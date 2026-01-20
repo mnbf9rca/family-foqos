@@ -62,6 +62,10 @@ struct HomeView: View {
   // Intro sheet
   @AppStorage("showIntroScreen") private var showIntroScreen = true
 
+  // Mode selection
+  @ObservedObject private var appModeManager = AppModeManager.shared
+  @State private var showModeSelection = false
+
   // UI States
   @State private var opacityValue = 1.0
 
@@ -197,6 +201,10 @@ struct HomeView: View {
     .onChange(of: requestAuthorizer.isAuthorized) { _, newValue in
       if newValue {
         showIntroScreen = false
+        // Show mode selection if user hasn't selected a mode yet
+        if !appModeManager.hasSelectedMode {
+          showModeSelection = true
+        }
       } else {
         showIntroScreen = true
       }
@@ -225,6 +233,14 @@ struct HomeView: View {
       IntroView {
         requestAuthorizer.requestAuthorization()
       }.interactiveDismissDisabled()
+    }
+    .fullScreenCover(isPresented: $showModeSelection) {
+      ModeSelectionView { selectedMode in
+        showModeSelection = false
+        // Note: The app will route to the appropriate view based on mode
+        // If parent or child mode is selected, the root view in foqosApp will handle routing
+      }
+      .interactiveDismissDisabled()
     }
     .sheet(item: $profileToEdit) { profile in
       BlockedProfileView(profile: profile)

@@ -4,10 +4,18 @@
 <dict>
 	<key>com.apple.developer.associated-domains</key>
 	<array>
-		<string>applinks:foqos.app</string>
+		<string>applinks:family-foqus.cynexia.com</string>
 	</array>
 	<key>com.apple.developer.family-controls</key>
 	<true/>
+	<key>com.apple.developer.icloud-container-identifiers</key>
+	<array>
+		<string>iCloud.com.cynexia.family-foqus</string>
+	</array>
+	<key>com.apple.developer.icloud-services</key>
+	<array>
+		<string>CloudKit</string>
+	</array>
 	<key>com.apple.developer.nfc.readersession.formats</key>
 	<array>
 		<string>TAG</string>
@@ -16,7 +24,7 @@
 	<true/>
 	<key>com.apple.security.application-groups</key>
 	<array>
-		<string>group.dev.ambitionsoftware.foqos</string>
+		<string>group.com.cynexia.family-foqus</string>
 	</array>
 	<key>com.apple.security.files.user-selected.read-only</key>
 	<true/>

@@ -6,8 +6,14 @@ struct EmergencyView: View {
 
   @EnvironmentObject var strategyManager: StrategyManager
 
+  // Child policy enforcer for checking parent restrictions
+  @ObservedObject private var childPolicyEnforcer = ChildPolicyEnforcer.shared
+
   private var emergencyUnblocksRemaining: Int { strategyManager.getRemainingEmergencyUnblocks() }
   private var hasRemaining: Bool { strategyManager.getRemainingEmergencyUnblocks() > 0 }
+
+  /// Whether emergency unblock is blocked by parent policies
+  private var isBlockedByParent: Bool { childPolicyEnforcer.shouldBlockEmergencyUnblock }
 
   @State private var isPerformingEmergencyUnblock: Bool = false
 
@@ -16,13 +22,53 @@ struct EmergencyView: View {
       VStack(spacing: 20) {
         header
 
-        statusCard
+        // Show parent-blocked message if applicable
+        if isBlockedByParent {
+          parentBlockedCard
+        } else {
+          statusCard
+        }
       }
       .padding()
     }
     .onAppear {
       strategyManager.checkAndResetEmergencyUnblocks()
     }
+  }
+
+  private var parentBlockedCard: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      HStack(spacing: 12) {
+        Image(systemName: "lock.shield.fill")
+          .font(.title3)
+          .foregroundColor(.orange)
+        VStack(alignment: .leading, spacing: 4) {
+          Text("Parent Controlled")
+            .font(.subheadline)
+            .foregroundColor(.secondary)
+          Text("Emergency unblock disabled")
+            .font(.title2).bold()
+            .foregroundColor(.orange)
+        }
+        Spacer()
+      }
+
+      Text("Your parent has set restrictions that don't allow emergency unblocks. Contact your parent if you need access.")
+        .font(.footnote)
+        .foregroundColor(.secondary)
+
+      // Show if any policies allow unlock
+      if childPolicyEnforcer.anyPolicyAllowsEmergencyUnblock {
+        Text("Note: Some of your restrictions may allow emergency unblock.")
+          .font(.footnote)
+          .foregroundColor(.blue)
+      }
+    }
+    .padding(16)
+    .background(
+      RoundedRectangle(cornerRadius: 16, style: .continuous)
+        .fill(.thinMaterial)
+    )
   }
 
   private var header: some View {

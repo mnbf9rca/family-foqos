@@ -614,7 +614,7 @@
 				CODE_SIGN_ENTITLEMENTS = FoqosDeviceMonitor/FoqosDeviceMonitor.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = YR54789JNV;
+				DEVELOPMENT_TEAM = BU7526J4QY;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = FoqosDeviceMonitor/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = FoqosDeviceMonitor;
@@ -626,7 +626,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.11;
-				PRODUCT_BUNDLE_IDENTIFIER = dev.ambitionsoftware.foqos.FoqosDeviceMonitor;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.cynexia.family-foqus.FoqosDeviceMonitor";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -647,7 +647,7 @@
 				CODE_SIGN_ENTITLEMENTS = FoqosDeviceMonitor/FoqosDeviceMonitor.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = YR54789JNV;
+				DEVELOPMENT_TEAM = BU7526J4QY;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = FoqosDeviceMonitor/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = FoqosDeviceMonitor;
@@ -659,7 +659,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.11;
-				PRODUCT_BUNDLE_IDENTIFIER = dev.ambitionsoftware.foqos.FoqosDeviceMonitor;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.cynexia.family-foqus.FoqosDeviceMonitor";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -803,7 +803,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "\"foqos/Preview Content\"";
-				DEVELOPMENT_TEAM = YR54789JNV;
+				DEVELOPMENT_TEAM = BU7526J4QY;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -827,7 +827,7 @@
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 14.5;
 				MARKETING_VERSION = 1.29.1;
-				PRODUCT_BUNDLE_IDENTIFIER = dev.ambitionsoftware.foqos;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.cynexia.family-foqus";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -851,7 +851,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "\"foqos/Preview Content\"";
-				DEVELOPMENT_TEAM = YR54789JNV;
+				DEVELOPMENT_TEAM = BU7526J4QY;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -875,7 +875,7 @@
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 14.5;
 				MARKETING_VERSION = 1.29.1;
-				PRODUCT_BUNDLE_IDENTIFIER = dev.ambitionsoftware.foqos;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.cynexia.family-foqus";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -894,12 +894,12 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = YR54789JNV;
+				DEVELOPMENT_TEAM = BU7526J4QY;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				MACOSX_DEPLOYMENT_TARGET = 14.5;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = dev.ambitionsoftware.foqosTests;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.cynexia.family-foqusTests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
@@ -918,12 +918,12 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = YR54789JNV;
+				DEVELOPMENT_TEAM = BU7526J4QY;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				MACOSX_DEPLOYMENT_TARGET = 14.5;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = dev.ambitionsoftware.foqosTests;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.cynexia.family-foqusTests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
@@ -941,12 +941,12 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = YR54789JNV;
+				DEVELOPMENT_TEAM = BU7526J4QY;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				MACOSX_DEPLOYMENT_TARGET = 14.5;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = dev.ambitionsoftware.foqosUITests;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.cynexia.family-foqusUITests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
@@ -964,12 +964,12 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = YR54789JNV;
+				DEVELOPMENT_TEAM = BU7526J4QY;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				MACOSX_DEPLOYMENT_TARGET = 14.5;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = dev.ambitionsoftware.foqosUITests;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.cynexia.family-foqusUITests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
@@ -987,7 +987,7 @@
 				CODE_SIGN_ENTITLEMENTS = FoqosShieldConfig/FoqosShieldConfig.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = YR54789JNV;
+				DEVELOPMENT_TEAM = BU7526J4QY;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = FoqosShieldConfig/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = FoqosShieldConfig;
@@ -999,7 +999,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = dev.ambitionsoftware.foqos.FoqosShieldConfig;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.cynexia.family-foqus.FoqosShieldConfig";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -1015,7 +1015,7 @@
 				CODE_SIGN_ENTITLEMENTS = FoqosShieldConfig/FoqosShieldConfig.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = YR54789JNV;
+				DEVELOPMENT_TEAM = BU7526J4QY;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = FoqosShieldConfig/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = FoqosShieldConfig;
@@ -1027,7 +1027,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = dev.ambitionsoftware.foqos.FoqosShieldConfig;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.cynexia.family-foqus.FoqosShieldConfig";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -1046,7 +1046,7 @@
 				CODE_SIGN_ENTITLEMENTS = FoqosWidget/FoqosWidgetExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = YR54789JNV;
+				DEVELOPMENT_TEAM = BU7526J4QY;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = FoqosWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = FoqosWidget;
@@ -1058,7 +1058,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.11;
-				PRODUCT_BUNDLE_IDENTIFIER = dev.ambitionsoftware.foqos.FoqosWidget;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.cynexia.family-foqus.FoqosWidget";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -1076,7 +1076,7 @@
 				CODE_SIGN_ENTITLEMENTS = FoqosWidget/FoqosWidgetExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = YR54789JNV;
+				DEVELOPMENT_TEAM = BU7526J4QY;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = FoqosWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = FoqosWidget;
@@ -1088,7 +1088,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.11;
-				PRODUCT_BUNDLE_IDENTIFIER = dev.ambitionsoftware.foqos.FoqosWidget;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.cynexia.family-foqus.FoqosWidget";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;

@@ -89,7 +89,7 @@ extension NFCScannerUtil: NFCTagReaderSessionDelegate {
       (payload: NFCNDEFPayload) -> URLComponents? in
       if let url = payload.wellKnownTypeURIPayload() {
         let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
-        if components?.host == "foqos.app" && components?.scheme == "https" {
+        if components?.host == "family-foqus.cynexia.com" && components?.scheme == "https" {
           return components
         }
       }

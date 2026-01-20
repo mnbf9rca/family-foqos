@@ -5,6 +5,10 @@ import WidgetKit
 class StrategyManager: ObservableObject {
   static var shared = StrategyManager()
 
+  // Child policy enforcer for checking parent restrictions
+  private let childPolicyEnforcer = ChildPolicyEnforcer.shared
+  private let appModeManager = AppModeManager.shared
+
   static let availableStrategies: [BlockingStrategy] = [
     ManualBlockingStrategy(),
     NFCBlockingStrategy(),
@@ -75,6 +79,12 @@ class StrategyManager: ObservableObject {
 
   func toggleBlocking(context: ModelContext, activeProfile: BlockedProfiles?) {
     if isBlocking {
+      // CRITICAL: Block manual stop if parent policies are enforced
+      if childPolicyEnforcer.shouldBlockManualStop {
+        print("Manual stop blocked: Parent policies are active")
+        errorMessage = childPolicyEnforcer.getBlockedActionReason()
+        return
+      }
       stopBlocking(context: context)
     } else {
       startBlocking(context: context, activeProfile: activeProfile)
@@ -313,6 +323,13 @@ class StrategyManager: ObservableObject {
   }
 
   func emergencyUnblock(context: ModelContext) {
+    // CRITICAL: Block emergency unblock if parent policies are enforced
+    if childPolicyEnforcer.shouldBlockEmergencyUnblock {
+      print("Emergency unblock blocked: Parent policies are active")
+      errorMessage = childPolicyEnforcer.getBlockedActionReason()
+      return
+    }
+
     // Do not allow emergency unblocks if there are no remaining
     if emergencyUnblocksRemaining == 0 {
       return
