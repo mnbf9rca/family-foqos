@@ -42,7 +42,7 @@ class ShareCoordinator: NSObject, ObservableObject {
 
     /// Get the CloudKit container
     func getContainer() -> CKContainer {
-        return CKContainer(identifier: "iCloud.com.cynexia.family-foqus")
+        return CKContainer(identifier: "iCloud.com.cynexia.family-foqos")
     }
 
     // MARK: - Deprecated Per-Policy Sharing

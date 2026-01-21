@@ -3,7 +3,7 @@ import Foundation
 
 enum SharedData {
   private static let suite = UserDefaults(
-    suiteName: "group.com.cynexia.family-foqus"
+    suiteName: "group.com.cynexia.family-foqos"
   )!
 
   // MARK: – Keys

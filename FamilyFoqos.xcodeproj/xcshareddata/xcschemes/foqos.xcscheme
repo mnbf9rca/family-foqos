@@ -16,8 +16,8 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "801B20942CB363A10073E9E2"
-               BuildableName = "foqos.app"
-               BlueprintName = "foqos"
+               BuildableName = "FamilyFoqos.app"
+               BlueprintName = "FamilyFoqos"
                ReferencedContainer = "container:FamilyFoqos.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -69,8 +69,8 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "801B20942CB363A10073E9E2"
-            BuildableName = "foqos.app"
-            BlueprintName = "foqos"
+            BuildableName = "FamilyFoqos.app"
+            BlueprintName = "FamilyFoqos"
             ReferencedContainer = "container:FamilyFoqos.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -89,8 +89,8 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "801B20942CB363A10073E9E2"
-            BuildableName = "foqos.app"
-            BlueprintName = "foqos"
+            BuildableName = "FamilyFoqos.app"
+            BlueprintName = "FamilyFoqos"
             ReferencedContainer = "container:FamilyFoqos.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>

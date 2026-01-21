@@ -9,9 +9,9 @@ class ParentPolicyStore: ObservableObject {
     static let shared = ParentPolicyStore()
 
     /// Separate store specifically for parent policies.
-    /// This is intentionally different from AppBlockerUtil's "foqosAppRestrictions" store.
+    /// This is intentionally different from AppBlockerUtil's "familyFoqosAppRestrictions" store.
     private let store = ManagedSettingsStore(
-        named: ManagedSettingsStore.Name("foqosParentPolicies")
+        named: ManagedSettingsStore.Name("familyFoqosParentPolicies")
     )
 
     /// Currently enforced policies (loaded from CloudKit)

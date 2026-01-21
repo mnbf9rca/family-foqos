@@ -4,12 +4,10 @@
 <dict>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
-		<string>com.foqos.backgroundprocessing</string>
+		<string>com.cynexia.family-foqos.backgroundprocessing</string>
 	</array>
 	<key>CFBundleIconName</key>
 	<string>AppIcon</string>
-	<key>ITSAppUsesNonExemptEncryption</key>
-	<false/>
 	<key>Supported</key>
 	<false/>
 	<key>UIBackgroundModes</key>

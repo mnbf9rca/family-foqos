@@ -10,7 +10,7 @@ import ManagedSettings
 import OSLog
 
 private let log = Logger(
-  subsystem: "com.foqos.monitor",
+  subsystem: "com.cynexia.family-foqos.monitor",
   category: "DeviceActivity"
 )
 

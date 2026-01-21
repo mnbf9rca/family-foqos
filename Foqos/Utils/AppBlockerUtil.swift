@@ -3,7 +3,7 @@ import SwiftUI
 
 class AppBlockerUtil {
   let store = ManagedSettingsStore(
-    named: ManagedSettingsStore.Name("foqosAppRestrictions")
+    named: ManagedSettingsStore.Name("familyFoqosAppRestrictions")
   )
 
   func activateRestrictions(for profile: SharedData.ProfileSnapshot) {

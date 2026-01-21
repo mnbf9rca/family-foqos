@@ -27,7 +27,7 @@ struct BlockedProfileDataExportView: View {
 
   private var defaultFilename: String {
     let timestamp = Int(Date().timeIntervalSince1970)
-    return "foqos_sessions_\(timestamp)"
+    return "family_foqos_sessions_\(timestamp)"
   }
 
   var body: some View {

@@ -6,7 +6,7 @@ class CloudKitManager: ObservableObject {
     static let shared = CloudKitManager()
 
     // CloudKit container identifier (must match entitlements)
-    private let containerIdentifier = "iCloud.com.cynexia.family-foqus"
+    private let containerIdentifier = "iCloud.com.cynexia.family-foqos"
 
     // Custom zone for family policies (enables sharing)
     private let policyZoneName = "FamilyPolicies"

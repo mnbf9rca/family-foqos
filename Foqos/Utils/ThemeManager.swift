@@ -25,7 +25,7 @@ class ThemeManager: ObservableObject {
   private static let defaultColorName = "Grimace Purple"
 
   @AppStorage(
-    "foqosThemeColorName", store: UserDefaults(suiteName: "group.com.cynexia.family-foqus"))
+    "familyFoqosThemeColorName", store: UserDefaults(suiteName: "group.com.cynexia.family-foqos"))
   private var themeColorName: String = defaultColorName
 
   var selectedColorName: String {

@@ -50,8 +50,8 @@ class AppModeManager: ObservableObject {
     static let shared = AppModeManager()
 
     private let userDefaults = UserDefaults.standard
-    private let modeKey = "foqos_app_mode"
-    private let hasSelectedModeKey = "foqos_has_selected_mode"
+    private let modeKey = "family_foqos_app_mode"
+    private let hasSelectedModeKey = "family_foqos_has_selected_mode"
 
     @Published var currentMode: AppMode {
         didSet {

@@ -179,7 +179,7 @@ struct SettingsView: View {
         }
 
         Section("Help") {
-          Link(destination: URL(string: "https://family-foqus.cynexia.com/")!) {
+          Link(destination: URL(string: "https://family-foqos.cynexia.com/")!) {
             HStack {
               Text("Blocking Native Apps")
                 .foregroundColor(.primary)
