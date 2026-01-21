@@ -91,7 +91,7 @@ enum AppCategoryIdentifier: String, CaseIterable, Codable, Identifiable {
 struct FamilyPolicy: Codable, Identifiable, Equatable {
     var id: UUID
     var parentUserRecordName: String  // CKRecord.ID.recordName of the parent
-    var assignedChildIds: [String]    // IDs of EnrolledChild records this policy applies to (empty = all children)
+    var assignedChildIds: [String]    // IDs of FamilyMember (child) records this policy applies to (empty = all children)
 
     // Basic info
     var name: String

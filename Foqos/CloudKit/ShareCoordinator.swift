@@ -11,11 +11,15 @@ class ShareCoordinator: NSObject, ObservableObject {
     private var currentShare: CKShare?
     private let cloudKitManager = CloudKitManager.shared
 
-    // MARK: - Zone-Level Sharing (Enroll Child)
+    // The role being enrolled (for creating the FamilyMember record after share acceptance)
+    @Published var pendingRole: FamilyRole = .child
 
-    /// Prepare and present sharing UI for enrolling a child (family share)
-    func enrollChild() {
+    // MARK: - Zone-Level Sharing (Enroll Family Member)
+
+    /// Prepare and present sharing UI for enrolling a family member
+    func enrollFamilyMember(role: FamilyRole) {
         isPreparingShare = true
+        pendingRole = role
 
         Task {
             do {
@@ -33,6 +37,12 @@ class ShareCoordinator: NSObject, ObservableObject {
                 }
             }
         }
+    }
+
+    /// Legacy method - use enrollFamilyMember instead
+    @available(*, deprecated, message: "Use enrollFamilyMember(role:) instead")
+    func enrollChild() {
+        enrollFamilyMember(role: .child)
     }
 
     /// Get the current share for presenting in UICloudSharingController
@@ -133,9 +143,9 @@ struct CloudSharingView: UIViewControllerRepresentable {
     }
 }
 
-// MARK: - Zone Share Sheet Modifier (for enrolling children)
+// MARK: - Zone Share Sheet Modifier (for enrolling family members)
 
-struct EnrollChildModifier: ViewModifier {
+struct EnrollFamilyMemberModifier: ViewModifier {
     @ObservedObject var coordinator: ShareCoordinator
 
     func body(content: Content) -> some View {
@@ -160,8 +170,14 @@ struct EnrollChildModifier: ViewModifier {
 }
 
 extension View {
+    func enrollFamilyMemberSheet(coordinator: ShareCoordinator) -> some View {
+        modifier(EnrollFamilyMemberModifier(coordinator: coordinator))
+    }
+
+    /// Legacy method - use enrollFamilyMemberSheet instead
+    @available(*, deprecated, message: "Use enrollFamilyMemberSheet(coordinator:) instead")
     func enrollChildSheet(coordinator: ShareCoordinator) -> some View {
-        modifier(EnrollChildModifier(coordinator: coordinator))
+        modifier(EnrollFamilyMemberModifier(coordinator: coordinator))
     }
 }
 
@@ -199,14 +215,36 @@ extension View {
     }
 }
 
-// MARK: - Enroll Child Button Component
+// MARK: - Enroll Family Member Button Component
 
+struct EnrollFamilyMemberButton: View {
+    let role: FamilyRole
+    @StateObject private var coordinator = ShareCoordinator()
+
+    var body: some View {
+        Button {
+            coordinator.enrollFamilyMember(role: role)
+        } label: {
+            if coordinator.isPreparingShare {
+                ProgressView()
+                    .progressViewStyle(CircularProgressViewStyle())
+            } else {
+                Label("Add \(role.displayName)", systemImage: "person.badge.plus")
+            }
+        }
+        .disabled(coordinator.isPreparingShare)
+        .enrollFamilyMemberSheet(coordinator: coordinator)
+    }
+}
+
+/// Legacy component - use EnrollFamilyMemberButton instead
+@available(*, deprecated, message: "Use EnrollFamilyMemberButton instead")
 struct EnrollChildButton: View {
     @StateObject private var coordinator = ShareCoordinator()
 
     var body: some View {
         Button {
-            coordinator.enrollChild()
+            coordinator.enrollFamilyMember(role: .child)
         } label: {
             if coordinator.isPreparingShare {
                 ProgressView()
@@ -216,7 +254,7 @@ struct EnrollChildButton: View {
             }
         }
         .disabled(coordinator.isPreparingShare)
-        .enrollChildSheet(coordinator: coordinator)
+        .enrollFamilyMemberSheet(coordinator: coordinator)
     }
 }
 

@@ -28,7 +28,7 @@ class CloudKitManager: ObservableObject {
     @Published var currentUserRecordID: CKRecord.ID?
     @Published var isSignedIn = false
     @Published var policies: [FamilyPolicy] = []
-    @Published var enrolledChildren: [EnrolledChild] = []  // Children enrolled by this parent
+    @Published var familyMembers: [FamilyMember] = []  // Family members (parents and children)
     @Published var sharedPolicies: [FamilyPolicy] = []  // Policies shared with this user (child)
     @Published var lockCodes: [FamilyLockCode] = []  // Lock codes created by this parent
     @Published var isLoading = false
@@ -255,58 +255,56 @@ class CloudKitManager: ObservableObject {
         }
     }
 
-    // MARK: - Enrolled Children Management
+    // MARK: - Family Member Management
 
-    /// Save an enrolled child to CloudKit
-    func saveEnrolledChild(_ child: EnrolledChild) async throws {
-        print("CloudKitManager: Saving enrolled child '\(child.displayName)'")
+    /// Save a family member to CloudKit
+    func saveFamilyMember(_ member: FamilyMember) async throws {
+        print("CloudKitManager: Saving family member '\(member.displayName)' as \(member.role.displayName)")
 
         try await createPolicyZoneIfNeeded()
         try await ensureFamilyRootExists()
 
-        let record = child.toCKRecord(in: policyZoneID)
+        let record = member.toCKRecord(in: policyZoneID)
 
         do {
             _ = try await privateDatabase.save(record)
             await MainActor.run {
-                if let index = self.enrolledChildren.firstIndex(where: { $0.id == child.id }) {
-                    self.enrolledChildren[index] = child
+                if let index = self.familyMembers.firstIndex(where: { $0.id == member.id }) {
+                    self.familyMembers[index] = member
                 } else {
-                    self.enrolledChildren.append(child)
+                    self.familyMembers.append(member)
                 }
             }
-            print("CloudKitManager: Saved enrolled child: \(child.displayName)")
+            print("CloudKitManager: Saved family member: \(member.displayName)")
         } catch {
-            print("CloudKitManager: Failed to save enrolled child - \(error)")
+            print("CloudKitManager: Failed to save family member - \(error)")
             throw CloudKitError.saveFailed(error)
         }
     }
 
-    /// Delete an enrolled child from CloudKit
-    func deleteEnrolledChild(_ child: EnrolledChild) async throws {
-        let recordID = CKRecord.ID(recordName: child.id.uuidString, zoneID: policyZoneID)
+    /// Delete a family member from CloudKit
+    func deleteFamilyMember(_ member: FamilyMember) async throws {
+        let recordID = CKRecord.ID(recordName: member.id.uuidString, zoneID: policyZoneID)
 
         do {
             try await privateDatabase.deleteRecord(withID: recordID)
             await MainActor.run {
-                self.enrolledChildren.removeAll { $0.id == child.id }
+                self.familyMembers.removeAll { $0.id == member.id }
             }
-            print("CloudKitManager: Deleted enrolled child: \(child.displayName)")
+            print("CloudKitManager: Deleted family member: \(member.displayName)")
         } catch {
             throw CloudKitError.deleteFailed(error)
         }
     }
 
-    /// Fetch all enrolled children
-    func fetchEnrolledChildren() async throws -> [EnrolledChild] {
+    /// Fetch all family members
+    func fetchFamilyMembers() async throws -> [FamilyMember] {
         try await createPolicyZoneIfNeeded()
 
         let query = CKQuery(
-            recordType: EnrolledChild.recordType,
+            recordType: FamilyMember.recordType,
             predicate: NSPredicate(value: true)
         )
-        // Note: Don't use sortDescriptors - can cause issues with CloudKit schema
-        // Sort in-memory instead
 
         do {
             let (results, _) = try await privateDatabase.records(
@@ -314,26 +312,26 @@ class CloudKitManager: ObservableObject {
                 inZoneWith: policyZoneID
             )
 
-            var children: [EnrolledChild] = []
+            var members: [FamilyMember] = []
             for (_, result) in results {
                 if case .success(let record) = result,
-                   let child = EnrolledChild(from: record) {
-                    children.append(child)
+                   let member = FamilyMember(from: record) {
+                    members.append(member)
                 }
             }
 
-            // Sort by enrolledAt ascending in-memory
-            children.sort { $0.enrolledAt < $1.enrolledAt }
+            // Sort by enrolledAt ascending
+            members.sort { $0.enrolledAt < $1.enrolledAt }
 
             await MainActor.run {
-                self.enrolledChildren = children
+                self.familyMembers = members
             }
 
-            return children
+            return members
         } catch let error as CKError {
             if error.code == .zoneNotFound || error.code == .unknownItem {
                 await MainActor.run {
-                    self.enrolledChildren = []
+                    self.familyMembers = []
                 }
                 return []
             }

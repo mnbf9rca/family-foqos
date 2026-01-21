@@ -98,10 +98,10 @@ struct foqosApp: App {
     } else {
       // Route based on selected mode
       switch appModeManager.currentMode {
-      case .individual:
+      case .individual, .parent:
+        // Both individual and parent modes use HomeView as default
+        // Parent dashboard is accessible from HomeView's settings
         HomeView()
-      case .parent:
-        ParentDashboardView()
       case .child:
         ChildDashboardView()
       }

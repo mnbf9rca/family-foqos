@@ -45,6 +45,9 @@ struct HomeView: View {
   // Debug mode
   @State private var showingDebugMode = false
 
+  // Parent dashboard (accessible in parent mode)
+  @State private var showParentDashboard = false
+
   // Activity sessions
   @Query(sort: \BlockedProfileSession.startTime, order: .reverse) private
     var sessions: [BlockedProfileSession]
@@ -92,6 +95,14 @@ struct HomeView: View {
           AppTitle()
           Spacer()
           HStack(spacing: 8) {
+            // Show Family button in parent mode
+            if appModeManager.currentMode == .parent {
+              RoundedButton(
+                "Family",
+                action: {
+                  showParentDashboard = true
+                }, iconName: "person.2.fill")
+            }
             RoundedButton(
               "Support",
               action: {
@@ -271,6 +282,9 @@ struct HomeView: View {
     }
     .sheet(isPresented: $showingDebugMode) {
       DebugView()
+    }
+    .sheet(isPresented: $showParentDashboard) {
+      ParentDashboardView()
     }
     .alert(alertTitle, isPresented: $showingAlert) {
       Button("OK", role: .cancel) { dismissAlert() }
