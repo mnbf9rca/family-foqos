@@ -94,7 +94,7 @@ extension ShareCoordinator: UICloudSharingControllerDelegate {
     }
 
     func itemTitle(for csc: UICloudSharingController) -> String? {
-        return "Foqos Family Policies"
+        return "Family Foqos Policies"
     }
 
     func itemThumbnailData(for csc: UICloudSharingController) -> Data? {

@@ -462,7 +462,7 @@
 					};
 				};
 			};
-			buildConfigurationList = 801B20902CB363A10073E9E2 /* Build configuration list for PBXProject "foqos" */;
+			buildConfigurationList = 801B20902CB363A10073E9E2 /* Build configuration list for PBXProject "FamilyFoqos" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -808,7 +808,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = foqos/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Foqos;
+				INFOPLIST_KEY_CFBundleDisplayName = "Family Foqos";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_NFCReaderUsageDescription = "This app uses NFC to scan tags for item identification.";
 				INFOPLIST_KEY_NSCameraUsageDescription = "We need camera access to scan QR codes to active/deactivate profiles";
@@ -856,7 +856,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = foqos/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Foqos;
+				INFOPLIST_KEY_CFBundleDisplayName = "Family Foqos";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_NFCReaderUsageDescription = "This app uses NFC to scan tags for item identification.";
 				INFOPLIST_KEY_NSCameraUsageDescription = "We need camera access to scan QR codes to active/deactivate profiles";
@@ -1111,7 +1111,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
-		801B20902CB363A10073E9E2 /* Build configuration list for PBXProject "foqos" */ = {
+		801B20902CB363A10073E9E2 /* Build configuration list for PBXProject "FamilyFoqos" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				801B20B82CB363A20073E9E2 /* Debug */,

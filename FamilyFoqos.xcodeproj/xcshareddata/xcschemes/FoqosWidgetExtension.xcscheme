@@ -19,7 +19,7 @@
                BlueprintIdentifier = "80FF388C2D80DB540032BC5E"
                BuildableName = "FoqosWidgetExtension.appex"
                BlueprintName = "FoqosWidgetExtension"
-               ReferencedContainer = "container:foqos.xcodeproj">
+               ReferencedContainer = "container:FamilyFoqos.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
          <BuildActionEntry
@@ -33,7 +33,7 @@
                BlueprintIdentifier = "801B20942CB363A10073E9E2"
                BuildableName = "foqos.app"
                BlueprintName = "foqos"
-               ReferencedContainer = "container:foqos.xcodeproj">
+               ReferencedContainer = "container:FamilyFoqos.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -65,7 +65,7 @@
             BlueprintIdentifier = "80FF388C2D80DB540032BC5E"
             BuildableName = "FoqosWidgetExtension.appex"
             BlueprintName = "FoqosWidgetExtension"
-            ReferencedContainer = "container:foqos.xcodeproj">
+            ReferencedContainer = "container:FamilyFoqos.xcodeproj">
          </BuildableReference>
       </RemoteRunnable>
       <MacroExpansion>
@@ -74,7 +74,7 @@
             BlueprintIdentifier = "801B20942CB363A10073E9E2"
             BuildableName = "foqos.app"
             BlueprintName = "foqos"
-            ReferencedContainer = "container:foqos.xcodeproj">
+            ReferencedContainer = "container:FamilyFoqos.xcodeproj">
          </BuildableReference>
       </MacroExpansion>
       <EnvironmentVariables>
@@ -110,7 +110,7 @@
             BlueprintIdentifier = "801B20942CB363A10073E9E2"
             BuildableName = "foqos.app"
             BlueprintName = "foqos"
-            ReferencedContainer = "container:foqos.xcodeproj">
+            ReferencedContainer = "container:FamilyFoqos.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

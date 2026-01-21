@@ -19,7 +19,7 @@ struct ModeSelectionView: View {
                     .font(.system(size: 60))
                     .foregroundStyle(.primary.opacity(0.8))
 
-                Text("How will you use Foqos?")
+                Text("How will you use Family Foqos?")
                     .font(.title2)
                     .fontWeight(.bold)
 

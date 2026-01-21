@@ -30,7 +30,7 @@ struct Welcome: View {
           .frame(height: 10)
 
         // Title and subtitle
-        Text("Welcome to Foqos")
+        Text("Welcome to Family Foqos")
           .font(.title)
           .fontWeight(.bold)
           .foregroundColor(.primary)

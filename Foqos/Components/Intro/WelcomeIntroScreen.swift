@@ -12,7 +12,7 @@ struct WelcomeIntroScreen: View {
     VStack(spacing: 0) {
       // Heading
       VStack(spacing: 8) {
-        Text("Welcome to Foqos")
+        Text("Welcome to Family Foqos")
           .font(.system(size: 34, weight: .bold))
           .foregroundColor(.primary)
           .opacity(showContent ? 1 : 0)

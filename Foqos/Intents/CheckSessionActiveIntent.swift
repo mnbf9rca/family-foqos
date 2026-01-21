@@ -10,9 +10,9 @@ struct CheckSessionActiveIntent: AppIntent {
     return modelContainer.mainContext
   }
 
-  static var title: LocalizedStringResource = "Check if Foqos Session is Active"
+  static var title: LocalizedStringResource = "Check if Family Foqos Session is Active"
   static var description = IntentDescription(
-    "Check if any Foqos blocking session is currently active and return true or false. Useful for automation and shortcuts."
+    "Check if any Family Foqos blocking session is currently active and return true or false. Useful for automation and shortcuts."
   )
 
   static var openAppWhenRun: Bool = false
@@ -29,8 +29,8 @@ struct CheckSessionActiveIntent: AppIntent {
 
     let dialogMessage =
       isActive
-      ? "A Foqos session is currently active."
-      : "No Foqos session is active."
+      ? "A Family Foqos session is currently active."
+      : "No Family Foqos session is active."
 
     return .result(
       value: isActive,

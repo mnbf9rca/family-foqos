@@ -66,7 +66,7 @@ struct PermissionsIntroScreen: View {
 
       // Message text
       VStack(spacing: 16) {
-        (Text("Foqos is 100% open source, ")
+        (Text("Family Foqos is 100% open source, ")
           + Text("read the code yourself")
           .foregroundColor(.accentColor)
           + Text(

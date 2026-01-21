@@ -12,7 +12,7 @@ struct StopProfileIntent: AppIntent {
 
   @Parameter(title: "Profile") var profile: BlockedProfileEntity
 
-  static var title: LocalizedStringResource = "Stop Foqos Profile"
+  static var title: LocalizedStringResource = "Stop Family Foqos Profile"
 
   @MainActor
   func perform() async throws -> some IntentResult {

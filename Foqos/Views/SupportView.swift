@@ -34,7 +34,7 @@ struct SupportView: View {
         .padding(.bottom, 20)
 
       Text(
-        "Thank you for your support! I created Foqos because I believe everyone deserves tools to live with more focus and intention. Your support, whether through reviews, shares, or donations helps keep this dream alive and accessible to everyone who needs it"
+        "Thank you for your support! I created Family Foqos because I love the original Foqos app, but wanted to extend it to support family policies. If you like it, please support the original author."
       )
       .font(.body)
       .multilineTextAlignment(.center)

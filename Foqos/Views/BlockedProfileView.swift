@@ -266,7 +266,7 @@ struct BlockedProfileView: View {
           CustomToggle(
             title: "Strict",
             description:
-              "Block deleting apps from your phone, stops you from deleting Foqos to access apps",
+              "Block deleting apps from your phone, stops you from deleting Family Foqos to access apps",
             isOn: $enableStrictMode,
             isDisabled: isBlocking
           )

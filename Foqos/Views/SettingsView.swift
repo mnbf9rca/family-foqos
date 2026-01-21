@@ -161,7 +161,7 @@ struct SettingsView: View {
             Text("Made in")
               .foregroundStyle(.primary)
             Spacer()
-            Text("Calgary AB 🇨🇦")
+            Text("Calgary AB 🇨🇦 and London 🇬🇧")
               .foregroundStyle(.secondary)
           }
         }
@@ -169,7 +169,7 @@ struct SettingsView: View {
         Section("Buy NFC Tags") {
           Link(destination: URL(string: AMZN_STORE_LINK)!) {
             HStack {
-              Text("Amazon")
+              Text("Amazon (original author affiliate link)")
                 .foregroundColor(.primary)
               Spacer()
               Image(systemName: "arrow.up.right.square")
@@ -179,7 +179,7 @@ struct SettingsView: View {
         }
 
         Section("Help") {
-          Link(destination: URL(string: "https://family-foqus.cynexia.com/blocking-native-apps.html")!) {
+          Link(destination: URL(string: "https://family-foqus.cynexia.com/")!) {
             HStack {
               Text("Blocking Native Apps")
                 .foregroundColor(.primary)

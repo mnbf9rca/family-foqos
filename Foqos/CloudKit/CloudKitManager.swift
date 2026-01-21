@@ -384,7 +384,7 @@ class CloudKitManager: ObservableObject {
     private func createShareForRoot(_ rootRecord: CKRecord) async throws -> CKShare {
         let share = CKShare(rootRecord: rootRecord)
         share.publicPermission = .none  // Only invited participants
-        share[CKShare.SystemFieldKey.title] = "Foqos Family Policies" as CKRecordValue
+        share[CKShare.SystemFieldKey.title] = "Family Foqos Policies" as CKRecordValue
 
         // Save both the root record and share together
         let modifyOperation = CKModifyRecordsOperation(
@@ -427,7 +427,7 @@ class CloudKitManager: ObservableObject {
         // Create share
         let share = CKShare(rootRecord: record)
         share.publicPermission = .none  // Only invited participants
-        share[CKShare.SystemFieldKey.title] = "Foqos Policy: \(policy.name)" as CKRecordValue
+        share[CKShare.SystemFieldKey.title] = "Family Foqos Policy: \(policy.name)" as CKRecordValue
 
         // Save both the record and share
         let modifyOperation = CKModifyRecordsOperation(

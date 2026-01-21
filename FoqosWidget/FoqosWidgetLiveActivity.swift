@@ -47,7 +47,7 @@ struct FoqosWidgetLiveActivity: Widget {
         // Left side - App info
         VStack(alignment: .leading, spacing: 8) {
           HStack(spacing: 4) {
-            Text("Foqos")
+            Text("Family Foqos")
               .font(.headline)
               .fontWeight(.bold)
               .foregroundColor(.primary)

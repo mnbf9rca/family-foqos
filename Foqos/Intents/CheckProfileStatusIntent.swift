@@ -12,9 +12,9 @@ struct CheckProfileStatusIntent: AppIntent {
 
   @Parameter(title: "Profile") var profile: BlockedProfileEntity
 
-  static var title: LocalizedStringResource = "Foqos Profile Status"
+  static var title: LocalizedStringResource = "Family Foqos Profile Status"
   static var description = IntentDescription(
-    "Check if a Foqos profile is currently active and return the status as a boolean value.")
+    "Check if a Family Foqos profile is currently active and return the status as a boolean value.")
 
   @MainActor
   func perform() async throws -> some IntentResult & ReturnsValue<Bool> & ProvidesDialog {
