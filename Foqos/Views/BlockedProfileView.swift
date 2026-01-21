@@ -22,6 +22,9 @@ struct BlockedProfileView: View {
   @EnvironmentObject private var nfcWriter: NFCWriter
   @EnvironmentObject private var strategyManager: StrategyManager
 
+  @ObservedObject private var appModeManager = AppModeManager.shared
+  @ObservedObject private var lockCodeManager = LockCodeManager.shared
+
   // If profile is nil, we're creating a new profile
   var profile: BlockedProfiles?
 
@@ -72,6 +75,18 @@ struct BlockedProfileView: View {
   // Sheet for sessions modal
   @State private var showingSessions = false
 
+  // Managed profile state
+  @State private var isManaged: Bool = false
+  @State private var showingLockCodeEntry = false
+  @State private var pendingAction: PendingAction?
+
+  // Pending actions that require code verification
+  private enum PendingAction {
+    case edit
+    case delete
+    case stopBlocking
+  }
+
   @State private var selectedActivity = FamilyActivitySelection()
   @State private var selectedStrategy: BlockingStrategy? = nil
 
@@ -83,6 +98,28 @@ struct BlockedProfileView: View {
 
   private var isBlocking: Bool {
     strategyManager.activeSession?.isActive ?? false
+  }
+
+  /// Whether this profile is managed and requires code for editing
+  private var isManagedProfile: Bool {
+    profile?.isManaged == true
+  }
+
+  /// Whether the profile is currently unlocked for editing
+  private var isUnlockedForEditing: Bool {
+    guard let profile = profile else { return true }
+    return lockCodeManager.isUnlocked(profile.id)
+  }
+
+  /// Whether editing should be disabled
+  private var editingDisabled: Bool {
+    isBlocking || (isManagedProfile && !isUnlockedForEditing && appModeManager.currentMode != .parent)
+  }
+
+  /// Whether to show the managed toggle (only for parents and individual users setting up for a child)
+  private var showManagedToggle: Bool {
+    // Parent devices should NOT have managed profiles on them (safety feature)
+    appModeManager.currentMode == .parent && lockCodeManager.hasAnyLockCode
   }
 
   init(profile: BlockedProfiles? = nil) {
@@ -144,6 +181,7 @@ struct BlockedProfileView: View {
           updatedAt: Date()
         )
     )
+    _isManaged = State(initialValue: profile?.isManaged ?? false)
 
     if let profileStrategyId = profile?.blockingStrategyId {
       _selectedStrategy = State(
@@ -171,6 +209,33 @@ struct BlockedProfileView: View {
                 .foregroundColor(.red)
             }
             .frame(maxWidth: .infinity, alignment: .center)
+            .padding(.vertical, 4)
+          }
+        }
+
+        // Show managed profile lock status
+        if isManagedProfile && !isUnlockedForEditing && appModeManager.currentMode != .parent {
+          Section {
+            HStack {
+              Image(systemName: "lock.shield.fill")
+                .font(.title2)
+                .foregroundColor(.blue)
+              VStack(alignment: .leading, spacing: 4) {
+                Text("Parent-Controlled Profile")
+                  .font(.subheadline)
+                  .fontWeight(.medium)
+                Text("This profile is managed by a parent. Enter the lock code to edit.")
+                  .font(.caption)
+                  .foregroundColor(.secondary)
+              }
+              Spacer()
+              Button("Unlock") {
+                pendingAction = .edit
+                showingLockCodeEntry = true
+              }
+              .buttonStyle(.borderedProminent)
+              .controlSize(.small)
+            }
             .padding(.vertical, 4)
           }
         }
@@ -268,7 +333,7 @@ struct BlockedProfileView: View {
             description:
               "Block deleting apps from your phone, stops you from deleting Family Foqos to access apps",
             isOn: $enableStrictMode,
-            isDisabled: isBlocking
+            isDisabled: editingDisabled
           )
 
           CustomToggle(
@@ -276,8 +341,27 @@ struct BlockedProfileView: View {
             description:
               "Disable the ability to stop a profile from the background, this includes shortcuts and scanning links from NFC tags or QR codes.",
             isOn: $disableBackgroundStops,
-            isDisabled: isBlocking
+            isDisabled: editingDisabled
           )
+        }
+
+        // Parent-controlled profile section (only visible for parents)
+        if showManagedToggle {
+          Section {
+            CustomToggle(
+              title: "Parent-Controlled",
+              description:
+                "When enabled, this profile will require a lock code to edit or delete. Use this when setting up a profile on your child's device.",
+              isOn: $isManaged,
+              isDisabled: isBlocking
+            )
+          } header: {
+            Text("Parent Controls")
+          } footer: {
+            if isManaged {
+              Text("This profile will require your lock code to modify. The child will not be able to see the code.")
+            }
+          }
         }
 
         Section("Strict Unlocks") {
@@ -417,7 +501,13 @@ struct BlockedProfileView: View {
                 Divider()
 
                 Button(role: .destructive) {
-                  alertIdentifier = AlertIdentifier(id: .deleteProfile)
+                  // If managed profile on child device, require code
+                  if isManagedProfile && appModeManager.currentMode != .parent && !isUnlockedForEditing {
+                    pendingAction = .delete
+                    showingLockCodeEntry = true
+                  } else {
+                    alertIdentifier = AlertIdentifier(id: .deleteProfile)
+                  }
                 } label: {
                   Label("Delete Profile", systemImage: "trash")
                 }
@@ -487,6 +577,18 @@ struct BlockedProfileView: View {
         if let validProfile = profile {
           BlockedProfileSessionsView(profile: validProfile)
         }
+      }
+      .sheet(isPresented: $showingLockCodeEntry) {
+        LockCodeEntryView(
+          title: "Enter Lock Code",
+          subtitle: "Enter the parent lock code to modify this managed profile",
+          onVerify: { code in
+            lockCodeManager.verifyCodeForProfile(code, profile: profile!)
+          },
+          onSuccess: {
+            handleLockCodeSuccess()
+          }
+        )
       }
       .background(
         TextFieldAlert(
@@ -562,6 +664,30 @@ struct BlockedProfileView: View {
     alertIdentifier = AlertIdentifier(id: .error, errorMessage: message)
   }
 
+  private func handleLockCodeSuccess() {
+    guard let profile = profile else { return }
+
+    // Grant temporary unlock for this profile
+    lockCodeManager.grantTemporaryUnlock(for: profile.id)
+
+    // Execute the pending action
+    switch pendingAction {
+    case .edit:
+      // Profile is now unlocked, user can edit
+      break
+    case .delete:
+      // Show delete confirmation
+      alertIdentifier = AlertIdentifier(id: .deleteProfile)
+    case .stopBlocking:
+      // This would be handled by StrategyManager
+      break
+    case .none:
+      break
+    }
+
+    pendingAction = nil
+  }
+
   private func writeProfile() {
     if let profileToWrite = profile {
       let url = BlockedProfiles.getProfileDeepLink(profileToWrite)
@@ -577,6 +703,9 @@ struct BlockedProfileView: View {
       // Calculate reminder time in seconds or nil if disabled
       let reminderTimeSeconds: UInt32? =
         enableReminder ? UInt32(reminderTimeInMinutes * 60) : nil
+
+      // Determine managedByChildId - use current user's CloudKit ID if on child device
+      let managedChildId: String? = isManaged ? CloudKitManager.shared.currentUserRecordID?.recordName : nil
 
       if let existingProfile = profile {
         // Update existing profile
@@ -599,7 +728,9 @@ struct BlockedProfileView: View {
           physicalUnblockNFCTagId: physicalUnblockNFCTagId,
           physicalUnblockQRCodeId: physicalUnblockQRCodeId,
           schedule: schedule,
-          disableBackgroundStops: disableBackgroundStops
+          disableBackgroundStops: disableBackgroundStops,
+          isManaged: isManaged,
+          managedByChildId: managedChildId
         )
 
         // Schedule restrictions
@@ -624,7 +755,9 @@ struct BlockedProfileView: View {
           physicalUnblockNFCTagId: physicalUnblockNFCTagId,
           physicalUnblockQRCodeId: physicalUnblockQRCodeId,
           schedule: schedule,
-          disableBackgroundStops: disableBackgroundStops
+          disableBackgroundStops: disableBackgroundStops,
+          isManaged: isManaged,
+          managedByChildId: managedChildId
         )
 
         // Schedule restrictions

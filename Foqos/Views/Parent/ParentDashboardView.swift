@@ -1,14 +1,14 @@
 import SwiftUI
 
-/// Main dashboard view for parents to manage family policies
+/// Main dashboard view for parents to manage lock codes and enrolled children
 struct ParentDashboardView: View {
     @ObservedObject private var cloudKitManager = CloudKitManager.shared
     @ObservedObject private var appModeManager = AppModeManager.shared
+    @ObservedObject private var lockCodeManager = LockCodeManager.shared
 
-    @State private var showNewPolicySheet = false
-    @State private var policyToEdit: FamilyPolicy?
     @State private var showSettings = false
     @State private var showPersonalProfiles = false
+    @State private var showLockCodeSetup = false
     @State private var showError = false
     @State private var errorMessage = ""
 
@@ -24,15 +24,14 @@ struct ParentDashboardView: View {
                         iCloudWarning
                     }
 
+                    // Lock code management section
+                    lockCodeSection
+
                     // Enrolled children section
                     enrolledChildrenSection
 
-                    // Policies section
-                    if cloudKitManager.policies.isEmpty && !cloudKitManager.isLoading {
-                        emptyStateView
-                    } else {
-                        policiesSection
-                    }
+                    // How to use section
+                    howToUseSection
                 }
                 .padding()
             }
@@ -53,56 +52,32 @@ struct ParentDashboardView: View {
                         Image(systemName: "gear")
                     }
                 }
-
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        showNewPolicySheet = true
-                    } label: {
-                        Image(systemName: "plus")
-                    }
-                    .disabled(!cloudKitManager.isSignedIn)
-                }
             }
             .refreshable {
-                await refreshPolicies()
+                await refreshData()
             }
             .task {
-                await refreshPolicies()
-            }
-            .sheet(isPresented: $showNewPolicySheet) {
-                ParentPolicyEditorView(policy: nil) { savedPolicy in
-                    Task {
-                        do {
-                            try await cloudKitManager.savePolicy(savedPolicy)
-                            print("Policy saved successfully: \(savedPolicy.name)")
-                        } catch {
-                            print("Failed to save policy: \(error)")
-                            await MainActor.run {
-                                errorMessage = error.localizedDescription
-                                showError = true
-                            }
-                        }
-                    }
-                }
-            }
-            .sheet(item: $policyToEdit) { policy in
-                ParentPolicyEditorView(policy: policy) { savedPolicy in
-                    Task {
-                        do {
-                            try await cloudKitManager.savePolicy(savedPolicy)
-                            print("Policy updated successfully: \(savedPolicy.name)")
-                        } catch {
-                            print("Failed to update policy: \(error)")
-                            await MainActor.run {
-                                errorMessage = error.localizedDescription
-                                showError = true
-                            }
-                        }
-                    }
-                }
+                await refreshData()
             }
             .sheet(isPresented: $showSettings) {
                 ParentSettingsView()
+            }
+            .sheet(isPresented: $showLockCodeSetup) {
+                LockCodeSetupView(
+                    title: "Set Lock Code",
+                    onSave: { code in
+                        Task {
+                            do {
+                                try await lockCodeManager.setLockCode(code, scope: .allChildren)
+                            } catch {
+                                await MainActor.run {
+                                    errorMessage = error.localizedDescription
+                                    showError = true
+                                }
+                            }
+                        }
+                    }
+                )
             }
             .fullScreenCover(isPresented: $showPersonalProfiles) {
                 NavigationStack {
@@ -138,7 +113,7 @@ struct ParentDashboardView: View {
                     .fontWeight(.bold)
             }
 
-            Text("Create and manage screen time policies for your children")
+            Text("Set up lock codes to protect profiles on your children's devices")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
         }
@@ -153,7 +128,7 @@ struct ParentDashboardView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("iCloud Not Available")
                     .font(.headline)
-                Text("Sign in to iCloud to create and share policies with your children.")
+                Text("Sign in to iCloud to sync lock codes with your children's devices.")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
@@ -165,6 +140,36 @@ struct ParentDashboardView: View {
             RoundedRectangle(cornerRadius: 12)
                 .fill(Color.orange.opacity(0.1))
         )
+    }
+
+    private var lockCodeSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Lock Code")
+                    .font(.headline)
+
+                Spacer()
+
+                if lockCodeManager.isLoading {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                }
+            }
+
+            if lockCodeManager.hasAnyLockCode {
+                // Show lock code status
+                LockCodeStatusCard(
+                    onEdit: {
+                        showLockCodeSetup = true
+                    }
+                )
+            } else {
+                // No lock code set - show setup prompt
+                NoLockCodeCard(onSetup: {
+                    showLockCodeSetup = true
+                })
+            }
+        }
     }
 
     private var enrolledChildrenSection: some View {
@@ -189,7 +194,7 @@ struct ParentDashboardView: View {
                         Text("No Children Enrolled")
                             .font(.subheadline)
                             .fontWeight(.medium)
-                        Text("Tap 'Add Child' to invite your child's device and share policies with them.")
+                        Text("Tap 'Add Child' to invite your child's device and share the lock code with them.")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
@@ -210,84 +215,53 @@ struct ParentDashboardView: View {
         }
     }
 
-    private var emptyStateView: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "doc.badge.plus")
-                .font(.system(size: 48))
-                .foregroundColor(.secondary)
-
-            Text("No Policies Yet")
+    private var howToUseSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("How It Works")
                 .font(.headline)
 
-            Text("Create a policy to control which apps and websites your child can access.")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
+            VStack(alignment: .leading, spacing: 16) {
+                HowToUseStep(
+                    number: 1,
+                    title: "Set a Lock Code",
+                    description: "Create a 4-digit code that you'll remember"
+                )
 
-            Button {
-                showNewPolicySheet = true
-            } label: {
-                Label("Create First Policy", systemImage: "plus")
-                    .fontWeight(.semibold)
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(!cloudKitManager.isSignedIn)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 40)
-    }
+                HowToUseStep(
+                    number: 2,
+                    title: "Add Your Children",
+                    description: "Invite your child's device using the Add Child button"
+                )
 
-    private var policiesSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Text("Policies")
-                    .font(.headline)
+                HowToUseStep(
+                    number: 3,
+                    title: "Create Managed Profiles",
+                    description: "On your child's device, create profiles and enable 'Parent-Controlled'"
+                )
 
-                Spacer()
-
-                if cloudKitManager.isLoading {
-                    ProgressView()
-                        .scaleEffect(0.8)
-                }
-            }
-
-            ForEach(cloudKitManager.policies) { policy in
-                PolicyCard(
-                    policy: policy,
-                    enrolledChildren: cloudKitManager.enrolledChildren,
-                    onEdit: {
-                        policyToEdit = policy
-                    },
-                    onDelete: {
-                        deletePolicy(policy)
-                    }
+                HowToUseStep(
+                    number: 4,
+                    title: "Child Needs Code to Edit",
+                    description: "Your child will need your lock code to modify or delete managed profiles"
                 )
             }
+            .padding()
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color(.tertiarySystemBackground))
+            )
         }
     }
 
     // MARK: - Actions
 
-    private func refreshPolicies() async {
+    private func refreshData() async {
         do {
-            _ = try await cloudKitManager.fetchMyPolicies()
             _ = try await cloudKitManager.fetchEnrolledChildren()
+            await lockCodeManager.fetchLockCodes()
         } catch {
             errorMessage = error.localizedDescription
             showError = true
-        }
-    }
-
-    private func deletePolicy(_ policy: FamilyPolicy) {
-        Task {
-            do {
-                try await cloudKitManager.deletePolicy(policy)
-            } catch {
-                await MainActor.run {
-                    errorMessage = error.localizedDescription
-                    showError = true
-                }
-            }
         }
     }
 
@@ -300,6 +274,110 @@ struct ParentDashboardView: View {
                     errorMessage = error.localizedDescription
                     showError = true
                 }
+            }
+        }
+    }
+}
+
+// MARK: - Lock Code Status Card
+
+struct LockCodeStatusCard: View {
+    let onEdit: () -> Void
+
+    var body: some View {
+        HStack(spacing: 16) {
+            Image(systemName: "lock.shield.fill")
+                .font(.largeTitle)
+                .foregroundColor(.green)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Lock Code Set")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+
+                Text("Your lock code is active and will be required to edit managed profiles")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer()
+
+            Button("Change") {
+                onEdit()
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+        }
+        .padding()
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.green.opacity(0.1))
+        )
+    }
+}
+
+// MARK: - No Lock Code Card
+
+struct NoLockCodeCard: View {
+    let onSetup: () -> Void
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "lock.open.fill")
+                .font(.system(size: 40))
+                .foregroundColor(.orange)
+
+            VStack(spacing: 4) {
+                Text("No Lock Code Set")
+                    .font(.headline)
+
+                Text("Set up a lock code to protect profiles on your children's devices")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+
+            Button {
+                onSetup()
+            } label: {
+                Label("Set Lock Code", systemImage: "lock.fill")
+                    .fontWeight(.semibold)
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .frame(maxWidth: .infinity)
+        .padding()
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color(.tertiarySystemBackground))
+        )
+    }
+}
+
+// MARK: - How To Use Step
+
+struct HowToUseStep: View {
+    let number: Int
+    let title: String
+    let description: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Text("\(number)")
+                .font(.caption)
+                .fontWeight(.bold)
+                .foregroundColor(.white)
+                .frame(width: 24, height: 24)
+                .background(Circle().fill(Color.accentColor))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+
+                Text(description)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
         }
     }
@@ -360,129 +438,7 @@ struct EnrolledChildCard: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This will stop sharing policies with \(child.displayName). They will need to be re-invited to receive policies again.")
-        }
-    }
-}
-
-// MARK: - Policy Card
-
-struct PolicyCard: View {
-    let policy: FamilyPolicy
-    let enrolledChildren: [EnrolledChild]
-    let onEdit: () -> Void
-    let onDelete: () -> Void
-
-    @State private var showDeleteConfirmation = false
-
-    /// Get the names of children this policy applies to
-    private var appliedChildrenText: String {
-        if policy.appliesToAllChildren {
-            return "All children"
-        }
-
-        let childNames = enrolledChildren
-            .filter { policy.assignedChildIds.contains($0.userRecordName) }
-            .map { $0.displayName }
-
-        if childNames.isEmpty {
-            return "No children assigned"
-        }
-        return childNames.joined(separator: ", ")
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Header
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(policy.name)
-                        .font(.headline)
-
-                    Text(policy.summaryText)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-
-                Spacer()
-
-                // Status indicator
-                Circle()
-                    .fill(policy.isActive ? Color.green : Color.gray)
-                    .frame(width: 10, height: 10)
-            }
-
-            // Applied to children
-            HStack(spacing: 6) {
-                Image(systemName: "person.2.fill")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                Text(appliedChildrenText)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-
-            Divider()
-
-            // Categories
-            if !policy.blockedCategories.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(policy.blockedCategories.prefix(4)) { category in
-                            Label(category.displayName, systemImage: category.iconName)
-                                .font(.caption)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(
-                                    Capsule()
-                                        .fill(Color.accentColor.opacity(0.1))
-                                )
-                        }
-
-                        if policy.blockedCategories.count > 4 {
-                            Text("+\(policy.blockedCategories.count - 4)")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                }
-            }
-
-            // Actions
-            HStack(spacing: 12) {
-                Button {
-                    onEdit()
-                } label: {
-                    Label("Edit", systemImage: "pencil")
-                        .font(.subheadline)
-                }
-
-                Spacer()
-
-                Button(role: .destructive) {
-                    showDeleteConfirmation = true
-                } label: {
-                    Image(systemName: "trash")
-                        .font(.subheadline)
-                }
-            }
-        }
-        .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color(.secondarySystemBackground))
-        )
-        .confirmationDialog(
-            "Delete Policy",
-            isPresented: $showDeleteConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button("Delete", role: .destructive) {
-                onDelete()
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This will remove the policy from all assigned children's devices.")
+            Text("This will stop sharing your lock code with \(child.displayName). They will no longer be able to use managed profiles.")
         }
     }
 }
@@ -519,7 +475,7 @@ struct ParentSettingsView: View {
                         appModeManager.selectMode(.individual)
                     }
                 } footer: {
-                    Text("Switch back to controlling your own screen time instead of managing children's policies.")
+                    Text("Switch back to controlling your own screen time instead of managing children's profiles.")
                 }
             }
             .navigationTitle("Settings")

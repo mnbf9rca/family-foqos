@@ -30,6 +30,7 @@ class CloudKitManager: ObservableObject {
     @Published var policies: [FamilyPolicy] = []
     @Published var enrolledChildren: [EnrolledChild] = []  // Children enrolled by this parent
     @Published var sharedPolicies: [FamilyPolicy] = []  // Policies shared with this user (child)
+    @Published var lockCodes: [FamilyLockCode] = []  // Lock codes created by this parent
     @Published var isLoading = false
     @Published var error: CloudKitError?
 
@@ -338,6 +339,123 @@ class CloudKitManager: ObservableObject {
             }
             throw CloudKitError.fetchFailed(error)
         }
+    }
+
+    // MARK: - Lock Code Management
+
+    /// Save a lock code to CloudKit (parent operation)
+    func saveLockCode(_ lockCode: FamilyLockCode) async throws {
+        print("CloudKitManager: Saving lock code")
+
+        try await createPolicyZoneIfNeeded()
+        try await ensureFamilyRootExists()
+
+        let record = lockCode.toCKRecord(in: policyZoneID)
+
+        do {
+            _ = try await privateDatabase.save(record)
+            await MainActor.run {
+                if let index = self.lockCodes.firstIndex(where: { $0.id == lockCode.id }) {
+                    self.lockCodes[index] = lockCode
+                } else {
+                    self.lockCodes.append(lockCode)
+                }
+            }
+            print("CloudKitManager: Saved lock code successfully")
+        } catch {
+            print("CloudKitManager: Failed to save lock code - \(error)")
+            throw CloudKitError.saveFailed(error)
+        }
+    }
+
+    /// Delete a lock code from CloudKit (parent operation)
+    func deleteLockCode(_ lockCode: FamilyLockCode) async throws {
+        let recordID = CKRecord.ID(recordName: lockCode.id.uuidString, zoneID: policyZoneID)
+
+        do {
+            try await privateDatabase.deleteRecord(withID: recordID)
+            await MainActor.run {
+                self.lockCodes.removeAll { $0.id == lockCode.id }
+            }
+            print("CloudKitManager: Deleted lock code successfully")
+        } catch {
+            throw CloudKitError.deleteFailed(error)
+        }
+    }
+
+    /// Fetch all lock codes created by this parent
+    func fetchLockCodes() async throws -> [FamilyLockCode] {
+        try await createPolicyZoneIfNeeded()
+
+        let query = CKQuery(
+            recordType: FamilyLockCode.recordType,
+            predicate: NSPredicate(value: true)
+        )
+
+        do {
+            let (results, _) = try await privateDatabase.records(
+                matching: query,
+                inZoneWith: policyZoneID
+            )
+
+            var codes: [FamilyLockCode] = []
+            for (_, result) in results {
+                if case .success(let record) = result,
+                   let code = FamilyLockCode(from: record) {
+                    codes.append(code)
+                }
+            }
+
+            // Sort by createdAt ascending
+            codes.sort { $0.createdAt < $1.createdAt }
+
+            await MainActor.run {
+                self.lockCodes = codes
+            }
+
+            return codes
+        } catch let error as CKError {
+            if error.code == .zoneNotFound || error.code == .unknownItem {
+                await MainActor.run {
+                    self.lockCodes = []
+                }
+                return []
+            }
+            throw CloudKitError.fetchFailed(error)
+        }
+    }
+
+    /// Fetch shared lock codes for verification (child operation)
+    func fetchSharedLockCodes() async throws -> [FamilyLockCode] {
+        // Fetch from shared database (codes shared via CKShare)
+        let zones = try await sharedDatabase.allRecordZones()
+
+        var allCodes: [FamilyLockCode] = []
+
+        for zone in zones {
+            let query = CKQuery(
+                recordType: FamilyLockCode.recordType,
+                predicate: NSPredicate(value: true)
+            )
+
+            do {
+                let (results, _) = try await sharedDatabase.records(
+                    matching: query,
+                    inZoneWith: zone.zoneID
+                )
+
+                for (_, result) in results {
+                    if case .success(let record) = result,
+                       let code = FamilyLockCode(from: record) {
+                        allCodes.append(code)
+                    }
+                }
+            } catch {
+                print("Failed to fetch lock codes from zone \(zone.zoneID): \(error)")
+            }
+        }
+
+        return allCodes
     }
 
     // MARK: - Family Sharing (Enroll Child)
