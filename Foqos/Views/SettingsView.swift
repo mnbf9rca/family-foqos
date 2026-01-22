@@ -161,8 +161,9 @@ struct SettingsView: View {
             Text("Made in")
               .foregroundStyle(.primary)
             Spacer()
-            Text("Calgary AB 🇨🇦 and London 🇬🇧")
+            Text("Calgary AB 🇨🇦\nand London 🇬🇧")
               .foregroundStyle(.secondary)
+              .multilineTextAlignment(.trailing)
           }
         }
 
@@ -178,8 +179,8 @@ struct SettingsView: View {
           }
         }
 
-        Section("Help") {
-          Link(destination: URL(string: "https://family-foqos.cynexia.com/")!) {
+        Section("Help from the original author") {
+          Link(destination: URL(string: "https://www.foqos.app/blocking-native-apps.html")!) {
             HStack {
               Text("Blocking Native Apps")
                 .foregroundColor(.primary)

@@ -77,7 +77,7 @@ struct PermissionsIntroScreen: View {
           .multilineTextAlignment(.center)
           .lineSpacing(4)
           .onTapGesture {
-            if let url = URL(string: "https://github.com/awaseem/foqos") {
+            if let url = URL(string: "https://github.com/mnbf9rca/family-foqos") {
               UIApplication.shared.open(url)
             }
           }

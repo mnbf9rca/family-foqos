@@ -98,13 +98,13 @@ struct HomeView: View {
             // Show Family button in parent mode
             if appModeManager.currentMode == .parent {
               RoundedButton(
-                "Family",
+                "",
                 action: {
                   showParentDashboard = true
                 }, iconName: "person.2.fill")
             }
             RoundedButton(
-              "Support",
+              "",
               action: {
                 showDonationView = true
               }, iconName: "heart.fill")

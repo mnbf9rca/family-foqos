@@ -34,7 +34,7 @@ struct SupportView: View {
         .padding(.bottom, 20)
 
       Text(
-        "Thank you for your support! I created Family Foqos because I love the original Foqos app, but wanted to extend it to support family policies. If you like it, please support the original author."
+        "Thank you for your support! I created Family Foqos because I love the original Foqos app by @awaseem, but wanted to extend it to support family policies."
       )
       .font(.body)
       .multilineTextAlignment(.center)
@@ -42,34 +42,42 @@ struct SupportView: View {
       .fadeInSlide(delay: 0.3)
 
       Text(
-        "Questions? Reach out to me."
+        "If you like it, please support the original author."
       )
       .font(.body)
       .multilineTextAlignment(.center)
       .foregroundColor(.secondary)
-      .fadeInSlide(delay: 0.4)
+      .fadeInSlide(delay: 0.3)
 
-      HStack(alignment: .center, spacing: 20) {
-        Link(destination: URL(string: THREADS_URL)!) {
-          Image("Threads")
-            .resizable()
-            .aspectRatio(contentMode: .fit)
-            .frame(width: 30, height: 30)
-        }
+      // Text(
+      //   "Questions? Reach out to me."
+      // )
+      // .font(.body)
+      // .multilineTextAlignment(.center)
+      // .foregroundColor(.secondary)
+      // .fadeInSlide(delay: 0.4)
 
-        Link(destination: URL(string: TWITTER_URL)!) {
-          Image("Twitter")
-            .resizable()
-            .aspectRatio(contentMode: .fit)
-            .frame(width: 30, height: 30)
-        }
-      }
+      // HStack(alignment: .center, spacing: 20) {
+      //   Link(destination: URL(string: THREADS_URL)!) {
+      //     Image("Threads")
+      //       .resizable()
+      //       .aspectRatio(contentMode: .fit)
+      //       .frame(width: 30, height: 30)
+      //   }
+
+      //   Link(destination: URL(string: TWITTER_URL)!) {
+      //     Image("Twitter")
+      //       .resizable()
+      //       .aspectRatio(contentMode: .fit)
+      //       .frame(width: 30, height: 30)
+      //   }
+      // }
       .fadeInSlide(delay: 0.5)
 
       Spacer()
 
       ActionButton(
-        title: donationManager.hasPurchasedTip ? "Thank you for the donation" : "Donate",
+        title: donationManager.hasPurchasedTip ? "Thank you for the donation" : "Donate to @awaseem",
         backgroundColor: donationManager.hasPurchasedTip ? .gray : themeManager.themeColor,
         iconName: "heart.fill",
         iconColor: donationManager.hasPurchasedTip ? .red : nil,

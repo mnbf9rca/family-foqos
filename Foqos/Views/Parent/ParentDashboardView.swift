@@ -6,7 +6,6 @@ struct ParentDashboardView: View {
     @ObservedObject private var appModeManager = AppModeManager.shared
     @ObservedObject private var lockCodeManager = LockCodeManager.shared
 
-    @State private var showSettings = false
     @State private var showLockCodeSetup = false
     @State private var showAddMember = false
     @State private var showError = false
@@ -39,23 +38,11 @@ struct ParentDashboardView: View {
                 .padding()
             }
             .navigationTitle("Family Controls")
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        showSettings = true
-                    } label: {
-                        Image(systemName: "gear")
-                    }
-                }
-            }
             .refreshable {
                 await refreshData()
             }
             .task {
                 await refreshData()
-            }
-            .sheet(isPresented: $showSettings) {
-                ParentSettingsView()
             }
             .sheet(isPresented: $showLockCodeSetup) {
                 LockCodeSetupView(
@@ -581,54 +568,6 @@ struct AddFamilyMemberView: View {
                 }
             } message: {
                 Text(coordinator.shareError ?? "")
-            }
-        }
-    }
-}
-
-// MARK: - Parent Settings View
-
-struct ParentSettingsView: View {
-    @Environment(\.dismiss) private var dismiss
-    @ObservedObject private var appModeManager = AppModeManager.shared
-
-    var body: some View {
-        NavigationStack {
-            List {
-                Section("Account") {
-                    HStack {
-                        Label("Mode", systemImage: "person.fill")
-                        Spacer()
-                        Text("Parent")
-                            .foregroundColor(.secondary)
-                    }
-                }
-
-                Section("About") {
-                    HStack {
-                        Label("Version", systemImage: "info.circle")
-                        Spacer()
-                        Text(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")
-                            .foregroundColor(.secondary)
-                    }
-                }
-
-                Section {
-                    Button("Switch to Individual Mode") {
-                        appModeManager.selectMode(.individual)
-                    }
-                } footer: {
-                    Text("Switch back to controlling your own screen time only.")
-                }
-            }
-            .navigationTitle("Settings")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") {
-                        dismiss()
-                    }
-                }
             }
         }
     }
