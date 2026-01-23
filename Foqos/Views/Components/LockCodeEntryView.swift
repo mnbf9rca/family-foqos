@@ -86,7 +86,7 @@ struct LockCodeEntryView: View {
 
                     // Bottom row: empty, 0, delete
                     HStack(spacing: 24) {
-                        // Empty space
+                        // Empty space (same size as number buttons)
                         Color.clear
                             .frame(width: 72, height: 72)
 
@@ -95,16 +95,10 @@ struct LockCodeEntryView: View {
                             addDigit("0")
                         }
 
-                        // Delete button
-                        Button {
+                        // Delete button (same size as number buttons, no background)
+                        DeleteButton(disabled: code.isEmpty) {
                             deleteDigit()
-                        } label: {
-                            Image(systemName: "delete.backward")
-                                .font(.title2)
-                                .foregroundColor(.primary)
-                                .frame(width: 72, height: 72)
                         }
-                        .disabled(code.isEmpty)
                     }
                 }
 
@@ -185,6 +179,24 @@ private struct NumberButton: View {
     }
 }
 
+// MARK: - Delete Button
+
+private struct DeleteButton: View {
+    let disabled: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "delete.backward.fill")
+                .font(.title2)
+                .foregroundColor(disabled ? Color(.systemGray3) : .primary)
+                .frame(width: 72, height: 72)
+        }
+        .disabled(disabled)
+        .buttonStyle(LockCodeScaleButtonStyle())
+    }
+}
+
 // MARK: - Lock Code Scale Button Style
 
 private struct LockCodeScaleButtonStyle: ButtonStyle {
@@ -261,6 +273,12 @@ struct LockCodeSetupView: View {
                          : "Enter the same code again")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
+
+                    if step == .enter {
+                        Text("This makes your device a parent device")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
                 }
 
                 // Code dots display
@@ -298,6 +316,7 @@ struct LockCodeSetupView: View {
                     }
 
                     HStack(spacing: 24) {
+                        // Empty space (same size as number buttons)
                         Color.clear
                             .frame(width: 72, height: 72)
 
@@ -305,15 +324,10 @@ struct LockCodeSetupView: View {
                             addDigit("0")
                         }
 
-                        Button {
+                        // Delete button (same size as number buttons, no background)
+                        DeleteButton(disabled: currentCode.isEmpty) {
                             deleteDigit()
-                        } label: {
-                            Image(systemName: "delete.backward")
-                                .font(.title2)
-                                .foregroundColor(.primary)
-                                .frame(width: 72, height: 72)
                         }
-                        .disabled(currentCode.isEmpty)
                     }
                 }
 

@@ -45,26 +45,21 @@ class LockCodeManager: ObservableObject {
 
     private func handleModeChange(_ mode: AppMode) async {
         switch mode {
-        case .parent:
-            // Parents need to fetch their lock codes
+        case .parent, .individual:
+            // Parents and individual users can manage lock codes
             await fetchLockCodes()
         case .child:
             // Children need to fetch shared lock codes for verification
             await fetchSharedLockCodes()
-        case .individual:
-            // Individual mode doesn't use lock codes
-            await MainActor.run {
-                lockCodes.removeAll()
-                cachedLockCodes.removeAll()
-            }
         }
     }
 
     // MARK: - Parent Operations
 
     /// Create or update a lock code (parent operation)
+    /// Individual mode users can also set lock codes via the Family Controls Dashboard
     func setLockCode(_ code: String, scope: LockCodeScope = .allChildren) async throws {
-        guard appModeManager.currentMode == .parent else {
+        guard appModeManager.currentMode != .child else {
             throw LockCodeError.notAuthorized
         }
 
@@ -78,8 +73,9 @@ class LockCodeManager: ObservableObject {
 
             try await cloudKitManager.saveLockCode(updatedCode)
 
+            let savedCode = updatedCode
             await MainActor.run {
-                lockCodes[existingIndex] = updatedCode
+                lockCodes[existingIndex] = savedCode
             }
         } else {
             // Create new lock code
@@ -93,8 +89,9 @@ class LockCodeManager: ObservableObject {
     }
 
     /// Delete a lock code (parent operation)
+    /// Individual mode users can also delete lock codes via the Family Controls Dashboard
     func deleteLockCode(_ lockCode: FamilyLockCode) async throws {
-        guard appModeManager.currentMode == .parent else {
+        guard appModeManager.currentMode != .child else {
             throw LockCodeError.notAuthorized
         }
 
@@ -108,9 +105,9 @@ class LockCodeManager: ObservableObject {
         }
     }
 
-    /// Fetch all lock codes created by this parent
+    /// Fetch all lock codes created by this user (parent or individual mode)
     func fetchLockCodes() async {
-        guard appModeManager.currentMode == .parent else { return }
+        guard appModeManager.currentMode != .child else { return }
 
         await MainActor.run { isLoading = true }
         defer { Task { await MainActor.run { self.isLoading = false } } }
@@ -297,14 +294,14 @@ enum LockCodeError: LocalizedError {
 
 extension LockCodeManager {
     /// Check if the current device can have managed profiles
-    /// Parent devices should NOT have managed profiles on them
+    /// Parent/individual devices should NOT have managed profiles on them
     var canHaveManagedProfiles: Bool {
         return appModeManager.currentMode == .child
     }
 
     /// Check if the current device can create managed profiles
-    /// Only parent devices can mark profiles as managed
+    /// Parent and individual mode users can mark profiles as managed (for children's devices)
     var canCreateManagedProfiles: Bool {
-        return appModeManager.currentMode == .parent
+        return appModeManager.currentMode != .child
     }
 }

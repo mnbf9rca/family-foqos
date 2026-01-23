@@ -223,6 +223,12 @@ struct SettingsView: View {
             }
         }
       }
+      .onChange(of: appModeManager.currentMode) { oldMode, newMode in
+        // Auto-dismiss settings when switching from child to individual mode
+        if oldMode == .child && newMode == .individual {
+          dismiss()
+        }
+      }
     }
   }
 }

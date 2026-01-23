@@ -397,7 +397,39 @@ class CloudKitManager: ObservableObject {
         try await createPolicyZoneIfNeeded()
         try await ensureFamilyRootExists()
 
-        let record = lockCode.toCKRecord(in: policyZoneID)
+        let recordID = CKRecord.ID(recordName: lockCode.id.uuidString, zoneID: policyZoneID)
+
+        // Try to fetch existing record first, or create new one
+        let record: CKRecord
+        do {
+            record = try await privateDatabase.record(for: recordID)
+            print("CloudKitManager: Updating existing lock code record")
+        } catch let error as CKError where error.code == .unknownItem {
+            // Record doesn't exist, create new one
+            record = CKRecord(recordType: FamilyLockCode.recordType, recordID: recordID)
+            print("CloudKitManager: Creating new lock code record")
+        }
+
+        // Update record fields
+        record["id"] = lockCode.id.uuidString
+        record["codeHash"] = lockCode.codeHash
+        record["codeSalt"] = lockCode.codeSalt
+        record["createdAt"] = lockCode.createdAt
+        record["updatedAt"] = lockCode.updatedAt
+
+        // Set parent reference to FamilyRoot for share hierarchy
+        let familyRootID = CKRecord.ID(recordName: "FamilyRoot", zoneID: policyZoneID)
+        record.parent = CKRecord.Reference(recordID: familyRootID, action: .none)
+
+        // Set scope
+        switch lockCode.scope {
+        case .allChildren:
+            record["scopeType"] = "all"
+            record["scopeChildId"] = nil
+        case .specificChild(let childId):
+            record["scopeType"] = "specific"
+            record["scopeChildId"] = childId
+        }
 
         do {
             _ = try await privateDatabase.save(record)
@@ -590,9 +622,12 @@ class CloudKitManager: ObservableObject {
 
     /// Fetch and refresh share participants (for parent dashboard)
     func refreshShareParticipants() async {
-        // Try to get the share
+        // Clear cached share to force fresh fetch from server
+        activeZoneShare = nil
+
         let rootRecordID = CKRecord.ID(recordName: familyRootRecordName, zoneID: policyZoneID)
         do {
+            // Fetch root record fresh from server
             let rootRecord = try await privateDatabase.record(for: rootRecordID)
             guard let shareRef = rootRecord.share else {
                 print("CloudKitManager: No share exists")
@@ -600,11 +635,17 @@ class CloudKitManager: ObservableObject {
                 return
             }
 
+            // Fetch share record fresh from server
             let share = try await privateDatabase.record(for: shareRef.recordID) as! CKShare
             activeZoneShare = share
 
-            // Get all participants except owner
+            // Get all participants except owner, log their statuses for debugging
             let participants = share.participants.filter { $0.role != .owner }
+            for participant in participants {
+                let name = participant.userIdentity.nameComponents?.formatted() ?? "Unknown"
+                print("CloudKitManager: Participant '\(name)' status: \(participant.acceptanceStatus.rawValue)")
+            }
+
             await MainActor.run {
                 self.shareParticipants = participants
             }
@@ -612,41 +653,6 @@ class CloudKitManager: ObservableObject {
         } catch {
             print("CloudKitManager: Failed to fetch share participants - \(error)")
             await MainActor.run { self.shareParticipants = [] }
-        }
-    }
-
-    // MARK: - Sharing (Parent creates share for child) - DEPRECATED
-    // Use getOrCreateZoneShare() instead for zone-level sharing
-
-    /// Create a CKShare for a policy to share with a child
-    @available(*, deprecated, message: "Use getOrCreateZoneShare() for zone-level sharing instead")
-    func createShare(for policy: FamilyPolicy) async throws -> CKShare {
-        // Fetch the record first
-        let recordID = CKRecord.ID(recordName: policy.id.uuidString, zoneID: policyZoneID)
-        let record = try await privateDatabase.record(for: recordID)
-
-        // Create share
-        let share = CKShare(rootRecord: record)
-        share.publicPermission = .none  // Only invited participants
-        share[CKShare.SystemFieldKey.title] = "Family Foqos Policy: \(policy.name)" as CKRecordValue
-
-        // Save both the record and share
-        let modifyOperation = CKModifyRecordsOperation(
-            recordsToSave: [record, share],
-            recordIDsToDelete: nil
-        )
-        modifyOperation.savePolicy = .changedKeys
-
-        return try await withCheckedThrowingContinuation { continuation in
-            modifyOperation.modifyRecordsResultBlock = { result in
-                switch result {
-                case .success:
-                    continuation.resume(returning: share)
-                case .failure(let error):
-                    continuation.resume(throwing: CloudKitError.shareFailed(error))
-                }
-            }
-            privateDatabase.add(modifyOperation)
         }
     }
 
@@ -711,25 +717,22 @@ class CloudKitManager: ObservableObject {
     /// Sync share participants to FamilyMember records
     /// Call this from parent dashboard to see children who accepted the share
     func syncShareParticipantsToFamilyMembers() async throws {
-        // First ensure we have the share
+        // Always fetch fresh share data - clear cache first
+        activeZoneShare = nil
+
         let share: CKShare
-        if let existingShare = activeZoneShare {
-            share = existingShare
-        } else {
-            // Try to fetch the existing share
-            let rootRecordID = CKRecord.ID(recordName: familyRootRecordName, zoneID: policyZoneID)
-            do {
-                let rootRecord = try await privateDatabase.record(for: rootRecordID)
-                guard let shareRef = rootRecord.share else {
-                    print("CloudKitManager: No share exists yet")
-                    return
-                }
-                share = try await privateDatabase.record(for: shareRef.recordID) as! CKShare
-                activeZoneShare = share
-            } catch {
-                print("CloudKitManager: Could not fetch share - \(error)")
+        let rootRecordID = CKRecord.ID(recordName: familyRootRecordName, zoneID: policyZoneID)
+        do {
+            let rootRecord = try await privateDatabase.record(for: rootRecordID)
+            guard let shareRef = rootRecord.share else {
+                print("CloudKitManager: No share exists yet")
                 return
             }
+            share = try await privateDatabase.record(for: shareRef.recordID) as! CKShare
+            activeZoneShare = share
+        } catch {
+            print("CloudKitManager: Could not fetch share - \(error)")
+            return
         }
 
         // Get participants who have accepted (excluding owner)
@@ -737,11 +740,17 @@ class CloudKitManager: ObservableObject {
             $0.acceptanceStatus == .accepted && $0.role != .owner
         }
 
+        // Get the userRecordNames of all current participants
+        let currentParticipantRecordNames = Set(
+            acceptedParticipants.compactMap { $0.userIdentity.userRecordID?.recordName }
+        )
+
         print("CloudKitManager: Found \(acceptedParticipants.count) accepted participants")
 
-        // Fetch current family members to avoid duplicates
+        // Fetch current family members
         _ = try await fetchFamilyMembers()
 
+        // Add new participants as FamilyMembers
         for participant in acceptedParticipants {
             guard let userRecordID = participant.userIdentity.userRecordID else {
                 continue
@@ -772,6 +781,26 @@ class CloudKitManager: ObservableObject {
                 }
             }
         }
+
+        // Remove FamilyMembers who are no longer participants (they left the share)
+        for member in familyMembers {
+            let userRecordName = member.userRecordName
+
+            // If this member is no longer in the share participants, remove them
+            if !currentParticipantRecordNames.contains(userRecordName) {
+                do {
+                    // Delete the FamilyMember record (but don't try to revoke share - they already left)
+                    let recordID = CKRecord.ID(recordName: member.id.uuidString, zoneID: policyZoneID)
+                    try await privateDatabase.deleteRecord(withID: recordID)
+                    await MainActor.run {
+                        self.familyMembers.removeAll { $0.id == member.id }
+                    }
+                    print("CloudKitManager: Removed FamilyMember who left share: \(member.displayName)")
+                } catch {
+                    print("CloudKitManager: Failed to remove stale FamilyMember - \(error)")
+                }
+            }
+        }
     }
 
     // MARK: - Child Family Connection Status
@@ -785,6 +814,36 @@ class CloudKitManager: ObservableObject {
             print("CloudKitManager: Failed to check family connection - \(error)")
             return false
         }
+    }
+
+    /// Fetch the CKShare from the shared database (for child to present leave UI)
+    func fetchShareFromSharedDatabase() async throws -> CKShare {
+        let zones = try await sharedDatabase.allRecordZones()
+
+        guard let zone = zones.first else {
+            throw CloudKitError.notConnectedToFamily
+        }
+
+        // Find the FamilyRoot record which has the share attached
+        let rootRecordID = CKRecord.ID(recordName: familyRootRecordName, zoneID: zone.zoneID)
+        let rootRecord = try await sharedDatabase.record(for: rootRecordID)
+
+        guard let shareRef = rootRecord.share else {
+            throw CloudKitError.shareNotFound
+        }
+
+        let share = try await sharedDatabase.record(for: shareRef.recordID) as! CKShare
+        return share
+    }
+
+    /// Clear local shared state after child leaves the family share
+    func clearSharedState() async {
+        await MainActor.run {
+            self.isConnectedToFamily = false
+            self.sharedLockCodes = []
+            self.sharedPolicies = []
+        }
+        print("CloudKitManager: Cleared shared state after leaving family")
     }
 
     // MARK: - Subscriptions (Real-time updates)
@@ -837,6 +896,8 @@ enum CloudKitError: LocalizedError {
     case shareFailed(Error)
     case shareAcceptFailed(Error)
     case subscriptionFailed(Error)
+    case notConnectedToFamily
+    case shareNotFound
 
     var errorDescription: String? {
         switch self {
@@ -852,6 +913,10 @@ enum CloudKitError: LocalizedError {
             return "Failed to fetch policies: \(error.localizedDescription)"
         case .shareFailed(let error):
             return "Failed to share policy: \(error.localizedDescription)"
+        case .notConnectedToFamily:
+            return "You are not connected to a family share."
+        case .shareNotFound:
+            return "Could not find the family share."
         case .shareAcceptFailed(let error):
             return "Failed to accept shared policy: \(error.localizedDescription)"
         case .subscriptionFailed(let error):

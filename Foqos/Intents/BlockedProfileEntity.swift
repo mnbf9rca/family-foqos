@@ -2,10 +2,18 @@ import AppIntents
 import SwiftData
 
 struct BlockedProfileEntity: AppEntity, Identifiable {
-  let profile: BlockedProfiles
+  let id: UUID
+  let name: String
 
-  var id: UUID { profile.id }
-  var name: String { profile.name }
+  init(id: UUID, name: String) {
+    self.id = id
+    self.name = name
+  }
+
+  init(profile: BlockedProfiles) {
+    self.id = profile.id
+    self.name = profile.name
+  }
 
   static var typeDisplayRepresentation = TypeDisplayRepresentation(
     name: "Profile"
@@ -14,7 +22,7 @@ struct BlockedProfileEntity: AppEntity, Identifiable {
   static var defaultQuery = BlockedProfilesQuery()
 
   var displayRepresentation: DisplayRepresentation {
-    DisplayRepresentation(title: "\(profile.name)")
+    DisplayRepresentation(title: "\(name)")
   }
 }
 

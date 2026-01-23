@@ -351,7 +351,7 @@ struct NoLockCodeCard: View {
                 Text("No Lock Code Set")
                     .font(.headline)
 
-                Text("Set up a lock code to protect profiles on children's devices")
+                Text("Setting a lock code makes this a parent device. You can then link children's devices to share the code.")
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)

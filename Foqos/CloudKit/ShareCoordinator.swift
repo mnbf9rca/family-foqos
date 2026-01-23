@@ -5,14 +5,19 @@ import UIKit
 /// Coordinates CloudKit sharing UI for parent-child policy sharing
 class ShareCoordinator: NSObject, ObservableObject {
     @Published var isShowingShareSheet = false
+    @Published var isShowingLeaveShareSheet = false
     @Published var shareError: String?
     @Published var isPreparingShare = false
+    @Published var didLeaveShare = false
 
     private var currentShare: CKShare?
     private let cloudKitManager = CloudKitManager.shared
 
     // The role being enrolled (for creating the FamilyMember record after share acceptance)
     @Published var pendingRole: FamilyRole = .child
+
+    // Callback when child successfully leaves share
+    var onDidLeaveShare: (() -> Void)?
 
     // MARK: - Zone-Level Sharing (Enroll Family Member)
 
@@ -39,12 +44,6 @@ class ShareCoordinator: NSObject, ObservableObject {
         }
     }
 
-    /// Legacy method - use enrollFamilyMember instead
-    @available(*, deprecated, message: "Use enrollFamilyMember(role:) instead")
-    func enrollChild() {
-        enrollFamilyMember(role: .child)
-    }
-
     /// Get the current share for presenting in UICloudSharingController
     func getCurrentShare() -> CKShare? {
         return currentShare
@@ -55,22 +54,26 @@ class ShareCoordinator: NSObject, ObservableObject {
         return CKContainer(identifier: "iCloud.com.cynexia.family-foqos")
     }
 
-    // MARK: - Deprecated Per-Policy Sharing
+    // MARK: - Leave Share (Child)
 
-    /// Prepare and present sharing UI for a policy
-    @available(*, deprecated, message: "Use enrollChild() for zone-level sharing instead")
-    func sharePolicy(_ policy: FamilyPolicy) {
+    /// Prepare and present UI for child to leave the family share
+    func prepareToLeaveShare() {
+        isPreparingShare = true
+
         Task {
             do {
-                let share = try await cloudKitManager.createShare(for: policy)
+                // Fetch the share from the shared database
+                let share = try await cloudKitManager.fetchShareFromSharedDatabase()
                 currentShare = share
 
                 await MainActor.run {
-                    self.isShowingShareSheet = true
+                    self.isPreparingShare = false
+                    self.isShowingLeaveShareSheet = true
                 }
             } catch {
                 await MainActor.run {
-                    self.shareError = error.localizedDescription
+                    self.isPreparingShare = false
+                    self.shareError = "Could not find family share: \(error.localizedDescription)"
                 }
             }
         }
@@ -104,22 +107,31 @@ extension ShareCoordinator: UICloudSharingControllerDelegate {
     }
 
     func itemTitle(for csc: UICloudSharingController) -> String? {
-        return "Family Foqos Policies"
+        return "Family Foqos"
     }
 
     func itemThumbnailData(for csc: UICloudSharingController) -> Data? {
-        // Return app icon or policy icon as thumbnail
         return nil
     }
 
     func cloudSharingControllerDidSaveShare(_ csc: UICloudSharingController) {
-        print("Share saved successfully")
+        print("ShareCoordinator: Share saved successfully")
         isShowingShareSheet = false
     }
 
     func cloudSharingControllerDidStopSharing(_ csc: UICloudSharingController) {
-        print("Sharing stopped")
+        print("ShareCoordinator: User stopped sharing / left share")
         isShowingShareSheet = false
+        isShowingLeaveShareSheet = false
+
+        // Clear local state when child leaves
+        Task {
+            await cloudKitManager.clearSharedState()
+            await MainActor.run {
+                self.didLeaveShare = true
+                self.onDidLeaveShare?()
+            }
+        }
     }
 }
 
@@ -173,23 +185,16 @@ extension View {
     func enrollFamilyMemberSheet(coordinator: ShareCoordinator) -> some View {
         modifier(EnrollFamilyMemberModifier(coordinator: coordinator))
     }
-
-    /// Legacy method - use enrollFamilyMemberSheet instead
-    @available(*, deprecated, message: "Use enrollFamilyMemberSheet(coordinator:) instead")
-    func enrollChildSheet(coordinator: ShareCoordinator) -> some View {
-        modifier(EnrollFamilyMemberModifier(coordinator: coordinator))
-    }
 }
 
-// MARK: - Deprecated Per-Policy Share Sheet
+// MARK: - Leave Share Sheet Modifier (for child leaving family)
 
-struct SharePolicyModifier: ViewModifier {
+struct LeaveShareModifier: ViewModifier {
     @ObservedObject var coordinator: ShareCoordinator
-    let policy: FamilyPolicy
 
     func body(content: Content) -> some View {
         content
-            .sheet(isPresented: $coordinator.isShowingShareSheet) {
+            .sheet(isPresented: $coordinator.isShowingLeaveShareSheet) {
                 if let share = coordinator.getCurrentShare() {
                     CloudSharingView(
                         share: share,
@@ -198,7 +203,7 @@ struct SharePolicyModifier: ViewModifier {
                     )
                 }
             }
-            .alert("Sharing Error", isPresented: .constant(coordinator.shareError != nil)) {
+            .alert("Error", isPresented: .constant(coordinator.shareError != nil)) {
                 Button("OK") {
                     coordinator.shareError = nil
                 }
@@ -209,9 +214,8 @@ struct SharePolicyModifier: ViewModifier {
 }
 
 extension View {
-    @available(*, deprecated, message: "Use enrollChildSheet(coordinator:) instead")
-    func sharePolicySheet(coordinator: ShareCoordinator, policy: FamilyPolicy) -> some View {
-        modifier(SharePolicyModifier(coordinator: coordinator, policy: policy))
+    func leaveShareSheet(coordinator: ShareCoordinator) -> some View {
+        modifier(LeaveShareModifier(coordinator: coordinator))
     }
 }
 
@@ -234,43 +238,5 @@ struct EnrollFamilyMemberButton: View {
         }
         .disabled(coordinator.isPreparingShare)
         .enrollFamilyMemberSheet(coordinator: coordinator)
-    }
-}
-
-/// Legacy component - use EnrollFamilyMemberButton instead
-@available(*, deprecated, message: "Use EnrollFamilyMemberButton instead")
-struct EnrollChildButton: View {
-    @StateObject private var coordinator = ShareCoordinator()
-
-    var body: some View {
-        Button {
-            coordinator.enrollFamilyMember(role: .child)
-        } label: {
-            if coordinator.isPreparingShare {
-                ProgressView()
-                    .progressViewStyle(CircularProgressViewStyle())
-            } else {
-                Label("Add Child", systemImage: "person.badge.plus")
-            }
-        }
-        .disabled(coordinator.isPreparingShare)
-        .enrollFamilyMemberSheet(coordinator: coordinator)
-    }
-}
-
-// MARK: - Deprecated Share Button Component
-
-@available(*, deprecated, message: "Use zone-level sharing via EnrollChildButton instead")
-struct SharePolicyButton: View {
-    let policy: FamilyPolicy
-    @StateObject private var coordinator = ShareCoordinator()
-
-    var body: some View {
-        Button {
-            coordinator.sharePolicy(policy)
-        } label: {
-            Label("Share with Child", systemImage: "square.and.arrow.up")
-        }
-        .sharePolicySheet(coordinator: coordinator, policy: policy)
     }
 }

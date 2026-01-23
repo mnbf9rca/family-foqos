@@ -5,6 +5,7 @@ import SwiftUI
 /// Shows locked profiles and provides access to personal profiles.
 struct ChildDashboardView: View {
   @Environment(\.modelContext) private var modelContext
+  @Environment(\.dismiss) private var dismiss
   @Query(sort: \BlockedProfiles.order) private var allProfiles: [BlockedProfiles]
 
   @ObservedObject private var appModeManager = AppModeManager.shared
@@ -99,6 +100,12 @@ struct ChildDashboardView: View {
                 }
               }
             }
+        }
+      }
+      .onChange(of: appModeManager.currentMode) { _, newMode in
+        // Auto-dismiss when switching away from child mode
+        if newMode != .child {
+          dismiss()
         }
       }
     }
@@ -462,8 +469,8 @@ struct ChildSettingsView: View {
   @ObservedObject private var cloudKitManager = CloudKitManager.shared
   @ObservedObject private var lockCodeManager = LockCodeManager.shared
 
+  @StateObject private var shareCoordinator = ShareCoordinator()
   @State private var showCodeEntry = false
-  @State private var showSwitchConfirmation = false
 
   private var hasLockCode: Bool {
     !cloudKitManager.sharedLockCodes.isEmpty
@@ -498,16 +505,16 @@ struct ChildSettingsView: View {
         }
 
         Section {
-          Button("Switch to Individual Mode") {
+          Button("Leave Family & Switch to Individual Mode") {
             if hasLockCode {
               showCodeEntry = true
             } else {
-              // No lock code set, show confirmation directly
-              showSwitchConfirmation = true
+              // No lock code set, show leave share UI directly
+              showLeaveShareUI()
             }
           }
         } footer: {
-          Text("Switching to Individual Mode removes parental controls. \(hasLockCode ? "Requires lock code." : "")")
+          Text("This will remove you from the family share and disable parental controls. \(hasLockCode ? "Requires lock code." : "")")
         }
       }
       .navigationTitle("Settings")
@@ -523,23 +530,26 @@ struct ChildSettingsView: View {
         LockCodeEntrySheet(
           onSuccess: {
             showCodeEntry = false
-            showSwitchConfirmation = true
+            showLeaveShareUI()
           },
           onCancel: {
             showCodeEntry = false
           }
         )
       }
-      .alert("Switch to Individual Mode?", isPresented: $showSwitchConfirmation) {
-        Button("Cancel", role: .cancel) { }
-        Button("Switch", role: .destructive) {
+      .leaveShareSheet(coordinator: shareCoordinator)
+      .onChange(of: shareCoordinator.didLeaveShare) { _, didLeave in
+        if didLeave {
+          // Successfully left the share via UICloudSharingController
           appModeManager.selectMode(.individual)
           dismiss()
         }
-      } message: {
-        Text("This will remove parental controls from this device.")
       }
     }
+  }
+
+  private func showLeaveShareUI() {
+    shareCoordinator.prepareToLeaveShare()
   }
 }
 
