@@ -143,7 +143,7 @@ class ParentPolicyStore: ObservableObject {
 
         // This is a simplified implementation - in production you'd need to
         // query FamilyActivitySelection to resolve categories properly.
-        var tokens = Set<ActivityCategoryToken>()
+        let tokens = Set<ActivityCategoryToken>()
 
         // The ManagedSettings framework doesn't provide a way to create
         // ActivityCategoryToken from strings directly. The tokens are opaque

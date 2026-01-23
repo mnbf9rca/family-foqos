@@ -197,7 +197,7 @@ struct ProfileWidgetEntryView: View {
       id: UUID(),
       name: "Focus Session",
       selectedActivity: {
-        var selection = FamilyActivitySelection()
+        let selection = FamilyActivitySelection()
         // Simulate some selected apps and domains for preview
         return selection
       }(),

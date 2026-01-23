@@ -242,11 +242,12 @@ class CloudKitManager: ObservableObject {
             // Sort by createdAt descending in-memory
             fetchedPolicies.sort { $0.createdAt > $1.createdAt }
 
+            let policiesToSet = fetchedPolicies
             await MainActor.run {
-                self.policies = fetchedPolicies
+                self.policies = policiesToSet
             }
 
-            return fetchedPolicies
+            return policiesToSet
         } catch let error as CKError {
             // If zone doesn't exist or is empty, return empty array (not an error)
             if error.code == .zoneNotFound || error.code == .unknownItem {
@@ -396,11 +397,12 @@ class CloudKitManager: ObservableObject {
             // Sort by enrolledAt ascending
             members.sort { $0.enrolledAt < $1.enrolledAt }
 
+            let membersToSet = members
             await MainActor.run {
-                self.familyMembers = members
+                self.familyMembers = membersToSet
             }
 
-            return members
+            return membersToSet
         } catch let error as CKError {
             if error.code == .zoneNotFound || error.code == .unknownItem {
                 await MainActor.run {
@@ -512,11 +514,12 @@ class CloudKitManager: ObservableObject {
             // Sort by createdAt ascending
             codes.sort { $0.createdAt < $1.createdAt }
 
+            let codesToSet = codes
             await MainActor.run {
-                self.lockCodes = codes
+                self.lockCodes = codesToSet
             }
 
-            return codes
+            return codesToSet
         } catch let error as CKError {
             if error.code == .zoneNotFound || error.code == .unknownItem {
                 await MainActor.run {
@@ -563,11 +566,12 @@ class CloudKitManager: ObservableObject {
             }
         }
 
+        let codesToSet = allCodes
         await MainActor.run {
-            self.sharedLockCodes = allCodes
+            self.sharedLockCodes = codesToSet
         }
 
-        return allCodes
+        return codesToSet
     }
 
     // MARK: - Family Sharing (Enroll Child)
@@ -717,11 +721,12 @@ class CloudKitManager: ObservableObject {
             }
         }
 
+        let policiesToSet = allPolicies
         await MainActor.run {
-            self.sharedPolicies = allPolicies
+            self.sharedPolicies = policiesToSet
         }
 
-        return allPolicies
+        return policiesToSet
     }
 
     /// Accept a CloudKit share invitation (child operation)

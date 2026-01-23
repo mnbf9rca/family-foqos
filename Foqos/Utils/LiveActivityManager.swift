@@ -89,9 +89,10 @@ class LiveActivityManager: ObservableObject {
     )
 
     do {
+      let content = ActivityContent(state: contentState, staleDate: nil)
       let activity = try Activity.request(
         attributes: attributes,
-        contentState: contentState
+        content: content
       )
       currentActivity = activity
 
@@ -118,7 +119,8 @@ class LiveActivityManager: ObservableObject {
     )
 
     Task {
-      await activity.update(using: updatedState)
+      let content = ActivityContent(state: updatedState, staleDate: nil)
+      await activity.update(content)
       print("Updated Live Activity with ID: \(activity.id)")
     }
   }
@@ -137,7 +139,8 @@ class LiveActivityManager: ObservableObject {
     )
 
     Task {
-      await activity.update(using: updatedState)
+      let content = ActivityContent(state: updatedState, staleDate: nil)
+      await activity.update(content)
       print("Updated Live Activity break state: \(session.isBreakActive)")
     }
   }
@@ -154,7 +157,8 @@ class LiveActivityManager: ObservableObject {
     )
 
     Task {
-      await activity.end(using: completedState, dismissalPolicy: .immediate)
+      let content = ActivityContent(state: completedState, staleDate: nil)
+      await activity.end(content, dismissalPolicy: .immediate)
       print("Ended Live Activity")
     }
 
