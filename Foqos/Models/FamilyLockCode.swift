@@ -62,6 +62,9 @@ struct FamilyLockCode: Codable, Identifiable, Equatable {
         return Data(bytes).base64EncodedString()
     }
 
+    // TODO: Consider using PBKDF2 or Argon2 for hardened security against brute-force
+    // attacks on 4-digit PINs. SHA256+salt is acceptable for v1 family app use case
+    // but could be strengthened for higher-stakes scenarios.
     private static func hashCode(_ code: String, salt: String) -> String {
         let combined = code + salt
         let data = Data(combined.utf8)

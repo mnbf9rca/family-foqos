@@ -68,9 +68,9 @@ class RequestAuthorizer: ObservableObject {
         case .child:
             // Child authorization has specific requirements
             if nsError.domain == "FamilyControls" {
-                return "Child mode requires this device to be set up as a child account in Family Sharing. Please ask your parent to add this device to their Family Sharing group."
+                return "Child mode requires this device to be set up as a child account in Apple Family Sharing. To set this up: (1) The parent should go to Settings > Family, (2) Add this device's Apple ID as a child, (3) Enable Screen Time for this child in Family settings."
             }
-            return "Unable to authorize child mode. Make sure Screen Time Family Sharing is enabled for this device."
+            return "Unable to authorize child mode. This device must be configured as a child in Apple Family Sharing with Screen Time enabled. Please ask your parent to set this up in Settings > Family."
 
         case .individual, .parent:
             return "Unable to authorize Screen Time access. Please enable Screen Time in Settings and try again."

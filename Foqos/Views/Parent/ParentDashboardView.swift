@@ -280,7 +280,11 @@ struct ParentDashboardView: View {
             await cloudKitManager.refreshShareParticipants()
 
             // Sync share participants - creates FamilyMember records for accepted ones
-            try? await cloudKitManager.syncShareParticipantsToFamilyMembers()
+            do {
+                try await cloudKitManager.syncShareParticipantsToFamilyMembers()
+            } catch {
+                print("ParentDashboardView: Failed to sync share participants - \(error)")
+            }
 
             _ = try await cloudKitManager.fetchFamilyMembers()
             await lockCodeManager.fetchLockCodes()

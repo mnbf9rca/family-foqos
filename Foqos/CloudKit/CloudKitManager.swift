@@ -37,7 +37,8 @@ class CloudKitManager: ObservableObject {
     @Published var shareAcceptedMessage: String?  // Set when a share is successfully accepted
 
     // Active zone share (for enrolling children)
-    private var activeZoneShare: CKShare?
+    // Note: Accessed from multiple async contexts, use MainActor for synchronization
+    @MainActor private var activeZoneShare: CKShare?
 
     // Track if zone has been verified this session
     private var policyZoneVerified = false
@@ -102,12 +103,18 @@ class CloudKitManager: ObservableObject {
             policyZoneVerified = true
             print("Created policy zone: \(policyZoneName)")
         } catch let error as CKError {
-            // These errors mean zone already exists - that's fine
-            if error.code == .serverRecordChanged || error.code == .partialFailure {
+            // Zone already exists - that's fine, mark as verified
+            // CKError codes that indicate zone exists: save succeeds silently for existing zones,
+            // but if we get any error, check if zone exists before failing
+            do {
+                _ = try await privateDatabase.recordZone(for: policyZoneID)
                 policyZoneVerified = true
+                print("Policy zone already exists: \(policyZoneName)")
                 return
+            } catch {
+                // Zone truly doesn't exist and creation failed
+                throw CloudKitError.zoneCreationFailed(error)
             }
-            throw CloudKitError.zoneCreationFailed(error)
         }
     }
 
@@ -207,7 +214,7 @@ class CloudKitManager: ObservableObject {
         let share = try await privateDatabase.record(for: shareRef.recordID) as! CKShare
         share.removeParticipant(participant)
         try await privateDatabase.save(share)
-        activeZoneShare = share
+        await MainActor.run { self.activeZoneShare = share }
 
         let name =
             participant.userIdentity.nameComponents?.formatted()
@@ -244,7 +251,7 @@ class CloudKitManager: ObservableObject {
 
                 // Save the updated share
                 try await privateDatabase.save(share)
-                activeZoneShare = share
+                await MainActor.run { self.activeZoneShare = share }
 
                 print("CloudKitManager: Revoked share access for \(userRecordName)")
 
@@ -469,7 +476,7 @@ class CloudKitManager: ObservableObject {
     /// Uses a root record approach since zone-wide sharing has limitations
     func getOrCreateFamilyShare() async throws -> CKShare {
         // Check if we already have a share
-        if let existingShare = activeZoneShare {
+        if let existingShare = await MainActor.run(body: { self.activeZoneShare }) {
             return existingShare
         }
 
@@ -484,7 +491,7 @@ class CloudKitManager: ObservableObject {
             // Check if it has a share
             if let shareRef = rootRecord.share {
                 let share = try await privateDatabase.record(for: shareRef.recordID) as! CKShare
-                activeZoneShare = share
+                await MainActor.run { self.activeZoneShare = share }
                 print("CloudKitManager: Found existing family share")
                 return share
             }
@@ -515,10 +522,10 @@ class CloudKitManager: ObservableObject {
         modifyOperation.savePolicy = .changedKeys
 
         return try await withCheckedThrowingContinuation { continuation in
-            modifyOperation.modifyRecordsResultBlock = { result in
+            modifyOperation.modifyRecordsResultBlock = { [weak self] result in
                 switch result {
                 case .success:
-                    self.activeZoneShare = share
+                    Task { @MainActor in self?.activeZoneShare = share }
                     print("CloudKitManager: Created family share successfully")
                     continuation.resume(returning: share)
                 case .failure(let error):
@@ -531,14 +538,14 @@ class CloudKitManager: ObservableObject {
     }
 
     /// Get the current family share for use in UICloudSharingController
-    func getCurrentFamilyShare() -> CKShare? {
+    @MainActor func getCurrentFamilyShare() -> CKShare? {
         return activeZoneShare
     }
 
     /// Fetch and refresh share participants (for parent dashboard)
     func refreshShareParticipants() async {
         // Clear cached share to force fresh fetch from server
-        activeZoneShare = nil
+        await MainActor.run { self.activeZoneShare = nil }
 
         let rootRecordID = CKRecord.ID(recordName: familyRootRecordName, zoneID: policyZoneID)
         do {
@@ -552,7 +559,7 @@ class CloudKitManager: ObservableObject {
 
             // Fetch share record fresh from server
             let share = try await privateDatabase.record(for: shareRef.recordID) as! CKShare
-            activeZoneShare = share
+            await MainActor.run { self.activeZoneShare = share }
 
             // Get all participants except owner, log their statuses for debugging
             let participants = share.participants.filter { $0.role != .owner }
@@ -593,7 +600,7 @@ class CloudKitManager: ObservableObject {
     /// Call this from parent dashboard to see children who accepted the share
     func syncShareParticipantsToFamilyMembers() async throws {
         // Always fetch fresh share data - clear cache first
-        activeZoneShare = nil
+        await MainActor.run { self.activeZoneShare = nil }
 
         let share: CKShare
         let rootRecordID = CKRecord.ID(recordName: familyRootRecordName, zoneID: policyZoneID)
@@ -604,7 +611,7 @@ class CloudKitManager: ObservableObject {
                 return
             }
             share = try await privateDatabase.record(for: shareRef.recordID) as! CKShare
-            activeZoneShare = share
+            await MainActor.run { self.activeZoneShare = share }
         } catch {
             print("CloudKitManager: Could not fetch share - \(error)")
             return

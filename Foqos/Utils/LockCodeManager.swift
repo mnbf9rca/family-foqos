@@ -5,6 +5,8 @@ import SwiftUI
 /// Manages lock codes for parent-controlled (managed) profiles.
 /// - Parents: Can create, view, and update lock codes
 /// - Children: Can only verify codes (cannot see them)
+// TODO: Consider refactoring to use dependency injection instead of singleton pattern
+// for improved testability. Currently uses static shared instance for convenience.
 class LockCodeManager: ObservableObject {
     static let shared = LockCodeManager()
 
@@ -243,6 +245,8 @@ class LockCodeManager: ObservableObject {
     }
 
     /// Grant temporary edit access to a managed profile (5 minute window)
+    // TODO: Add countdown timer UI to show remaining unlock time to the user.
+    // Currently the 5-minute unlock window expires silently without user feedback.
     func grantTemporaryUnlock(for profileId: UUID, duration: TimeInterval = 300) {
         let now = Date()
         temporaryUnlock = TemporaryUnlock(

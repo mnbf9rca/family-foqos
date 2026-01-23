@@ -18,6 +18,7 @@ struct ChildDashboardView: View {
   @State private var showCodeEntry = false
   @State private var enteredCode = ""
   @State private var codeError: String?
+  @State private var isFetchingLockCodes = false
 
   /// Profiles that are locked (require code to edit)
   private var lockedProfiles: [BlockedProfiles] {
@@ -66,11 +67,11 @@ struct ChildDashboardView: View {
         }
       }
       .refreshable {
-        _ = try? await cloudKitManager.fetchSharedLockCodes()
+        await fetchLockCodesIfNeeded()
       }
       .onAppear {
         Task {
-          _ = try? await cloudKitManager.fetchSharedLockCodes()
+          await fetchLockCodesIfNeeded()
         }
       }
       .sheet(isPresented: $showSettings) {
@@ -109,6 +110,16 @@ struct ChildDashboardView: View {
         }
       }
     }
+  }
+
+  // MARK: - Data Fetching
+
+  /// Fetch lock codes if not already fetching (prevents duplicate concurrent requests)
+  private func fetchLockCodesIfNeeded() async {
+    guard !isFetchingLockCodes else { return }
+    isFetchingLockCodes = true
+    defer { isFetchingLockCodes = false }
+    _ = try? await cloudKitManager.fetchSharedLockCodes()
   }
 
   // MARK: - Sections

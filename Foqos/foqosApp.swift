@@ -185,15 +185,6 @@ class AppDelegate: NSObject, UIApplicationDelegate {
     return config
   }
 
-  /// Handle CloudKit share acceptance (fallback for older iOS)
-  func application(
-    _ application: UIApplication,
-    userDidAcceptCloudKitShareWith cloudKitShareMetadata: CKShare.Metadata
-  ) {
-    print("AppDelegate: userDidAcceptCloudKitShareWith called!")
-    acceptCloudKitShare(cloudKitShareMetadata)
-  }
-
 }
 
 // MARK: - Scene Delegate for CloudKit Share Handling
