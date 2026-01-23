@@ -5,13 +5,11 @@ import SwiftUI
 /// Manages lock codes for parent-controlled (managed) profiles.
 /// - Parents: Can create, view, and update lock codes
 /// - Children: Can only verify codes (cannot see them)
-// TODO: Consider refactoring to use dependency injection instead of singleton pattern
-// for improved testability. Currently uses static shared instance for convenience.
 class LockCodeManager: ObservableObject {
     static let shared = LockCodeManager()
 
-    private let cloudKitManager = CloudKitManager.shared
-    private let appModeManager = AppModeManager.shared
+    private let cloudKitManager: CloudKitManager
+    private let appModeManager: AppModeManager
 
     /// All lock codes (only populated for parents)
     @Published private(set) var lockCodes: [FamilyLockCode] = []
@@ -27,7 +25,12 @@ class LockCodeManager: ObservableObject {
 
     private var cancellables = Set<AnyCancellable>()
 
-    private init() {
+    private init(
+        cloudKitManager: CloudKitManager = .shared,
+        appModeManager: AppModeManager = .shared
+    ) {
+        self.cloudKitManager = cloudKitManager
+        self.appModeManager = appModeManager
         setupBindings()
     }
 
@@ -228,50 +231,22 @@ class LockCodeManager: ObservableObject {
     // MARK: - Temporary Unlock Session
 
     /// Temporary unlock state for the current session
-    @Published private(set) var temporaryUnlock: TemporaryUnlock?
+    /// Unlocked until the profile view is dismissed (which calls revokeUnlock)
+    @Published private(set) var unlockedProfileId: UUID?
 
-    struct TemporaryUnlock {
-        let profileId: UUID
-        let unlockedAt: Date
-        let expiresAt: Date
-
-        var isExpired: Bool {
-            Date() >= expiresAt
-        }
-
-        var remainingTime: TimeInterval {
-            max(0, expiresAt.timeIntervalSince(Date()))
-        }
-    }
-
-    /// Grant temporary edit access to a managed profile (5 minute window)
-    // TODO: Add countdown timer UI to show remaining unlock time to the user.
-    // Currently the 5-minute unlock window expires silently without user feedback.
-    func grantTemporaryUnlock(for profileId: UUID, duration: TimeInterval = 300) {
-        let now = Date()
-        temporaryUnlock = TemporaryUnlock(
-            profileId: profileId,
-            unlockedAt: now,
-            expiresAt: now.addingTimeInterval(duration)
-        )
-
-        // Schedule expiration
-        DispatchQueue.main.asyncAfter(deadline: .now() + duration) { [weak self] in
-            if self?.temporaryUnlock?.profileId == profileId {
-                self?.temporaryUnlock = nil
-            }
-        }
+    /// Grant edit access to a managed profile until the view is dismissed
+    func grantTemporaryUnlock(for profileId: UUID) {
+        unlockedProfileId = profileId
     }
 
     /// Check if a profile is currently unlocked for editing
     func isUnlocked(_ profileId: UUID) -> Bool {
-        guard let unlock = temporaryUnlock else { return false }
-        return unlock.profileId == profileId && !unlock.isExpired
+        return unlockedProfileId == profileId
     }
 
-    /// Revoke temporary unlock
+    /// Revoke temporary unlock (called when profile view is dismissed)
     func revokeUnlock() {
-        temporaryUnlock = nil
+        unlockedProfileId = nil
     }
 }
 
