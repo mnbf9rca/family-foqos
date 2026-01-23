@@ -7,7 +7,7 @@ struct ParentDashboardView: View {
     @ObservedObject private var lockCodeManager = LockCodeManager.shared
 
     @State private var showLockCodeSetup = false
-    @State private var showAddMember = false
+    @State private var addingMemberRole: FamilyRole?
     @State private var showError = false
     @State private var errorMessage = ""
 
@@ -61,8 +61,8 @@ struct ParentDashboardView: View {
                     }
                 )
             }
-            .sheet(isPresented: $showAddMember) {
-                AddFamilyMemberView()
+            .sheet(item: $addingMemberRole) { role in
+                AddFamilyMemberView(role: role)
             }
             .alert("Error", isPresented: $showError) {
                 Button("OK", role: .cancel) {}
@@ -146,13 +146,13 @@ struct ParentDashboardView: View {
     private var coParentsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Co-Parents")
+                Text("Parents")
                     .font(.headline)
 
                 Spacer()
 
                 Button {
-                    showAddMember = true
+                    addingMemberRole = .parent
                 } label: {
                     Label("Add", systemImage: "plus")
                         .font(.subheadline)
@@ -165,7 +165,7 @@ struct ParentDashboardView: View {
             if parents.isEmpty {
                 EmptyMemberCard(
                     icon: "person.fill",
-                    title: "No Co-Parents",
+                    title: "No other Parents",
                     description: "Add another parent to share lock code management"
                 )
             } else {
@@ -187,7 +187,7 @@ struct ParentDashboardView: View {
                 Spacer()
 
                 Button {
-                    showAddMember = true
+                    addingMemberRole = .child
                 } label: {
                     Label("Add", systemImage: "plus")
                         .font(.subheadline)
@@ -201,7 +201,7 @@ struct ParentDashboardView: View {
                 EmptyMemberCard(
                     icon: "face.smiling",
                     title: "No Children",
-                    description: "Add a child to share the lock code with their device"
+                    description: "Add a child to set the lock code on their device"
                 )
             } else {
                 ForEach(children) { member in
@@ -228,7 +228,7 @@ struct ParentDashboardView: View {
                 HowToUseStep(
                     number: 2,
                     title: "Add Family Members",
-                    description: "Invite co-parents and children to your family"
+                    description: "Invite other parents and children to your family"
                 )
 
                 HowToUseStep(
@@ -486,58 +486,85 @@ struct AddFamilyMemberView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var coordinator = ShareCoordinator()
 
-    @State private var selectedRole: FamilyRole = .child
+    let role: FamilyRole
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 24) {
-                // Role selection
+                // Role info
+                VStack(spacing: 16) {
+                    Image(systemName: role.iconName)
+                        .font(.system(size: 48))
+                        .foregroundColor(role == .parent ? .blue : .accentColor)
+
+                    Text("Add \(role.displayName)")
+                        .font(.title2)
+                        .fontWeight(.bold)
+
+                    Text(role.description)
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .padding(.top, 24)
+
+                Spacer()
+
+                // Instructions
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("Who are you adding?")
+                    Text("How it works")
                         .font(.headline)
 
-                    ForEach(FamilyRole.allCases, id: \.self) { role in
-                        Button {
-                            selectedRole = role
-                        } label: {
-                            HStack(spacing: 16) {
-                                Image(systemName: role.iconName)
-                                    .font(.title2)
-                                    .foregroundColor(role == .parent ? .blue : .accentColor)
-                                    .frame(width: 40)
+                    HStack(alignment: .top, spacing: 12) {
+                        Text("1")
+                            .font(.caption)
+                            .fontWeight(.bold)
+                            .foregroundColor(.white)
+                            .frame(width: 20, height: 20)
+                            .background(Circle().fill(Color.accentColor))
 
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(role.displayName)
-                                        .font(.headline)
-                                        .foregroundColor(.primary)
+                        Text("Tap 'Send Invitation' to share a link")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
 
-                                    Text(role.description)
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                        .multilineTextAlignment(.leading)
-                                }
+                    HStack(alignment: .top, spacing: 12) {
+                        Text("2")
+                            .font(.caption)
+                            .fontWeight(.bold)
+                            .foregroundColor(.white)
+                            .frame(width: 20, height: 20)
+                            .background(Circle().fill(Color.accentColor))
 
-                                Spacer()
+                        Text("The \(role.displayName.lowercased()) opens the link on their device")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
 
-                                if selectedRole == role {
-                                    Image(systemName: "checkmark.circle.fill")
-                                        .foregroundColor(.accentColor)
-                                }
-                            }
-                            .padding()
-                            .background(
-                                RoundedRectangle(cornerRadius: 12)
-                                    .stroke(selectedRole == role ? Color.accentColor : Color.gray.opacity(0.3), lineWidth: 2)
-                            )
-                        }
+                    HStack(alignment: .top, spacing: 12) {
+                        Text("3")
+                            .font(.caption)
+                            .fontWeight(.bold)
+                            .foregroundColor(.white)
+                            .frame(width: 20, height: 20)
+                            .background(Circle().fill(Color.accentColor))
+
+                        Text("They'll be added to your family")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
                     }
                 }
+                .padding()
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color(.tertiarySystemBackground))
+                )
 
                 Spacer()
 
                 // Add button
                 Button {
-                    coordinator.enrollFamilyMember(role: selectedRole)
+                    coordinator.enrollFamilyMember(role: role)
                 } label: {
                     if coordinator.isPreparingShare {
                         ProgressView()
@@ -552,7 +579,7 @@ struct AddFamilyMemberView: View {
                 .disabled(coordinator.isPreparingShare)
             }
             .padding()
-            .navigationTitle("Add Family Member")
+            .navigationTitle("Add \(role.displayName)")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {

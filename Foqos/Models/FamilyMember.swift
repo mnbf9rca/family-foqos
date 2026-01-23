@@ -2,9 +2,11 @@ import CloudKit
 import Foundation
 
 /// Role of a family member in the Family Foqos system
-enum FamilyRole: String, Codable, CaseIterable {
+enum FamilyRole: String, Codable, CaseIterable, Identifiable {
     case parent
     case child
+
+    var id: String { rawValue }
 
     var displayName: String {
         switch self {
