@@ -460,6 +460,13 @@ struct ChildSettingsView: View {
   @Environment(\.dismiss) private var dismiss
   @ObservedObject private var appModeManager = AppModeManager.shared
   @ObservedObject private var cloudKitManager = CloudKitManager.shared
+  @ObservedObject private var lockCodeManager = LockCodeManager.shared
+
+  @State private var showCodeEntry = false
+
+  private var hasLockCode: Bool {
+    !cloudKitManager.sharedLockCodes.isEmpty
+  }
 
   var body: some View {
     NavigationStack {
@@ -491,10 +498,16 @@ struct ChildSettingsView: View {
 
         Section {
           Button("Switch to Individual Mode") {
-            appModeManager.selectMode(.individual)
+            if hasLockCode {
+              showCodeEntry = true
+            } else {
+              // No lock code set, allow switching directly
+              appModeManager.selectMode(.individual)
+              dismiss()
+            }
           }
         } footer: {
-          Text("Switching to Individual Mode removes the child dashboard. You can still use focus profiles normally.")
+          Text("Switching to Individual Mode removes parental controls. \(hasLockCode ? "Requires lock code." : "")")
         }
       }
       .navigationTitle("Settings")
@@ -505,6 +518,18 @@ struct ChildSettingsView: View {
             dismiss()
           }
         }
+      }
+      .sheet(isPresented: $showCodeEntry) {
+        LockCodeEntrySheet(
+          onSuccess: {
+            showCodeEntry = false
+            appModeManager.selectMode(.individual)
+            dismiss()
+          },
+          onCancel: {
+            showCodeEntry = false
+          }
+        )
       }
     }
   }

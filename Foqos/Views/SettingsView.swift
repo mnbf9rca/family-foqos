@@ -15,6 +15,7 @@ struct SettingsView: View {
 
   @State private var showResetBlockingStateAlert = false
   @State private var showParentDashboard = false
+  @State private var showChildDashboard = false
   @State private var showModeChangeAlert = false
   @State private var pendingMode: AppMode?
 
@@ -85,6 +86,24 @@ struct SettingsView: View {
                 Image(systemName: "person.2.fill")
                   .foregroundColor(themeManager.themeColor)
                 Text("Family Controls Dashboard")
+                  .foregroundColor(.primary)
+                Spacer()
+                Image(systemName: "chevron.right")
+                  .foregroundColor(.secondary)
+                  .font(.caption)
+              }
+            }
+          }
+
+          // Child Dashboard access (for child mode)
+          if appModeManager.currentMode == .child {
+            Button {
+              showChildDashboard = true
+            } label: {
+              HStack {
+                Image(systemName: "lock.shield.fill")
+                  .foregroundColor(themeManager.themeColor)
+                Text("Parental Controls")
                   .foregroundColor(.primary)
                 Spacer()
                 Image(systemName: "chevron.right")
@@ -239,6 +258,18 @@ struct SettingsView: View {
       }
       .sheet(isPresented: $showParentDashboard) {
         ParentDashboardView()
+      }
+      .sheet(isPresented: $showChildDashboard) {
+        NavigationStack {
+          ChildDashboardView()
+            .toolbar {
+              ToolbarItem(placement: .navigationBarTrailing) {
+                Button("Done") {
+                  showChildDashboard = false
+                }
+              }
+            }
+        }
       }
     }
   }

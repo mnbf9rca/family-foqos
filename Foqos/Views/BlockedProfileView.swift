@@ -657,6 +657,12 @@ struct BlockedProfileView: View {
           )
         }
       }
+      .onDisappear {
+        // Revoke temporary unlock when leaving the profile view
+        if let profile = profile, lockCodeManager.isUnlocked(profile.id) {
+          lockCodeManager.revokeUnlock()
+        }
+      }
     }
   }
 

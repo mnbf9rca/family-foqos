@@ -102,21 +102,10 @@ struct foqosApp: App {
   /// Root view that routes based on app mode
   @ViewBuilder
   private var rootView: some View {
-    // If user hasn't selected a mode yet, show mode selection after intro
-    if !appModeManager.hasSelectedMode {
-      // Show normal HomeView which will show intro, then we'll show mode selection
-      HomeView()
-    } else {
-      // Route based on selected mode
-      switch appModeManager.currentMode {
-      case .individual, .parent:
-        // Both individual and parent modes use HomeView as default
-        // Parent dashboard is accessible from HomeView's settings
-        HomeView()
-      case .child:
-        ChildDashboardView()
-      }
-    }
+    // All modes use HomeView as the default landing page
+    // Parent dashboard is accessible from settings (parent mode)
+    // Child parental controls info is accessible from settings (child mode)
+    HomeView()
   }
 
   private func handleURL(_ url: URL) {
