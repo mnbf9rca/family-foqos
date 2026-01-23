@@ -5,8 +5,6 @@ import WidgetKit
 class StrategyManager: ObservableObject {
   static var shared = StrategyManager()
 
-  // Child policy enforcer for checking parent restrictions
-  private let childPolicyEnforcer = ChildPolicyEnforcer.shared
   private let appModeManager = AppModeManager.shared
   private let lockCodeManager = LockCodeManager.shared
 
@@ -80,18 +78,12 @@ class StrategyManager: ObservableObject {
 
   func toggleBlocking(context: ModelContext, activeProfile: BlockedProfiles?) {
     if isBlocking {
-      // CRITICAL: Block manual stop if parent policies are enforced
-      if childPolicyEnforcer.shouldBlockManualStop {
-        print("Manual stop blocked: Parent policies are active")
-        errorMessage = childPolicyEnforcer.getBlockedActionReason()
-        return
-      }
-
       // Check if the active profile is managed and requires unlock
       if let session = activeSession,
-         session.blockedProfile.isManaged,
-         appModeManager.currentMode != .parent,
-         !lockCodeManager.isUnlocked(session.blockedProfile.id) {
+        session.blockedProfile.isManaged,
+        appModeManager.currentMode != .parent,
+        !lockCodeManager.isUnlocked(session.blockedProfile.id)
+      {
         print("Manual stop blocked: Managed profile requires lock code")
         errorMessage = "This profile is parent-controlled. Enter the lock code to stop blocking."
         return
@@ -119,12 +111,10 @@ class StrategyManager: ObservableObject {
   func getStopBlockedReason() -> String? {
     guard let session = activeSession else { return nil }
 
-    if session.blockedProfile.isManaged && appModeManager.currentMode != .parent && !lockCodeManager.isUnlocked(session.blockedProfile.id) {
+    if session.blockedProfile.isManaged && appModeManager.currentMode != .parent
+      && !lockCodeManager.isUnlocked(session.blockedProfile.id)
+    {
       return "This profile is parent-controlled. Enter the lock code to stop blocking."
-    }
-
-    if childPolicyEnforcer.shouldBlockManualStop {
-      return childPolicyEnforcer.getBlockedActionReason()
     }
 
     return nil
@@ -362,13 +352,6 @@ class StrategyManager: ObservableObject {
   }
 
   func emergencyUnblock(context: ModelContext) {
-    // CRITICAL: Block emergency unblock if parent policies are enforced
-    if childPolicyEnforcer.shouldBlockEmergencyUnblock {
-      print("Emergency unblock blocked: Parent policies are active")
-      errorMessage = childPolicyEnforcer.getBlockedActionReason()
-      return
-    }
-
     // Do not allow emergency unblocks if there are no remaining
     if emergencyUnblocksRemaining == 0 {
       return
@@ -381,10 +364,12 @@ class StrategyManager: ObservableObject {
 
     // Check if the active profile is managed and requires unlock
     if activeSession.blockedProfile.isManaged,
-       appModeManager.currentMode != .parent,
-       !lockCodeManager.isUnlocked(activeSession.blockedProfile.id) {
+      appModeManager.currentMode != .parent,
+      !lockCodeManager.isUnlocked(activeSession.blockedProfile.id)
+    {
       print("Emergency unblock blocked: Managed profile requires lock code")
-      errorMessage = "This profile is parent-controlled. Enter the lock code to use emergency unblock."
+      errorMessage =
+        "This profile is parent-controlled. Enter the lock code to use emergency unblock."
       return
     }
 

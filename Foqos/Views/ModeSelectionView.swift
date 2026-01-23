@@ -127,62 +127,6 @@ struct ModeSelectionView: View {
     }
 }
 
-struct ModeCard: View {
-    let mode: AppMode
-    let isSelected: Bool
-    let onTap: () -> Void
-
-    var body: some View {
-        Button(action: onTap) {
-            HStack(spacing: 16) {
-                // Icon
-                Image(systemName: mode.iconName)
-                    .font(.title2)
-                    .foregroundColor(isSelected ? .white : .accentColor)
-                    .frame(width: 44, height: 44)
-                    .background(
-                        Circle()
-                            .fill(isSelected ? Color.accentColor : Color.accentColor.opacity(0.1))
-                    )
-
-                // Text
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(mode.displayName)
-                        .font(.headline)
-                        .foregroundColor(.primary)
-
-                    Text(mode.description)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .lineLimit(2)
-                }
-
-                Spacer()
-
-                // Checkmark
-                if isSelected {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.title2)
-                        .foregroundColor(.accentColor)
-                }
-            }
-            .padding(16)
-            .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(Color(.secondarySystemBackground))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .stroke(
-                                isSelected ? Color.accentColor : Color.clear,
-                                lineWidth: 2
-                            )
-                    )
-            )
-        }
-        .buttonStyle(.plain)
-    }
-}
-
 /// Simplified mode card for the two-option selection UI
 struct SimplifiedModeCard: View {
     let mode: AppMode

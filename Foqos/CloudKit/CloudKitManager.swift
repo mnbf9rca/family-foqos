@@ -27,9 +27,7 @@ class CloudKitManager: ObservableObject {
     // Published state
     @Published var currentUserRecordID: CKRecord.ID?
     @Published var isSignedIn = false
-    @Published var policies: [FamilyPolicy] = []
     @Published var familyMembers: [FamilyMember] = []  // Family members (parents and children)
-    @Published var sharedPolicies: [FamilyPolicy] = []  // Policies shared with this user (child)
     @Published var lockCodes: [FamilyLockCode] = []  // Lock codes created by this parent
     @Published var sharedLockCodes: [FamilyLockCode] = []  // Lock codes shared with this user (child)
     @Published var isConnectedToFamily = false  // For children: whether connected to parent's share
@@ -113,7 +111,7 @@ class CloudKitManager: ObservableObject {
         }
     }
 
-    // MARK: - Parent Operations (Create/Manage Policies)
+    // MARK: - User Record
 
     /// Ensure user record ID is available, fetching if needed
     func ensureUserRecordID() async throws -> CKRecord.ID {
@@ -148,117 +146,6 @@ class CloudKitManager: ObservableObject {
             rootRecord["createdAt"] = Date()
             _ = try await privateDatabase.save(rootRecord)
             print("CloudKitManager: FamilyRoot created")
-        }
-    }
-
-    /// Save a new policy to CloudKit (parent operation)
-    func savePolicy(_ policy: FamilyPolicy) async throws {
-        print("CloudKitManager: Starting to save policy '\(policy.name)'")
-
-        await MainActor.run { self.isLoading = true }
-        defer { Task { await MainActor.run { self.isLoading = false } } }
-
-        // Ensure zone and FamilyRoot exist
-        print("CloudKitManager: Ensuring zone exists...")
-        try await createPolicyZoneIfNeeded()
-        try await ensureFamilyRootExists()
-
-        let record = policy.toCKRecord(in: policyZoneID)
-        print("CloudKitManager: Created CKRecord with ID: \(record.recordID)")
-
-        do {
-            print("CloudKitManager: Saving to CloudKit...")
-            let savedRecord = try await privateDatabase.save(record)
-            print("CloudKitManager: Successfully saved record: \(savedRecord.recordID)")
-
-            await MainActor.run {
-                if let index = self.policies.firstIndex(where: { $0.id == policy.id }) {
-                    self.policies[index] = policy
-                    print("CloudKitManager: Updated existing policy in local array")
-                } else {
-                    self.policies.append(policy)
-                    print("CloudKitManager: Added new policy to local array. Total policies: \(self.policies.count)")
-                }
-            }
-            print("Saved policy: \(policy.name)")
-        } catch {
-            print("CloudKitManager: FAILED to save - \(error)")
-            throw CloudKitError.saveFailed(error)
-        }
-    }
-
-    /// Delete a policy from CloudKit (parent operation)
-    func deletePolicy(_ policy: FamilyPolicy) async throws {
-        await MainActor.run { self.isLoading = true }
-        defer { Task { await MainActor.run { self.isLoading = false } } }
-
-        let recordID = CKRecord.ID(recordName: policy.id.uuidString, zoneID: policyZoneID)
-
-        do {
-            try await privateDatabase.deleteRecord(withID: recordID)
-            await MainActor.run {
-                self.policies.removeAll { $0.id == policy.id }
-            }
-            print("Deleted policy: \(policy.name)")
-        } catch {
-            throw CloudKitError.deleteFailed(error)
-        }
-    }
-
-    /// Fetch all policies created by this user (parent operation)
-    func fetchMyPolicies() async throws -> [FamilyPolicy] {
-        await MainActor.run { self.isLoading = true }
-        defer { Task { await MainActor.run { self.isLoading = false } } }
-
-        // Ensure zone exists before fetching
-        do {
-            try await createPolicyZoneIfNeeded()
-        } catch {
-            // Zone creation failed, but might already exist - continue to try fetch
-            print("Zone creation note: \(error)")
-        }
-
-        let query = CKQuery(
-            recordType: FamilyPolicy.recordType,
-            predicate: NSPredicate(value: true)
-        )
-        // Note: Don't use sortDescriptors - can cause issues with CloudKit schema
-        // Sort in-memory instead
-
-        do {
-            let (results, _) = try await privateDatabase.records(
-                matching: query,
-                inZoneWith: policyZoneID
-            )
-
-            var fetchedPolicies: [FamilyPolicy] = []
-            for (_, result) in results {
-                if case .success(let record) = result,
-                   let policy = FamilyPolicy(from: record) {
-                    fetchedPolicies.append(policy)
-                }
-            }
-
-            // Sort by createdAt descending in-memory
-            fetchedPolicies.sort { $0.createdAt > $1.createdAt }
-
-            let policiesToSet = fetchedPolicies
-            await MainActor.run {
-                self.policies = policiesToSet
-            }
-
-            return policiesToSet
-        } catch let error as CKError {
-            // If zone doesn't exist or is empty, return empty array (not an error)
-            if error.code == .zoneNotFound || error.code == .unknownItem {
-                await MainActor.run {
-                    self.policies = []
-                }
-                return []
-            }
-            throw CloudKitError.fetchFailed(error)
-        } catch {
-            throw CloudKitError.fetchFailed(error)
         }
     }
 
@@ -686,56 +573,13 @@ class CloudKitManager: ObservableObject {
         }
     }
 
-    // MARK: - Child Operations (Receive shared policies)
-
-    /// Fetch all policies shared with this user (child operation)
-    func fetchSharedPolicies() async throws -> [FamilyPolicy] {
-        await MainActor.run { self.isLoading = true }
-        defer { Task { await MainActor.run { self.isLoading = false } } }
-
-        // Fetch all shared record zones
-        let zones = try await sharedDatabase.allRecordZones()
-
-        var allPolicies: [FamilyPolicy] = []
-
-        for zone in zones {
-            let query = CKQuery(
-                recordType: FamilyPolicy.recordType,
-                predicate: NSPredicate(value: true)
-            )
-
-            do {
-                let (results, _) = try await sharedDatabase.records(
-                    matching: query,
-                    inZoneWith: zone.zoneID
-                )
-
-                for (_, result) in results {
-                    if case .success(let record) = result,
-                       let policy = FamilyPolicy(from: record) {
-                        allPolicies.append(policy)
-                    }
-                }
-            } catch {
-                print("Failed to fetch policies from zone \(zone.zoneID): \(error)")
-            }
-        }
-
-        let policiesToSet = allPolicies
-        await MainActor.run {
-            self.sharedPolicies = policiesToSet
-        }
-
-        return policiesToSet
-    }
+    // MARK: - Child Operations (Receive shared data)
 
     /// Accept a CloudKit share invitation (child operation)
     func acceptShare(metadata: CKShare.Metadata) async throws {
         do {
             _ = try await container.accept(metadata)
-            // Refresh shared policies after accepting
-            _ = try await fetchSharedPolicies()
-            // Also fetch shared lock codes
+            // Fetch shared lock codes after accepting
             _ = try? await fetchSharedLockCodes()
             print("Accepted share successfully")
         } catch {
@@ -871,47 +715,8 @@ class CloudKitManager: ObservableObject {
         await MainActor.run {
             self.isConnectedToFamily = false
             self.sharedLockCodes = []
-            self.sharedPolicies = []
         }
         print("CloudKitManager: Cleared shared state after leaving family")
-    }
-
-    // MARK: - Subscriptions (Real-time updates)
-
-    /// Subscribe to policy changes (for children to receive real-time updates)
-    func subscribeToSharedPolicyChanges() async throws {
-        let subscription = CKDatabaseSubscription(subscriptionID: "shared-policy-changes")
-
-        let notificationInfo = CKSubscription.NotificationInfo()
-        notificationInfo.shouldSendContentAvailable = true  // Silent push
-
-        subscription.notificationInfo = notificationInfo
-
-        do {
-            _ = try await sharedDatabase.save(subscription)
-            print("Subscribed to shared policy changes")
-        } catch let error as CKError {
-            // Subscription already exists is OK
-            if error.code != .serverRejectedRequest {
-                throw CloudKitError.subscriptionFailed(error)
-            }
-        }
-    }
-
-    /// Handle incoming push notification for policy changes
-    func handlePushNotification(_ userInfo: [AnyHashable: Any]) async {
-        guard let notification = CKNotification(fromRemoteNotificationDictionary: userInfo) else {
-            return
-        }
-
-        if notification.subscriptionID == "shared-policy-changes" {
-            // Refresh shared policies
-            do {
-                _ = try await fetchSharedPolicies()
-            } catch {
-                print("Failed to refresh policies after push: \(error)")
-            }
-        }
     }
 }
 
@@ -925,7 +730,6 @@ enum CloudKitError: LocalizedError {
     case fetchFailed(Error)
     case shareFailed(Error)
     case shareAcceptFailed(Error)
-    case subscriptionFailed(Error)
     case notConnectedToFamily
     case shareNotFound
 
@@ -936,21 +740,19 @@ enum CloudKitError: LocalizedError {
         case .zoneCreationFailed(let error):
             return "Failed to set up cloud storage: \(error.localizedDescription)"
         case .saveFailed(let error):
-            return "Failed to save policy: \(error.localizedDescription)"
+            return "Failed to save: \(error.localizedDescription)"
         case .deleteFailed(let error):
-            return "Failed to delete policy: \(error.localizedDescription)"
+            return "Failed to delete: \(error.localizedDescription)"
         case .fetchFailed(let error):
-            return "Failed to fetch policies: \(error.localizedDescription)"
+            return "Failed to fetch: \(error.localizedDescription)"
         case .shareFailed(let error):
-            return "Failed to share policy: \(error.localizedDescription)"
+            return "Failed to share: \(error.localizedDescription)"
         case .notConnectedToFamily:
             return "You are not connected to a family share."
         case .shareNotFound:
             return "Could not find the family share."
         case .shareAcceptFailed(let error):
-            return "Failed to accept shared policy: \(error.localizedDescription)"
-        case .subscriptionFailed(let error):
-            return "Failed to subscribe to updates: \(error.localizedDescription)"
+            return "Failed to accept share: \(error.localizedDescription)"
         }
     }
 }

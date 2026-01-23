@@ -49,31 +49,6 @@ struct SupportView: View {
       .foregroundColor(.secondary)
       .fadeInSlide(delay: 0.3)
 
-      // Text(
-      //   "Questions? Reach out to me."
-      // )
-      // .font(.body)
-      // .multilineTextAlignment(.center)
-      // .foregroundColor(.secondary)
-      // .fadeInSlide(delay: 0.4)
-
-      // HStack(alignment: .center, spacing: 20) {
-      //   Link(destination: URL(string: THREADS_URL)!) {
-      //     Image("Threads")
-      //       .resizable()
-      //       .aspectRatio(contentMode: .fit)
-      //       .frame(width: 30, height: 30)
-      //   }
-
-      //   Link(destination: URL(string: TWITTER_URL)!) {
-      //     Image("Twitter")
-      //       .resizable()
-      //       .aspectRatio(contentMode: .fit)
-      //       .frame(width: 30, height: 30)
-      //   }
-      // }
-      .fadeInSlide(delay: 0.5)
-
       Spacer()
 
       ActionButton(

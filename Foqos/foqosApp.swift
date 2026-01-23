@@ -145,8 +145,7 @@ struct foqosApp: App {
         try await CloudKitManager.shared.acceptShare(metadata: metadata)
         print("foqosApp: Successfully accepted CloudKit share")
 
-        // Fetch shared data immediately
-        _ = try? await CloudKitManager.shared.fetchSharedPolicies()
+        // Fetch shared lock codes immediately
         _ = try? await CloudKitManager.shared.fetchSharedLockCodes()
 
         // Switch to child mode
@@ -195,21 +194,6 @@ class AppDelegate: NSObject, UIApplicationDelegate {
     acceptCloudKitShare(cloudKitShareMetadata)
   }
 
-  /// Handle remote notifications for CloudKit changes
-  func application(
-    _ application: UIApplication,
-    didReceiveRemoteNotification userInfo: [AnyHashable: Any],
-    fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
-  ) {
-    if let _ = CKNotification(fromRemoteNotificationDictionary: userInfo) {
-      Task {
-        await CloudKitManager.shared.handlePushNotification(userInfo)
-        completionHandler(.newData)
-      }
-    } else {
-      completionHandler(.noData)
-    }
-  }
 }
 
 // MARK: - Scene Delegate for CloudKit Share Handling
@@ -288,8 +272,7 @@ func acceptCloudKitShare(_ metadata: CKShare.Metadata) {
       try await CloudKitManager.shared.acceptShare(metadata: metadata)
       print("acceptCloudKitShare: Successfully accepted CloudKit share")
 
-      // Fetch shared data immediately
-      _ = try? await CloudKitManager.shared.fetchSharedPolicies()
+      // Fetch shared lock codes immediately
       _ = try? await CloudKitManager.shared.fetchSharedLockCodes()
 
       // Switch to child mode and show confirmation
@@ -297,12 +280,14 @@ func acceptCloudKitShare(_ metadata: CKShare.Metadata) {
         if AppModeManager.shared.currentMode != .child {
           AppModeManager.shared.selectMode(.child)
         }
-        CloudKitManager.shared.shareAcceptedMessage = "You are now linked to a parent's device. They can set a lock code to manage your focus profiles."
+        CloudKitManager.shared.shareAcceptedMessage =
+          "You are now linked to a parent's device. They can set a lock code to manage your focus profiles."
       }
     } catch {
       print("acceptCloudKitShare: Failed - \(error)")
       await MainActor.run {
-        CloudKitManager.shared.shareAcceptedMessage = "Failed to accept invitation: \(error.localizedDescription)"
+        CloudKitManager.shared.shareAcceptedMessage =
+          "Failed to accept invitation: \(error.localizedDescription)"
       }
     }
   }

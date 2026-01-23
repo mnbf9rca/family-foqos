@@ -37,34 +37,6 @@ DEFINE SCHEMA
         GRANT READ TO "_world"
     );
 
-    RECORD TYPE FamilyPolicy (
-        "___createTime"             TIMESTAMP QUERYABLE SORTABLE,
-        "___createdBy"              REFERENCE QUERYABLE,
-        "___etag"                   STRING,
-        "___modTime"                TIMESTAMP QUERYABLE SORTABLE,
-        "___modifiedBy"             REFERENCE QUERYABLE,
-        "___recordID"               REFERENCE QUERYABLE,
-        id                          STRING QUERYABLE SEARCHABLE SORTABLE,
-        parentUserRecordName        STRING QUERYABLE SEARCHABLE,
-        assignedChildIds            LIST<STRING>,
-        name                        STRING QUERYABLE SEARCHABLE SORTABLE,
-        createdAt                   TIMESTAMP QUERYABLE SORTABLE,
-        updatedAt                   TIMESTAMP QUERYABLE SORTABLE,
-        blockedCategoryIdentifiers  LIST<STRING>,
-        blockedDomains              LIST<STRING>,
-        nfcUnlockEnabled            INT64 QUERYABLE,
-        nfcTagIdentifier            STRING,
-        unlockDurationMinutes       INT64,
-        scheduleEnabled             INT64 QUERYABLE,
-        scheduleData                BYTES,
-        isActive                    INT64 QUERYABLE,
-        denyAppRemoval              INT64,
-        allowChildEmergencyUnblock  INT64,
-        GRANT WRITE TO "_creator",
-        GRANT CREATE TO "_icloud",
-        GRANT READ TO "_world"
-    );
-
     RECORD TYPE FamilyRoot (
         "___createTime" TIMESTAMP QUERYABLE SORTABLE,
         "___createdBy"  REFERENCE QUERYABLE,
