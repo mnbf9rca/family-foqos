@@ -41,6 +41,9 @@ class CloudKitManager: ObservableObject {
     // Active zone share (for enrolling children)
     private var activeZoneShare: CKShare?
 
+    // Track if zone has been verified this session
+    private var policyZoneVerified = false
+
     // Zone ID for policy storage
     private var policyZoneID: CKRecordZone.ID {
         CKRecordZone.ID(zoneName: policyZoneName, ownerName: CKCurrentUserDefaultName)
@@ -91,20 +94,19 @@ class CloudKitManager: ObservableObject {
 
     /// Create the custom zone for storing policies (enables sharing)
     func createPolicyZoneIfNeeded() async throws {
+        // Skip if already verified this session
+        if policyZoneVerified { return }
+
         let zone = CKRecordZone(zoneID: policyZoneID)
 
         do {
             _ = try await privateDatabase.save(zone)
+            policyZoneVerified = true
             print("Created policy zone: \(policyZoneName)")
         } catch let error as CKError {
             // These errors mean zone already exists - that's fine
-            if error.code == .serverRecordChanged {
-                print("Policy zone already exists (serverRecordChanged)")
-                return
-            }
-            // partialFailure can also indicate zone exists
-            if error.code == .partialFailure {
-                print("Policy zone already exists (partialFailure)")
+            if error.code == .serverRecordChanged || error.code == .partialFailure {
+                policyZoneVerified = true
                 return
             }
             throw CloudKitError.zoneCreationFailed(error)
@@ -303,6 +305,28 @@ class CloudKitManager: ObservableObject {
         } catch {
             throw CloudKitError.deleteFailed(error)
         }
+    }
+
+    /// Remove a share participant directly (revokes their access so they can't rejoin)
+    func removeShareParticipant(_ participant: CKShare.Participant) async throws {
+        let rootRecordID = CKRecord.ID(recordName: familyRootRecordName, zoneID: policyZoneID)
+        let rootRecord = try await privateDatabase.record(for: rootRecordID)
+
+        guard let shareRef = rootRecord.share else {
+            throw CloudKitError.shareNotFound
+        }
+
+        let share = try await privateDatabase.record(for: shareRef.recordID) as! CKShare
+        share.removeParticipant(participant)
+        try await privateDatabase.save(share)
+        activeZoneShare = share
+
+        let name =
+            participant.userIdentity.nameComponents?.formatted()
+            ?? participant.userIdentity.lookupInfo?.emailAddress ?? "Unknown"
+        print("CloudKitManager: Removed participant '\(name)' from share")
+
+        await refreshShareParticipants()
     }
 
     /// Revoke a user's access to the family share
@@ -642,8 +666,10 @@ class CloudKitManager: ObservableObject {
             // Get all participants except owner, log their statuses for debugging
             let participants = share.participants.filter { $0.role != .owner }
             for participant in participants {
-                let name = participant.userIdentity.nameComponents?.formatted() ?? "Unknown"
-                print("CloudKitManager: Participant '\(name)' status: \(participant.acceptanceStatus.rawValue)")
+                let name = participant.userIdentity.nameComponents?.formatted() ?? ""
+                let email = participant.userIdentity.lookupInfo?.emailAddress ?? ""
+                let displayInfo = !name.isEmpty ? name : (!email.isEmpty ? email : "Unknown")
+                print("CloudKitManager: Participant '\(displayInfo)' status: \(participant.acceptanceStatus.rawValue)")
             }
 
             await MainActor.run {
@@ -782,14 +808,13 @@ class CloudKitManager: ObservableObject {
             }
         }
 
-        // Remove FamilyMembers who are no longer participants (they left the share)
+        // Remove FamilyMembers who are no longer accepted participants (they left the share)
         for member in familyMembers {
             let userRecordName = member.userRecordName
 
-            // If this member is no longer in the share participants, remove them
+            // If this member is no longer in the accepted participants, remove their FamilyMember record
             if !currentParticipantRecordNames.contains(userRecordName) {
                 do {
-                    // Delete the FamilyMember record (but don't try to revoke share - they already left)
                     let recordID = CKRecord.ID(recordName: member.id.uuidString, zoneID: policyZoneID)
                     try await privateDatabase.deleteRecord(withID: recordID)
                     await MainActor.run {

@@ -505,7 +505,7 @@ struct ChildSettingsView: View {
         }
 
         Section {
-          Button("Leave Family & Switch to Individual Mode") {
+          Button("Remove Parental lock and switch to Individual Mode") {
             if hasLockCode {
               showCodeEntry = true
             } else {
@@ -514,7 +514,7 @@ struct ChildSettingsView: View {
             }
           }
         } footer: {
-          Text("This will remove you from the family share and disable parental controls. \(hasLockCode ? "Requires lock code." : "")")
+          Text("This will remove you from the code sharing group and disable parental locks. \(hasLockCode ? "Requires lock code." : "")")
         }
       }
       .navigationTitle("Settings")

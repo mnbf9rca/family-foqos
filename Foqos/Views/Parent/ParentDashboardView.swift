@@ -212,18 +212,23 @@ struct ParentDashboardView: View {
                 }
             }
 
-            // Show pending invitations
-            let pendingParticipants = cloudKitManager.shareParticipants.filter {
-                $0.acceptanceStatus == .pending
+            // Show pending/non-accepted invitations (includes people who left)
+            let nonAcceptedParticipants = cloudKitManager.shareParticipants.filter {
+                $0.acceptanceStatus != .accepted
             }
-            if !pendingParticipants.isEmpty {
+            if !nonAcceptedParticipants.isEmpty {
                 Text("Pending Invitations")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                     .padding(.top, 8)
 
-                ForEach(pendingParticipants, id: \.userIdentity.userRecordID) { participant in
-                    PendingInvitationCard(participant: participant)
+                ForEach(nonAcceptedParticipants, id: \.userIdentity.userRecordID) { participant in
+                    PendingInvitationCard(
+                        participant: participant,
+                        onRemove: {
+                            removeParticipant(participant)
+                        }
+                    )
                 }
             }
         }
@@ -289,6 +294,20 @@ struct ParentDashboardView: View {
         Task {
             do {
                 try await cloudKitManager.deleteFamilyMember(member)
+            } catch {
+                await MainActor.run {
+                    errorMessage = error.localizedDescription
+                    showError = true
+                }
+            }
+        }
+    }
+
+    private func removeParticipant(_ participant: CKShare.Participant) {
+        Task {
+            do {
+                try await cloudKitManager.removeShareParticipant(participant)
+                await refreshData()
             } catch {
                 await MainActor.run {
                     errorMessage = error.localizedDescription
@@ -506,18 +525,32 @@ struct FamilyMemberCard: View {
 
 struct PendingInvitationCard: View {
     let participant: CKShare.Participant
+    let onRemove: () -> Void
+
+    @State private var showRemoveConfirmation = false
 
     var displayName: String {
-        if let name = participant.userIdentity.nameComponents?.formatted() {
+        // Try name first (only available after acceptance)
+        if let name = participant.userIdentity.nameComponents?.formatted(), !name.isEmpty {
             return name
         }
-        if let email = participant.userIdentity.lookupInfo?.emailAddress {
+        // Try email used to invite
+        if let email = participant.userIdentity.lookupInfo?.emailAddress, !email.isEmpty {
             return email
         }
-        if let phone = participant.userIdentity.lookupInfo?.phoneNumber {
+        // Try phone used to invite
+        if let phone = participant.userIdentity.lookupInfo?.phoneNumber, !phone.isEmpty {
             return phone
         }
-        return "Pending"
+        // Fallback based on status
+        switch participant.acceptanceStatus {
+        case .pending:
+            return "Pending Invitation"
+        case .removed:
+            return "Unlinked Device"
+        default:
+            return "Unknown"
+        }
     }
 
     var statusText: String {
@@ -527,7 +560,7 @@ struct PendingInvitationCard: View {
         case .accepted:
             return "Accepted"
         case .removed:
-            return "Removed"
+            return "Left - tap to revoke"
         case .unknown:
             return "Unknown"
         @unknown default:
@@ -535,32 +568,64 @@ struct PendingInvitationCard: View {
         }
     }
 
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "person.crop.circle.badge.clock")
-                .font(.title2)
-                .foregroundColor(.orange)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(displayName)
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-
-                Text(statusText)
-                    .font(.caption)
-                    .foregroundColor(.orange)
-            }
-
-            Spacer()
-
-            Image(systemName: "hourglass")
-                .foregroundColor(.orange)
+    var statusColor: Color {
+        switch participant.acceptanceStatus {
+        case .pending:
+            return .orange
+        case .removed:
+            return .red
+        default:
+            return .orange
         }
-        .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color.orange.opacity(0.1))
-        )
+    }
+
+    var body: some View {
+        Button {
+            showRemoveConfirmation = true
+        } label: {
+            HStack(spacing: 12) {
+                Image(
+                    systemName: participant.acceptanceStatus == .removed
+                        ? "person.crop.circle.badge.xmark" : "person.crop.circle.badge.clock"
+                )
+                .font(.title2)
+                .foregroundColor(statusColor)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(displayName)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundColor(.primary)
+
+                    Text(statusText)
+                        .font(.caption)
+                        .foregroundColor(statusColor)
+                }
+
+                Spacer()
+
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundColor(.secondary)
+            }
+            .padding()
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(statusColor.opacity(0.1))
+            )
+        }
+        .buttonStyle(.plain)
+        .confirmationDialog(
+            "Remove \(displayName)?",
+            isPresented: $showRemoveConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Remove", role: .destructive) {
+                onRemove()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("They will need a new invitation to link again.")
+        }
     }
 }
 
