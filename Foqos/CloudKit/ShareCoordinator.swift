@@ -79,20 +79,6 @@ class ShareCoordinator: NSObject, ObservableObject {
         }
     }
 
-    // MARK: - Share Acceptance (Child)
-
-    /// Accept a share from a URL scheme or universal link
-    func acceptShare(from metadata: CKShare.Metadata) {
-        Task {
-            do {
-                try await cloudKitManager.acceptShare(metadata: metadata)
-            } catch {
-                await MainActor.run {
-                    self.shareError = error.localizedDescription
-                }
-            }
-        }
-    }
 }
 
 // MARK: - UICloudSharingControllerDelegate

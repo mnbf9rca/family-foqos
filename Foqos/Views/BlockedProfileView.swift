@@ -116,9 +116,10 @@ struct BlockedProfileView: View {
     isBlocking || (isManagedProfile && !isUnlockedForEditing && appModeManager.currentMode != .parent)
   }
 
-  /// Whether to show the managed toggle (only for parents and individual users setting up for a child)
+  /// Whether to show the managed toggle (only in parent mode when lock code exists)
   private var showManagedToggle: Bool {
-    // Parent devices should NOT have managed profiles on them (safety feature)
+    // Parent mode allows marking profiles as managed on the child's device
+    // The lock code is set on parent device and synced via CloudKit
     appModeManager.currentMode == .parent && lockCodeManager.hasAnyLockCode
   }
 
@@ -583,7 +584,8 @@ struct BlockedProfileView: View {
           title: "Enter Lock Code",
           subtitle: "Enter the parent lock code to modify this managed profile",
           onVerify: { code in
-            lockCodeManager.verifyCodeForProfile(code, profile: profile!)
+            guard let profile = profile else { return false }
+            return lockCodeManager.verifyCodeForProfile(code, profile: profile)
           },
           onSuccess: {
             handleLockCodeSuccess()
@@ -710,8 +712,10 @@ struct BlockedProfileView: View {
       let reminderTimeSeconds: UInt32? =
         enableReminder ? UInt32(reminderTimeInMinutes * 60) : nil
 
-      // Determine managedByChildId - use current user's CloudKit ID if on child device
-      let managedChildId: String? = isManaged ? CloudKitManager.shared.currentUserRecordID?.recordName : nil
+      // Only set managedByChildId on child devices - this identifies which child owns this profile
+      let managedChildId: String? = (isManaged && appModeManager.currentMode == .child)
+        ? CloudKitManager.shared.currentUserRecordID?.recordName
+        : nil
 
       if let existingProfile = profile {
         // Update existing profile

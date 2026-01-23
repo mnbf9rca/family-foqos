@@ -137,28 +137,6 @@ struct foqosApp: App {
     // Handle as universal link for our app
     navigationManager.handleLink(url)
   }
-
-  private func handleShareAcceptance(_ metadata: CKShare.Metadata) {
-    print("foqosApp: handleShareAcceptance called")
-    Task {
-      do {
-        try await CloudKitManager.shared.acceptShare(metadata: metadata)
-        print("foqosApp: Successfully accepted CloudKit share")
-
-        // Fetch shared lock codes immediately
-        _ = try? await CloudKitManager.shared.fetchSharedLockCodes()
-
-        // Switch to child mode
-        await MainActor.run {
-          if AppModeManager.shared.currentMode != .child {
-            AppModeManager.shared.selectMode(.child)
-          }
-        }
-      } catch {
-        print("foqosApp: Failed to accept share: \(error)")
-      }
-    }
-  }
 }
 
 
