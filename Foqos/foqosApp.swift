@@ -84,6 +84,19 @@ struct foqosApp: App {
           }
           handleURL(url)
         }
+        .alert(
+          "Linked to Parent",
+          isPresented: Binding(
+            get: { cloudKitManager.shareAcceptedMessage != nil },
+            set: { if !$0 { cloudKitManager.shareAcceptedMessage = nil } }
+          )
+        ) {
+          Button("OK") {
+            cloudKitManager.shareAcceptedMessage = nil
+          }
+        } message: {
+          Text(cloudKitManager.shareAcceptedMessage ?? "")
+        }
         .environmentObject(requestAuthorizer)
         .environmentObject(donationManager)
         .environmentObject(startegyManager)
@@ -279,14 +292,18 @@ func acceptCloudKitShare(_ metadata: CKShare.Metadata) {
       _ = try? await CloudKitManager.shared.fetchSharedPolicies()
       _ = try? await CloudKitManager.shared.fetchSharedLockCodes()
 
-      // Switch to child mode
+      // Switch to child mode and show confirmation
       await MainActor.run {
         if AppModeManager.shared.currentMode != .child {
           AppModeManager.shared.selectMode(.child)
         }
+        CloudKitManager.shared.shareAcceptedMessage = "You are now linked to a parent's device. They can set a lock code to manage your focus profiles."
       }
     } catch {
       print("acceptCloudKitShare: Failed - \(error)")
+      await MainActor.run {
+        CloudKitManager.shared.shareAcceptedMessage = "Failed to accept invitation: \(error.localizedDescription)"
+      }
     }
   }
 }

@@ -11,6 +11,10 @@ struct ModeSelectionView: View {
 
     let onModeSelected: (AppMode) -> Void
 
+    /// Only show individual and child modes in the selection UI
+    /// Parent mode can be activated later from Settings > Family Controls Dashboard
+    private let availableModes: [AppMode] = [.individual, .child]
+
     var body: some View {
         VStack(spacing: 0) {
             // Header
@@ -30,10 +34,10 @@ struct ModeSelectionView: View {
             .padding(.top, 60)
             .padding(.bottom, 40)
 
-            // Mode cards
+            // Mode cards - only show individual and child options
             VStack(spacing: 16) {
-                ForEach(AppMode.allCases, id: \.self) { mode in
-                    ModeCard(
+                ForEach(availableModes, id: \.self) { mode in
+                    SimplifiedModeCard(
                         mode: mode,
                         isSelected: selectedMode == mode,
                         onTap: {
@@ -86,15 +90,10 @@ struct ModeSelectionView: View {
     private var modeInfoText: some View {
         VStack(spacing: 8) {
             switch selectedMode {
-            case .individual:
+            case .individual, .parent:
                 Label(
-                    "Your profiles and restrictions stay on this device",
+                    "Manage your own screen time. Family controls available in Settings.",
                     systemImage: "iphone"
-                )
-            case .parent:
-                Label(
-                    "Create policies that sync to your children's devices via iCloud",
-                    systemImage: "icloud"
                 )
             case .child:
                 Label(
@@ -153,6 +152,93 @@ struct ModeCard: View {
                         .foregroundColor(.primary)
 
                     Text(mode.description)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
+                }
+
+                Spacer()
+
+                // Checkmark
+                if isSelected {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.title2)
+                        .foregroundColor(.accentColor)
+                }
+            }
+            .padding(16)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Color(.secondarySystemBackground))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .stroke(
+                                isSelected ? Color.accentColor : Color.clear,
+                                lineWidth: 2
+                            )
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// Simplified mode card for the two-option selection UI
+struct SimplifiedModeCard: View {
+    let mode: AppMode
+    let isSelected: Bool
+    let onTap: () -> Void
+
+    /// Simplified display name for the two-option UI
+    private var simplifiedDisplayName: String {
+        switch mode {
+        case .individual, .parent:
+            return "For myself"
+        case .child:
+            return "Child"
+        }
+    }
+
+    /// Simplified description for the two-option UI
+    private var simplifiedDescription: String {
+        switch mode {
+        case .individual, .parent:
+            return "For personal use"
+        case .child:
+            return "Parent manages this device"
+        }
+    }
+
+    /// Icon for the simplified UI
+    private var simplifiedIconName: String {
+        switch mode {
+        case .individual, .parent:
+            return "person.fill"
+        case .child:
+            return "face.smiling.fill"
+        }
+    }
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 16) {
+                // Icon
+                Image(systemName: simplifiedIconName)
+                    .font(.title2)
+                    .foregroundColor(isSelected ? .white : .accentColor)
+                    .frame(width: 44, height: 44)
+                    .background(
+                        Circle()
+                            .fill(isSelected ? Color.accentColor : Color.accentColor.opacity(0.1))
+                    )
+
+                // Text
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(simplifiedDisplayName)
+                        .font(.headline)
+                        .foregroundColor(.primary)
+
+                    Text(simplifiedDescription)
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .lineLimit(2)

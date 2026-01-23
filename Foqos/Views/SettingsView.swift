@@ -16,8 +16,6 @@ struct SettingsView: View {
   @State private var showResetBlockingStateAlert = false
   @State private var showParentDashboard = false
   @State private var showChildDashboard = false
-  @State private var showModeChangeAlert = false
-  @State private var pendingMode: AppMode?
 
   private var appVersion: String {
     Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
@@ -113,34 +111,6 @@ struct SettingsView: View {
             }
           }
 
-          // Mode switching
-          if appModeManager.currentMode == .individual {
-            Button {
-              pendingMode = .parent
-              showModeChangeAlert = true
-            } label: {
-              HStack {
-                Text("Switch to Parent Mode")
-                  .foregroundColor(.primary)
-                Spacer()
-                Image(systemName: "arrow.right.circle")
-                  .foregroundColor(.secondary)
-              }
-            }
-          } else if appModeManager.currentMode == .parent {
-            Button {
-              pendingMode = .individual
-              showModeChangeAlert = true
-            } label: {
-              HStack {
-                Text("Switch to Individual Mode")
-                  .foregroundColor(.primary)
-                Spacer()
-                Image(systemName: "arrow.right.circle")
-                  .foregroundColor(.secondary)
-              }
-            }
-          }
         } header: {
           Text("Family Controls")
         } footer: {
@@ -237,24 +207,6 @@ struct SettingsView: View {
         }
       } message: {
         Text("This will clear all app restrictions and remove any ghost schedules. Only use this if you're locked out and no profile is active.")
-      }
-      .alert("Switch Mode", isPresented: $showModeChangeAlert) {
-        Button("Cancel", role: .cancel) {
-          pendingMode = nil
-        }
-        Button("Switch") {
-          if let mode = pendingMode {
-            appModeManager.selectMode(mode)
-            pendingMode = nil
-            dismiss()
-          }
-        }
-      } message: {
-        if pendingMode == .parent {
-          Text("Parent Mode shows the Family Controls dashboard as your main view. Your personal profiles will still be accessible.")
-        } else {
-          Text("Individual Mode shows your personal profiles as the main view. You can access Family Controls from Settings.")
-        }
       }
       .sheet(isPresented: $showParentDashboard) {
         ParentDashboardView()

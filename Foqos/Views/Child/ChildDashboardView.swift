@@ -463,6 +463,7 @@ struct ChildSettingsView: View {
   @ObservedObject private var lockCodeManager = LockCodeManager.shared
 
   @State private var showCodeEntry = false
+  @State private var showSwitchConfirmation = false
 
   private var hasLockCode: Bool {
     !cloudKitManager.sharedLockCodes.isEmpty
@@ -501,9 +502,8 @@ struct ChildSettingsView: View {
             if hasLockCode {
               showCodeEntry = true
             } else {
-              // No lock code set, allow switching directly
-              appModeManager.selectMode(.individual)
-              dismiss()
+              // No lock code set, show confirmation directly
+              showSwitchConfirmation = true
             }
           }
         } footer: {
@@ -523,13 +523,21 @@ struct ChildSettingsView: View {
         LockCodeEntrySheet(
           onSuccess: {
             showCodeEntry = false
-            appModeManager.selectMode(.individual)
-            dismiss()
+            showSwitchConfirmation = true
           },
           onCancel: {
             showCodeEntry = false
           }
         )
+      }
+      .alert("Switch to Individual Mode?", isPresented: $showSwitchConfirmation) {
+        Button("Cancel", role: .cancel) { }
+        Button("Switch", role: .destructive) {
+          appModeManager.selectMode(.individual)
+          dismiss()
+        }
+      } message: {
+        Text("This will remove parental controls from this device.")
       }
     }
   }

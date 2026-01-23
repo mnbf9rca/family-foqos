@@ -36,6 +36,7 @@ class CloudKitManager: ObservableObject {
     @Published var shareParticipants: [CKShare.Participant] = []  // For parents: pending/accepted invitations
     @Published var isLoading = false
     @Published var error: CloudKitError?
+    @Published var shareAcceptedMessage: String?  // Set when a share is successfully accepted
 
     // Active zone share (for enrolling children)
     private var activeZoneShare: CKShare?
