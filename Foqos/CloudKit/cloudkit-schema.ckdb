@@ -1,0 +1,94 @@
+DEFINE SCHEMA
+
+    RECORD TYPE FamilyLockCode (
+        "___createTime" TIMESTAMP QUERYABLE SORTABLE,
+        "___createdBy"  REFERENCE QUERYABLE,
+        "___etag"       STRING,
+        "___modTime"    TIMESTAMP QUERYABLE SORTABLE,
+        "___modifiedBy" REFERENCE QUERYABLE,
+        "___recordID"   REFERENCE QUERYABLE,
+        id              STRING QUERYABLE SEARCHABLE SORTABLE,
+        codeHash        STRING,
+        codeSalt        STRING,
+        scopeType       STRING QUERYABLE SEARCHABLE,
+        scopeChildId    STRING QUERYABLE SEARCHABLE,
+        createdAt       TIMESTAMP QUERYABLE SORTABLE,
+        updatedAt       TIMESTAMP QUERYABLE SORTABLE,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_world"
+    );
+
+    RECORD TYPE FamilyMember (
+        "___createTime" TIMESTAMP QUERYABLE SORTABLE,
+        "___createdBy"  REFERENCE QUERYABLE,
+        "___etag"       STRING,
+        "___modTime"    TIMESTAMP QUERYABLE SORTABLE,
+        "___modifiedBy" REFERENCE QUERYABLE,
+        "___recordID"   REFERENCE QUERYABLE,
+        id              STRING QUERYABLE SEARCHABLE SORTABLE,
+        userRecordName  STRING QUERYABLE SEARCHABLE,
+        displayName     STRING QUERYABLE SEARCHABLE SORTABLE,
+        role            STRING QUERYABLE SEARCHABLE,
+        enrolledAt      TIMESTAMP QUERYABLE SORTABLE,
+        isActive        INT64 QUERYABLE,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_world"
+    );
+
+    RECORD TYPE FamilyPolicy (
+        "___createTime"             TIMESTAMP QUERYABLE SORTABLE,
+        "___createdBy"              REFERENCE QUERYABLE,
+        "___etag"                   STRING,
+        "___modTime"                TIMESTAMP QUERYABLE SORTABLE,
+        "___modifiedBy"             REFERENCE QUERYABLE,
+        "___recordID"               REFERENCE QUERYABLE,
+        id                          STRING QUERYABLE SEARCHABLE SORTABLE,
+        parentUserRecordName        STRING QUERYABLE SEARCHABLE,
+        assignedChildIds            LIST<STRING>,
+        name                        STRING QUERYABLE SEARCHABLE SORTABLE,
+        createdAt                   TIMESTAMP QUERYABLE SORTABLE,
+        updatedAt                   TIMESTAMP QUERYABLE SORTABLE,
+        blockedCategoryIdentifiers  LIST<STRING>,
+        blockedDomains              LIST<STRING>,
+        nfcUnlockEnabled            INT64 QUERYABLE,
+        nfcTagIdentifier            STRING,
+        unlockDurationMinutes       INT64,
+        scheduleEnabled             INT64 QUERYABLE,
+        scheduleData                BYTES,
+        isActive                    INT64 QUERYABLE,
+        denyAppRemoval              INT64,
+        allowChildEmergencyUnblock  INT64,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_world"
+    );
+
+    RECORD TYPE FamilyRoot (
+        "___createTime" TIMESTAMP QUERYABLE SORTABLE,
+        "___createdBy"  REFERENCE QUERYABLE,
+        "___etag"       STRING,
+        "___modTime"    TIMESTAMP QUERYABLE SORTABLE,
+        "___modifiedBy" REFERENCE QUERYABLE,
+        "___recordID"   REFERENCE QUERYABLE,
+        createdAt       TIMESTAMP QUERYABLE SORTABLE,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_world"
+    );
+
+    RECORD TYPE "cloudkit.share" (
+        "___createTime"               TIMESTAMP QUERYABLE SORTABLE,
+        "___createdBy"                REFERENCE QUERYABLE,
+        "___etag"                     STRING,
+        "___modTime"                  TIMESTAMP QUERYABLE SORTABLE,
+        "___modifiedBy"               REFERENCE QUERYABLE,
+        "___recordID"                 REFERENCE QUERYABLE,
+        "cloudkit.thumbnailImageData" BYTES,
+        "cloudkit.title"              STRING,
+        "cloudkit.type"               STRING,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_world"
+    );
