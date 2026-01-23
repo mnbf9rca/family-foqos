@@ -6,6 +6,8 @@ import SwiftUI
 struct ChildDashboardView: View {
     @ObservedObject private var childPolicyEnforcer = ChildPolicyEnforcer.shared
     @ObservedObject private var appModeManager = AppModeManager.shared
+    @ObservedObject private var cloudKitManager = CloudKitManager.shared
+    @ObservedObject private var lockCodeManager = LockCodeManager.shared
 
     @State private var showSettings = false
     @State private var showNFCScanSheet = false
@@ -17,6 +19,9 @@ struct ChildDashboardView: View {
                 VStack(alignment: .leading, spacing: 24) {
                     // Header
                     headerSection
+
+                    // Family connection status
+                    familyConnectionSection
 
                     // Active unlock banner
                     if let unlock = childPolicyEnforcer.currentUnlock, !unlock.isExpired {
@@ -64,9 +69,14 @@ struct ChildDashboardView: View {
             }
             .refreshable {
                 await childPolicyEnforcer.syncPolicies()
+                _ = try? await cloudKitManager.fetchSharedLockCodes()
             }
             .onAppear {
                 childPolicyEnforcer.startEnforcing()
+                // Check family connection status
+                Task {
+                    _ = try? await cloudKitManager.fetchSharedLockCodes()
+                }
             }
             .sheet(isPresented: $showSettings) {
                 ChildSettingsView()
@@ -107,6 +117,49 @@ struct ChildDashboardView: View {
                 .font(.subheadline)
                 .foregroundColor(.secondary)
         }
+    }
+
+    private var familyConnectionSection: some View {
+        let isConnected = cloudKitManager.isConnectedToFamily
+        let hasLockCode = !cloudKitManager.sharedLockCodes.isEmpty
+
+        return HStack(spacing: 12) {
+            Image(systemName: isConnected ? "link.circle.fill" : "link.circle")
+                .font(.title2)
+                .foregroundColor(isConnected ? .green : .orange)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(isConnected ? "Linked to Parent" : "Not Linked")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+
+                if isConnected {
+                    HStack(spacing: 4) {
+                        Image(systemName: hasLockCode ? "lock.fill" : "lock.open")
+                            .font(.caption2)
+                        Text(hasLockCode ? "Lock code active" : "No lock code set")
+                            .font(.caption)
+                    }
+                    .foregroundColor(.secondary)
+                } else {
+                    Text("Ask a parent to send you an invitation link")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            Spacer()
+
+            if isConnected {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundColor(.green)
+            }
+        }
+        .padding()
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color(isConnected ? .systemGreen : .systemOrange).opacity(0.1))
+        )
     }
 
     private func activeUnlockBanner(_ unlock: NFCUnlockSession) -> some View {

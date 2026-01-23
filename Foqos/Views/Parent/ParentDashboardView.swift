@@ -1,3 +1,4 @@
+import CloudKit
 import SwiftUI
 
 /// Main dashboard view for parents to manage lock codes and family members
@@ -7,9 +8,11 @@ struct ParentDashboardView: View {
     @ObservedObject private var lockCodeManager = LockCodeManager.shared
 
     @State private var showLockCodeSetup = false
-    @State private var addingMemberRole: FamilyRole?
     @State private var showError = false
     @State private var errorMessage = ""
+
+    // Share coordinator for direct sharing
+    @StateObject private var shareCoordinator = ShareCoordinator()
 
     var body: some View {
         NavigationStack {
@@ -61,9 +64,7 @@ struct ParentDashboardView: View {
                     }
                 )
             }
-            .sheet(item: $addingMemberRole) { role in
-                AddFamilyMemberView(role: role)
-            }
+            .enrollFamilyMemberSheet(coordinator: shareCoordinator)
             .alert("Error", isPresented: $showError) {
                 Button("OK", role: .cancel) {}
             } message: {
@@ -81,12 +82,12 @@ struct ParentDashboardView: View {
                     .font(.title2)
                     .foregroundColor(.accentColor)
 
-                Text("Family Dashboard")
+                Text("Parental Controls")
                     .font(.title2)
                     .fontWeight(.bold)
             }
 
-            Text("Manage lock codes and family members for parent-controlled profiles")
+            Text("Manage lock codes and linked devices for parent-controlled profiles")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
         }
@@ -101,7 +102,7 @@ struct ParentDashboardView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("iCloud Not Available")
                     .font(.headline)
-                Text("Sign in to iCloud to sync with family members.")
+                Text("Sign in to iCloud to sync lock codes with linked devices.")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
@@ -152,7 +153,7 @@ struct ParentDashboardView: View {
                 Spacer()
 
                 Button {
-                    addingMemberRole = .parent
+                    shareCoordinator.enrollFamilyMember(role: .parent)
                 } label: {
                     Label("Add", systemImage: "plus")
                         .font(.subheadline)
@@ -187,7 +188,7 @@ struct ParentDashboardView: View {
                 Spacer()
 
                 Button {
-                    addingMemberRole = .child
+                    shareCoordinator.enrollFamilyMember(role: .child)
                 } label: {
                     Label("Add", systemImage: "plus")
                         .font(.subheadline)
@@ -210,6 +211,21 @@ struct ParentDashboardView: View {
                     })
                 }
             }
+
+            // Show pending invitations
+            let pendingParticipants = cloudKitManager.shareParticipants.filter {
+                $0.acceptanceStatus == .pending
+            }
+            if !pendingParticipants.isEmpty {
+                Text("Pending Invitations")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .padding(.top, 8)
+
+                ForEach(pendingParticipants, id: \.userIdentity.userRecordID) { participant in
+                    PendingInvitationCard(participant: participant)
+                }
+            }
         }
     }
 
@@ -227,8 +243,8 @@ struct ParentDashboardView: View {
 
                 HowToUseStep(
                     number: 2,
-                    title: "Add Family Members",
-                    description: "Invite other parents and children to your family"
+                    title: "Link Devices",
+                    description: "Invite other parents and children to share lock codes"
                 )
 
                 HowToUseStep(
@@ -255,6 +271,12 @@ struct ParentDashboardView: View {
 
     private func refreshData() async {
         do {
+            // Refresh share participants to show pending invitations
+            await cloudKitManager.refreshShareParticipants()
+
+            // Sync share participants - creates FamilyMember records for accepted ones
+            try? await cloudKitManager.syncShareParticipantsToFamilyMembers()
+
             _ = try await cloudKitManager.fetchFamilyMembers()
             await lockCodeManager.fetchLockCodes()
         } catch {
@@ -466,7 +488,7 @@ struct FamilyMemberCard: View {
                 .fill(Color(.tertiarySystemBackground))
         )
         .confirmationDialog(
-            "Remove \(member.role.displayName)",
+            "Remove \(member.displayName)",
             isPresented: $showRemoveConfirmation,
             titleVisibility: .visible
         ) {
@@ -475,8 +497,70 @@ struct FamilyMemberCard: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This will remove \(member.displayName) from your family. They will no longer have access to the shared lock code.")
+            Text("This will unlink \(member.displayName) from locked Foqos controls. They will no longer receive your lock code.")
         }
+    }
+}
+
+// MARK: - Pending Invitation Card
+
+struct PendingInvitationCard: View {
+    let participant: CKShare.Participant
+
+    var displayName: String {
+        if let name = participant.userIdentity.nameComponents?.formatted() {
+            return name
+        }
+        if let email = participant.userIdentity.lookupInfo?.emailAddress {
+            return email
+        }
+        if let phone = participant.userIdentity.lookupInfo?.phoneNumber {
+            return phone
+        }
+        return "Pending"
+    }
+
+    var statusText: String {
+        switch participant.acceptanceStatus {
+        case .pending:
+            return "Invitation sent"
+        case .accepted:
+            return "Accepted"
+        case .removed:
+            return "Removed"
+        case .unknown:
+            return "Unknown"
+        @unknown default:
+            return "Unknown"
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "person.crop.circle.badge.clock")
+                .font(.title2)
+                .foregroundColor(.orange)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(displayName)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+
+                Text(statusText)
+                    .font(.caption)
+                    .foregroundColor(.orange)
+            }
+
+            Spacer()
+
+            Image(systemName: "hourglass")
+                .foregroundColor(.orange)
+        }
+        .padding()
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.orange.opacity(0.1))
+        )
     }
 }
 
@@ -549,7 +633,7 @@ struct AddFamilyMemberView: View {
                             .frame(width: 20, height: 20)
                             .background(Circle().fill(Color.accentColor))
 
-                        Text("They'll be added to your family")
+                        Text("Their device will be linked to yours")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                     }
