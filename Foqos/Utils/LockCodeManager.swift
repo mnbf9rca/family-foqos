@@ -214,6 +214,12 @@ class LockCodeManager: ObservableObject {
         return verifyCode(code, forChildId: profile.managedByChildId)
     }
 
+    /// Simple validation - checks if code matches any available lock code
+    func validateCode(_ code: String) -> Bool {
+        let codesToCheck = appModeManager.currentMode == .parent ? lockCodes : cachedLockCodes
+        return codesToCheck.contains { $0.verifyCode(code) }
+    }
+
     /// Check if there's a lock code available for verification
     var canVerifyCode: Bool {
         let codesToCheck = appModeManager.currentMode == .parent ? lockCodes : cachedLockCodes

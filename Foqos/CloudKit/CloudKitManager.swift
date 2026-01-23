@@ -285,8 +285,12 @@ class CloudKitManager: ObservableObject {
         }
     }
 
-    /// Delete a family member from CloudKit
+    /// Delete a family member from CloudKit and revoke their share access
     func deleteFamilyMember(_ member: FamilyMember) async throws {
+        // First, try to remove them from the share
+        await revokeShareAccess(forUserRecordName: member.userRecordName)
+
+        // Then delete the FamilyMember record
         let recordID = CKRecord.ID(recordName: member.id.uuidString, zoneID: policyZoneID)
 
         do {
@@ -297,6 +301,47 @@ class CloudKitManager: ObservableObject {
             print("CloudKitManager: Deleted family member: \(member.displayName)")
         } catch {
             throw CloudKitError.deleteFailed(error)
+        }
+    }
+
+    /// Revoke a user's access to the family share
+    private func revokeShareAccess(forUserRecordName userRecordName: String?) async {
+        guard let userRecordName = userRecordName else {
+            print("CloudKitManager: No userRecordName to revoke")
+            return
+        }
+
+        do {
+            // Get the current share
+            let rootRecordID = CKRecord.ID(recordName: familyRootRecordName, zoneID: policyZoneID)
+            let rootRecord = try await privateDatabase.record(for: rootRecordID)
+
+            guard let shareRef = rootRecord.share else {
+                print("CloudKitManager: No share exists to revoke from")
+                return
+            }
+
+            let share = try await privateDatabase.record(for: shareRef.recordID) as! CKShare
+
+            // Find the participant to remove
+            if let participant = share.participants.first(where: {
+                $0.userIdentity.userRecordID?.recordName == userRecordName
+            }) {
+                share.removeParticipant(participant)
+
+                // Save the updated share
+                try await privateDatabase.save(share)
+                activeZoneShare = share
+
+                print("CloudKitManager: Revoked share access for \(userRecordName)")
+
+                // Refresh participants list
+                await refreshShareParticipants()
+            } else {
+                print("CloudKitManager: Participant not found in share")
+            }
+        } catch {
+            print("CloudKitManager: Failed to revoke share access - \(error)")
         }
     }
 

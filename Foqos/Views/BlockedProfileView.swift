@@ -333,7 +333,7 @@ struct BlockedProfileView: View {
             description:
               "Block deleting apps from your phone, stops you from deleting Family Foqos to access apps",
             isOn: $enableStrictMode,
-            isDisabled: editingDisabled
+            isDisabled: isBlocking
           )
 
           CustomToggle(
@@ -341,7 +341,7 @@ struct BlockedProfileView: View {
             description:
               "Disable the ability to stop a profile from the background, this includes shortcuts and scanning links from NFC tags or QR codes.",
             isOn: $disableBackgroundStops,
-            isDisabled: editingDisabled
+            isDisabled: isBlocking
           )
         }
 
@@ -528,7 +528,7 @@ struct BlockedProfileView: View {
           ToolbarSpacer(.flexible, placement: .topBarTrailing)
         }
 
-        if !isBlocking {
+        if !editingDisabled {
           ToolbarItem(placement: .topBarTrailing) {
             Button(action: { saveProfile() }) {
               Image(systemName: "checkmark")
