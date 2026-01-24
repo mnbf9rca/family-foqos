@@ -38,10 +38,10 @@ struct ProfileWidgetEntryView: View {
   private var linkToOpen: URL {
     // Don't open the app via profile to stop the session
     if entry.isBreakActive || entry.isSessionActive {
-      return URL(string: "https://foqos.app")!
+      return URL(string: "https://family-foqos.cynexia.com")!
     }
 
-    return entry.deepLinkURL ?? URL(string: "foqos://")!
+    return entry.deepLinkURL ?? URL(string: "family-foqos://")!
   }
 
   var body: some View {
@@ -197,7 +197,7 @@ struct ProfileWidgetEntryView: View {
       id: UUID(),
       name: "Focus Session",
       selectedActivity: {
-        var selection = FamilyActivitySelection()
+        let selection = FamilyActivitySelection()
         // Simulate some selected apps and domains for preview
         return selection
       }(),
@@ -219,7 +219,7 @@ struct ProfileWidgetEntryView: View {
       schedule: nil,
       disableBackgroundStops: nil
     ),
-    deepLinkURL: URL(string: "https://foqos.app/profile/test-id"),
+    deepLinkURL: URL(string: "https://family-foqos.cynexia.com/profile/test-id"),
     focusMessage: "Stay focused and avoid distractions",
     useProfileURL: true
   )
@@ -262,7 +262,7 @@ struct ProfileWidgetEntryView: View {
       schedule: nil,
       disableBackgroundStops: nil
     ),
-    deepLinkURL: URL(string: "https://foqos.app/profile/\(activeProfileId.uuidString)"),
+    deepLinkURL: URL(string: "https://family-foqos.cynexia.com/profile/\(activeProfileId.uuidString)"),
     focusMessage: "Deep focus time",
     useProfileURL: true
   )
@@ -305,7 +305,7 @@ struct ProfileWidgetEntryView: View {
       schedule: nil,
       disableBackgroundStops: nil
     ),
-    deepLinkURL: URL(string: "https://foqos.app/profile/\(breakProfileId.uuidString)"),
+    deepLinkURL: URL(string: "https://family-foqos.cynexia.com/profile/\(breakProfileId.uuidString)"),
     focusMessage: "Take a well-deserved break",
     useProfileURL: true
   )
@@ -316,7 +316,7 @@ struct ProfileWidgetEntryView: View {
     profileName: "No Profile Selected",
     activeSession: nil,
     profileSnapshot: nil,
-    deepLinkURL: URL(string: "foqos://"),
+    deepLinkURL: URL(string: "family-foqos://"),
     focusMessage: "Select a profile to get started",
     useProfileURL: false
   )
@@ -360,7 +360,7 @@ struct ProfileWidgetEntryView: View {
       schedule: nil,
       disableBackgroundStops: nil
     ),
-    deepLinkURL: URL(string: "https://foqos.app/profile/\(unavailableProfileId.uuidString)"),
+    deepLinkURL: URL(string: "https://family-foqos.cynexia.com/profile/\(unavailableProfileId.uuidString)"),
     focusMessage: "Different profile is currently active",
     useProfileURL: true
   )

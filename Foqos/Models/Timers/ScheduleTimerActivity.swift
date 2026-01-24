@@ -1,7 +1,7 @@
 import DeviceActivity
 import OSLog
 
-private let log: Logger = Logger(subsystem: "com.foqos.monitor", category: ScheduleTimerActivity.id)
+private let log: Logger = Logger(subsystem: "com.cynexia.family-foqos.monitor", category: ScheduleTimerActivity.id)
 
 class ScheduleTimerActivity: TimerActivity {
   static var id: String = "ScheduleTimerActivity"

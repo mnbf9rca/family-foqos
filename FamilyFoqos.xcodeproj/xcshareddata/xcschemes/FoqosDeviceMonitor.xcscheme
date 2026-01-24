@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Scheme
-   LastUpgradeVersion = "1630"
+   LastUpgradeVersion = "2620"
    wasCreatedForAppExtension = "YES"
    version = "2.0">
    <BuildAction
@@ -16,10 +16,10 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "80FF388C2D80DB540032BC5E"
-               BuildableName = "FoqosWidgetExtension.appex"
-               BlueprintName = "FoqosWidgetExtension"
-               ReferencedContainer = "container:foqos.xcodeproj">
+               BlueprintIdentifier = "801713092DE6C78C00B77FE1"
+               BuildableName = "FoqosDeviceMonitor.appex"
+               BlueprintName = "FoqosDeviceMonitor"
+               ReferencedContainer = "container:FamilyFoqos.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
          <BuildActionEntry
@@ -31,9 +31,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "801B20942CB363A10073E9E2"
-               BuildableName = "foqos.app"
-               BlueprintName = "foqos"
-               ReferencedContainer = "container:foqos.xcodeproj">
+               BuildableName = "FamilyFoqos.app"
+               BlueprintName = "FamilyFoqos"
+               ReferencedContainer = "container:FamilyFoqos.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -49,7 +49,7 @@
       buildConfiguration = "Debug"
       selectedDebuggerIdentifier = ""
       selectedLauncherIdentifier = "Xcode.IDEFoundation.Launcher.PosixSpawn"
-      launchStyle = "1"
+      launchStyle = "0"
       askForAppToLaunch = "Yes"
       useCustomWorkingDirectory = "NO"
       ignoresPersistentStateOnLaunch = "NO"
@@ -57,43 +57,16 @@
       debugServiceExtension = "internal"
       allowLocationSimulation = "YES"
       launchAutomaticallySubstyle = "2">
-      <RemoteRunnable
-         runnableDebuggingMode = "2"
-         BundleIdentifier = "com.apple.springboard">
-         <BuildableReference
-            BuildableIdentifier = "primary"
-            BlueprintIdentifier = "80FF388C2D80DB540032BC5E"
-            BuildableName = "FoqosWidgetExtension.appex"
-            BlueprintName = "FoqosWidgetExtension"
-            ReferencedContainer = "container:foqos.xcodeproj">
-         </BuildableReference>
-      </RemoteRunnable>
-      <MacroExpansion>
+      <BuildableProductRunnable
+         runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "801B20942CB363A10073E9E2"
-            BuildableName = "foqos.app"
-            BlueprintName = "foqos"
-            ReferencedContainer = "container:foqos.xcodeproj">
+            BuildableName = "FamilyFoqos.app"
+            BlueprintName = "FamilyFoqos"
+            ReferencedContainer = "container:FamilyFoqos.xcodeproj">
          </BuildableReference>
-      </MacroExpansion>
-      <EnvironmentVariables>
-         <EnvironmentVariable
-            key = "_XCWidgetKind"
-            value = ""
-            isEnabled = "YES">
-         </EnvironmentVariable>
-         <EnvironmentVariable
-            key = "_XCWidgetDefaultView"
-            value = "timeline"
-            isEnabled = "YES">
-         </EnvironmentVariable>
-         <EnvironmentVariable
-            key = "_XCWidgetFamily"
-            value = "systemMedium"
-            isEnabled = "YES">
-         </EnvironmentVariable>
-      </EnvironmentVariables>
+      </BuildableProductRunnable>
    </LaunchAction>
    <ProfileAction
       buildConfiguration = "Release"
@@ -108,9 +81,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "801B20942CB363A10073E9E2"
-            BuildableName = "foqos.app"
-            BlueprintName = "foqos"
-            ReferencedContainer = "container:foqos.xcodeproj">
+            BuildableName = "FamilyFoqos.app"
+            BlueprintName = "FamilyFoqos"
+            ReferencedContainer = "container:FamilyFoqos.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

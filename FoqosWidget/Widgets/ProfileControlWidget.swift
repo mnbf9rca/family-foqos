@@ -29,7 +29,7 @@ struct ProfileControlWidget: Widget {
           }
         }
     }
-    .configurationDisplayName("Foqos Profile")
+    .configurationDisplayName("Family Foqos Profile")
     .description("Monitor and control your selected focus profile")
     .supportedFamilies([.systemSmall])
   }

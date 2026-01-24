@@ -47,7 +47,7 @@ struct FoqosWidgetLiveActivity: Widget {
         // Left side - App info
         VStack(alignment: .leading, spacing: 8) {
           HStack(spacing: 4) {
-            Text("Foqos")
+            Text("Family Foqos")
               .font(.headline)
               .fontWeight(.bold)
               .foregroundColor(.primary)
@@ -155,7 +155,7 @@ struct FoqosWidgetLiveActivity: Widget {
         Image(systemName: "hourglass")
           .foregroundColor(.purple)
       }
-      .widgetURL(URL(string: "http://www.foqos.app"))
+      .widgetURL(URL(string: "https://family-foqos.cynexia.com"))
       .keylineTint(Color.purple)
     }
   }

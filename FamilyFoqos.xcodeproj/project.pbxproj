@@ -75,7 +75,7 @@
 
 /* Begin PBXFileReference section */
 		8017130A2DE6C78C00B77FE1 /* FoqosDeviceMonitor.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = FoqosDeviceMonitor.appex; sourceTree = BUILT_PRODUCTS_DIR; };
-		801B20952CB363A10073E9E2 /* foqos.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = foqos.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		801B20952CB363A10073E9E2 /* FamilyFoqos.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FamilyFoqos.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		801B20A62CB363A20073E9E2 /* foqosTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = foqosTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		801B20B02CB363A20073E9E2 /* foqosUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = foqosUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		803989B22CCC06D600E87F57 /* StoreKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = StoreKit.framework; path = System/Library/Frameworks/StoreKit.framework; sourceTree = SDKROOT; };
@@ -89,12 +89,12 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		8015A1F62D80E29B0037DFE9 /* Exceptions for "FoqosWidget" folder in "foqos" target */ = {
+		8015A1F62D80E29B0037DFE9 /* Exceptions for "FoqosWidget" folder in "FamilyFoqos" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				FoqosWidgetLiveActivity.swift,
 			);
-			target = 801B20942CB363A10073E9E2 /* foqos */;
+			target = 801B20942CB363A10073E9E2 /* FamilyFoqos */;
 		};
 		801713172DE6C78C00B77FE1 /* Exceptions for "FoqosDeviceMonitor" folder in "FoqosDeviceMonitor" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
@@ -103,12 +103,12 @@
 			);
 			target = 801713092DE6C78C00B77FE1 /* FoqosDeviceMonitor */;
 		};
-		801713192DE6CCF400B77FE1 /* Exceptions for "FoqosDeviceMonitor" folder in "foqos" target */ = {
+		801713192DE6CCF400B77FE1 /* Exceptions for "FoqosDeviceMonitor" folder in "FamilyFoqos" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				DeviceActivityMonitorExtension.swift,
 			);
-			target = 801B20942CB363A10073E9E2 /* foqos */;
+			target = 801B20942CB363A10073E9E2 /* FamilyFoqos */;
 		};
 		801C99CE2E9C9B9D000E07CD /* Exceptions for "Foqos" folder in "FoqosWidgetExtension" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
@@ -140,12 +140,12 @@
 			);
 			target = 801713092DE6C78C00B77FE1 /* FoqosDeviceMonitor */;
 		};
-		807B2B8A2CC0ACCD00944D2B /* Exceptions for "Foqos" folder in "foqos" target */ = {
+		807B2B8A2CC0ACCD00944D2B /* Exceptions for "Foqos" folder in "FamilyFoqos" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
 			);
-			target = 801B20942CB363A10073E9E2 /* foqos */;
+			target = 801B20942CB363A10073E9E2 /* FamilyFoqos */;
 		};
 		808A3C5A2E4ACD18002A7812 /* Exceptions for "FoqosShieldConfig" folder in "FoqosShieldConfig" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
@@ -167,7 +167,7 @@
 		8017130C2DE6C78C00B77FE1 /* FoqosDeviceMonitor */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				801713192DE6CCF400B77FE1 /* Exceptions for "FoqosDeviceMonitor" folder in "foqos" target */,
+				801713192DE6CCF400B77FE1 /* Exceptions for "FoqosDeviceMonitor" folder in "FamilyFoqos" target */,
 				801713172DE6C78C00B77FE1 /* Exceptions for "FoqosDeviceMonitor" folder in "FoqosDeviceMonitor" target */,
 			);
 			path = FoqosDeviceMonitor;
@@ -176,7 +176,7 @@
 		801B20972CB363A10073E9E2 /* Foqos */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				807B2B8A2CC0ACCD00944D2B /* Exceptions for "Foqos" folder in "foqos" target */,
+				807B2B8A2CC0ACCD00944D2B /* Exceptions for "Foqos" folder in "FamilyFoqos" target */,
 				801C99CE2E9C9B9D000E07CD /* Exceptions for "Foqos" folder in "FoqosWidgetExtension" target */,
 				804415942DE7E94B0000CAE4 /* Exceptions for "Foqos" folder in "FoqosDeviceMonitor" target */,
 				803899772EF736BA009988BB /* Exceptions for "Foqos" folder in "FoqosShieldConfig" target */,
@@ -195,7 +195,7 @@
 		80FF38902D80DB540032BC5E /* FoqosWidget */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				8015A1F62D80E29B0037DFE9 /* Exceptions for "FoqosWidget" folder in "foqos" target */,
+				8015A1F62D80E29B0037DFE9 /* Exceptions for "FoqosWidget" folder in "FamilyFoqos" target */,
 				80FF38A02D80DB560032BC5E /* Exceptions for "FoqosWidget" folder in "FoqosWidgetExtension" target */,
 			);
 			path = FoqosWidget;
@@ -271,7 +271,7 @@
 		801B20962CB363A10073E9E2 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				801B20952CB363A10073E9E2 /* foqos.app */,
+				801B20952CB363A10073E9E2 /* FamilyFoqos.app */,
 				801B20A62CB363A20073E9E2 /* foqosTests.xctest */,
 				801B20B02CB363A20073E9E2 /* foqosUITests.xctest */,
 				80FF388D2D80DB540032BC5E /* FoqosWidgetExtension.appex */,
@@ -319,9 +319,9 @@
 			productReference = 8017130A2DE6C78C00B77FE1 /* FoqosDeviceMonitor.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
-		801B20942CB363A10073E9E2 /* foqos */ = {
+		801B20942CB363A10073E9E2 /* FamilyFoqos */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 801B20BA2CB363A20073E9E2 /* Build configuration list for PBXNativeTarget "foqos" */;
+			buildConfigurationList = 801B20BA2CB363A20073E9E2 /* Build configuration list for PBXNativeTarget "FamilyFoqos" */;
 			buildPhases = (
 				801B20912CB363A10073E9E2 /* Sources */,
 				801B20922CB363A10073E9E2 /* Frameworks */,
@@ -338,12 +338,12 @@
 			fileSystemSynchronizedGroups = (
 				801B20972CB363A10073E9E2 /* Foqos */,
 			);
-			name = foqos;
+			name = FamilyFoqos;
 			packageProductDependencies = (
 				80F674AA2D6185510056977F /* CodeScanner */,
 			);
 			productName = foqos;
-			productReference = 801B20952CB363A10073E9E2 /* foqos.app */;
+			productReference = 801B20952CB363A10073E9E2 /* FamilyFoqos.app */;
 			productType = "com.apple.product-type.application";
 		};
 		801B20A52CB363A20073E9E2 /* foqosTests */ = {
@@ -438,7 +438,7 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
 				LastSwiftUpdateCheck = 1640;
-				LastUpgradeCheck = 1610;
+				LastUpgradeCheck = 2620;
 				TargetAttributes = {
 					801713092DE6C78C00B77FE1 = {
 						CreatedOnToolsVersion = 16.3;
@@ -462,7 +462,7 @@
 					};
 				};
 			};
-			buildConfigurationList = 801B20902CB363A10073E9E2 /* Build configuration list for PBXProject "foqos" */;
+			buildConfigurationList = 801B20902CB363A10073E9E2 /* Build configuration list for PBXProject "FamilyFoqos" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -479,7 +479,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				801B20942CB363A10073E9E2 /* foqos */,
+				801B20942CB363A10073E9E2 /* FamilyFoqos */,
 				801B20A52CB363A20073E9E2 /* foqosTests */,
 				801B20AF2CB363A20073E9E2 /* foqosUITests */,
 				80FF388C2D80DB540032BC5E /* FoqosWidgetExtension */,
@@ -587,12 +587,12 @@
 		};
 		801B20A82CB363A20073E9E2 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = 801B20942CB363A10073E9E2 /* foqos */;
+			target = 801B20942CB363A10073E9E2 /* FamilyFoqos */;
 			targetProxy = 801B20A72CB363A20073E9E2 /* PBXContainerItemProxy */;
 		};
 		801B20B22CB363A20073E9E2 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = 801B20942CB363A10073E9E2 /* foqos */;
+			target = 801B20942CB363A10073E9E2 /* FamilyFoqos */;
 			targetProxy = 801B20B12CB363A20073E9E2 /* PBXContainerItemProxy */;
 		};
 		808A3C552E4ACD18002A7812 /* PBXTargetDependency */ = {
@@ -613,8 +613,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = FoqosDeviceMonitor/FoqosDeviceMonitor.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = YR54789JNV;
+				CURRENT_PROJECT_VERSION = 5;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = FoqosDeviceMonitor/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = FoqosDeviceMonitor;
@@ -625,12 +624,11 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.11;
-				PRODUCT_BUNDLE_IDENTIFIER = dev.ambitionsoftware.foqos.FoqosDeviceMonitor;
+				MARKETING_VERSION = 1.29.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.cynexia.family-foqos.FoqosDeviceMonitor";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
-				STRIP_INSTALLED_PRODUCT = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
@@ -646,8 +644,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = FoqosDeviceMonitor/FoqosDeviceMonitor.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = YR54789JNV;
+				CURRENT_PROJECT_VERSION = 5;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = FoqosDeviceMonitor/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = FoqosDeviceMonitor;
@@ -658,12 +655,11 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.11;
-				PRODUCT_BUNDLE_IDENTIFIER = dev.ambitionsoftware.foqos.FoqosDeviceMonitor;
+				MARKETING_VERSION = 1.29.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.cynexia.family-foqos.FoqosDeviceMonitor";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
-				STRIP_INSTALLED_PRODUCT = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
@@ -711,6 +707,7 @@
 				COPY_PHASE_STRIP = NO;
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = BU7526J4QY;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -732,6 +729,7 @@
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
@@ -773,6 +771,7 @@
 				COPY_PHASE_STRIP = NO;
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = BU7526J4QY;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -787,6 +786,7 @@
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 			};
 			name = Release;
@@ -798,17 +798,19 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_ENTITLEMENTS = foqos/foqos.entitlements;
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 5;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "\"foqos/Preview Content\"";
-				DEVELOPMENT_TEAM = YR54789JNV;
+				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = foqos/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Foqos;
+				INFOPLIST_KEY_CFBundleDisplayName = "Family Foqos";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_NFCReaderUsageDescription = "This app uses NFC to scan tags for item identification.";
 				INFOPLIST_KEY_NSCameraUsageDescription = "We need camera access to scan QR codes to active/deactivate profiles";
@@ -827,8 +829,9 @@
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 14.5;
 				MARKETING_VERSION = 1.29.1;
-				PRODUCT_BUNDLE_IDENTIFIER = dev.ambitionsoftware.foqos;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.cynexia.family-foqos";
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
@@ -846,17 +849,19 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_ENTITLEMENTS = foqos/foqos.entitlements;
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 5;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "\"foqos/Preview Content\"";
-				DEVELOPMENT_TEAM = YR54789JNV;
+				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = foqos/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Foqos;
+				INFOPLIST_KEY_CFBundleDisplayName = "Family Foqos";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_NFCReaderUsageDescription = "This app uses NFC to scan tags for item identification.";
 				INFOPLIST_KEY_NSCameraUsageDescription = "We need camera access to scan QR codes to active/deactivate profiles";
@@ -875,8 +880,9 @@
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 14.5;
 				MARKETING_VERSION = 1.29.1;
-				PRODUCT_BUNDLE_IDENTIFIER = dev.ambitionsoftware.foqos;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.cynexia.family-foqos";
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
@@ -892,14 +898,13 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 4;
 				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = YR54789JNV;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				MACOSX_DEPLOYMENT_TARGET = 14.5;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = dev.ambitionsoftware.foqosTests;
+				MARKETING_VERSION = 1.29.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.cynexia.family-foqosTests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
@@ -916,14 +921,13 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 4;
 				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = YR54789JNV;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				MACOSX_DEPLOYMENT_TARGET = 14.5;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = dev.ambitionsoftware.foqosTests;
+				MARKETING_VERSION = 1.29.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.cynexia.family-foqosTests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
@@ -939,14 +943,13 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = YR54789JNV;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				MACOSX_DEPLOYMENT_TARGET = 14.5;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = dev.ambitionsoftware.foqosUITests;
+				MARKETING_VERSION = 1.29.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.cynexia.family-foqosUITests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
@@ -962,14 +965,13 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = YR54789JNV;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				MACOSX_DEPLOYMENT_TARGET = 14.5;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = dev.ambitionsoftware.foqosUITests;
+				MARKETING_VERSION = 1.29.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.cynexia.family-foqosUITests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
@@ -986,8 +988,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = FoqosShieldConfig/FoqosShieldConfig.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = YR54789JNV;
+				CURRENT_PROJECT_VERSION = 5;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = FoqosShieldConfig/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = FoqosShieldConfig;
@@ -998,8 +999,8 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = dev.ambitionsoftware.foqos.FoqosShieldConfig;
+				MARKETING_VERSION = 1.29.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.cynexia.family-foqos.FoqosShieldConfig";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -1014,8 +1015,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = FoqosShieldConfig/FoqosShieldConfig.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = YR54789JNV;
+				CURRENT_PROJECT_VERSION = 5;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = FoqosShieldConfig/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = FoqosShieldConfig;
@@ -1026,8 +1026,8 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = dev.ambitionsoftware.foqos.FoqosShieldConfig;
+				MARKETING_VERSION = 1.29.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.cynexia.family-foqos.FoqosShieldConfig";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -1045,8 +1045,7 @@
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CODE_SIGN_ENTITLEMENTS = FoqosWidget/FoqosWidgetExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = YR54789JNV;
+				CURRENT_PROJECT_VERSION = 5;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = FoqosWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = FoqosWidget;
@@ -1057,8 +1056,8 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.11;
-				PRODUCT_BUNDLE_IDENTIFIER = dev.ambitionsoftware.foqos.FoqosWidget;
+				MARKETING_VERSION = 1.29.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.cynexia.family-foqos.FoqosWidget";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -1075,8 +1074,7 @@
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CODE_SIGN_ENTITLEMENTS = FoqosWidget/FoqosWidgetExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = YR54789JNV;
+				CURRENT_PROJECT_VERSION = 5;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = FoqosWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = FoqosWidget;
@@ -1087,8 +1085,8 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.11;
-				PRODUCT_BUNDLE_IDENTIFIER = dev.ambitionsoftware.foqos.FoqosWidget;
+				MARKETING_VERSION = 1.29.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.cynexia.family-foqos.FoqosWidget";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -1111,7 +1109,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
-		801B20902CB363A10073E9E2 /* Build configuration list for PBXProject "foqos" */ = {
+		801B20902CB363A10073E9E2 /* Build configuration list for PBXProject "FamilyFoqos" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				801B20B82CB363A20073E9E2 /* Debug */,
@@ -1120,7 +1118,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
-		801B20BA2CB363A20073E9E2 /* Build configuration list for PBXNativeTarget "foqos" */ = {
+		801B20BA2CB363A20073E9E2 /* Build configuration list for PBXNativeTarget "FamilyFoqos" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				801B20BB2CB363A20073E9E2 /* Debug */,

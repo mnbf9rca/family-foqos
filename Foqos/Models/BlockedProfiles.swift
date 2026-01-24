@@ -35,6 +35,10 @@ class BlockedProfiles {
 
   var customReminderMessage: String?
 
+  // Managed profile fields (parent-controlled)
+  var isManaged: Bool = false  // If true, requires lock code to edit/delete
+  var managedByChildId: String? = nil  // Which child this managed profile is for (for per-child code lookup)
+
   @Relationship var sessions: [BlockedProfileSession] = []
 
   var activeScheduleTimerActivity: DeviceActivityName? {
@@ -68,7 +72,9 @@ class BlockedProfiles {
     physicalUnblockNFCTagId: String? = nil,
     physicalUnblockQRCodeId: String? = nil,
     schedule: BlockedProfileSchedule? = nil,
-    disableBackgroundStops: Bool = false
+    disableBackgroundStops: Bool = false,
+    isManaged: Bool = false,
+    managedByChildId: String? = nil
   ) {
     self.id = id
     self.name = name
@@ -96,6 +102,8 @@ class BlockedProfiles {
     self.schedule = schedule
 
     self.disableBackgroundStops = disableBackgroundStops
+    self.isManaged = isManaged
+    self.managedByChildId = managedByChildId
   }
 
   static func fetchProfiles(in context: ModelContext) throws
@@ -148,7 +156,9 @@ class BlockedProfiles {
     physicalUnblockNFCTagId: String? = nil,
     physicalUnblockQRCodeId: String? = nil,
     schedule: BlockedProfileSchedule? = nil,
-    disableBackgroundStops: Bool? = nil
+    disableBackgroundStops: Bool? = nil,
+    isManaged: Bool? = nil,
+    managedByChildId: String? = nil
   ) throws -> BlockedProfiles {
     if let newName = name {
       profile.name = newName
@@ -210,6 +220,13 @@ class BlockedProfiles {
       profile.disableBackgroundStops = newDisableBackgroundStops
     }
 
+    if let newIsManaged = isManaged {
+      profile.isManaged = newIsManaged
+    }
+
+    // managedByChildId can be nil when removing assignment
+    profile.managedByChildId = managedByChildId
+
     // Values can be nil when removed
     profile.physicalUnblockNFCTagId = physicalUnblockNFCTagId
     profile.physicalUnblockQRCodeId = physicalUnblockQRCodeId
@@ -254,7 +271,7 @@ class BlockedProfiles {
   }
 
   static func getProfileDeepLink(_ profile: BlockedProfiles) -> String {
-    return "https://foqos.app/profile/" + profile.id.uuidString
+    return "https://family-foqos.cynexia.com/profile/" + profile.id.uuidString
   }
 
   static func getSnapshot(for profile: BlockedProfiles) -> SharedData.ProfileSnapshot {
@@ -280,7 +297,9 @@ class BlockedProfiles {
       physicalUnblockNFCTagId: profile.physicalUnblockNFCTagId,
       physicalUnblockQRCodeId: profile.physicalUnblockQRCodeId,
       schedule: profile.schedule,
-      disableBackgroundStops: profile.disableBackgroundStops
+      disableBackgroundStops: profile.disableBackgroundStops,
+      isManaged: profile.isManaged,
+      managedByChildId: profile.managedByChildId
     )
   }
 
@@ -333,7 +352,9 @@ class BlockedProfiles {
     physicalUnblockNFCTagId: String? = nil,
     physicalUnblockQRCodeId: String? = nil,
     schedule: BlockedProfileSchedule? = nil,
-    disableBackgroundStops: Bool = false
+    disableBackgroundStops: Bool = false,
+    isManaged: Bool = false,
+    managedByChildId: String? = nil
   ) throws -> BlockedProfiles {
     let profileOrder = getNextOrder(in: context)
 
@@ -355,7 +376,9 @@ class BlockedProfiles {
       domains: domains,
       physicalUnblockNFCTagId: physicalUnblockNFCTagId,
       physicalUnblockQRCodeId: physicalUnblockQRCodeId,
-      disableBackgroundStops: disableBackgroundStops
+      disableBackgroundStops: disableBackgroundStops,
+      isManaged: isManaged,
+      managedByChildId: managedByChildId
     )
 
     if let schedule = schedule {
@@ -394,7 +417,10 @@ class BlockedProfiles {
       domains: source.domains,
       physicalUnblockNFCTagId: source.physicalUnblockNFCTagId,
       physicalUnblockQRCodeId: source.physicalUnblockQRCodeId,
-      schedule: source.schedule
+      schedule: source.schedule,
+      disableBackgroundStops: source.disableBackgroundStops,
+      isManaged: source.isManaged,
+      managedByChildId: source.managedByChildId
     )
 
     context.insert(cloned)
@@ -412,7 +438,7 @@ class BlockedProfiles {
     }
 
     let newDomains = domains + [domain]
-    try updateProfile(profile, in: context, domains: newDomains)
+    _ = try updateProfile(profile, in: context, domains: newDomains)
   }
 
   static func removeDomain(from profile: BlockedProfiles, context: ModelContext, domain: String)
@@ -423,6 +449,6 @@ class BlockedProfiles {
     }
 
     let newDomains = domains.filter { $0 != domain }
-    try updateProfile(profile, in: context, domains: newDomains)
+    _ = try updateProfile(profile, in: context, domains: newDomains)
   }
 }

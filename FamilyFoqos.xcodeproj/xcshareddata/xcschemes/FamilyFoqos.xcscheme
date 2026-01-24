@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Scheme
-   LastUpgradeVersion = "1610"
+   LastUpgradeVersion = "2620"
    version = "1.7">
    <BuildAction
       parallelizeBuildables = "YES"
@@ -16,9 +16,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "801B20942CB363A10073E9E2"
-               BuildableName = "foqos.app"
-               BlueprintName = "foqos"
-               ReferencedContainer = "container:foqos.xcodeproj">
+               BuildableName = "FamilyFoqos.app"
+               BlueprintName = "FamilyFoqos"
+               ReferencedContainer = "container:FamilyFoqos.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -38,7 +38,7 @@
                BlueprintIdentifier = "801B20A52CB363A20073E9E2"
                BuildableName = "foqosTests.xctest"
                BlueprintName = "foqosTests"
-               ReferencedContainer = "container:foqos.xcodeproj">
+               ReferencedContainer = "container:FamilyFoqos.xcodeproj">
             </BuildableReference>
          </TestableReference>
          <TestableReference
@@ -49,7 +49,7 @@
                BlueprintIdentifier = "801B20AF2CB363A20073E9E2"
                BuildableName = "foqosUITests.xctest"
                BlueprintName = "foqosUITests"
-               ReferencedContainer = "container:foqos.xcodeproj">
+               ReferencedContainer = "container:FamilyFoqos.xcodeproj">
             </BuildableReference>
          </TestableReference>
       </Testables>
@@ -69,9 +69,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "801B20942CB363A10073E9E2"
-            BuildableName = "foqos.app"
-            BlueprintName = "foqos"
-            ReferencedContainer = "container:foqos.xcodeproj">
+            BuildableName = "FamilyFoqos.app"
+            BlueprintName = "FamilyFoqos"
+            ReferencedContainer = "container:FamilyFoqos.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
       <StoreKitConfigurationFileReference
@@ -89,9 +89,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "801B20942CB363A10073E9E2"
-            BuildableName = "foqos.app"
-            BlueprintName = "foqos"
-            ReferencedContainer = "container:foqos.xcodeproj">
+            BuildableName = "FamilyFoqos.app"
+            BlueprintName = "FamilyFoqos"
+            ReferencedContainer = "container:FamilyFoqos.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

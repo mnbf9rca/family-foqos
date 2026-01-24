@@ -3,7 +3,7 @@ import Foundation
 
 enum SharedData {
   private static let suite = UserDefaults(
-    suiteName: "group.dev.ambitionsoftware.foqos"
+    suiteName: "group.com.cynexia.family-foqos"
   )!
 
   // MARK: – Keys
@@ -41,6 +41,10 @@ enum SharedData {
     var schedule: BlockedProfileSchedule?
 
     var disableBackgroundStops: Bool?
+
+    // Managed profile fields
+    var isManaged: Bool?
+    var managedByChildId: String?
   }
 
   // MARK: – Serializable snapshot of a session (no profile object)

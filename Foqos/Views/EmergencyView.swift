@@ -15,7 +15,6 @@ struct EmergencyView: View {
     ScrollView {
       VStack(spacing: 20) {
         header
-
         statusCard
       }
       .padding()

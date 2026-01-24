@@ -66,7 +66,7 @@ struct PermissionsIntroScreen: View {
 
       // Message text
       VStack(spacing: 16) {
-        (Text("Foqos is 100% open source, ")
+        (Text("Family Foqos is 100% open source, ")
           + Text("read the code yourself")
           .foregroundColor(.accentColor)
           + Text(
@@ -77,7 +77,7 @@ struct PermissionsIntroScreen: View {
           .multilineTextAlignment(.center)
           .lineSpacing(4)
           .onTapGesture {
-            if let url = URL(string: "https://github.com/awaseem/foqos") {
+            if let url = URL(string: "https://github.com/mnbf9rca/family-foqos") {
               UIApplication.shared.open(url)
             }
           }
