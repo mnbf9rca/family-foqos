@@ -2,10 +2,8 @@ import SwiftUI
 
 let THREADS_URL = "https://www.threads.com/@softwarecuddler"
 let TWITTER_URL = "https://x.com/softwarecuddler"
-let DONATE_URL = "https://buymeacoffee.com/softwarecuddler"  // You can replace this with your actual donation URL
 
 struct SupportView: View {
-  @EnvironmentObject var donationManager: TipManager
   @EnvironmentObject var themeManager: ThemeManager
 
   @State private var stampScale: CGFloat = 0.1
@@ -42,7 +40,7 @@ struct SupportView: View {
       .fadeInSlide(delay: 0.3)
 
       Text(
-        "If you like it, please support the original author."
+        "If you like it, please support Common Sense Media who provide valuable resources for families to make informed decisions about media and technology."
       )
       .font(.body)
       .multilineTextAlignment(.center)
@@ -52,14 +50,12 @@ struct SupportView: View {
       Spacer()
 
       ActionButton(
-        title: donationManager.hasPurchasedTip ? "Thank you for the donation" : "Donate to @awaseem",
-        backgroundColor: donationManager.hasPurchasedTip ? .gray : themeManager.themeColor,
+        title: "Donate to Common Sense Media",
+        backgroundColor: themeManager.themeColor,
         iconName: "heart.fill",
-        iconColor: donationManager.hasPurchasedTip ? .red : nil,
-        isLoading: donationManager.loadingTip,
         action: {
-          if !donationManager.hasPurchasedTip {
-            donationManager.tip()
+          if let url = URL(string: "https://www.commonsensemedia.org/donate") {
+            UIApplication.shared.open(url)
           }
         }
       )
@@ -72,6 +68,6 @@ struct SupportView: View {
 #Preview {
   NavigationView {
     SupportView()
-      .environmentObject(TipManager())
+      .environmentObject(ThemeManager.shared)
   }
 }

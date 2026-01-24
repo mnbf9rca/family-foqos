@@ -30,8 +30,8 @@ struct HomeView: View {
   // Stats sheet
   @State private var profileToShowStats: BlockedProfiles? = nil
 
-  // Donation View
-  @State private var showDonationView = false
+  // Support View
+  @State private var showSupportView = false
 
   // Settings View
   @State private var showSettingsView = false
@@ -106,7 +106,7 @@ struct HomeView: View {
             RoundedButton(
               "",
               action: {
-                showDonationView = true
+                showSupportView = true
               }, iconName: "heart.fill")
             RoundedButton(
               "",
@@ -270,7 +270,7 @@ struct HomeView: View {
       )
       .presentationDetents([.medium])
     }
-    .sheet(isPresented: $showDonationView) {
+    .sheet(isPresented: $showSupportView) {
       SupportView()
     }
     .sheet(isPresented: $showSettingsView) {
@@ -332,7 +332,6 @@ struct HomeView: View {
 #Preview {
   HomeView()
     .environmentObject(RequestAuthorizer())
-    .environmentObject(TipManager())
     .environmentObject(NavigationManager())
     .environmentObject(StrategyManager())
     .defaultAppStorage(UserDefaults(suiteName: "preview")!)
