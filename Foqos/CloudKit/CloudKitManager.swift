@@ -102,7 +102,7 @@ class CloudKitManager: ObservableObject {
             _ = try await privateDatabase.save(zone)
             policyZoneVerified = true
             print("Created policy zone: \(policyZoneName)")
-        } catch let error as CKError {
+        } catch _ as CKError {
             // Zone already exists - that's fine, mark as verified
             // CKError codes that indicate zone exists: save succeeds silently for existing zones,
             // but if we get any error, check if zone exists before failing
