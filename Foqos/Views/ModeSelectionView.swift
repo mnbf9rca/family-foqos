@@ -96,10 +96,17 @@ struct ModeSelectionView: View {
                     systemImage: "iphone"
                 )
             case .child:
-                Label(
-                    "Requires parent approval via Screen Time Family Sharing",
-                    systemImage: "person.2"
-                )
+                VStack(spacing: 4) {
+                    Label(
+                        "Requires Apple Family Sharing setup",
+                        systemImage: "person.2"
+                    )
+                    Text(
+                        "This device must be set up as a child in Apple Family Sharing with Screen Time enabled."
+                    )
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                }
             }
         }
         .font(.footnote)
@@ -149,7 +156,7 @@ struct SimplifiedModeCard: View {
         case .individual, .parent:
             return "For personal use"
         case .child:
-            return "Parent manages this device"
+            return "Parent manages this device with lock code set via Apple Family Sharing"
         }
     }
 
