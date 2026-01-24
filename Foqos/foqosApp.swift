@@ -298,11 +298,12 @@ func verifyChildAuthorizationIfNeeded() {
 
     if !isAuthorized {
       print("verifyChildAuthorizationIfNeeded: Child authorization lost")
+
+      // First clear shared state
+      await cloudKitManager.clearSharedState()
+
+      // Then perform main-actor updates
       await MainActor.run {
-        // Clear shared state and switch to individual mode
-        Task {
-          await cloudKitManager.clearSharedState()
-        }
         appModeManager.selectMode(.individual)
         AuthorizationVerifier.shared.clearAuthorizationState()
 

@@ -44,8 +44,6 @@ struct FamilyMember: Codable, Identifiable, Equatable {
     var role: FamilyRole        // Parent or child
     var enrolledAt: Date
     var isActive: Bool
-    var authorizationType: String?      // "child" or "individual" - tracks FamilyControls auth type
-    var authorizationVerifiedAt: Date?  // Last successful authorization verification
 
     init(
         id: UUID = UUID(),
@@ -53,9 +51,7 @@ struct FamilyMember: Codable, Identifiable, Equatable {
         displayName: String,
         role: FamilyRole,
         enrolledAt: Date = Date(),
-        isActive: Bool = true,
-        authorizationType: String? = nil,
-        authorizationVerifiedAt: Date? = nil
+        isActive: Bool = true
     ) {
         self.id = id
         self.userRecordName = userRecordName
@@ -63,8 +59,6 @@ struct FamilyMember: Codable, Identifiable, Equatable {
         self.role = role
         self.enrolledAt = enrolledAt
         self.isActive = isActive
-        self.authorizationType = authorizationType
-        self.authorizationVerifiedAt = authorizationVerifiedAt
     }
 
 }
@@ -81,8 +75,6 @@ extension FamilyMember {
         static let role = "role"
         static let enrolledAt = "enrolledAt"
         static let isActive = "isActive"
-        static let authorizationType = "authorizationType"
-        static let authorizationVerifiedAt = "authorizationVerifiedAt"
     }
 
     /// Create a FamilyMember from a CKRecord
@@ -110,10 +102,6 @@ extension FamilyMember {
         } else {
             self.role = .child
         }
-
-        // Parse authorization tracking fields (optional for backwards compatibility)
-        self.authorizationType = record[RecordKey.authorizationType] as? String
-        self.authorizationVerifiedAt = record[RecordKey.authorizationVerifiedAt] as? Date
     }
 
     /// Convert to a CKRecord for saving to CloudKit
@@ -127,8 +115,6 @@ extension FamilyMember {
         record[RecordKey.role] = role.rawValue
         record[RecordKey.enrolledAt] = enrolledAt
         record[RecordKey.isActive] = isActive ? 1 : 0
-        record[RecordKey.authorizationType] = authorizationType
-        record[RecordKey.authorizationVerifiedAt] = authorizationVerifiedAt
 
         // Set parent reference to FamilyRoot for share hierarchy
         let familyRootID = CKRecord.ID(recordName: "FamilyRoot", zoneID: zoneID)

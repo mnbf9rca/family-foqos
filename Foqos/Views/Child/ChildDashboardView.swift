@@ -154,10 +154,12 @@ struct ChildDashboardView: View {
   private func handleAuthorizationLost() {
     Task {
       await cloudKitManager.clearSharedState()
+      await MainActor.run {
+        AuthorizationVerifier.shared.clearAuthorizationState()
+        appModeManager.selectMode(.individual)
+        dismiss()
+      }
     }
-    AuthorizationVerifier.shared.clearAuthorizationState()
-    appModeManager.selectMode(.individual)
-    dismiss()
   }
 
   // MARK: - Data Fetching
