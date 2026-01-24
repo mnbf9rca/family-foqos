@@ -988,7 +988,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = FoqosShieldConfig/FoqosShieldConfig.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = FoqosShieldConfig/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = FoqosShieldConfig;
@@ -1015,7 +1015,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = FoqosShieldConfig/FoqosShieldConfig.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = FoqosShieldConfig/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = FoqosShieldConfig;
