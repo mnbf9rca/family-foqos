@@ -50,7 +50,7 @@ struct SupportView: View {
       Spacer()
 
       ActionButton(
-        title: "Donate to Common Sense Media",
+        title: "Donate to\nCommon Sense Media",
         backgroundColor: themeManager.themeColor,
         iconName: "heart.fill",
         action: {
