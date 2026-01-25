@@ -271,7 +271,7 @@ class BlockedProfiles {
   }
 
   static func getProfileDeepLink(_ profile: BlockedProfiles) -> String {
-    return "https://family-foqos.cynexia.com/profile/" + profile.id.uuidString
+    return "https://family-foqos.app/profile/" + profile.id.uuidString
   }
 
   static func getSnapshot(for profile: BlockedProfiles) -> SharedData.ProfileSnapshot {

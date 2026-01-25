@@ -6,7 +6,7 @@
 	<string>development</string>
 	<key>com.apple.developer.associated-domains</key>
 	<array>
-		<string>applinks:family-foqos.cynexia.com</string>
+		<string>applinks:family-foqos.app</string>
 	</array>
 	<key>com.apple.developer.family-controls</key>
 	<true/>

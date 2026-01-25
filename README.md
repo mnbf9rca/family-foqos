@@ -2,11 +2,7 @@
   <img src="./Foqos/Assets.xcassets/AppIcon.appiconset/AppIcon~ios-marketing.png" width="250" style="border-radius: 40px;">
 </p>
 
-<p align="center">
-<a href="https://www.buymeacoffee.com/ambitionsoftware" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/arial-yellow.png" alt="Buy Me A Coffee" style="height: 60px !important;width: 217px !important;" ></a>
-</p>
-
-<h1 align="center"><a href="https://apps.apple.com/ca/app/foqos/id6736793117">Foqos</a></h1>
+<h1 align="center"><a href="TODO">Family Foqos</a></h1>
 
 <p align="center">
   <strong>Focus, the physical way</strong>
@@ -19,6 +15,14 @@
 ---
 
 ## ✨ Features
+
+Family Foqos adds:
+
+- **👨‍👩‍👧 Parent Mode**: Parental control over changing settings — lock profiles for your children
+- **👶 Child Mode**: Kids can create and use profiles freely — parents can choose to lock specific profiles
+- **☁️ Shared Lock Codes**: Sync parent lock codes across your family's devices via iCloud
+
+But still has all these features from the original Foqos app:
 
 - **🏷️ NFC & QR Blocking**: Start or stop sessions with a quick tag tap or QR scan
 - **🧩 Mix & Match Strategies**: Manual, NFC, QR, NFC + Manual, QR + Manual, NFC + Timer, QR + Timer
@@ -40,10 +44,20 @@
 
 ### From the App Store
 
-1. Download Foqos from the [App Store](https://apps.apple.com/ca/app/foqos/id6736793117)
+1. Download Foqos from the [App Store](TODO)
 2. Grant Screen Time permissions when prompted
 3. Create your first blocking profile
 4. Optionally set up NFC tags or a QR code and start focusing
+
+### Adding Family Lock
+
+1. Install the app on a Parent device
+2. Set up a lock code in Settings
+3. Install the app on a Child device, and create some profiles
+3. Invite a child account and accept it from the Child device
+4. Select which profiles should be locked from the Profile settings
+
+> **Note:** Profile locking only works on Apple Family child accounts — this prevents misuse in coercive relationships and i'm not going to change that feature.
 
 ### Setting Up NFC Tags
 
@@ -65,15 +79,15 @@
 ### Building the Project
 
 ```bash
-git clone https://github.com/awaseem/foqos.git
-cd foqos
-open foqos.xcodeproj
+git clone https://github.com/mnbf9rca/family-foqos.git
+cd family-foqos
+open FamilyFoqos.xcodeproj
 ```
 
 ### Project Structure
 
 ```
-foqos/
+family-foqos/
 ├── Foqos/                     # Main app target
 │   ├── Views/                 # SwiftUI views
 │   ├── Models/                # Data models
@@ -82,7 +96,8 @@ foqos/
 │   ├── Utils/                 # Utility functions
 │   └── Intents/               # App Intents & Shortcuts
 ├── FoqosWidget/               # Widget extension
-└── FoqosDeviceMonitor/        # Device monitoring extension
+├── FoqosDeviceMonitor/        # Device monitoring extension
+└── FoqosShieldConfig/         # Shield configuration extension
 ```
 
 ### Key Technologies Used
@@ -143,7 +158,7 @@ All strategies live in `Foqos/Models/Strategies/` and are orchestrated by `Foqos
 ### QR deep links
 
 - Each profile exposes a deep link via `BlockedProfiles.getProfileDeepLink(profile)` in the form:
-  - `https://foqos.app/profile/<PROFILE_UUID>`
+  - `https://family-foqos.app/profile/<PROFILE_UUID>`
 - Scanning a QR that encodes this deep link will toggle the profile: if inactive it starts, if active it stops. This works even if the app isn’t already open (it will be launched via the link).
 
 ## 🤝 Contributing
@@ -165,9 +180,8 @@ We love contributions! Here’s how to jump in:
 
 Something not working as expected? We're here to help.
 
-- **Bug Reports**: [Open an issue](https://github.com/awaseem/foqos/issues) with detailed steps to reproduce
-- **Feature Requests**: Share your ideas via [GitHub Issues](https://github.com/awaseem/foqos/issues)
-- **Questions**: Use GitHub Discussions for general questions
+- **Bug Reports**: [Open an issue](https://github.com/mnbf9rca/family-foqos/issues) with detailed steps to reproduce
+- **Feature Requests**: Share your ideas via [GitHub Issues](https://github.com/mnbf9rca/family-foqos/issues)
 
 When reporting issues, please include:
 
@@ -184,13 +198,13 @@ When reporting issues, please include:
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details. This project is a fork of the MIT Licenced [Foqos app](https://github.com/awaseem/foqos).
 
 ## 🔗 Links
 
-- [App Store](https://apps.apple.com/ca/app/foqos/id6736793117)
-- [GitHub Issues](https://github.com/awaseem/foqos/issues)
-- [Support the Project](https://apps.apple.com/ca/app/foqos/id6736793117) (via in-app purchases or [here](https://coff.ee/ambitionsoftware))
+- [App Store](TODO)
+- [GitHub Issues](https://github.com/mnbf9rca/family-foqos/issues)
+- [Donate to Common Sense Media](https://www.commonsensemedia.org/donate)
 
 ---
 

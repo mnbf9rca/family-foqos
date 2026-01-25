@@ -155,7 +155,7 @@ struct FoqosWidgetLiveActivity: Widget {
         Image(systemName: "hourglass")
           .foregroundColor(.purple)
       }
-      .widgetURL(URL(string: "https://family-foqos.cynexia.com"))
+      .widgetURL(URL(string: "https://family-foqos.app"))
       .keylineTint(Color.purple)
     }
   }
