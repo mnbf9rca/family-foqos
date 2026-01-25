@@ -8,6 +8,7 @@
 import AppIntents
 import BackgroundTasks
 import CloudKit
+import FamilyControls
 import SwiftData
 import SwiftUI
 
@@ -71,6 +72,10 @@ struct foqosApp: App {
         }
         .onChange(of: scenePhase) { oldPhase, newPhase in
           print("foqosApp: scenePhase changed from \(oldPhase) to \(newPhase)")
+          if newPhase == .active {
+            // Verify child authorization when app becomes active
+            verifyChildAuthorizationIfNeeded()
+          }
         }
         .onOpenURL { url in
           print("foqosApp: onOpenURL triggered with: \(url.absoluteString)")
@@ -86,7 +91,7 @@ struct foqosApp: App {
         .alert(
           "Linked to Parent",
           isPresented: Binding(
-            get: { cloudKitManager.shareAcceptedMessage != nil },
+            get: { cloudKitManager.shareAcceptedMessage != nil && !cloudKitManager.childAuthorizationFailed },
             set: { if !$0 { cloudKitManager.shareAcceptedMessage = nil } }
           )
         ) {
@@ -95,6 +100,11 @@ struct foqosApp: App {
           }
         } message: {
           Text(cloudKitManager.shareAcceptedMessage ?? "")
+        }
+        .sheet(isPresented: $cloudKitManager.childAuthorizationFailed) {
+          ChildAuthorizationRequiredView {
+            cloudKitManager.clearChildAuthorizationFailure()
+          }
         }
         .environmentObject(requestAuthorizer)
         .environmentObject(startegyManager)
@@ -250,12 +260,32 @@ func acceptCloudKitShare(_ metadata: CKShare.Metadata) {
         CloudKitManager.shared.shareAcceptedMessage =
           "You are now linked to a parent's device. They can set a lock code to manage your focus profiles."
       }
+    } catch CloudKitError.childAuthorizationRequired {
+      // Show the authorization required view instead of a generic error
+      print("acceptCloudKitShare: Child authorization required")
+      await MainActor.run {
+        CloudKitManager.shared.setChildAuthorizationFailure(
+          message: CloudKitError.childAuthorizationRequired.errorDescription ?? "Child authorization required"
+        )
+      }
     } catch {
       print("acceptCloudKitShare: Failed - \(error)")
       await MainActor.run {
         CloudKitManager.shared.shareAcceptedMessage =
           "Failed to accept invitation: \(error.localizedDescription)"
       }
+    }
+  }
+}
+
+// MARK: - Authorization Verification
+
+/// Verify child authorization when app becomes active (if in child mode)
+/// If authorization is lost, clear shared data and switch to individual mode
+func verifyChildAuthorizationIfNeeded() {
+  Task { @MainActor in
+    if let message = await AuthorizationVerifier.shared.verifyIfNeeded() {
+      CloudKitManager.shared.shareAcceptedMessage = message
     }
   }
 }

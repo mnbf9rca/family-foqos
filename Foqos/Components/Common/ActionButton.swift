@@ -45,9 +45,11 @@ struct ActionButton: View {
           Text(title)
             .font(.headline)
             .foregroundColor(.white)
+            .multilineTextAlignment(.center)
         }
       }.frame(maxWidth: .infinity)
-        .frame(height: 40)
+        .frame(minHeight: 40)
+        .padding(.vertical, 8)
     }
     .modifier(
       GlassProminentIfAvailable(
@@ -69,7 +71,7 @@ private struct GlassProminentIfAvailable: ViewModifier {
     Group {
       if #available(iOS 26.0, *) {
         content
-          .frame(height: 50)
+          .frame(minHeight: 50)
           .buttonStyle(.glassProminent)
           .tint(backgroundColor)
       } else {

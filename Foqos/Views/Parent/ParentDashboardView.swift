@@ -14,6 +14,11 @@ struct ParentDashboardView: View {
     // Share coordinator for direct sharing
     @StateObject private var shareCoordinator = ShareCoordinator()
 
+    /// Whether the page is functional (iCloud signed in and available)
+    private var isPageFunctional: Bool {
+        cloudKitManager.isSignedIn
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -28,12 +33,18 @@ struct ParentDashboardView: View {
 
                     // Lock code management section
                     lockCodeSection
+                        .disabled(!isPageFunctional)
+                        .opacity(isPageFunctional ? 1.0 : 0.5)
 
                     // Co-parents section
                     coParentsSection
+                        .disabled(!isPageFunctional)
+                        .opacity(isPageFunctional ? 1.0 : 0.5)
 
                     // Children section
                     childrenSection
+                        .disabled(!isPageFunctional)
+                        .opacity(isPageFunctional ? 1.0 : 0.5)
 
                     // How to use section
                     howToUseSection
@@ -94,25 +105,46 @@ struct ParentDashboardView: View {
     }
 
     private var iCloudWarning: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "exclamationmark.icloud.fill")
-                .font(.title2)
-                .foregroundColor(.orange)
+        VStack(spacing: 12) {
+            HStack(spacing: 12) {
+                Image(systemName: "exclamationmark.icloud.fill")
+                    .font(.title2)
+                    .foregroundColor(.orange)
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text("iCloud Not Available")
-                    .font(.headline)
-                Text("Sign in to iCloud to sync lock codes with linked devices.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("iCloud Not Available")
+                        .font(.headline)
+                    Text("Sign in to iCloud to enable family controls. All features below are disabled until iCloud is available.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                Spacer()
             }
 
-            Spacer()
+            Button {
+                if let url = URL(string: UIApplication.openSettingsURLString) {
+                    UIApplication.shared.open(url)
+                }
+            } label: {
+                HStack {
+                    Image(systemName: "gear")
+                    Text("Open Settings")
+                }
+                .font(.subheadline)
+                .fontWeight(.medium)
+            }
+            .buttonStyle(.bordered)
+            .tint(.orange)
         }
         .padding()
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(Color.orange.opacity(0.1))
+                .fill(Color.orange.opacity(0.15))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color.orange.opacity(0.3), lineWidth: 1)
+                )
         )
     }
 
@@ -158,7 +190,6 @@ struct ParentDashboardView: View {
                     Label("Add", systemImage: "plus")
                         .font(.subheadline)
                 }
-                .disabled(!cloudKitManager.isSignedIn)
             }
 
             let parents = cloudKitManager.familyMembers.parents
@@ -193,7 +224,6 @@ struct ParentDashboardView: View {
                     Label("Add", systemImage: "plus")
                         .font(.subheadline)
                 }
-                .disabled(!cloudKitManager.isSignedIn)
             }
 
             let children = cloudKitManager.familyMembers.children

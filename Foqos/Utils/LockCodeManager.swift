@@ -1,4 +1,5 @@
 import Combine
+import FamilyControls
 import Foundation
 import SwiftUI
 
@@ -166,11 +167,25 @@ class LockCodeManager: ObservableObject {
     // MARK: - Child Operations
 
     /// Fetch shared lock codes for verification (child operation)
+    /// Verifies child authorization before fetching to ensure security
     private func fetchSharedLockCodes() async {
         guard appModeManager.currentMode == .child else { return }
 
         await MainActor.run { isLoading = true }
         defer { Task { await MainActor.run { self.isLoading = false } } }
+
+        // Use centralized authorization verification
+        let result = await AuthorizationVerifier.shared.verifyChildAuthorization()
+        guard result.isAuthorized else {
+            // Let the centralized handler deal with authorization loss
+            if let message = await AuthorizationVerifier.shared.verifyIfNeeded() {
+                await MainActor.run {
+                    self.cachedLockCodes = []
+                    self.error = message
+                }
+            }
+            return
+        }
 
         do {
             let codes = try await cloudKitManager.fetchSharedLockCodes()
@@ -187,9 +202,20 @@ class LockCodeManager: ObservableObject {
 
     /// Verify a code entered by a child
     /// Returns true if the code is valid for the given child
+    /// For child mode, verifies authorization status before checking codes
+    @MainActor
     func verifyCode(_ code: String, forChildId childId: String?) -> Bool {
         // Use cached codes for verification
         let codesToCheck = appModeManager.currentMode == .parent ? lockCodes : cachedLockCodes
+
+        // For child mode, verify the authorization type is still valid
+        if appModeManager.currentMode == .child {
+            let authType = AuthorizationVerifier.shared.currentAuthorizationType
+            guard authType == .child else {
+                print("LockCodeManager: Authorization type mismatch, clearing cached codes")
+                return false
+            }
+        }
 
         // First try to find a specific code for this child
         if let childId = childId {
@@ -212,6 +238,7 @@ class LockCodeManager: ObservableObject {
     }
 
     /// Verify a code for a managed profile
+    @MainActor
     func verifyCodeForProfile(_ code: String, profile: BlockedProfiles) -> Bool {
         return verifyCode(code, forChildId: profile.managedByChildId)
     }

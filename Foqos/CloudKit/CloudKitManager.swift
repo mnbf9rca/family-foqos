@@ -35,6 +35,8 @@ class CloudKitManager: ObservableObject {
     @Published var isLoading = false
     @Published var error: CloudKitError?
     @Published var shareAcceptedMessage: String?  // Set when a share is successfully accepted
+    @Published var childAuthorizationFailed = false  // True when share acceptance failed due to missing child auth
+    @Published var childAuthorizationErrorMessage: String?  // Detailed error message for UI
 
     // Active zone share (for enrolling children)
     // Note: Accessed from multiple async contexts, use MainActor for synchronization
@@ -583,7 +585,17 @@ class CloudKitManager: ObservableObject {
     // MARK: - Child Operations (Receive shared data)
 
     /// Accept a CloudKit share invitation (child operation)
+    /// Requires valid .child authorization from Apple Family Sharing
     func acceptShare(metadata: CKShare.Metadata) async throws {
+        // Verify child authorization before accepting the share
+        // This ensures only devices set up as children in Apple Family Sharing can join
+        let verificationResult = await AuthorizationVerifier.shared.verifyChildAuthorization()
+
+        guard verificationResult.isAuthorized else {
+            print("CloudKitManager: Share acceptance rejected - child authorization required")
+            throw CloudKitError.childAuthorizationRequired
+        }
+
         do {
             _ = try await container.accept(metadata)
             // Fetch shared lock codes after accepting
@@ -725,6 +737,22 @@ class CloudKitManager: ObservableObject {
         }
         print("CloudKitManager: Cleared shared state after leaving family")
     }
+
+    /// Clear child authorization failure state (call when user dismisses error UI)
+    func clearChildAuthorizationFailure() {
+        Task { @MainActor in
+            self.childAuthorizationFailed = false
+            self.childAuthorizationErrorMessage = nil
+        }
+    }
+
+    /// Set child authorization failure state with error message
+    func setChildAuthorizationFailure(message: String) {
+        Task { @MainActor in
+            self.childAuthorizationFailed = true
+            self.childAuthorizationErrorMessage = message
+        }
+    }
 }
 
 // MARK: - Error Types
@@ -739,6 +767,7 @@ enum CloudKitError: LocalizedError {
     case shareAcceptFailed(Error)
     case notConnectedToFamily
     case shareNotFound
+    case childAuthorizationRequired
 
     var errorDescription: String? {
         switch self {
@@ -760,6 +789,8 @@ enum CloudKitError: LocalizedError {
             return "Could not find the family share."
         case .shareAcceptFailed(let error):
             return "Failed to accept share: \(error.localizedDescription)"
+        case .childAuthorizationRequired:
+            return "This device must be set up as a child in Apple Family Sharing to accept this invitation. Please ask a parent to: (1) Go to Settings > Family, (2) Add this Apple ID as a child, (3) Enable Screen Time for this child."
         }
     }
 }
