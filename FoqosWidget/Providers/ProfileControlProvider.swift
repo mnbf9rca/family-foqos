@@ -21,7 +21,7 @@ struct ProfileControlProvider: AppIntentTimelineProvider {
       profileName: "Focus Session",
       activeSession: nil,
       profileSnapshot: nil,
-      deepLinkURL: URL(string: "https://family-foqos.cynexia.com/profile/placeholder"),
+      deepLinkURL: URL(string: "https://family-foqos.app/profile/placeholder"),
       focusMessage: "Stay focused and avoid distractions",
       useProfileURL: false
     )
@@ -99,9 +99,9 @@ struct ProfileControlProvider: AppIntentTimelineProvider {
     var deepLinkURL: URL?
     if let profileId = targetProfileId {
       if let useProfileURL = configuration.useProfileURL, useProfileURL == true {
-        deepLinkURL = URL(string: "https://family-foqos.cynexia.com/profile/\(profileId)")
+        deepLinkURL = URL(string: "https://family-foqos.app/profile/\(profileId)")
       } else {
-        deepLinkURL = URL(string: "https://family-foqos.cynexia.com/navigate/\(profileId)")
+        deepLinkURL = URL(string: "https://family-foqos.app/navigate/\(profileId)")
       }
     } else {
       deepLinkURL = URL(string: "family-foqos://")
