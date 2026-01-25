@@ -283,34 +283,9 @@ func acceptCloudKitShare(_ metadata: CKShare.Metadata) {
 /// Verify child authorization when app becomes active (if in child mode)
 /// If authorization is lost, clear shared data and switch to individual mode
 func verifyChildAuthorizationIfNeeded() {
-  let appModeManager = AppModeManager.shared
-  let cloudKitManager = CloudKitManager.shared
-
-  // Only verify if in child mode and connected to a family
-  guard appModeManager.currentMode == .child,
-    cloudKitManager.isConnectedToFamily
-  else {
-    return
-  }
-
-  Task {
-    let isAuthorized = await AuthorizationVerifier.shared.verifyChildAuthorization()
-
-    if !isAuthorized {
-      print("verifyChildAuthorizationIfNeeded: Child authorization lost")
-
-      // First clear shared state
-      await cloudKitManager.clearSharedState()
-
-      // Then perform main-actor updates
-      await MainActor.run {
-        appModeManager.selectMode(.individual)
-        AuthorizationVerifier.shared.clearAuthorizationState()
-
-        // Show message to user
-        cloudKitManager.shareAcceptedMessage =
-          "Your child account authorization was revoked (the device may have been removed from Apple Family Sharing). You've been switched to individual mode. To reconnect, ask a parent to re-add this device and send a new invitation."
-      }
+  Task { @MainActor in
+    if let message = await AuthorizationVerifier.shared.verifyIfNeeded() {
+      CloudKitManager.shared.shareAcceptedMessage = message
     }
   }
 }

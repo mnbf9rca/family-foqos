@@ -136,29 +136,25 @@ struct ChildDashboardView: View {
   // MARK: - Authorization Verification
 
   /// Verify that this device still has valid child authorization
+  @MainActor
   private func verifyChildAuthorization() async {
     guard !isVerifyingAuthorization else { return }
     isVerifyingAuthorization = true
     defer { isVerifyingAuthorization = false }
 
-    let isAuthorized = await AuthorizationVerifier.shared.verifyChildAuthorization()
+    let result = await AuthorizationVerifier.shared.verifyChildAuthorization()
 
-    if !isAuthorized {
-      await MainActor.run {
-        showAuthorizationLostAlert = true
-      }
+    if !result.isAuthorized {
+      showAuthorizationLostAlert = true
     }
   }
 
   /// Handle when authorization is lost
+  @MainActor
   private func handleAuthorizationLost() {
     Task {
-      await cloudKitManager.clearSharedState()
-      await MainActor.run {
-        AuthorizationVerifier.shared.clearAuthorizationState()
-        appModeManager.selectMode(.individual)
-        dismiss()
-      }
+      _ = await AuthorizationVerifier.shared.handleAuthorizationLoss()
+      dismiss()
     }
   }
 

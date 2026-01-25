@@ -4,6 +4,10 @@ import Foundation
 /// Centralized service for verifying Apple Family Sharing authorization.
 /// Used to ensure children accepting CloudKit shares are actually set up as
 /// children in Apple Family Sharing (not just adults pretending to be children).
+///
+/// This class provides a single entry point for authorization verification and
+/// handles all authorization loss scenarios consistently.
+@MainActor
 class AuthorizationVerifier: ObservableObject {
   static let shared = AuthorizationVerifier()
 
@@ -19,102 +23,6 @@ class AuthorizationVerifier: ObservableObject {
     case child
     case none
   }
-
-  @Published private(set) var lastVerificationDate: Date?
-  @Published private(set) var currentAuthorizationType: AuthorizationType = .none
-
-  private let userDefaults = UserDefaults.standard
-
-  private init() {
-    loadPersistedState()
-  }
-
-  // MARK: - Persistence
-
-  private func loadPersistedState() {
-    if let typeString = userDefaults.string(forKey: Keys.authorizationType),
-      let authType = AuthorizationType(rawValue: typeString)
-    {
-      currentAuthorizationType = authType
-    }
-    lastVerificationDate = userDefaults.object(forKey: Keys.authorizationVerifiedAt) as? Date
-  }
-
-  private func persistAuthorizationType(_ type: AuthorizationType) {
-    userDefaults.set(type.rawValue, forKey: Keys.authorizationType)
-    let now = Date()
-    userDefaults.set(now, forKey: Keys.authorizationVerifiedAt)
-
-    Task { @MainActor in
-      self.currentAuthorizationType = type
-      self.lastVerificationDate = now
-    }
-  }
-
-  // MARK: - Authorization Verification
-
-  /// Get current authorization status without requesting
-  func getCurrentAuthorizationStatus() -> AuthorizationStatus {
-    return AuthorizationCenter.shared.authorizationStatus
-  }
-
-  /// Verify that the device has valid .child authorization.
-  /// Returns true if the device is set up as a child in Apple Family Sharing.
-  func verifyChildAuthorization() async -> Bool {
-    let status = AuthorizationCenter.shared.authorizationStatus
-
-    // Check if we already have approved status
-    if status == .approved {
-      // We need to try requesting child auth to verify it's actually child auth
-      // not just individual auth
-      return await requestChildAuthorizationIfNeeded()
-    }
-
-    return false
-  }
-
-  /// Attempt to request .child authorization.
-  /// Returns true if successful (device is set up as child in Apple Family Sharing).
-  /// Returns false if authorization fails (device is not a child device).
-  func requestChildAuthorizationIfNeeded() async -> Bool {
-    do {
-      try await AuthorizationCenter.shared.requestAuthorization(for: .child)
-      persistAuthorizationType(.child)
-      print("AuthorizationVerifier: Child authorization successful")
-      return true
-    } catch {
-      print("AuthorizationVerifier: Child authorization failed - \(error)")
-      // Don't clear authorization type here - the device might still have individual auth
-      return false
-    }
-  }
-
-  /// Request .individual authorization.
-  /// Returns true if successful.
-  func requestIndividualAuthorization() async -> Bool {
-    do {
-      try await AuthorizationCenter.shared.requestAuthorization(for: .individual)
-      persistAuthorizationType(.individual)
-      print("AuthorizationVerifier: Individual authorization successful")
-      return true
-    } catch {
-      print("AuthorizationVerifier: Individual authorization failed - \(error)")
-      return false
-    }
-  }
-
-  /// Clear the persisted authorization state (called when leaving family share)
-  func clearAuthorizationState() {
-    userDefaults.removeObject(forKey: Keys.authorizationType)
-    userDefaults.removeObject(forKey: Keys.authorizationVerifiedAt)
-
-    Task { @MainActor in
-      self.currentAuthorizationType = .none
-      self.lastVerificationDate = nil
-    }
-  }
-
-  // MARK: - Verification with Detailed Results
 
   /// Result of a child authorization verification attempt
   enum VerificationResult {
@@ -150,14 +58,48 @@ class AuthorizationVerifier: ObservableObject {
     }
   }
 
-  /// Verify child authorization with detailed result
-  func verifyChildAuthorizationWithResult() async -> VerificationResult {
+  @Published private(set) var lastVerificationDate: Date?
+  @Published private(set) var currentAuthorizationType: AuthorizationType = .none
+
+  private let userDefaults = UserDefaults.standard
+
+  private init() {
+    loadPersistedState()
+  }
+
+  // MARK: - Persistence
+
+  private func loadPersistedState() {
+    if let typeString = userDefaults.string(forKey: Keys.authorizationType),
+      let authType = AuthorizationType(rawValue: typeString)
+    {
+      currentAuthorizationType = authType
+    }
+    lastVerificationDate = userDefaults.object(forKey: Keys.authorizationVerifiedAt) as? Date
+  }
+
+  private func persistAuthorizationType(_ type: AuthorizationType) {
+    userDefaults.set(type.rawValue, forKey: Keys.authorizationType)
+    let now = Date()
+    userDefaults.set(now, forKey: Keys.authorizationVerifiedAt)
+    currentAuthorizationType = type
+    lastVerificationDate = now
+  }
+
+  // MARK: - Primary Verification API
+
+  /// Verify child authorization and return detailed result.
+  /// This is the primary method for checking authorization status.
+  func verifyChildAuthorization() async -> VerificationResult {
     do {
       try await AuthorizationCenter.shared.requestAuthorization(for: .child)
       persistAuthorizationType(.child)
+      print("AuthorizationVerifier: Child authorization successful")
       return .authorized
     } catch let error as NSError {
-      print("AuthorizationVerifier: Child authorization failed - domain: \(error.domain), code: \(error.code)")
+      print(
+        "AuthorizationVerifier: Child authorization failed - domain: \(error.domain), code: \(error.code)"
+      )
 
       // FamilyControls errors indicating this isn't a child device
       if error.domain == "FamilyControls" || error.domain == "com.apple.FamilyControls" {
@@ -172,5 +114,73 @@ class AuthorizationVerifier: ObservableObject {
       // Generic authorization failure
       return .unknownError(error)
     }
+  }
+
+  /// Request .individual authorization.
+  /// Returns true if successful.
+  func requestIndividualAuthorization() async -> Bool {
+    do {
+      try await AuthorizationCenter.shared.requestAuthorization(for: .individual)
+      persistAuthorizationType(.individual)
+      print("AuthorizationVerifier: Individual authorization successful")
+      return true
+    } catch {
+      print("AuthorizationVerifier: Individual authorization failed - \(error)")
+      return false
+    }
+  }
+
+  /// Clear the persisted authorization state (called when leaving family share)
+  func clearAuthorizationState() {
+    userDefaults.removeObject(forKey: Keys.authorizationType)
+    userDefaults.removeObject(forKey: Keys.authorizationVerifiedAt)
+    currentAuthorizationType = .none
+    lastVerificationDate = nil
+  }
+
+  // MARK: - Centralized Authorization Loss Handling
+
+  /// Handle authorization loss for a child device.
+  /// This is the single entry point for all authorization loss scenarios.
+  /// Clears shared state, switches to individual mode, and returns a user message.
+  func handleAuthorizationLoss() async -> String {
+    let cloudKitManager = CloudKitManager.shared
+    let appModeManager = AppModeManager.shared
+
+    print("AuthorizationVerifier: Handling authorization loss")
+
+    // Clear CloudKit shared state first
+    await cloudKitManager.clearSharedState()
+
+    // Clear local authorization state
+    clearAuthorizationState()
+
+    // Switch to individual mode
+    appModeManager.selectMode(.individual)
+
+    return
+      "Your child account authorization was revoked (the device may have been removed from Apple Family Sharing). You've been switched to individual mode. To reconnect, ask a parent to re-add this device and send a new invitation."
+  }
+
+  /// Verify child authorization if in child mode and connected to family.
+  /// Returns nil if authorized or not applicable, returns error message if authorization lost.
+  func verifyIfNeeded() async -> String? {
+    let appModeManager = AppModeManager.shared
+    let cloudKitManager = CloudKitManager.shared
+
+    // Only verify if in child mode and connected to a family
+    guard appModeManager.currentMode == .child,
+      cloudKitManager.isConnectedToFamily
+    else {
+      return nil
+    }
+
+    let result = await verifyChildAuthorization()
+
+    if !result.isAuthorized {
+      return await handleAuthorizationLoss()
+    }
+
+    return nil
   }
 }

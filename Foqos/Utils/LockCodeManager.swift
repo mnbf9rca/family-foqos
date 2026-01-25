@@ -174,12 +174,15 @@ class LockCodeManager: ObservableObject {
         await MainActor.run { isLoading = true }
         defer { Task { await MainActor.run { self.isLoading = false } } }
 
-        // Verify child authorization before fetching shared lock codes
-        let isAuthorized = await AuthorizationVerifier.shared.verifyChildAuthorization()
-        guard isAuthorized else {
-            await MainActor.run {
-                self.cachedLockCodes = []
-                self.error = "This device is no longer authorized as a child in Apple Family Sharing. Please ask a parent to verify Screen Time settings, or switch to individual mode in Settings."
+        // Use centralized authorization verification
+        let result = await AuthorizationVerifier.shared.verifyChildAuthorization()
+        guard result.isAuthorized else {
+            // Let the centralized handler deal with authorization loss
+            if let message = await AuthorizationVerifier.shared.verifyIfNeeded() {
+                await MainActor.run {
+                    self.cachedLockCodes = []
+                    self.error = message
+                }
             }
             return
         }
@@ -200,6 +203,7 @@ class LockCodeManager: ObservableObject {
     /// Verify a code entered by a child
     /// Returns true if the code is valid for the given child
     /// For child mode, verifies authorization status before checking codes
+    @MainActor
     func verifyCode(_ code: String, forChildId childId: String?) -> Bool {
         // Use cached codes for verification
         let codesToCheck = appModeManager.currentMode == .parent ? lockCodes : cachedLockCodes
@@ -234,6 +238,7 @@ class LockCodeManager: ObservableObject {
     }
 
     /// Verify a code for a managed profile
+    @MainActor
     func verifyCodeForProfile(_ code: String, profile: BlockedProfiles) -> Bool {
         return verifyCode(code, forChildId: profile.managedByChildId)
     }

@@ -589,7 +589,7 @@ class CloudKitManager: ObservableObject {
     func acceptShare(metadata: CKShare.Metadata) async throws {
         // Verify child authorization before accepting the share
         // This ensures only devices set up as children in Apple Family Sharing can join
-        let verificationResult = await AuthorizationVerifier.shared.verifyChildAuthorizationWithResult()
+        let verificationResult = await AuthorizationVerifier.shared.verifyChildAuthorization()
 
         guard verificationResult.isAuthorized else {
             print("CloudKitManager: Share acceptance rejected - child authorization required")
