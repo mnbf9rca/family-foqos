@@ -16,6 +16,7 @@ struct SettingsView: View {
   @State private var showResetBlockingStateAlert = false
   @State private var showParentDashboard = false
   @State private var showChildDashboard = false
+  @State private var showSavedLocations = false
 
   private var appVersion: String {
     Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
@@ -55,6 +56,37 @@ struct SettingsView: View {
           .onChange(of: themeManager.selectedColorName) { _, _ in
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
           }
+        }
+
+        Section {
+          Button {
+            showSavedLocations = true
+          } label: {
+            HStack {
+              Image(systemName: "mappin.circle.fill")
+                .foregroundColor(themeManager.themeColor)
+                .font(.title3)
+
+              VStack(alignment: .leading, spacing: 2) {
+                Text("Saved Locations")
+                  .font(.headline)
+                  .foregroundColor(.primary)
+                Text("Manage locations for geofence restrictions")
+                  .font(.caption)
+                  .foregroundColor(.secondary)
+              }
+
+              Spacer()
+
+              Image(systemName: "chevron.right")
+                .foregroundColor(.secondary)
+                .font(.caption)
+            }
+          }
+        } header: {
+          Text("Location")
+        } footer: {
+          Text("Save locations to restrict when profiles can be stopped based on your physical location.")
         }
 
         // Family Controls Section
@@ -207,6 +239,9 @@ struct SettingsView: View {
         }
       } message: {
         Text("This will clear all app restrictions and remove any ghost schedules. Only use this if you're locked out and no profile is active.")
+      }
+      .sheet(isPresented: $showSavedLocations) {
+        SavedLocationsView()
       }
       .sheet(isPresented: $showParentDashboard) {
         ParentDashboardView()

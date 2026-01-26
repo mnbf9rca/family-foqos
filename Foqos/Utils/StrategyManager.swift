@@ -7,6 +7,7 @@ class StrategyManager: ObservableObject {
 
   private let appModeManager = AppModeManager.shared
   private let lockCodeManager = LockCodeManager.shared
+  private let locationManager = LocationManager.shared
 
   static let availableStrategies: [BlockingStrategy] = [
     ManualBlockingStrategy(),
@@ -27,6 +28,7 @@ class StrategyManager: ObservableObject {
   @Published var customStrategyView: (any View)? = nil
 
   @Published var errorMessage: String?
+  @Published var isCheckingGeofence: Bool = false
 
   @AppStorage("emergencyUnblocksRemaining") private var emergencyUnblocksRemaining: Int = 3
   @AppStorage("emergencyUnblocksResetPeriodInWeeks") private
@@ -89,13 +91,56 @@ class StrategyManager: ObservableObject {
         return
       }
 
+      // Check geofence rule if one exists
+      if let session = activeSession,
+        let geofenceRule = session.blockedProfile.geofenceRule,
+        geofenceRule.hasLocations
+      {
+        checkGeofenceAndStop(context: context, rule: geofenceRule)
+        return
+      }
+
       stopBlocking(context: context)
     } else {
       startBlocking(context: context, activeProfile: activeProfile)
     }
   }
 
+  /// Check geofence rule and stop blocking if satisfied
+  private func checkGeofenceAndStop(context: ModelContext, rule: ProfileGeofenceRule) {
+    // Request permission if not determined
+    if locationManager.isNotDetermined {
+      locationManager.requestAuthorization()
+      errorMessage = "Please allow location access to stop this profile, then try again."
+      return
+    }
+
+    // Check if permission is denied
+    if locationManager.isDenied {
+      errorMessage =
+        "Location access is denied. Enable location services in Settings to use location-based restrictions."
+      return
+    }
+
+    isCheckingGeofence = true
+
+    Task {
+      let result = await locationManager.checkGeofenceRule(rule: rule, context: context)
+
+      await MainActor.run {
+        self.isCheckingGeofence = false
+
+        if result.isSatisfied {
+          self.stopBlocking(context: context)
+        } else {
+          self.errorMessage = result.failureMessage ?? "Location restriction not met."
+        }
+      }
+    }
+  }
+
   /// Check if the current blocking session can be stopped (for managed profiles)
+  /// Note: This is a synchronous check and doesn't verify geofence rules
   func canStopBlocking() -> Bool {
     guard let session = activeSession else { return true }
 
@@ -107,6 +152,12 @@ class StrategyManager: ObservableObject {
     return true
   }
 
+  /// Check if the profile has geofence restrictions
+  func hasGeofenceRestrictions() -> Bool {
+    guard let session = activeSession else { return false }
+    return session.blockedProfile.geofenceRule?.hasLocations == true
+  }
+
   /// Get the reason why stopping is blocked
   func getStopBlockedReason() -> String? {
     guard let session = activeSession else { return nil }
@@ -115,6 +166,10 @@ class StrategyManager: ObservableObject {
       && !lockCodeManager.isUnlocked(session.blockedProfile.id)
     {
       return "This profile is parent-controlled. Enter the lock code to stop blocking."
+    }
+
+    if session.blockedProfile.geofenceRule?.hasLocations == true {
+      return "This profile has location restrictions. You must be at the required location to stop."
     }
 
     return nil
@@ -373,16 +428,66 @@ class StrategyManager: ObservableObject {
       return
     }
 
-    // Stop the active session using the manual strategy, by passes any other strategy in view
+    // Check geofence rule if one exists
+    if let geofenceRule = activeSession.blockedProfile.geofenceRule,
+      geofenceRule.hasLocations
+    {
+      checkGeofenceAndEmergencyUnblock(context: context, rule: geofenceRule, session: activeSession)
+      return
+    }
+
+    performEmergencyUnblock(context: context, session: activeSession)
+  }
+
+  /// Check geofence rule and perform emergency unblock if satisfied
+  private func checkGeofenceAndEmergencyUnblock(
+    context: ModelContext,
+    rule: ProfileGeofenceRule,
+    session: BlockedProfileSession
+  ) {
+    // Request permission if not determined
+    if locationManager.isNotDetermined {
+      locationManager.requestAuthorization()
+      errorMessage = "Please allow location access to use emergency unblock, then try again."
+      return
+    }
+
+    // Check if permission is denied
+    if locationManager.isDenied {
+      errorMessage =
+        "Location access is denied. Enable location services in Settings to use emergency unblock."
+      return
+    }
+
+    isCheckingGeofence = true
+
+    Task {
+      let result = await locationManager.checkGeofenceRule(rule: rule, context: context)
+
+      await MainActor.run {
+        self.isCheckingGeofence = false
+
+        if result.isSatisfied {
+          self.performEmergencyUnblock(context: context, session: session)
+        } else {
+          self.errorMessage = result.failureMessage ?? "Location restriction not met."
+        }
+      }
+    }
+  }
+
+  /// Actually perform the emergency unblock (called after all checks pass)
+  private func performEmergencyUnblock(context: ModelContext, session: BlockedProfileSession) {
+    // Stop the active session using the manual strategy, bypasses any other strategy in view
     let manualStrategy = getStrategy(id: ManualBlockingStrategy.id)
     _ = manualStrategy.stopBlocking(
       context: context,
-      session: activeSession
+      session: session
     )
 
     // Do end sections for the profile
     self.liveActivityManager.endSessionActivity()
-    self.scheduleReminder(profile: activeSession.blockedProfile)
+    self.scheduleReminder(profile: session.blockedProfile)
     self.stopTimer()
 
     // Decrement the remaining emergency unblocks

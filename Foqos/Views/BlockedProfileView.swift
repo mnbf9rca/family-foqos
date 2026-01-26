@@ -25,6 +25,8 @@ struct BlockedProfileView: View {
   @ObservedObject private var appModeManager = AppModeManager.shared
   @ObservedObject private var lockCodeManager = LockCodeManager.shared
 
+  @Query(sort: \SavedLocation.name) private var savedLocations: [SavedLocation]
+
   // If profile is nil, we're creating a new profile
   var profile: BlockedProfiles?
 
@@ -46,6 +48,11 @@ struct BlockedProfileView: View {
   @State private var physicalUnblockQRCodeId: String?
 
   @State private var schedule: BlockedProfileSchedule
+
+  @State private var geofenceRule: ProfileGeofenceRule?
+
+  // Sheet for geofence picker
+  @State private var showingGeofencePicker = false
 
   // QR code generator
   @State private var showingGeneratedQRCode = false
@@ -183,6 +190,7 @@ struct BlockedProfileView: View {
         )
     )
     _isManaged = State(initialValue: profile?.isManaged ?? false)
+    _geofenceRule = State(initialValue: profile?.geofenceRule)
 
     if let profileStrategyId = profile?.blockingStrategyId {
       _selectedStrategy = State(
@@ -306,6 +314,19 @@ struct BlockedProfileView: View {
             buttonAction: { showingSchedulePicker = true },
             disabled: isBlocking
           )
+        }
+
+        Section {
+          BlockedProfileGeofenceSelector(
+            geofenceRule: $geofenceRule,
+            savedLocations: savedLocations,
+            buttonAction: { showingGeofencePicker = true },
+            disabled: isBlocking
+          )
+        } header: {
+          Text("Location Restrictions")
+        } footer: {
+          Text("Require being at or away from specific locations to stop this profile.")
         }
 
         Section("Breaks") {
@@ -559,6 +580,12 @@ struct BlockedProfileView: View {
           isPresented: $showingSchedulePicker
         )
       }
+      .sheet(isPresented: $showingGeofencePicker) {
+        GeofencePicker(
+          geofenceRule: $geofenceRule,
+          savedLocations: savedLocations
+        )
+      }
       .sheet(isPresented: $showingGeneratedQRCode) {
         if let profileToWrite = profile {
           let url = BlockedProfiles.getProfileDeepLink(profileToWrite)
@@ -738,6 +765,7 @@ struct BlockedProfileView: View {
           physicalUnblockNFCTagId: physicalUnblockNFCTagId,
           physicalUnblockQRCodeId: physicalUnblockQRCodeId,
           schedule: schedule,
+          geofenceRule: geofenceRule,
           disableBackgroundStops: disableBackgroundStops,
           isManaged: isManaged,
           managedByChildId: managedChildId
@@ -765,6 +793,7 @@ struct BlockedProfileView: View {
           physicalUnblockNFCTagId: physicalUnblockNFCTagId,
           physicalUnblockQRCodeId: physicalUnblockQRCodeId,
           schedule: schedule,
+          geofenceRule: geofenceRule,
           disableBackgroundStops: disableBackgroundStops,
           isManaged: isManaged,
           managedByChildId: managedChildId

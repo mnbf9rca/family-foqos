@@ -31,6 +31,8 @@ class BlockedProfiles {
 
   var schedule: BlockedProfileSchedule? = nil
 
+  var geofenceRule: ProfileGeofenceRule? = nil
+
   var disableBackgroundStops: Bool = false
 
   var customReminderMessage: String?
@@ -72,6 +74,7 @@ class BlockedProfiles {
     physicalUnblockNFCTagId: String? = nil,
     physicalUnblockQRCodeId: String? = nil,
     schedule: BlockedProfileSchedule? = nil,
+    geofenceRule: ProfileGeofenceRule? = nil,
     disableBackgroundStops: Bool = false,
     isManaged: Bool = false,
     managedByChildId: String? = nil
@@ -100,6 +103,7 @@ class BlockedProfiles {
     self.physicalUnblockNFCTagId = physicalUnblockNFCTagId
     self.physicalUnblockQRCodeId = physicalUnblockQRCodeId
     self.schedule = schedule
+    self.geofenceRule = geofenceRule
 
     self.disableBackgroundStops = disableBackgroundStops
     self.isManaged = isManaged
@@ -156,6 +160,7 @@ class BlockedProfiles {
     physicalUnblockNFCTagId: String? = nil,
     physicalUnblockQRCodeId: String? = nil,
     schedule: BlockedProfileSchedule? = nil,
+    geofenceRule: ProfileGeofenceRule? = nil,
     disableBackgroundStops: Bool? = nil,
     isManaged: Bool? = nil,
     managedByChildId: String? = nil
@@ -215,6 +220,9 @@ class BlockedProfiles {
     if let newSchedule = schedule {
       profile.schedule = newSchedule
     }
+
+    // geofenceRule can be set to nil to remove it
+    profile.geofenceRule = geofenceRule
 
     if let newDisableBackgroundStops = disableBackgroundStops {
       profile.disableBackgroundStops = newDisableBackgroundStops
@@ -297,6 +305,7 @@ class BlockedProfiles {
       physicalUnblockNFCTagId: profile.physicalUnblockNFCTagId,
       physicalUnblockQRCodeId: profile.physicalUnblockQRCodeId,
       schedule: profile.schedule,
+      geofenceRule: profile.geofenceRule,
       disableBackgroundStops: profile.disableBackgroundStops,
       isManaged: profile.isManaged,
       managedByChildId: profile.managedByChildId
@@ -352,6 +361,7 @@ class BlockedProfiles {
     physicalUnblockNFCTagId: String? = nil,
     physicalUnblockQRCodeId: String? = nil,
     schedule: BlockedProfileSchedule? = nil,
+    geofenceRule: ProfileGeofenceRule? = nil,
     disableBackgroundStops: Bool = false,
     isManaged: Bool = false,
     managedByChildId: String? = nil
@@ -376,6 +386,7 @@ class BlockedProfiles {
       domains: domains,
       physicalUnblockNFCTagId: physicalUnblockNFCTagId,
       physicalUnblockQRCodeId: physicalUnblockQRCodeId,
+      geofenceRule: geofenceRule,
       disableBackgroundStops: disableBackgroundStops,
       isManaged: isManaged,
       managedByChildId: managedByChildId
@@ -418,6 +429,7 @@ class BlockedProfiles {
       physicalUnblockNFCTagId: source.physicalUnblockNFCTagId,
       physicalUnblockQRCodeId: source.physicalUnblockQRCodeId,
       schedule: source.schedule,
+      geofenceRule: source.geofenceRule,
       disableBackgroundStops: source.disableBackgroundStops,
       isManaged: source.isManaged,
       managedByChildId: source.managedByChildId

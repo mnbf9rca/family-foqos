@@ -1,0 +1,197 @@
+import SwiftData
+import SwiftUI
+
+struct SavedLocationsView: View {
+  @Environment(\.modelContext) private var context
+  @Environment(\.dismiss) private var dismiss
+
+  @EnvironmentObject var themeManager: ThemeManager
+
+  @ObservedObject private var appModeManager = AppModeManager.shared
+  @ObservedObject private var lockCodeManager = LockCodeManager.shared
+
+  @Query(sort: \SavedLocation.name) private var locations: [SavedLocation]
+
+  @State private var showingAddLocation = false
+  @State private var locationToEdit: SavedLocation?
+  @State private var showingDeleteConfirmation = false
+  @State private var locationToDelete: SavedLocation?
+  @State private var showingLockCodeEntry = false
+  @State private var pendingDeleteLocation: SavedLocation?
+  @State private var errorMessage: String?
+
+  var body: some View {
+    NavigationStack {
+      List {
+        if locations.isEmpty {
+          Section {
+            VStack(spacing: 16) {
+              Image(systemName: "mappin.slash")
+                .font(.system(size: 48))
+                .foregroundColor(.secondary)
+
+              Text("No Saved Locations")
+                .font(.headline)
+
+              Text("Add locations to use geofence-based restrictions on your profiles.")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+
+              Button {
+                showingAddLocation = true
+              } label: {
+                Label("Add Location", systemImage: "plus")
+              }
+              .buttonStyle(.borderedProminent)
+              .tint(themeManager.themeColor)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 32)
+          }
+        } else {
+          Section {
+            ForEach(locations) { location in
+              SavedLocationCard(
+                location: location,
+                onEdit: {
+                  handleEdit(location)
+                },
+                onDelete: {
+                  handleDelete(location)
+                }
+              )
+            }
+          } header: {
+            Text("Your Locations")
+          } footer: {
+            Text("These locations can be used to restrict when profiles can be stopped.")
+          }
+        }
+      }
+      .navigationTitle("Saved Locations")
+      .toolbar {
+        ToolbarItem(placement: .topBarLeading) {
+          Button(action: { dismiss() }) {
+            Image(systemName: "xmark")
+          }
+          .accessibilityLabel("Close")
+        }
+
+        if !locations.isEmpty {
+          ToolbarItem(placement: .topBarTrailing) {
+            Button {
+              showingAddLocation = true
+            } label: {
+              Image(systemName: "plus")
+            }
+            .accessibilityLabel("Add Location")
+          }
+        }
+      }
+      .sheet(isPresented: $showingAddLocation) {
+        AddLocationView()
+      }
+      .sheet(item: $locationToEdit) { location in
+        AddLocationView(editingLocation: location)
+      }
+      .sheet(isPresented: $showingLockCodeEntry) {
+        LockCodeEntryView(
+          title: "Enter Lock Code",
+          subtitle: "This location is locked. Enter the lock code to delete it.",
+          onVerify: { code in
+            lockCodeManager.validateCode(code)
+          },
+          onSuccess: {
+            if let location = pendingDeleteLocation {
+              locationToDelete = location
+              showingDeleteConfirmation = true
+            }
+            pendingDeleteLocation = nil
+          }
+        )
+      }
+      .alert("Delete Location", isPresented: $showingDeleteConfirmation) {
+        Button("Cancel", role: .cancel) {
+          locationToDelete = nil
+        }
+        Button("Delete", role: .destructive) {
+          if let location = locationToDelete {
+            deleteLocation(location)
+          }
+        }
+      } message: {
+        if let location = locationToDelete {
+          Text("Are you sure you want to delete \"\(location.name)\"? This will remove it from any profiles using it.")
+        }
+      }
+      .alert("Error", isPresented: .init(
+        get: { errorMessage != nil },
+        set: { if !$0 { errorMessage = nil } }
+      )) {
+        Button("OK", role: .cancel) {}
+      } message: {
+        if let message = errorMessage {
+          Text(message)
+        }
+      }
+    }
+  }
+
+  private func handleEdit(_ location: SavedLocation) {
+    if location.isLocked && appModeManager.currentMode != .parent {
+      // For locked locations in non-parent mode, require code verification
+      // For now, allow editing if they can verify the lock code
+      locationToEdit = location
+    } else {
+      locationToEdit = location
+    }
+  }
+
+  private func handleDelete(_ location: SavedLocation) {
+    if location.isLocked && appModeManager.currentMode != .parent {
+      pendingDeleteLocation = location
+      showingLockCodeEntry = true
+    } else {
+      locationToDelete = location
+      showingDeleteConfirmation = true
+    }
+  }
+
+  private func deleteLocation(_ location: SavedLocation) {
+    do {
+      // Remove references from profiles that use this location
+      removeLocationFromProfiles(location.id)
+
+      try SavedLocation.delete(location, in: context)
+      locationToDelete = nil
+    } catch {
+      errorMessage = "Failed to delete location: \(error.localizedDescription)"
+    }
+  }
+
+  private func removeLocationFromProfiles(_ locationId: UUID) {
+    do {
+      let profiles = try BlockedProfiles.fetchProfiles(in: context)
+      for profile in profiles {
+        if var rule = profile.geofenceRule {
+          rule.locationReferences.removeAll { $0.savedLocationId == locationId }
+          if rule.locationReferences.isEmpty {
+            profile.geofenceRule = nil
+          } else {
+            profile.geofenceRule = rule
+          }
+        }
+      }
+      try context.save()
+    } catch {
+      print("Failed to update profiles after location deletion: \(error)")
+    }
+  }
+}
+
+#Preview {
+  SavedLocationsView()
+    .environmentObject(ThemeManager.shared)
+    .modelContainer(for: [SavedLocation.self, BlockedProfiles.self], inMemory: true)
+}

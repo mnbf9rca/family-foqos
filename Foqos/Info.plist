@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Family Foqos needs your location if you want to lock profiles by location. Otherwise, feel free to deny. We do not track you or send your location data - it all stays on your device.</string>
 	<key>CKSharingSupported</key>
 	<true/>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
