@@ -36,13 +36,17 @@ struct foqosApp: App {
   @StateObject private var ratingManager = RatingManager()
 
   // Singletons for shared functionality
-  @StateObject private var startegyManager = StrategyManager.shared
+  @StateObject private var strategyManager = StrategyManager.shared
   @StateObject private var liveActivityManager = LiveActivityManager.shared
   @StateObject private var themeManager = ThemeManager.shared
 
   // App mode management for Family Sharing
   @StateObject private var appModeManager = AppModeManager.shared
   @StateObject private var cloudKitManager = CloudKitManager.shared
+
+  // Device sync for same-user multi-device sync
+  @StateObject private var profileSyncManager = ProfileSyncManager.shared
+  @StateObject private var syncCoordinator = SyncCoordinator.shared
 
   // CloudKit share acceptance
   @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
@@ -107,7 +111,7 @@ struct foqosApp: App {
           }
         }
         .environmentObject(requestAuthorizer)
-        .environmentObject(startegyManager)
+        .environmentObject(strategyManager)
         .environmentObject(navigationManager)
         .environmentObject(nfcWriter)
         .environmentObject(ratingManager)
@@ -115,6 +119,19 @@ struct foqosApp: App {
         .environmentObject(themeManager)
         .environmentObject(appModeManager)
         .environmentObject(cloudKitManager)
+        .environmentObject(profileSyncManager)
+        .onAppear {
+          // Set up sync coordinator with model context
+          syncCoordinator.setModelContext(container.mainContext)
+          // Set up remote session observers
+          strategyManager.setupRemoteSessionObservers()
+          // Initialize sync if enabled
+          if profileSyncManager.isEnabled {
+            Task {
+              await profileSyncManager.setupSync()
+            }
+          }
+        }
     }
     .handlesExternalEvents(matching: ["*"])  // Handle all external events including CloudKit shares
     .modelContainer(container)
@@ -157,6 +174,10 @@ class AppDelegate: NSObject, UIApplicationDelegate {
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
   ) -> Bool {
     print("AppDelegate: didFinishLaunchingWithOptions")
+
+    // Register for remote notifications to receive CloudKit push notifications
+    application.registerForRemoteNotifications()
+
     return true
   }
 
@@ -169,6 +190,43 @@ class AppDelegate: NSObject, UIApplicationDelegate {
     let config = UISceneConfiguration(name: nil, sessionRole: connectingSceneSession.role)
     config.delegateClass = SceneDelegate.self
     return config
+  }
+
+  // MARK: - Remote Notification Handling
+
+  func application(
+    _ application: UIApplication,
+    didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
+  ) {
+    print("AppDelegate: Registered for remote notifications")
+  }
+
+  func application(
+    _ application: UIApplication,
+    didFailToRegisterForRemoteNotificationsWithError error: Error
+  ) {
+    print("AppDelegate: Failed to register for remote notifications - \(error)")
+  }
+
+  func application(
+    _ application: UIApplication,
+    didReceiveRemoteNotification userInfo: [AnyHashable: Any],
+    fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
+  ) {
+    print("AppDelegate: Received remote notification")
+
+    // Check if this is a CloudKit notification
+    if let ckNotification = CKNotification(fromRemoteNotificationDictionary: userInfo) {
+      print("AppDelegate: CloudKit notification received - type: \(ckNotification.notificationType.rawValue)")
+
+      // Handle the notification via ProfileSyncManager
+      Task {
+        await ProfileSyncManager.shared.handleRemoteNotification()
+        completionHandler(.newData)
+      }
+    } else {
+      completionHandler(.noData)
+    }
   }
 
 }

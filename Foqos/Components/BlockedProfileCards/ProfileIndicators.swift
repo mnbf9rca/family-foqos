@@ -42,13 +42,13 @@ struct ProfileIndicators: View {
       enableLiveActivity: true,
       hasReminders: true,
       enableBreaks: false,
-      enableStrictMode: false,
+      enableStrictMode: false
     )
     ProfileIndicators(
       enableLiveActivity: false,
       hasReminders: false,
       enableBreaks: true,
-      enableStrictMode: true,
+      enableStrictMode: true
     )
   }
   .padding()

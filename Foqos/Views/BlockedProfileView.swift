@@ -676,8 +676,11 @@ struct BlockedProfileView: View {
             secondaryButton: .destructive(Text("Delete")) {
               dismiss()
               if let profileToDelete = profile {
+                let profileId = profileToDelete.id
                 do {
                   try BlockedProfiles.deleteProfile(profileToDelete, in: modelContext)
+                  // Delete from sync (if global sync is enabled)
+                  SyncCoordinator.shared.deleteProfileFromSync(profileId)
                 } catch {
                   showError(message: error.localizedDescription)
                 }
@@ -768,11 +771,15 @@ struct BlockedProfileView: View {
           geofenceRule: geofenceRule,
           disableBackgroundStops: disableBackgroundStops,
           isManaged: isManaged,
-          managedByChildId: managedChildId
+          managedByChildId: managedChildId,
+          needsAppSelection: false  // Clear needsAppSelection since user is saving with app selection
         )
 
         // Schedule restrictions
         DeviceActivityCenterUtil.scheduleTimerActivity(for: updatedProfile)
+
+        // Push to sync (if global sync is enabled)
+        SyncCoordinator.shared.pushProfile(updatedProfile)
       } else {
         let newProfile = try BlockedProfiles.createProfile(
           in: modelContext,
@@ -801,6 +808,9 @@ struct BlockedProfileView: View {
 
         // Schedule restrictions
         DeviceActivityCenterUtil.scheduleTimerActivity(for: newProfile)
+
+        // Push to sync (if global sync is enabled)
+        SyncCoordinator.shared.pushProfile(newProfile)
       }
 
       dismiss()

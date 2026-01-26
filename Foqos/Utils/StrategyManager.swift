@@ -45,9 +45,13 @@ class StrategyManager: ObservableObject {
     Double = 0
 
   private let liveActivityManager = LiveActivityManager.shared
+  private let profileSyncManager = ProfileSyncManager.shared
 
   private let timersUtil = TimersUtil()
   private let appBlocker = AppBlockerUtil()
+
+  // Track if we're currently processing a remote session change
+  private var processingRemoteChange = false
 
   var isBlocking: Bool {
     return activeSession?.isActive == true
@@ -717,7 +721,17 @@ class StrategyManager: ObservableObject {
 
         // Refresh widgets when session starts
         WidgetCenter.shared.reloadTimelines(ofKind: "ProfileControlWidget")
+
+        // Sync session start to other devices (if global sync is enabled)
+        if self.profileSyncManager.isEnabled {
+          Task {
+            try? await self.profileSyncManager.pushSession(session)
+          }
+        }
       case .ended(let endedProfile):
+        // Capture session ID before clearing for sync
+        let endedSessionId = self.activeSession?.id
+
         self.activeSession = nil
         self.liveActivityManager.endSessionActivity()
         self.scheduleReminder(profile: endedProfile)
@@ -733,6 +747,13 @@ class StrategyManager: ObservableObject {
 
         // Remove all strategy timer activities
         DeviceActivityCenterUtil.removeAllStrategyTimerActivities()
+
+        // Sync session end to other devices (if global sync is enabled)
+        if self.profileSyncManager.isEnabled, let sessionId = endedSessionId {
+          Task {
+            try? await self.profileSyncManager.pushSessionEnd(sessionId, endTime: Date())
+          }
+        }
       }
     }
 
@@ -979,4 +1000,90 @@ class StrategyManager: ObservableObject {
 
     print("Blocking state reset complete")
   }
+
+  // MARK: - Remote Session Sync
+
+  /// Set up observers for remote session changes from other devices.
+  /// Note: Session sync is now handled directly by SyncCoordinator which calls
+  /// startRemoteSession/stopRemoteSession methods. This method is kept for future
+  /// extensibility but no longer observes .syncedSessionsReceived.
+  func setupRemoteSessionObservers() {
+    // SyncCoordinator now handles session sync directly by calling
+    // startRemoteSession() and stopRemoteSession() methods.
+    // No notification observers needed here.
+  }
+
+  /// Start a session triggered by remote device
+  func startRemoteSession(
+    context: ModelContext,
+    profileId: UUID,
+    sessionId: UUID,
+    startTime: Date
+  ) {
+    guard !processingRemoteChange else { return }
+    processingRemoteChange = true
+
+    defer { processingRemoteChange = false }
+
+    do {
+      guard let profile = try BlockedProfiles.findProfile(byID: profileId, in: context) else {
+        print("StrategyManager: Profile not found for remote session")
+        return
+      }
+
+      // Check if profile has local app selection
+      if profile.needsAppSelection {
+        print("StrategyManager: Profile needs app selection, cannot start remotely")
+        errorMessage = "Profile '\(profile.name)' is active on another device but needs app selection on this device."
+        return
+      }
+
+      // Activate restrictions
+      appBlocker.activateRestrictions(for: BlockedProfiles.getSnapshot(for: profile))
+
+      // Create session with synced startTime
+      let activeSession = BlockedProfileSession.createSession(
+        in: context,
+        withTag: "remote-sync",
+        withProfile: profile,
+        forceStart: true,
+        startTime: startTime
+      )
+
+      // Set as active session
+      self.activeSession = activeSession
+
+      print("StrategyManager: Started remote session for profile '\(profile.name)' with synced startTime")
+    } catch {
+      print("StrategyManager: Error starting remote session - \(error)")
+    }
+  }
+
+  /// Stop a session triggered by remote device
+  func stopRemoteSession(context: ModelContext, profileId: UUID) {
+    guard !processingRemoteChange else { return }
+    processingRemoteChange = true
+
+    defer { processingRemoteChange = false }
+
+    guard let session = activeSession,
+      session.blockedProfile.id == profileId
+    else {
+      print("StrategyManager: No matching active session to stop")
+      return
+    }
+
+    // Stop using manual strategy (bypasses NFC/QR requirements)
+    let manualStrategy = getStrategy(id: ManualBlockingStrategy.id)
+    _ = manualStrategy.stopBlocking(context: context, session: session)
+
+    print("StrategyManager: Stopped session via remote trigger")
+  }
+}
+
+// MARK: - Remote Session Notification Names
+
+extension Notification.Name {
+  static let remoteSessionStartRequested = Notification.Name("remoteSessionStartRequested")
+  static let remoteSessionStopRequested = Notification.Name("remoteSessionStopRequested")
 }

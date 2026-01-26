@@ -12,6 +12,7 @@ struct AddLocationView: View {
   @ObservedObject private var appModeManager = AppModeManager.shared
   @ObservedObject private var lockCodeManager = LockCodeManager.shared
   @ObservedObject private var locationManager = LocationManager.shared
+  @ObservedObject private var profileSyncManager = ProfileSyncManager.shared
 
   @Query(sort: \SavedLocation.name) private var existingLocations: [SavedLocation]
 
@@ -462,8 +463,9 @@ struct AddLocationView: View {
     guard !trimmedName.isEmpty, hasSetLocation else { return }
 
     do {
+      let savedLocation: SavedLocation
       if let existing = editingLocation {
-        _ = try SavedLocation.update(
+        savedLocation = try SavedLocation.update(
           existing,
           in: context,
           name: trimmedName,
@@ -473,7 +475,7 @@ struct AddLocationView: View {
           isLocked: isLocked
         )
       } else {
-        _ = try SavedLocation.create(
+        savedLocation = try SavedLocation.create(
           in: context,
           name: trimmedName,
           latitude: latitude,
@@ -482,6 +484,14 @@ struct AddLocationView: View {
           isLocked: isLocked
         )
       }
+
+      // Sync location to other devices if sync is enabled
+      if profileSyncManager.isEnabled {
+        Task {
+          try? await profileSyncManager.pushLocation(savedLocation)
+        }
+      }
+
       dismiss()
     } catch {
       errorMessage = "Failed to save location: \(error.localizedDescription)"

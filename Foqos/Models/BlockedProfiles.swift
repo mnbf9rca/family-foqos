@@ -41,6 +41,10 @@ class BlockedProfiles {
   var isManaged: Bool = false  // If true, requires lock code to edit/delete
   var managedByChildId: String? = nil  // Which child this managed profile is for (for per-child code lookup)
 
+  // Device sync fields (same-user multi-device sync)
+  var syncVersion: Int = 0  // Version counter for conflict resolution (last-write-wins)
+  var needsAppSelection: Bool = false  // True if synced from another device but no local apps selected
+
   @Relationship var sessions: [BlockedProfileSession] = []
 
   var activeScheduleTimerActivity: DeviceActivityName? {
@@ -77,7 +81,9 @@ class BlockedProfiles {
     geofenceRule: ProfileGeofenceRule? = nil,
     disableBackgroundStops: Bool = false,
     isManaged: Bool = false,
-    managedByChildId: String? = nil
+    managedByChildId: String? = nil,
+    syncVersion: Int = 0,
+    needsAppSelection: Bool = false
   ) {
     self.id = id
     self.name = name
@@ -108,6 +114,8 @@ class BlockedProfiles {
     self.disableBackgroundStops = disableBackgroundStops
     self.isManaged = isManaged
     self.managedByChildId = managedByChildId
+    self.syncVersion = syncVersion
+    self.needsAppSelection = needsAppSelection
   }
 
   static func fetchProfiles(in context: ModelContext) throws
@@ -163,7 +171,9 @@ class BlockedProfiles {
     geofenceRule: ProfileGeofenceRule? = nil,
     disableBackgroundStops: Bool? = nil,
     isManaged: Bool? = nil,
-    managedByChildId: String? = nil
+    managedByChildId: String? = nil,
+    syncVersion: Int? = nil,
+    needsAppSelection: Bool? = nil
   ) throws -> BlockedProfiles {
     if let newName = name {
       profile.name = newName
@@ -234,6 +244,14 @@ class BlockedProfiles {
 
     // managedByChildId can be nil when removing assignment
     profile.managedByChildId = managedByChildId
+
+    // Sync fields
+    if let newSyncVersion = syncVersion {
+      profile.syncVersion = newSyncVersion
+    }
+    if let newNeedsAppSelection = needsAppSelection {
+      profile.needsAppSelection = newNeedsAppSelection
+    }
 
     // Values can be nil when removed
     profile.physicalUnblockNFCTagId = physicalUnblockNFCTagId
@@ -308,7 +326,9 @@ class BlockedProfiles {
       geofenceRule: profile.geofenceRule,
       disableBackgroundStops: profile.disableBackgroundStops,
       isManaged: profile.isManaged,
-      managedByChildId: profile.managedByChildId
+      managedByChildId: profile.managedByChildId,
+      syncVersion: profile.syncVersion,
+      needsAppSelection: profile.needsAppSelection
     )
   }
 
@@ -364,7 +384,9 @@ class BlockedProfiles {
     geofenceRule: ProfileGeofenceRule? = nil,
     disableBackgroundStops: Bool = false,
     isManaged: Bool = false,
-    managedByChildId: String? = nil
+    managedByChildId: String? = nil,
+    syncVersion: Int = 0,
+    needsAppSelection: Bool = false
   ) throws -> BlockedProfiles {
     let profileOrder = getNextOrder(in: context)
 
@@ -389,7 +411,9 @@ class BlockedProfiles {
       geofenceRule: geofenceRule,
       disableBackgroundStops: disableBackgroundStops,
       isManaged: isManaged,
-      managedByChildId: managedByChildId
+      managedByChildId: managedByChildId,
+      syncVersion: syncVersion,
+      needsAppSelection: needsAppSelection
     )
 
     if let schedule = schedule {
@@ -432,7 +456,9 @@ class BlockedProfiles {
       geofenceRule: source.geofenceRule,
       disableBackgroundStops: source.disableBackgroundStops,
       isManaged: source.isManaged,
-      managedByChildId: source.managedByChildId
+      managedByChildId: source.managedByChildId,
+      syncVersion: 0,  // Reset sync version for cloned profile
+      needsAppSelection: false  // Cloned profile has app selection from source
     )
 
     context.insert(cloned)

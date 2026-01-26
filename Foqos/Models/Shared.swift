@@ -11,6 +11,8 @@ enum SharedData {
     case profileSnapshots
     case activeScheduleSession
     case completedScheduleSessions
+    case deviceSyncId
+    case deviceSyncEnabled
   }
 
   // MARK: – Serializable snapshot of a profile (no sessions)
@@ -47,6 +49,10 @@ enum SharedData {
     // Managed profile fields
     var isManaged: Bool?
     var managedByChildId: String?
+
+    // Device sync fields
+    var syncVersion: Int?
+    var needsAppSelection: Bool?
   }
 
   // MARK: – Serializable snapshot of a session (no profile object)
@@ -173,5 +179,36 @@ enum SharedData {
 
   static func setEndTime(date: Date) {
     activeSharedSession?.endTime = date
+  }
+
+  // MARK: - Device Sync Settings
+
+  /// Unique identifier for this device in sync operations.
+  /// Generated once and persisted across app launches.
+  static var deviceSyncId: UUID {
+    get {
+      if let idString = suite.string(forKey: Key.deviceSyncId.rawValue),
+        let uuid = UUID(uuidString: idString)
+      {
+        return uuid
+      }
+      // Generate new ID if none exists
+      let newId = UUID()
+      suite.set(newId.uuidString, forKey: Key.deviceSyncId.rawValue)
+      return newId
+    }
+    set {
+      suite.set(newValue.uuidString, forKey: Key.deviceSyncId.rawValue)
+    }
+  }
+
+  /// Whether device sync is enabled for this device.
+  static var deviceSyncEnabled: Bool {
+    get {
+      return suite.bool(forKey: Key.deviceSyncEnabled.rawValue)
+    }
+    set {
+      suite.set(newValue, forKey: Key.deviceSyncEnabled.rawValue)
+    }
   }
 }

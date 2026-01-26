@@ -168,6 +168,10 @@ struct HomeView: View {
             onEmergencyTapped: {
               showEmergencyView = true
             },
+            onAppSelectionTapped: { profile in
+              // Open profile editor to configure app selection
+              profileToEdit = profile
+            }
           )
         }
 

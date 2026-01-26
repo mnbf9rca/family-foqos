@@ -9,6 +9,7 @@ struct SavedLocationsView: View {
 
   @ObservedObject private var appModeManager = AppModeManager.shared
   @ObservedObject private var lockCodeManager = LockCodeManager.shared
+  @ObservedObject private var profileSyncManager = ProfileSyncManager.shared
 
   @Query(sort: \SavedLocation.name) private var locations: [SavedLocation]
   @Query private var profiles: [BlockedProfiles]
@@ -160,11 +161,20 @@ struct SavedLocationsView: View {
   }
 
   private func deleteLocation(_ location: SavedLocation) {
+    let locationId = location.id
+
     do {
       // Remove references from profiles that use this location
-      removeLocationFromProfiles(location.id)
+      removeLocationFromProfiles(locationId)
 
       try SavedLocation.delete(location, in: context)
+
+      // Sync deletion to other devices if sync is enabled
+      if profileSyncManager.isEnabled {
+        Task {
+          try? await profileSyncManager.deleteLocation(locationId)
+        }
+      }
     } catch {
       errorMessage = "Failed to delete location: \(error.localizedDescription)"
     }
