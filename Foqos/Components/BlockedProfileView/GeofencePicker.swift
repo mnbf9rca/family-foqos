@@ -13,6 +13,7 @@ struct GeofencePicker: View {
   @State private var selectedRuleType: GeofenceRuleType = .within
   @State private var selectedLocationIds: Set<UUID> = []
   @State private var locationReferences: [UUID: ProfileLocationReference] = [:]
+  @State private var allowEmergencyOverride: Bool = true
 
   // Map state
   @State private var mapRegion = MKCoordinateRegion(
@@ -136,6 +137,24 @@ struct GeofencePicker: View {
           } header: {
             Text("Preview")
           }
+
+          // Emergency override section
+          Section {
+            Toggle(isOn: $allowEmergencyOverride) {
+              VStack(alignment: .leading, spacing: 4) {
+                Text("Allow Emergency Override")
+                  .font(.body)
+                Text("Emergency unblock can bypass this location restriction")
+                  .font(.caption)
+                  .foregroundColor(.secondary)
+              }
+            }
+            .tint(themeManager.themeColor)
+          } header: {
+            Text("Emergency Access")
+          } footer: {
+            Text("When enabled, the limited emergency unblock feature can stop this profile regardless of location.")
+          }
         }
       }
       .navigationTitle("Location Restrictions")
@@ -169,10 +188,12 @@ struct GeofencePicker: View {
         refs[ref.savedLocationId] = ref
       }
       locationReferences = refs
+      allowEmergencyOverride = rule.allowEmergencyOverride
     } else {
       selectedRuleType = .within
       selectedLocationIds = []
       locationReferences = [:]
+      allowEmergencyOverride = true
     }
   }
 
@@ -185,7 +206,8 @@ struct GeofencePicker: View {
       }
       geofenceRule = ProfileGeofenceRule(
         ruleType: selectedRuleType,
-        locationReferences: references
+        locationReferences: references,
+        allowEmergencyOverride: allowEmergencyOverride
       )
     }
   }

@@ -62,10 +62,16 @@ struct ProfileLocationReference: Codable, Equatable, Hashable {
 struct ProfileGeofenceRule: Codable, Equatable {
   var ruleType: GeofenceRuleType
   var locationReferences: [ProfileLocationReference]
+  var allowEmergencyOverride: Bool
 
-  init(ruleType: GeofenceRuleType, locationReferences: [ProfileLocationReference]) {
+  init(
+    ruleType: GeofenceRuleType,
+    locationReferences: [ProfileLocationReference],
+    allowEmergencyOverride: Bool = true
+  ) {
     self.ruleType = ruleType
     self.locationReferences = locationReferences
+    self.allowEmergencyOverride = allowEmergencyOverride
   }
 
   /// Whether this rule has any locations configured

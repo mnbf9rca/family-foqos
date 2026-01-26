@@ -433,9 +433,10 @@ class StrategyManager: ObservableObject {
       return
     }
 
-    // Check geofence rule if one exists
+    // Check geofence rule if one exists and emergency override is not allowed
     if let geofenceRule = activeSession.blockedProfile.geofenceRule,
-      geofenceRule.hasLocations
+      geofenceRule.hasLocations,
+      !geofenceRule.allowEmergencyOverride
     {
       checkGeofenceAndEmergencyUnblock(context: context, rule: geofenceRule, session: activeSession)
       return
