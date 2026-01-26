@@ -6,6 +6,8 @@ struct MapLocationPicker: View {
   @Environment(\.dismiss) private var dismiss
   @EnvironmentObject var themeManager: ThemeManager
 
+  @ObservedObject private var locationManager = LocationManager.shared
+
   // Initial coordinate (for editing existing location)
   var initialCoordinate: CLLocationCoordinate2D?
 
@@ -14,6 +16,7 @@ struct MapLocationPicker: View {
 
   @State private var selectedCoordinate: CLLocationCoordinate2D?
   @State private var position: MapCameraPosition = .automatic
+  @State private var isFetchingLocation: Bool = false
 
   var body: some View {
     NavigationStack {
@@ -32,6 +35,37 @@ struct MapLocationPicker: View {
             if let coordinate = proxy.convert(screenCoord, from: .local) {
               selectedCoordinate = coordinate
             }
+          }
+        }
+
+        // Locate me button
+        VStack {
+          Spacer()
+          HStack {
+            Spacer()
+            Button {
+              Task {
+                await locateMe()
+              }
+            } label: {
+              Group {
+                if isFetchingLocation {
+                  ProgressView()
+                    .tint(.white)
+                } else {
+                  Image(systemName: "location.fill")
+                }
+              }
+              .frame(width: 24, height: 24)
+              .padding(12)
+              .background(themeManager.themeColor)
+              .foregroundColor(.white)
+              .clipShape(Circle())
+              .shadow(radius: 4)
+            }
+            .disabled(isFetchingLocation)
+            .padding(.trailing, 16)
+            .padding(.bottom, selectedCoordinate == nil ? 80 : 16)
           }
         }
 
@@ -73,6 +107,36 @@ struct MapLocationPicker: View {
             ))
         }
       }
+    }
+  }
+
+  private func locateMe() async {
+    // Request permission if needed
+    if locationManager.isNotDetermined {
+      let status = await locationManager.requestAuthorizationAndWait()
+      guard status == .authorizedWhenInUse || status == .authorizedAlways else {
+        return
+      }
+    }
+
+    guard locationManager.isAuthorized else { return }
+
+    isFetchingLocation = true
+    defer { isFetchingLocation = false }
+
+    do {
+      let location = try await locationManager.getCurrentLocation()
+      let coordinate = location.coordinate
+
+      // Set pin at current location and center map
+      selectedCoordinate = coordinate
+      position = .region(
+        MKCoordinateRegion(
+          center: coordinate,
+          span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
+        ))
+    } catch {
+      // Silently fail - user can try again
     }
   }
 }
