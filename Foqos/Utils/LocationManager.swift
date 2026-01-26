@@ -9,6 +9,7 @@ class LocationManager: NSObject, ObservableObject {
 
   private let locationManager = CLLocationManager()
   private var locationContinuation: CheckedContinuation<CLLocation, Error>?
+  private var isLocationRequestInFlight: Bool = false
   private var authorizationContinuation: CheckedContinuation<CLAuthorizationStatus, Never>?
 
   @Published private(set) var authorizationStatus: CLAuthorizationStatus = .notDetermined
@@ -66,6 +67,11 @@ class LocationManager: NSObject, ObservableObject {
   /// Get the current location (one-shot fetch)
   /// Throws if location cannot be obtained
   func getCurrentLocation() async throws -> CLLocation {
+    // Prevent concurrent requests - second caller would overwrite continuation
+    guard !isLocationRequestInFlight else {
+      throw LocationError.locationUnavailable
+    }
+
     // Check authorization first
     guard isAuthorized else {
       if isNotDetermined {
@@ -74,6 +80,9 @@ class LocationManager: NSObject, ObservableObject {
         throw LocationError.permissionDenied
       }
     }
+
+    isLocationRequestInFlight = true
+    defer { isLocationRequestInFlight = false }
 
     return try await withCheckedThrowingContinuation { continuation in
       self.locationContinuation = continuation

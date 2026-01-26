@@ -134,7 +134,14 @@ class StrategyManager: ObservableObject {
 
     // Capture saved locations before entering the Task to avoid Sendable warnings
     let ruleToCheck = rule
-    let savedLocationsSnapshot = (try? SavedLocation.fetchAll(in: context)) ?? []
+    let savedLocationsSnapshot: [SavedLocation]
+    do {
+      savedLocationsSnapshot = try SavedLocation.fetchAll(in: context)
+    } catch {
+      self.isCheckingGeofence = false
+      self.errorMessage = "Unable to load saved locations. Please try again."
+      return
+    }
 
     Task { @MainActor in
       let result = await locationManager.checkGeofenceRule(
@@ -181,7 +188,14 @@ class StrategyManager: ObservableObject {
 
     // Capture saved locations before entering the Task to avoid Sendable warnings
     let ruleToCheck = geofenceRule
-    let savedLocationsSnapshot = (try? SavedLocation.fetchAll(in: context)) ?? []
+    let savedLocationsSnapshot: [SavedLocation]
+    do {
+      savedLocationsSnapshot = try SavedLocation.fetchAll(in: context)
+    } catch {
+      self.isCheckingGeofence = false
+      self.errorMessage = "Unable to load saved locations. Please try again."
+      return
+    }
 
     Task { @MainActor in
       let result = await locationManager.checkGeofenceRule(
@@ -573,7 +587,14 @@ class StrategyManager: ObservableObject {
 
     // Capture saved locations before entering the Task to avoid Sendable warnings
     let ruleToCheck = rule
-    let savedLocationsSnapshot = (try? SavedLocation.fetchAll(in: context)) ?? []
+    let savedLocationsSnapshot: [SavedLocation]
+    do {
+      savedLocationsSnapshot = try SavedLocation.fetchAll(in: context)
+    } catch {
+      self.isCheckingGeofence = false
+      self.errorMessage = "Unable to load saved locations. Please try again."
+      return
+    }
 
     Task { @MainActor in
       let result = await locationManager.checkGeofenceRule(

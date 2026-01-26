@@ -144,13 +144,9 @@ struct SavedLocationsView: View {
   }
 
   private func handleEdit(_ location: SavedLocation) {
-    if location.isLocked && appModeManager.currentMode == .child {
-      // For locked locations in non-parent mode, require code verification
-      // For now, allow editing if they can verify the lock code
-      locationToEdit = location
-    } else {
-      locationToEdit = location
-    }
+    // Note: Locked locations can be edited freely in Individual and Parent modes.
+    // In Child mode, AddLocationView will prevent saving changes to locked locations.
+    locationToEdit = location
   }
 
   private func handleDelete(_ location: SavedLocation) {

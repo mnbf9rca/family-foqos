@@ -17,6 +17,7 @@ struct MapLocationPicker: View {
   @State private var selectedCoordinate: CLLocationCoordinate2D?
   @State private var position: MapCameraPosition = .automatic
   @State private var isFetchingLocation: Bool = false
+  @State private var locationErrorMessage: String?
 
   var body: some View {
     NavigationStack {
@@ -72,6 +73,15 @@ struct MapLocationPicker: View {
         if selectedCoordinate == nil {
           VStack {
             Spacer()
+            if let error = locationErrorMessage {
+              Text(error)
+                .font(.subheadline)
+                .foregroundColor(.red)
+                .padding()
+                .background(.ultraThinMaterial)
+                .clipShape(Capsule())
+                .padding(.bottom, 8)
+            }
             Text("Tap to select a location")
               .font(.subheadline)
               .padding()
@@ -111,15 +121,21 @@ struct MapLocationPicker: View {
   }
 
   private func locateMe() async {
+    locationErrorMessage = nil
+
     // Request permission if needed
     if locationManager.isNotDetermined {
       let status = await locationManager.requestAuthorizationAndWait()
       guard status == .authorizedWhenInUse || status == .authorizedAlways else {
+        locationErrorMessage = "Location access denied. Enable in Settings."
         return
       }
     }
 
-    guard locationManager.isAuthorized else { return }
+    guard locationManager.isAuthorized else {
+      locationErrorMessage = "Location access denied. Enable in Settings."
+      return
+    }
 
     isFetchingLocation = true
     defer { isFetchingLocation = false }
@@ -136,7 +152,7 @@ struct MapLocationPicker: View {
           span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
         ))
     } catch {
-      // Silently fail - user can try again
+      locationErrorMessage = "Could not get location. Please try again."
     }
   }
 }
