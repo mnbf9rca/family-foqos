@@ -18,6 +18,9 @@ struct SettingsView: View {
   @State private var showChildDashboard = false
   @State private var showSavedLocations = false
 
+  @AppStorage("warnWhenActivatingAwayFromLocation") private var warnWhenActivatingAwayFromLocation =
+    true
+
   private var appVersion: String {
     Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
       ?? "1.0"
@@ -83,6 +86,18 @@ struct SettingsView: View {
                 .font(.caption)
             }
           }
+          Toggle(isOn: $warnWhenActivatingAwayFromLocation) {
+            VStack(alignment: .leading, spacing: 2) {
+              Text("Warn When Away from Unlock Location")
+                .font(.headline)
+              Text(
+                "Show a warning when starting a profile with location restrictions while not at the required location"
+              )
+              .font(.caption)
+              .foregroundColor(.secondary)
+            }
+          }
+          .tint(themeManager.themeColor)
         } header: {
           Text("Location")
         } footer: {

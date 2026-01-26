@@ -30,6 +30,14 @@ class StrategyManager: ObservableObject {
   @Published var errorMessage: String?
   @Published var isCheckingGeofence: Bool = false
 
+  // Geofence start warning state
+  @AppStorage("warnWhenActivatingAwayFromLocation") private var warnWhenActivatingAwayFromLocation =
+    true
+  @Published var showGeofenceStartWarning: Bool = false
+  @Published var pendingStartProfile: BlockedProfiles? = nil
+  @Published var pendingStartContext: ModelContext? = nil
+  @Published var geofenceWarningMessage: String = ""
+
   @AppStorage("emergencyUnblocksRemaining") private var emergencyUnblocksRemaining: Int = 3
   @AppStorage("emergencyUnblocksResetPeriodInWeeks") private
     var emergencyUnblocksResetPeriodInWeeks: Int = 4
@@ -102,7 +110,7 @@ class StrategyManager: ObservableObject {
 
       stopBlocking(context: context)
     } else {
-      startBlocking(context: context, activeProfile: activeProfile)
+      checkGeofenceAndStart(context: context, activeProfile: activeProfile)
     }
   }
 
@@ -142,6 +150,102 @@ class StrategyManager: ObservableObject {
         self.errorMessage = result.failureMessage ?? "Location restriction not met."
       }
     }
+  }
+
+  /// Check geofence rule before starting and show warning if user is not at location
+  private func checkGeofenceAndStart(context: ModelContext, activeProfile: BlockedProfiles?) {
+    guard let profile = activeProfile else {
+      startBlocking(context: context, activeProfile: activeProfile)
+      return
+    }
+
+    // Fast path: if setting is off, skip check
+    guard warnWhenActivatingAwayFromLocation else {
+      startBlocking(context: context, activeProfile: profile)
+      return
+    }
+
+    // Fast path: if profile has no geofence rule, skip check
+    guard let geofenceRule = profile.geofenceRule, geofenceRule.hasLocations else {
+      startBlocking(context: context, activeProfile: profile)
+      return
+    }
+
+    // If location permission not granted, proceed without warning (don't block activation)
+    if locationManager.isNotDetermined || locationManager.isDenied {
+      startBlocking(context: context, activeProfile: profile)
+      return
+    }
+
+    isCheckingGeofence = true
+
+    // Capture saved locations before entering the Task to avoid Sendable warnings
+    let ruleToCheck = geofenceRule
+    let savedLocationsSnapshot = (try? SavedLocation.fetchAll(in: context)) ?? []
+
+    Task { @MainActor in
+      let result = await locationManager.checkGeofenceRule(
+        rule: ruleToCheck,
+        savedLocations: savedLocationsSnapshot
+      )
+
+      self.isCheckingGeofence = false
+
+      if result.isSatisfied {
+        // User is at location, proceed without warning
+        self.startBlocking(context: context, activeProfile: profile)
+      } else {
+        // User is NOT at location, show warning
+        self.pendingStartProfile = profile
+        self.pendingStartContext = context
+        self.geofenceWarningMessage = self.buildStartWarningMessage(
+          rule: ruleToCheck,
+          savedLocations: savedLocationsSnapshot
+        )
+        self.showGeofenceStartWarning = true
+      }
+    }
+  }
+
+  /// Build user-friendly warning message for starting away from location
+  private func buildStartWarningMessage(
+    rule: ProfileGeofenceRule,
+    savedLocations: [SavedLocation]
+  ) -> String {
+    let locationNames = rule.locationReferences.compactMap { ref in
+      savedLocations.first { $0.id == ref.savedLocationId }?.name
+    }
+
+    if locationNames.isEmpty {
+      return
+        "This profile has location restrictions. You won't be able to stop it until you're at the required location."
+    } else if locationNames.count == 1 {
+      return
+        "This profile can only be stopped at \"\(locationNames[0])\". You're not currently at that location."
+    } else {
+      let locationList = locationNames.joined(separator: ", ")
+      return
+        "This profile can only be stopped at one of these locations: \(locationList). You're not currently at any of them."
+    }
+  }
+
+  /// Called when user confirms starting despite geofence warning
+  func confirmGeofenceStart() {
+    guard let profile = pendingStartProfile, let context = pendingStartContext else {
+      cancelGeofenceStart()
+      return
+    }
+
+    startBlocking(context: context, activeProfile: profile)
+    cancelGeofenceStart()
+  }
+
+  /// Called when user cancels starting due to geofence warning
+  func cancelGeofenceStart() {
+    pendingStartProfile = nil
+    pendingStartContext = nil
+    geofenceWarningMessage = ""
+    showGeofenceStartWarning = false
   }
 
   /// Check if the current blocking session can be stopped (for managed profiles)
