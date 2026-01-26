@@ -40,6 +40,8 @@ enum SharedData {
 
     var schedule: BlockedProfileSchedule?
 
+    var geofenceRule: ProfileGeofenceRule?
+
     var disableBackgroundStops: Bool?
 
     // Managed profile fields

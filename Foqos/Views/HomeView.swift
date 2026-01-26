@@ -291,6 +291,16 @@ struct HomeView: View {
     } message: {
       Text(alertMessage)
     }
+    .alert("Location Warning", isPresented: $strategyManager.showGeofenceStartWarning) {
+      Button("Start Anyway") {
+        strategyManager.confirmGeofenceStart()
+      }
+      Button("Cancel", role: .cancel) {
+        strategyManager.cancelGeofenceStart()
+      }
+    } message: {
+      Text(strategyManager.geofenceWarningMessage)
+    }
   }
 
   private func toggleSessionFromDeeplink(_ profileId: String, link: URL) {

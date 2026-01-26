@@ -16,7 +16,7 @@ private let container: ModelContainer = {
   do {
     // Configure SwiftData to use local storage only (not CloudKit sync)
     // We handle CloudKit manually for FamilyPolicy via CloudKitManager
-    let schema = Schema([BlockedProfileSession.self, BlockedProfiles.self])
+    let schema = Schema([BlockedProfileSession.self, BlockedProfiles.self, SavedLocation.self])
     let modelConfiguration = ModelConfiguration(
       schema: schema,
       isStoredInMemoryOnly: false,
