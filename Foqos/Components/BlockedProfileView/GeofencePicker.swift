@@ -50,20 +50,40 @@ struct GeofencePicker: View {
       Form {
         // Rule type section
         Section {
-          Picker("Rule Type", selection: $selectedRuleType) {
+          VStack(spacing: 12) {
             ForEach(GeofenceRuleType.allCases, id: \.self) { ruleType in
-              HStack {
-                Image(systemName: ruleType.iconName)
-                Text(ruleType.displayName)
+              Button {
+                selectedRuleType = ruleType
+              } label: {
+                HStack(spacing: 12) {
+                  Image(systemName: ruleType.iconName)
+                    .font(.title2)
+                    .foregroundColor(selectedRuleType == ruleType ? .white : themeManager.themeColor)
+                    .frame(width: 32)
+                  VStack(alignment: .leading, spacing: 2) {
+                    Text(ruleType.displayName)
+                      .font(.subheadline)
+                      .fontWeight(.medium)
+                    Text(ruleType.shortDescription)
+                      .font(.caption)
+                      .foregroundColor(selectedRuleType == ruleType ? .white.opacity(0.8) : .secondary)
+                  }
+                  Spacer()
+                  if selectedRuleType == ruleType {
+                    Image(systemName: "checkmark")
+                      .font(.body.weight(.semibold))
+                      .foregroundColor(.white)
+                  }
+                }
+                .padding(12)
+                .background(selectedRuleType == ruleType ? themeManager.themeColor : Color.secondary.opacity(0.1))
+                .foregroundColor(selectedRuleType == ruleType ? .white : .primary)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
               }
-              .tag(ruleType)
+              .buttonStyle(.plain)
             }
           }
-          .pickerStyle(.segmented)
-
-          Text(selectedRuleType.description)
-            .font(.caption)
-            .foregroundColor(.secondary)
+          .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
         } header: {
           Text("Restriction Type")
         }
@@ -117,7 +137,7 @@ struct GeofencePicker: View {
           Text("Locations")
         } footer: {
           if !savedLocations.isEmpty {
-            Text("Select locations and optionally customize the radius for each.")
+            Text("Select locations and optionally customize the distance for each.")
           }
         }
 
@@ -132,26 +152,6 @@ struct GeofencePicker: View {
             .clipShape(RoundedRectangle(cornerRadius: 12))
           } header: {
             Text("Preview")
-          }
-        }
-
-        // Summary section
-        if hasChanges {
-          Section {
-            HStack {
-              Image(systemName: selectedRuleType.iconName)
-                .foregroundColor(themeManager.themeColor)
-              VStack(alignment: .leading, spacing: 2) {
-                Text(selectedRuleType.displayName)
-                  .font(.subheadline)
-                  .fontWeight(.medium)
-                Text("\(selectedLocationIds.count) location\(selectedLocationIds.count == 1 ? "" : "s") selected")
-                  .font(.caption)
-                  .foregroundColor(.secondary)
-              }
-            }
-          } header: {
-            Text("Summary")
           }
         }
       }
@@ -197,40 +197,45 @@ struct GeofenceMapPreview: View {
   let locations: [SavedLocation]
   let locationReferences: [UUID: ProfileLocationReference]
 
-  @State private var region: MKCoordinateRegion
-
-  init(locations: [SavedLocation], locationReferences: [UUID: ProfileLocationReference]) {
-    self.locations = locations
-    self.locationReferences = locationReferences
-
-    // Calculate region to fit all locations
-    let coordinates = locations.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
-    _region = State(initialValue: Self.regionToFit(coordinates: coordinates))
+  private var region: MKCoordinateRegion {
+    Self.regionToFit(locations: locations, locationReferences: locationReferences)
   }
 
-  private static func regionToFit(coordinates: [CLLocationCoordinate2D]) -> MKCoordinateRegion {
-    guard !coordinates.isEmpty else {
+  private static func regionToFit(
+    locations: [SavedLocation],
+    locationReferences: [UUID: ProfileLocationReference]
+  ) -> MKCoordinateRegion {
+    guard !locations.isEmpty else {
       return MKCoordinateRegion(
         center: CLLocationCoordinate2D(latitude: 51.5074, longitude: -0.1278),
         span: MKCoordinateSpan(latitudeDelta: 0.1, longitudeDelta: 0.1)
       )
     }
 
-    let latitudes = coordinates.map { $0.latitude }
-    let longitudes = coordinates.map { $0.longitude }
+    // Calculate bounds including the radius of each location
+    let metersPerDegree = 111000.0
+    var minLat = Double.greatestFiniteMagnitude
+    var maxLat = -Double.greatestFiniteMagnitude
+    var minLon = Double.greatestFiniteMagnitude
+    var maxLon = -Double.greatestFiniteMagnitude
 
-    let minLat = latitudes.min()!
-    let maxLat = latitudes.max()!
-    let minLon = longitudes.min()!
-    let maxLon = longitudes.max()!
+    for location in locations {
+      let radius = locationReferences[location.id]?.radiusOverrideMeters ?? location.defaultRadiusMeters
+      let radiusDegrees = radius / metersPerDegree
+
+      minLat = min(minLat, location.latitude - radiusDegrees)
+      maxLat = max(maxLat, location.latitude + radiusDegrees)
+      minLon = min(minLon, location.longitude - radiusDegrees)
+      maxLon = max(maxLon, location.longitude + radiusDegrees)
+    }
 
     let center = CLLocationCoordinate2D(
       latitude: (minLat + maxLat) / 2,
       longitude: (minLon + maxLon) / 2
     )
 
-    let latDelta = max((maxLat - minLat) * 1.5, 0.01)
-    let lonDelta = max((maxLon - minLon) * 1.5, 0.01)
+    let latDelta = max((maxLat - minLat) * 1.4, 0.005)
+    let lonDelta = max((maxLon - minLon) * 1.4, 0.005)
 
     return MKCoordinateRegion(
       center: center,
@@ -239,28 +244,26 @@ struct GeofenceMapPreview: View {
   }
 
   var body: some View {
-    Map(position: .constant(.region(region))) {
+    Map(position: .constant(.region(region)), interactionModes: []) {
+      // Draw circles for each location
       ForEach(locations) { location in
         let reference = locationReferences[location.id]
         let radius = reference?.radiusOverrideMeters ?? location.defaultRadiusMeters
+        let coordinate = CLLocationCoordinate2D(latitude: location.latitude, longitude: location.longitude)
 
-        Annotation(location.name, coordinate: CLLocationCoordinate2D(latitude: location.latitude, longitude: location.longitude)) {
-          VStack(spacing: 2) {
-            ZStack {
-              Circle()
-                .fill(themeManager.themeColor.opacity(0.2))
-                .frame(width: radiusToSize(radius), height: radiusToSize(radius))
-              Circle()
-                .stroke(themeManager.themeColor, lineWidth: 2)
-                .frame(width: radiusToSize(radius), height: radiusToSize(radius))
-              Image(systemName: "mappin.circle.fill")
-                .font(.title2)
-                .foregroundColor(themeManager.themeColor)
-            }
+        MapCircle(center: coordinate, radius: radius)
+          .foregroundStyle(themeManager.themeColor.opacity(0.2))
+          .stroke(themeManager.themeColor, lineWidth: 2)
+
+        Annotation(location.name, coordinate: coordinate) {
+          VStack(spacing: 4) {
+            Image(systemName: "mappin.circle.fill")
+              .font(.title2)
+              .foregroundColor(themeManager.themeColor)
             Text(location.name)
               .font(.caption2)
               .fontWeight(.medium)
-              .padding(.horizontal, 4)
+              .padding(.horizontal, 6)
               .padding(.vertical, 2)
               .background(Color(.systemBackground).opacity(0.9))
               .clipShape(Capsule())
@@ -268,14 +271,6 @@ struct GeofenceMapPreview: View {
         }
       }
     }
-  }
-
-  private func radiusToSize(_ meters: Double) -> CGFloat {
-    // Scale radius to a reasonable visual size
-    let minSize: CGFloat = 30
-    let maxSize: CGFloat = 80
-    let scaleFactor = min(max(meters / 1000, 0.1), 5)
-    return minSize + CGFloat(scaleFactor) * (maxSize - minSize) / 5
   }
 }
 

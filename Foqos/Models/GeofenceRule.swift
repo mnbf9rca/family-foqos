@@ -23,6 +23,15 @@ enum GeofenceRuleType: String, Codable, CaseIterable {
     }
   }
 
+  var shortDescription: String {
+    switch self {
+    case .within:
+      return "Stop only at selected locations"
+    case .outside:
+      return "Stop only away from selected locations"
+    }
+  }
+
   var iconName: String {
     switch self {
     case .within:

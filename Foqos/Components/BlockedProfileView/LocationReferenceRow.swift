@@ -8,7 +8,8 @@ struct LocationReferenceRow: View {
   let isSelected: Bool
   let onToggle: (Bool) -> Void
 
-  @State private var showRadiusOverride: Bool = false
+  @State private var showDistanceOverride: Bool = false
+  @State private var sliderValue: Double = 0
 
   private var effectiveRadius: Double {
     reference.radiusOverrideMeters ?? location.defaultRadiusMeters
@@ -16,6 +17,15 @@ struct LocationReferenceRow: View {
 
   private var hasOverride: Bool {
     reference.radiusOverrideMeters != nil
+  }
+
+  private var selectedRadiusIndex: Int {
+    Int(sliderValue.rounded())
+  }
+
+  private var selectedRadius: Double {
+    let index = min(max(selectedRadiusIndex, 0), SavedLocation.radiusSteps.count - 1)
+    return SavedLocation.radiusSteps[index]
   }
 
   var body: some View {
@@ -45,17 +55,17 @@ struct LocationReferenceRow: View {
             }
           }
 
-          Text("Radius: \(SavedLocation.formatRadius(effectiveRadius))")
+          Text("Distance: \(SavedLocation.formatRadius(effectiveRadius))")
             .font(.caption)
             .foregroundColor(.secondary)
         }
 
         Spacer()
 
-        // Radius override button (only show when selected)
+        // Distance override button (only show when selected)
         if isSelected {
           Button {
-            showRadiusOverride.toggle()
+            showDistanceOverride.toggle()
           } label: {
             HStack(spacing: 4) {
               if hasOverride {
@@ -64,7 +74,7 @@ struct LocationReferenceRow: View {
               }
               Image(systemName: "chevron.down")
                 .font(.caption2)
-                .rotationEffect(.degrees(showRadiusOverride ? 180 : 0))
+                .rotationEffect(.degrees(showDistanceOverride ? 180 : 0))
             }
             .foregroundColor(.secondary)
             .padding(.horizontal, 8)
@@ -76,61 +86,65 @@ struct LocationReferenceRow: View {
         }
       }
 
-      // Radius override picker (expandable)
-      if isSelected && showRadiusOverride {
+      // Distance override picker (expandable)
+      if isSelected && showDistanceOverride {
         VStack(alignment: .leading, spacing: 8) {
           HStack {
-            Text("Override radius for this profile:")
+            Text("Override distance for this profile:")
               .font(.caption)
               .foregroundColor(.secondary)
             Spacer()
             if hasOverride {
               Button("Reset") {
                 reference.radiusOverrideMeters = nil
+                sliderValue = Double(SavedLocation.radiusStepIndex(for: location.defaultRadiusMeters))
               }
               .font(.caption)
               .foregroundColor(themeManager.themeColor)
             }
           }
 
-          ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-              ForEach(SavedLocation.radiusSteps, id: \.self) { meters in
-                radiusButton(label: SavedLocation.formatRadius(meters), meters: meters)
+          HStack {
+            Text("10m")
+              .font(.caption)
+              .foregroundColor(.secondary)
+              .frame(width: 32, alignment: .leading)
+            Slider(
+              value: $sliderValue,
+              in: 0...Double(SavedLocation.radiusSteps.count - 1),
+              step: 1
+            )
+            .tint(themeManager.themeColor)
+            .onChange(of: sliderValue) { _, newValue in
+              let index = Int(newValue.rounded())
+              let meters = SavedLocation.radiusSteps[min(max(index, 0), SavedLocation.radiusSteps.count - 1)]
+              if abs(location.defaultRadiusMeters - meters) < 1 {
+                reference.radiusOverrideMeters = nil
+              } else {
+                reference.radiusOverrideMeters = meters
               }
             }
+            Text("3km")
+              .font(.caption)
+              .foregroundColor(.secondary)
+              .frame(width: 32, alignment: .trailing)
           }
+
+          Text(SavedLocation.formatRadiusWithDescription(selectedRadius))
+            .font(.subheadline)
+            .foregroundColor(themeManager.themeColor)
+            .fontWeight(.medium)
+            .frame(maxWidth: .infinity, alignment: .center)
         }
         .padding(.leading, 44)
         .padding(.top, 4)
       }
     }
     .padding(.vertical, 4)
-    .animation(.easeInOut(duration: 0.2), value: showRadiusOverride)
-  }
-
-  @ViewBuilder
-  private func radiusButton(label: String, meters: Double) -> some View {
-    let isCurrentRadius = abs(effectiveRadius - meters) < 1
-
-    Button {
-      if abs(location.defaultRadiusMeters - meters) < 1 {
-        // If selecting the default, clear the override
-        reference.radiusOverrideMeters = nil
-      } else {
-        reference.radiusOverrideMeters = meters
-      }
-    } label: {
-      Text(label)
-        .font(.caption)
-        .fontWeight(isCurrentRadius ? .semibold : .regular)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .background(isCurrentRadius ? themeManager.themeColor : Color.secondary.opacity(0.15))
-        .foregroundColor(isCurrentRadius ? .white : .primary)
-        .clipShape(Capsule())
+    .animation(.easeInOut(duration: 0.2), value: showDistanceOverride)
+    .onAppear {
+      sliderValue = Double(SavedLocation.radiusStepIndex(for: effectiveRadius))
     }
-    .buttonStyle(.plain)
   }
 }
 
