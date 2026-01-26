@@ -5,13 +5,9 @@ struct ProfileIndicators: View {
   let hasReminders: Bool
   let enableBreaks: Bool
   let enableStrictMode: Bool
-  var isSynced: Bool = false
 
   var body: some View {
     HStack(spacing: 16) {
-      if isSynced {
-        syncIndicatorView()
-      }
       if enableBreaks {
         indicatorView(label: "Breaks")
       }
@@ -24,18 +20,6 @@ struct ProfileIndicators: View {
       if hasReminders {
         indicatorView(label: "Reminders")
       }
-    }
-  }
-
-  private func syncIndicatorView() -> some View {
-    HStack(spacing: 6) {
-      Image(systemName: "arrow.triangle.2.circlepath")
-        .font(.system(size: 8))
-        .foregroundColor(.blue)
-
-      Text("Synced")
-        .font(.caption2)
-        .foregroundColor(.blue)
     }
   }
 
@@ -58,13 +42,13 @@ struct ProfileIndicators: View {
       enableLiveActivity: true,
       hasReminders: true,
       enableBreaks: false,
-      enableStrictMode: false,
+      enableStrictMode: false
     )
     ProfileIndicators(
       enableLiveActivity: false,
       hasReminders: false,
       enableBreaks: true,
-      enableStrictMode: true,
+      enableStrictMode: true
     )
   }
   .padding()

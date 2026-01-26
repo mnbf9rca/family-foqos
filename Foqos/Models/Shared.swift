@@ -51,7 +51,6 @@ enum SharedData {
     var managedByChildId: String?
 
     // Device sync fields
-    var isSynced: Bool?
     var syncVersion: Int?
     var needsAppSelection: Bool?
   }

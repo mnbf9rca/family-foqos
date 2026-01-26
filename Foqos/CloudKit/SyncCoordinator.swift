@@ -73,13 +73,19 @@ class SyncCoordinator: ObservableObject {
         }
       }
       .store(in: &cancellables)
+
   }
 
   // MARK: - Local Data Push
 
-  /// Push all local synced profiles and locations to CloudKit
+  /// Push all local profiles and locations to CloudKit (when global sync is enabled)
   @MainActor
   private func pushLocalData() {
+    guard ProfileSyncManager.shared.isEnabled else {
+      print("SyncCoordinator: Global sync disabled, skipping push")
+      return
+    }
+
     guard let context = modelContext else {
       print("SyncCoordinator: No model context available for local push")
       return
@@ -89,12 +95,14 @@ class SyncCoordinator: ObservableObject {
       let profiles = try BlockedProfiles.fetchProfiles(in: context)
       let locations = try SavedLocation.fetchAll(in: context)
 
+      print("SyncCoordinator: Found \(profiles.count) profiles to sync")
+
       // Create sync objects on main queue (accesses SwiftData properties)
       let deviceId = SharedData.deviceSyncId.uuidString
-      let syncedProfiles = profiles
-        .filter { $0.isSynced }
-        .map { SyncedProfile(from: $0, originDeviceId: deviceId) }
+      let syncedProfiles = profiles.map { SyncedProfile(from: $0, originDeviceId: deviceId) }
       let syncedLocations = locations.map { SyncedLocation(from: $0) }
+
+      print("SyncCoordinator: Pushing \(syncedProfiles.count) profiles and \(syncedLocations.count) locations to CloudKit")
 
       Task.detached {
         // Push synced profiles
@@ -149,14 +157,11 @@ class SyncCoordinator: ObservableObject {
       }
     }
 
-    // Reconcile deletions: remove local synced profiles not in remote set
+    // Reconcile deletions: remove local profiles not in remote set
     // Only delete profiles that were synced from remote (not originated here)
     do {
       let localProfiles = try BlockedProfiles.fetchProfiles(in: context)
       for profile in localProfiles {
-        // Only consider profiles that are marked as synced
-        guard profile.isSynced else { continue }
-
         // If profile is not in remote and wasn't originated from this device, delete it
         if !remoteProfileIds.contains(profile.id) {
           // Check if this profile has any recent remote activity before deleting
@@ -200,7 +205,6 @@ class SyncCoordinator: ObservableObject {
     profile.managedByChildId = synced.managedByChildId
     profile.syncVersion = synced.version
     profile.updatedAt = synced.updatedAt
-    profile.isSynced = true
 
     // Update snapshot for extensions
     BlockedProfiles.updateSnapshot(for: profile)
@@ -234,7 +238,6 @@ class SyncCoordinator: ObservableObject {
       disableBackgroundStops: synced.disableBackgroundStops,
       isManaged: synced.isManaged,
       managedByChildId: synced.managedByChildId,
-      isSynced: true,
       syncVersion: synced.version,
       needsAppSelection: true  // New profile from another device needs app selection
     )
@@ -294,11 +297,11 @@ class SyncCoordinator: ObservableObject {
 
     // Check for sessions to STOP
     // Only stop if:
-    // 1. We have a local active session for a synced profile
+    // 1. We have a local active session and global sync is enabled
     // 2. That profile's session was triggered by remote (not started locally)
     // 3. The remote no longer has an active session for that profile
     if let localActiveSession = StrategyManager.shared.activeSession,
-      localActiveSession.blockedProfile.isSynced
+      ProfileSyncManager.shared.isEnabled
     {
       let localProfileId = localActiveSession.blockedProfile.id
 
@@ -372,16 +375,16 @@ class SyncCoordinator: ObservableObject {
     }
 
     if clearAppSelections {
-      // Mark all synced profiles as needing app selection
+      // Mark all profiles as needing app selection
       do {
         let profiles = try BlockedProfiles.fetchProfiles(in: context)
-        for profile in profiles where profile.isSynced {
+        for profile in profiles {
           profile.needsAppSelection = true
           profile.selectedActivity = .init()  // Clear selection
           BlockedProfiles.updateSnapshot(for: profile)
         }
         try context.save()
-        print("SyncCoordinator: Cleared app selections for all synced profiles")
+        print("SyncCoordinator: Cleared app selections for all profiles")
       } catch {
         print("SyncCoordinator: Error clearing app selections - \(error)")
       }
@@ -396,17 +399,17 @@ class SyncCoordinator: ObservableObject {
     }
   }
 
-  /// Re-push all local synced profiles and locations to CloudKit after a reset
+  /// Re-push all local profiles and locations to CloudKit after a reset
   private func rePushLocalSyncedData(context: ModelContext) async {
     do {
-      // Re-push synced profiles
+      // Re-push all profiles
       let profiles = try BlockedProfiles.fetchProfiles(in: context)
-      for profile in profiles where profile.isSynced {
+      for profile in profiles {
         try? await ProfileSyncManager.shared.pushProfile(profile)
         print("SyncCoordinator: Re-pushed profile '\(profile.name)' after reset")
       }
 
-      // Re-push synced locations
+      // Re-push all locations
       let locations = try SavedLocation.fetchAll(in: context)
       for location in locations {
         try? await ProfileSyncManager.shared.pushLocation(location)
@@ -419,9 +422,9 @@ class SyncCoordinator: ObservableObject {
 
   // MARK: - Profile Push Helper
 
-  /// Push a profile to CloudKit when it's marked as synced
-  func pushProfileIfSynced(_ profile: BlockedProfiles) {
-    guard profile.isSynced else { return }
+  /// Push a profile to CloudKit when global sync is enabled
+  func pushProfile(_ profile: BlockedProfiles) {
+    guard ProfileSyncManager.shared.isEnabled else { return }
     guard let context = modelContext else {
       print("SyncCoordinator: No model context available for push")
       return
@@ -436,9 +439,9 @@ class SyncCoordinator: ObservableObject {
     }
   }
 
-  /// Delete a profile from CloudKit when it's deleted locally
-  func deleteProfileFromSync(_ profileId: UUID, wasSynced: Bool) {
-    guard wasSynced else { return }
+  /// Delete a profile from CloudKit when it's deleted locally (if global sync is enabled)
+  func deleteProfileFromSync(_ profileId: UUID) {
+    guard ProfileSyncManager.shared.isEnabled else { return }
 
     Task {
       try? await ProfileSyncManager.shared.deleteProfile(profileId)

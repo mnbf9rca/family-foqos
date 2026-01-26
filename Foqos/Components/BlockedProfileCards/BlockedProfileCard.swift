@@ -44,8 +44,7 @@ struct BlockedProfileCard: View {
               enableLiveActivity: profile.enableLiveActivity,
               hasReminders: profile.reminderTimeInSeconds != nil,
               enableBreaks: profile.enableBreaks,
-              enableStrictMode: profile.enableStrictMode,
-              isSynced: profile.isSynced
+              enableStrictMode: profile.enableStrictMode
             )
           }
 

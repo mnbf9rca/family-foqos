@@ -87,10 +87,6 @@ struct BlockedProfileView: View {
   @State private var showingLockCodeEntry = false
   @State private var pendingAction: PendingAction?
 
-  // Device sync state
-  @State private var isSynced: Bool = false
-  @ObservedObject private var profileSyncManager = ProfileSyncManager.shared
-
   // Pending actions that require code verification
   private enum PendingAction {
     case edit
@@ -194,7 +190,6 @@ struct BlockedProfileView: View {
         )
     )
     _isManaged = State(initialValue: profile?.isManaged ?? false)
-    _isSynced = State(initialValue: profile?.isSynced ?? false)
     _geofenceRule = State(initialValue: profile?.geofenceRule)
 
     if let profileStrategyId = profile?.blockingStrategyId {
@@ -387,25 +382,6 @@ struct BlockedProfileView: View {
           } footer: {
             if isManaged {
               Text("This profile will require your lock code to modify. The child will not be able to see the code.")
-            }
-          }
-        }
-
-        // Device sync section (only visible when sync is enabled)
-        if profileSyncManager.isEnabled {
-          Section {
-            CustomToggle(
-              title: "Sync Across Devices",
-              description:
-                "Sync this profile to your other devices via iCloud. App selections must be configured on each device.",
-              isOn: $isSynced,
-              isDisabled: isBlocking
-            )
-          } header: {
-            Text("Device Sync")
-          } footer: {
-            if isSynced {
-              Text("This profile will sync to your other devices. Starting or stopping on one device will affect all devices.")
             }
           }
         }
@@ -701,11 +677,10 @@ struct BlockedProfileView: View {
               dismiss()
               if let profileToDelete = profile {
                 let profileId = profileToDelete.id
-                let wasSynced = profileToDelete.isSynced
                 do {
                   try BlockedProfiles.deleteProfile(profileToDelete, in: modelContext)
-                  // Delete from sync if it was synced
-                  SyncCoordinator.shared.deleteProfileFromSync(profileId, wasSynced: wasSynced)
+                  // Delete from sync (if global sync is enabled)
+                  SyncCoordinator.shared.deleteProfileFromSync(profileId)
                 } catch {
                   showError(message: error.localizedDescription)
                 }
@@ -773,10 +748,6 @@ struct BlockedProfileView: View {
         : nil
 
       if let existingProfile = profile {
-        // Track if sync was disabled (for CloudKit deletion)
-        let wasSynced = existingProfile.isSynced
-        let profileId = existingProfile.id
-
         // Update existing profile
         let updatedProfile = try BlockedProfiles.updateProfile(
           existingProfile,
@@ -801,21 +772,14 @@ struct BlockedProfileView: View {
           disableBackgroundStops: disableBackgroundStops,
           isManaged: isManaged,
           managedByChildId: managedChildId,
-          isSynced: isSynced,
           needsAppSelection: false  // Clear needsAppSelection since user is saving with app selection
         )
 
         // Schedule restrictions
         DeviceActivityCenterUtil.scheduleTimerActivity(for: updatedProfile)
 
-        // Handle sync state changes
-        if wasSynced && !isSynced {
-          // Sync was disabled - delete from CloudKit
-          SyncCoordinator.shared.deleteProfileFromSync(profileId, wasSynced: true)
-        } else {
-          // Push to sync if still synced
-          SyncCoordinator.shared.pushProfileIfSynced(updatedProfile)
-        }
+        // Push to sync (if global sync is enabled)
+        SyncCoordinator.shared.pushProfile(updatedProfile)
       } else {
         let newProfile = try BlockedProfiles.createProfile(
           in: modelContext,
@@ -839,15 +803,14 @@ struct BlockedProfileView: View {
           geofenceRule: geofenceRule,
           disableBackgroundStops: disableBackgroundStops,
           isManaged: isManaged,
-          managedByChildId: managedChildId,
-          isSynced: isSynced
+          managedByChildId: managedChildId
         )
 
         // Schedule restrictions
         DeviceActivityCenterUtil.scheduleTimerActivity(for: newProfile)
 
-        // Push to sync if synced
-        SyncCoordinator.shared.pushProfileIfSynced(newProfile)
+        // Push to sync (if global sync is enabled)
+        SyncCoordinator.shared.pushProfile(newProfile)
       }
 
       dismiss()

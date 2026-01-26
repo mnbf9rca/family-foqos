@@ -42,7 +42,6 @@ class BlockedProfiles {
   var managedByChildId: String? = nil  // Which child this managed profile is for (for per-child code lookup)
 
   // Device sync fields (same-user multi-device sync)
-  var isSynced: Bool = false  // If true, this profile syncs across user's devices via iCloud
   var syncVersion: Int = 0  // Version counter for conflict resolution (last-write-wins)
   var needsAppSelection: Bool = false  // True if synced from another device but no local apps selected
 
@@ -83,7 +82,6 @@ class BlockedProfiles {
     disableBackgroundStops: Bool = false,
     isManaged: Bool = false,
     managedByChildId: String? = nil,
-    isSynced: Bool = false,
     syncVersion: Int = 0,
     needsAppSelection: Bool = false
   ) {
@@ -116,7 +114,6 @@ class BlockedProfiles {
     self.disableBackgroundStops = disableBackgroundStops
     self.isManaged = isManaged
     self.managedByChildId = managedByChildId
-    self.isSynced = isSynced
     self.syncVersion = syncVersion
     self.needsAppSelection = needsAppSelection
   }
@@ -175,7 +172,6 @@ class BlockedProfiles {
     disableBackgroundStops: Bool? = nil,
     isManaged: Bool? = nil,
     managedByChildId: String? = nil,
-    isSynced: Bool? = nil,
     syncVersion: Int? = nil,
     needsAppSelection: Bool? = nil
   ) throws -> BlockedProfiles {
@@ -250,9 +246,6 @@ class BlockedProfiles {
     profile.managedByChildId = managedByChildId
 
     // Sync fields
-    if let newIsSynced = isSynced {
-      profile.isSynced = newIsSynced
-    }
     if let newSyncVersion = syncVersion {
       profile.syncVersion = newSyncVersion
     }
@@ -334,7 +327,6 @@ class BlockedProfiles {
       disableBackgroundStops: profile.disableBackgroundStops,
       isManaged: profile.isManaged,
       managedByChildId: profile.managedByChildId,
-      isSynced: profile.isSynced,
       syncVersion: profile.syncVersion,
       needsAppSelection: profile.needsAppSelection
     )
@@ -393,7 +385,6 @@ class BlockedProfiles {
     disableBackgroundStops: Bool = false,
     isManaged: Bool = false,
     managedByChildId: String? = nil,
-    isSynced: Bool = false,
     syncVersion: Int = 0,
     needsAppSelection: Bool = false
   ) throws -> BlockedProfiles {
@@ -421,7 +412,6 @@ class BlockedProfiles {
       disableBackgroundStops: disableBackgroundStops,
       isManaged: isManaged,
       managedByChildId: managedByChildId,
-      isSynced: isSynced,
       syncVersion: syncVersion,
       needsAppSelection: needsAppSelection
     )
@@ -467,7 +457,6 @@ class BlockedProfiles {
       disableBackgroundStops: source.disableBackgroundStops,
       isManaged: source.isManaged,
       managedByChildId: source.managedByChildId,
-      isSynced: source.isSynced,
       syncVersion: 0,  // Reset sync version for cloned profile
       needsAppSelection: false  // Cloned profile has app selection from source
     )

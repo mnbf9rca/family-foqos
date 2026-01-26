@@ -310,7 +310,6 @@ class ProfileSyncManager: ObservableObject {
   /// Push a profile to CloudKit
   func pushProfile(_ profile: BlockedProfiles) async throws {
     guard isEnabled else { throw SyncError.syncDisabled }
-    guard profile.isSynced else { return }
 
     let syncedProfile = SyncedProfile(from: profile, originDeviceId: deviceId)
     try await pushSyncedProfile(syncedProfile)
@@ -408,7 +407,6 @@ class ProfileSyncManager: ObservableObject {
   /// Push a session to CloudKit (for start/stop propagation)
   func pushSession(_ session: BlockedProfileSession) async throws {
     guard isEnabled else { throw SyncError.syncDisabled }
-    guard session.blockedProfile.isSynced else { return }
 
     let syncedSession = SyncedSession(from: session, originDeviceId: deviceId)
     let record = syncedSession.toCKRecord(in: syncZoneID)

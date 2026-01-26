@@ -722,8 +722,8 @@ class StrategyManager: ObservableObject {
         // Refresh widgets when session starts
         WidgetCenter.shared.reloadTimelines(ofKind: "ProfileControlWidget")
 
-        // Sync session start to other devices
-        if session.blockedProfile.isSynced {
+        // Sync session start to other devices (if global sync is enabled)
+        if self.profileSyncManager.isEnabled {
           Task {
             try? await self.profileSyncManager.pushSession(session)
           }
@@ -748,8 +748,8 @@ class StrategyManager: ObservableObject {
         // Remove all strategy timer activities
         DeviceActivityCenterUtil.removeAllStrategyTimerActivities()
 
-        // Sync session end to other devices
-        if endedProfile.isSynced, let sessionId = endedSessionId {
+        // Sync session end to other devices (if global sync is enabled)
+        if self.profileSyncManager.isEnabled, let sessionId = endedSessionId {
           Task {
             try? await self.profileSyncManager.pushSessionEnd(sessionId, endTime: Date())
           }
