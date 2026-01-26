@@ -19,8 +19,7 @@ struct AddLocationView: View {
   @State private var name: String = ""
   @State private var latitude: Double = 0
   @State private var longitude: Double = 0
-  @State private var selectedRadiusIndex: Int = 2  // Default to 500m
-  @State private var customRadius: String = ""
+  @State private var radiusSliderValue: Double = Double(SavedLocation.defaultRadiusIndex)
   @State private var isLocked: Bool = false
   @State private var hasSetLocation: Bool = false
 
@@ -42,12 +41,13 @@ struct AddLocationView: View {
     appModeManager.currentMode == .parent && lockCodeManager.hasAnyLockCode
   }
 
+  private var selectedRadiusIndex: Int {
+    Int(radiusSliderValue.rounded())
+  }
+
   private var selectedRadius: Double {
-    if selectedRadiusIndex < SavedLocation.radiusPresets.count {
-      return SavedLocation.radiusPresets[selectedRadiusIndex].meters
-    } else {
-      return Double(customRadius) ?? 500
-    }
+    let index = min(max(selectedRadiusIndex, 0), SavedLocation.radiusSteps.count - 1)
+    return SavedLocation.radiusSteps[index]
   }
 
   private var canSave: Bool {
@@ -64,13 +64,9 @@ struct AddLocationView: View {
       _isLocked = State(initialValue: location.isLocked)
       _hasSetLocation = State(initialValue: true)
 
-      // Find matching radius preset or use custom
-      if let presetIndex = SavedLocation.radiusPresets.firstIndex(where: { abs($0.meters - location.defaultRadiusMeters) < 1 }) {
-        _selectedRadiusIndex = State(initialValue: presetIndex)
-      } else {
-        _selectedRadiusIndex = State(initialValue: SavedLocation.radiusPresets.count)
-        _customRadius = State(initialValue: String(Int(location.defaultRadiusMeters)))
-      }
+      // Find closest radius step
+      let stepIndex = SavedLocation.radiusStepIndex(for: location.defaultRadiusMeters)
+      _radiusSliderValue = State(initialValue: Double(stepIndex))
 
       _mapRegion = State(initialValue: MKCoordinateRegion(
         center: CLLocationCoordinate2D(latitude: location.latitude, longitude: location.longitude),
@@ -168,44 +164,49 @@ struct AddLocationView: View {
           }
         }
 
-        // Map preview
+        // Map with range slider
         if hasSetLocation {
-          Section("Preview") {
-            Map(position: .constant(.region(mapRegion))) {
-              Annotation("", coordinate: CLLocationCoordinate2D(latitude: latitude, longitude: longitude)) {
-                ZStack {
-                  Circle()
-                    .fill(themeManager.themeColor.opacity(0.2))
-                    .frame(width: radiusToMapSize(), height: radiusToMapSize())
-                  Circle()
-                    .stroke(themeManager.themeColor, lineWidth: 2)
-                    .frame(width: radiusToMapSize(), height: radiusToMapSize())
-                  Image(systemName: "mappin.circle.fill")
-                    .font(.title)
-                    .foregroundColor(themeManager.themeColor)
+          Section {
+            VStack(spacing: 12) {
+              Map(position: .constant(.region(mapRegion))) {
+                Annotation("", coordinate: CLLocationCoordinate2D(latitude: latitude, longitude: longitude)) {
+                  ZStack {
+                    Circle()
+                      .fill(themeManager.themeColor.opacity(0.2))
+                      .frame(width: radiusToMapSize(), height: radiusToMapSize())
+                    Circle()
+                      .stroke(themeManager.themeColor, lineWidth: 2)
+                      .frame(width: radiusToMapSize(), height: radiusToMapSize())
+                    Image(systemName: "mappin.circle.fill")
+                      .font(.title)
+                      .foregroundColor(themeManager.themeColor)
+                  }
                 }
               }
-            }
-            .frame(height: 200)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-          }
-        }
+              .frame(height: 200)
+              .clipShape(RoundedRectangle(cornerRadius: 12))
 
-        Section("Radius") {
-          Picker("Radius", selection: $selectedRadiusIndex) {
-            ForEach(0..<SavedLocation.radiusPresets.count, id: \.self) { index in
-              Text(SavedLocation.radiusPresets[index].label).tag(index)
-            }
-            Text("Custom").tag(SavedLocation.radiusPresets.count)
-          }
-          .pickerStyle(.segmented)
+              HStack {
+                Text("10m")
+                  .font(.caption)
+                  .foregroundColor(.secondary)
+                  .frame(width: 32, alignment: .leading)
+                Slider(
+                  value: $radiusSliderValue,
+                  in: 0...Double(SavedLocation.radiusSteps.count - 1),
+                  step: 1
+                )
+                .tint(themeManager.themeColor)
+                Text("3km")
+                  .font(.caption)
+                  .foregroundColor(.secondary)
+                  .frame(width: 32, alignment: .trailing)
+              }
 
-          if selectedRadiusIndex == SavedLocation.radiusPresets.count {
-            HStack {
-              TextField("Meters", text: $customRadius)
-                .keyboardType(.numberPad)
-              Text("meters")
-                .foregroundColor(.secondary)
+              Text(SavedLocation.formatRadiusWithDescription(selectedRadius))
+                .font(.subheadline)
+                .foregroundColor(themeManager.themeColor)
+                .fontWeight(.medium)
             }
           }
         }
@@ -253,9 +254,13 @@ struct AddLocationView: View {
           Text(message)
         }
       }
+      .onAppear { updateMapRegion() }
       .onChange(of: latitude) { _, _ in updateMapRegion() }
       .onChange(of: longitude) { _, _ in updateMapRegion() }
-      .onChange(of: selectedRadiusIndex) { _, _ in updateMapRegion() }
+      .onChange(of: radiusSliderValue) { _, _ in updateMapRegion() }
+      .onChange(of: hasSetLocation) { _, newValue in
+        if newValue { updateMapRegion() }
+      }
     }
   }
 
@@ -346,26 +351,31 @@ struct AddLocationView: View {
   private func updateMapRegion() {
     guard hasSetLocation else { return }
 
-    // Adjust span based on radius
-    let spanDelta = selectedRadius / 50000  // Rough conversion to degrees
+    // Convert radius to degrees
+    // 1 degree ≈ 111,000 meters at equator
+    let metersPerDegree = 111000.0
+    let radiusInDegrees = selectedRadius / metersPerDegree
+    // Span needs to show full diameter (2x radius) plus 60% padding
+    let spanDelta = radiusInDegrees * 2 * 1.6
+
     mapRegion = MKCoordinateRegion(
       center: CLLocationCoordinate2D(latitude: latitude, longitude: longitude),
       span: MKCoordinateSpan(
-        latitudeDelta: max(0.005, spanDelta),
-        longitudeDelta: max(0.005, spanDelta)
+        latitudeDelta: max(0.002, spanDelta),
+        longitudeDelta: max(0.002, spanDelta)
       )
     )
   }
 
   private func radiusToMapSize() -> CGFloat {
-    // Convert radius to approximate pixel size on map
+    // Convert radius to pixel size based on map's latitude span and view height
     let metersPerDegree = 111000.0
-    let degreesPerMeter = 1.0 / metersPerDegree
-    let radiusDegrees = selectedRadius * degreesPerMeter
-    let mapWidthDegrees = mapRegion.span.longitudeDelta
-    let viewWidth: CGFloat = 300  // Approximate map view width
-    let pixelsPerDegree = viewWidth / mapWidthDegrees
-    return CGFloat(radiusDegrees * Double(pixelsPerDegree) * 2)
+    let radiusInDegrees = selectedRadius / metersPerDegree
+    let mapHeightDegrees = mapRegion.span.latitudeDelta
+    let viewHeight: CGFloat = 200  // Map view height
+    let pixelsPerDegree = viewHeight / mapHeightDegrees
+    // Return diameter (2x radius) in pixels
+    return CGFloat(radiusInDegrees * Double(pixelsPerDegree) * 2)
   }
 
   private func saveLocation() {

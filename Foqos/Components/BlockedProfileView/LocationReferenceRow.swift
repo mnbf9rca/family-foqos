@@ -95,8 +95,8 @@ struct LocationReferenceRow: View {
 
           ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-              ForEach(SavedLocation.radiusPresets, id: \.meters) { preset in
-                radiusButton(label: preset.label, meters: preset.meters)
+              ForEach(SavedLocation.radiusSteps, id: \.self) { meters in
+                radiusButton(label: SavedLocation.formatRadius(meters), meters: meters)
               }
             }
           }

@@ -108,29 +108,54 @@ class SavedLocation {
     try context.save()
   }
 
-  // MARK: - Radius Presets
+  // MARK: - Radius Steps
 
-  static let radiusPresets: [(label: String, meters: Double)] = [
-    ("100m", 100),
-    ("250m", 250),
-    ("500m", 500),
-    ("1km", 1000),
-    ("1mi", 1609.34),
-    ("5mi", 8046.72),
+  /// Radius steps for the slider (in meters)
+  /// Range: 10m ("at this spot") to ~2 miles
+  static let radiusSteps: [Double] = [
+    10, 25, 50, 100, 150, 200, 250, 300, 400, 500, 750, 1000, 1500, 2000, 3200
   ]
+
+  /// Default radius index (500m)
+  static let defaultRadiusIndex: Int = 9
+
+  /// Find the closest radius step index for a given meters value
+  static func radiusStepIndex(for meters: Double) -> Int {
+    var closestIndex = 0
+    var closestDiff = Double.infinity
+    for (index, step) in radiusSteps.enumerated() {
+      let diff = abs(step - meters)
+      if diff < closestDiff {
+        closestDiff = diff
+        closestIndex = index
+      }
+    }
+    return closestIndex
+  }
 
   static func formatRadius(_ meters: Double) -> String {
     if meters < 1000 {
       return "\(Int(meters))m"
-    } else if meters < 1609 {
-      return String(format: "%.1fkm", meters / 1000)
     } else {
-      let miles = meters / 1609.34
-      if miles < 2 {
-        return "1mi"
+      let km = meters / 1000
+      if km == floor(km) {
+        return "\(Int(km))km"
       } else {
-        return String(format: "%.0fmi", miles)
+        return String(format: "%.1fkm", km)
       }
+    }
+  }
+
+  /// Format radius with description for small values
+  static func formatRadiusWithDescription(_ meters: Double) -> String {
+    if meters <= 10 {
+      return "10m (at this spot)"
+    } else if meters <= 25 {
+      return "25m (very close)"
+    } else if meters <= 50 {
+      return "50m (nearby)"
+    } else {
+      return formatRadius(meters)
     }
   }
 }
