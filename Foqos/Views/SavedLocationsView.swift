@@ -11,12 +11,31 @@ struct SavedLocationsView: View {
   @ObservedObject private var lockCodeManager = LockCodeManager.shared
 
   @Query(sort: \SavedLocation.name) private var locations: [SavedLocation]
+  @Query private var profiles: [BlockedProfiles]
 
   @State private var showingAddLocation = false
   @State private var locationToEdit: SavedLocation?
   @State private var showingLockCodeEntry = false
   @State private var pendingDeleteLocation: SavedLocation?
   @State private var errorMessage: String?
+
+  /// Location IDs that are in use by profiles with active sessions
+  private var locationsInUseByActiveProfiles: [UUID: String] {
+    var result: [UUID: String] = [:]
+    for profile in profiles {
+      // Check if profile has an active session
+      let hasActiveSession = profile.sessions.contains { $0.isActive }
+      guard hasActiveSession else { continue }
+
+      // Get location IDs from the profile's geofence rule
+      if let rule = profile.geofenceRule {
+        for ref in rule.locationReferences {
+          result[ref.savedLocationId] = profile.name
+        }
+      }
+    }
+    return result
+  }
 
   var body: some View {
     NavigationStack {
@@ -54,7 +73,8 @@ struct SavedLocationsView: View {
                 location: location,
                 onTap: {
                   handleEdit(location)
-                }
+                },
+                inUseByProfile: locationsInUseByActiveProfiles[location.id]
               )
             }
           } header: {

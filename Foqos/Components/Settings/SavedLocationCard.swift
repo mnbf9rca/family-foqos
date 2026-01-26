@@ -5,20 +5,27 @@ struct SavedLocationCard: View {
 
   let location: SavedLocation
   let onTap: () -> Void
+  var inUseByProfile: String? = nil
+
+  private var isDisabled: Bool {
+    inUseByProfile != nil
+  }
 
   var body: some View {
     Button {
-      onTap()
+      if !isDisabled {
+        onTap()
+      }
     } label: {
       HStack(spacing: 12) {
         // Location icon
         ZStack {
           Circle()
-            .fill(themeManager.themeColor.opacity(0.15))
+            .fill(isDisabled ? Color.secondary.opacity(0.15) : themeManager.themeColor.opacity(0.15))
             .frame(width: 40, height: 40)
           Image(systemName: "mappin.circle.fill")
             .font(.title2)
-            .foregroundColor(themeManager.themeColor)
+            .foregroundColor(isDisabled ? .secondary : themeManager.themeColor)
         }
 
         // Location details
@@ -26,7 +33,7 @@ struct SavedLocationCard: View {
           HStack(spacing: 6) {
             Text(location.name)
               .font(.headline)
-              .foregroundColor(.primary)
+              .foregroundColor(isDisabled ? .secondary : .primary)
 
             if location.isLocked {
               Image(systemName: "lock.fill")
@@ -35,21 +42,30 @@ struct SavedLocationCard: View {
             }
           }
 
-          Text("Distance: \(SavedLocation.formatRadius(location.defaultRadiusMeters))")
-            .font(.subheadline)
-            .foregroundColor(.secondary)
+          if let profileName = inUseByProfile {
+            Text("In use by \"\(profileName)\"")
+              .font(.subheadline)
+              .foregroundColor(.orange)
+          } else {
+            Text("Distance: \(SavedLocation.formatRadius(location.defaultRadiusMeters))")
+              .font(.subheadline)
+              .foregroundColor(.secondary)
+          }
         }
 
         Spacer()
 
-        Image(systemName: "chevron.right")
-          .font(.caption)
-          .foregroundColor(.secondary)
+        if !isDisabled {
+          Image(systemName: "chevron.right")
+            .font(.caption)
+            .foregroundColor(.secondary)
+        }
       }
       .padding(.vertical, 8)
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
+    .disabled(isDisabled)
   }
 }
 
@@ -85,7 +101,8 @@ struct SavedLocationCard: View {
         defaultRadiusMeters: 250,
         isLocked: false
       ),
-      onTap: {}
+      onTap: {},
+      inUseByProfile: "Focus Mode"
     )
   }
   .environmentObject(ThemeManager.shared)
