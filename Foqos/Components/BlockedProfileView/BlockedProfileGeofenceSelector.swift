@@ -52,16 +52,6 @@ struct BlockedProfileGeofenceSelector: View {
             .font(.footnote)
             .foregroundColor(.secondary)
         }
-
-        if !disabled {
-          Button {
-            geofenceRule = nil
-          } label: {
-            Text("Remove restriction")
-              .font(.caption)
-              .foregroundColor(.red)
-          }
-        }
       } else {
         Text("No location restrictions set")
           .font(.footnote)

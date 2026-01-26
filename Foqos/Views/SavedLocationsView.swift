@@ -14,8 +14,6 @@ struct SavedLocationsView: View {
 
   @State private var showingAddLocation = false
   @State private var locationToEdit: SavedLocation?
-  @State private var showingDeleteConfirmation = false
-  @State private var locationToDelete: SavedLocation?
   @State private var showingLockCodeEntry = false
   @State private var pendingDeleteLocation: SavedLocation?
   @State private var errorMessage: String?
@@ -54,11 +52,8 @@ struct SavedLocationsView: View {
             ForEach(locations) { location in
               SavedLocationCard(
                 location: location,
-                onEdit: {
+                onTap: {
                   handleEdit(location)
-                },
-                onDelete: {
-                  handleDelete(location)
                 }
               )
             }
@@ -93,7 +88,12 @@ struct SavedLocationsView: View {
         AddLocationView()
       }
       .sheet(item: $locationToEdit) { location in
-        AddLocationView(editingLocation: location)
+        AddLocationView(
+          editingLocation: location,
+          onDelete: {
+            handleDelete(location)
+          }
+        )
       }
       .sheet(isPresented: $showingLockCodeEntry) {
         LockCodeEntryView(
@@ -104,26 +104,11 @@ struct SavedLocationsView: View {
           },
           onSuccess: {
             if let location = pendingDeleteLocation {
-              locationToDelete = location
-              showingDeleteConfirmation = true
+              deleteLocation(location)
             }
             pendingDeleteLocation = nil
           }
         )
-      }
-      .alert("Delete Location", isPresented: $showingDeleteConfirmation) {
-        Button("Cancel", role: .cancel) {
-          locationToDelete = nil
-        }
-        Button("Delete", role: .destructive) {
-          if let location = locationToDelete {
-            deleteLocation(location)
-          }
-        }
-      } message: {
-        if let location = locationToDelete {
-          Text("Are you sure you want to delete \"\(location.name)\"? This will remove it from any profiles using it.")
-        }
       }
       .alert("Error", isPresented: .init(
         get: { errorMessage != nil },
@@ -153,8 +138,8 @@ struct SavedLocationsView: View {
       pendingDeleteLocation = location
       showingLockCodeEntry = true
     } else {
-      locationToDelete = location
-      showingDeleteConfirmation = true
+      // Directly delete - confirmation was already shown in AddLocationView
+      deleteLocation(location)
     }
   }
 
@@ -164,7 +149,6 @@ struct SavedLocationsView: View {
       removeLocationFromProfiles(location.id)
 
       try SavedLocation.delete(location, in: context)
-      locationToDelete = nil
     } catch {
       errorMessage = "Failed to delete location: \(error.localizedDescription)"
     }

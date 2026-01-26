@@ -4,66 +4,52 @@ struct SavedLocationCard: View {
   @EnvironmentObject var themeManager: ThemeManager
 
   let location: SavedLocation
-  let onEdit: () -> Void
-  let onDelete: () -> Void
-  var disabled: Bool = false
+  let onTap: () -> Void
 
   var body: some View {
-    HStack(spacing: 12) {
-      // Location icon
-      ZStack {
-        Circle()
-          .fill(themeManager.themeColor.opacity(0.15))
-          .frame(width: 40, height: 40)
-        Image(systemName: "mappin.circle.fill")
-          .font(.title2)
-          .foregroundColor(themeManager.themeColor)
-      }
-
-      // Location details
-      VStack(alignment: .leading, spacing: 4) {
-        HStack(spacing: 6) {
-          Text(location.name)
-            .font(.headline)
-            .foregroundColor(.primary)
-
-          if location.isLocked {
-            Image(systemName: "lock.fill")
-              .font(.caption)
-              .foregroundColor(.orange)
-          }
+    Button {
+      onTap()
+    } label: {
+      HStack(spacing: 12) {
+        // Location icon
+        ZStack {
+          Circle()
+            .fill(themeManager.themeColor.opacity(0.15))
+            .frame(width: 40, height: 40)
+          Image(systemName: "mappin.circle.fill")
+            .font(.title2)
+            .foregroundColor(themeManager.themeColor)
         }
 
-        Text("Radius: \(SavedLocation.formatRadius(location.defaultRadiusMeters))")
-          .font(.subheadline)
-          .foregroundColor(.secondary)
-      }
+        // Location details
+        VStack(alignment: .leading, spacing: 4) {
+          HStack(spacing: 6) {
+            Text(location.name)
+              .font(.headline)
+              .foregroundColor(.primary)
 
-      Spacer()
-
-      // Actions
-      if !disabled {
-        Menu {
-          Button {
-            onEdit()
-          } label: {
-            Label("Edit", systemImage: "pencil")
+            if location.isLocked {
+              Image(systemName: "lock.fill")
+                .font(.caption)
+                .foregroundColor(.orange)
+            }
           }
 
-          Button(role: .destructive) {
-            onDelete()
-          } label: {
-            Label("Delete", systemImage: "trash")
-          }
-        } label: {
-          Image(systemName: "ellipsis.circle")
-            .font(.title3)
+          Text("Distance: \(SavedLocation.formatRadius(location.defaultRadiusMeters))")
+            .font(.subheadline)
             .foregroundColor(.secondary)
         }
+
+        Spacer()
+
+        Image(systemName: "chevron.right")
+          .font(.caption)
+          .foregroundColor(.secondary)
       }
+      .padding(.vertical, 8)
+      .contentShape(Rectangle())
     }
-    .padding(.vertical, 8)
-    .contentShape(Rectangle())
+    .buttonStyle(.plain)
   }
 }
 
@@ -77,8 +63,7 @@ struct SavedLocationCard: View {
         defaultRadiusMeters: 500,
         isLocked: false
       ),
-      onEdit: {},
-      onDelete: {}
+      onTap: {}
     )
 
     SavedLocationCard(
@@ -89,8 +74,7 @@ struct SavedLocationCard: View {
         defaultRadiusMeters: 1000,
         isLocked: true
       ),
-      onEdit: {},
-      onDelete: {}
+      onTap: {}
     )
 
     SavedLocationCard(
@@ -101,9 +85,7 @@ struct SavedLocationCard: View {
         defaultRadiusMeters: 250,
         isLocked: false
       ),
-      onEdit: {},
-      onDelete: {},
-      disabled: true
+      onTap: {}
     )
   }
   .environmentObject(ThemeManager.shared)

@@ -15,8 +15,10 @@ struct AddLocationView: View {
 
   // If editing an existing location
   var editingLocation: SavedLocation?
+  var onDelete: (() -> Void)?
 
   @State private var name: String = ""
+  @State private var showingDeleteConfirmation: Bool = false
   @State private var latitude: Double = 0
   @State private var longitude: Double = 0
   @State private var radiusSliderValue: Double = Double(SavedLocation.defaultRadiusIndex)
@@ -55,8 +57,9 @@ struct AddLocationView: View {
     return !name.trimmingCharacters(in: .whitespaces).isEmpty && hasSetLocation
   }
 
-  init(editingLocation: SavedLocation? = nil) {
+  init(editingLocation: SavedLocation? = nil, onDelete: (() -> Void)? = nil) {
     self.editingLocation = editingLocation
+    self.onDelete = onDelete
 
     if let location = editingLocation {
       _name = State(initialValue: location.name)
@@ -244,6 +247,21 @@ struct AddLocationView: View {
             Text("Parent Controls")
           }
         }
+
+        // Delete section (only when editing)
+        if isEditing && onDelete != nil {
+          Section {
+            Button(role: .destructive) {
+              showingDeleteConfirmation = true
+            } label: {
+              HStack {
+                Spacer()
+                Text("Delete Location")
+                Spacer()
+              }
+            }
+          }
+        }
       }
       .navigationTitle(isEditing ? "Edit Location" : "Add Location")
       .toolbar {
@@ -269,6 +287,15 @@ struct AddLocationView: View {
         if let message = errorMessage {
           Text(message)
         }
+      }
+      .alert("Delete Location", isPresented: $showingDeleteConfirmation) {
+        Button("Cancel", role: .cancel) {}
+        Button("Delete", role: .destructive) {
+          onDelete?()
+          dismiss()
+        }
+      } message: {
+        Text("Are you sure you want to delete \"\(name)\"? This will remove it from any profiles using it.")
       }
       .sheet(isPresented: $showingMapPicker) {
         MapLocationPicker(

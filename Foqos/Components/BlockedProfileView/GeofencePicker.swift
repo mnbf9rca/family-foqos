@@ -20,23 +20,6 @@ struct GeofencePicker: View {
     span: MKCoordinateSpan(latitudeDelta: 0.1, longitudeDelta: 0.1)
   )
 
-  init(geofenceRule: Binding<ProfileGeofenceRule?>, savedLocations: [SavedLocation]) {
-    self._geofenceRule = geofenceRule
-    self.savedLocations = savedLocations
-
-    // Initialize state from existing rule
-    if let rule = geofenceRule.wrappedValue {
-      _selectedRuleType = State(initialValue: rule.ruleType)
-      _selectedLocationIds = State(initialValue: Set(rule.locationReferences.map { $0.savedLocationId }))
-
-      var refs: [UUID: ProfileLocationReference] = [:]
-      for ref in rule.locationReferences {
-        refs[ref.savedLocationId] = ref
-      }
-      _locationReferences = State(initialValue: refs)
-    }
-  }
-
   private var hasChanges: Bool {
     !selectedLocationIds.isEmpty
   }
@@ -171,6 +154,25 @@ struct GeofencePicker: View {
           }
         }
       }
+      .onAppear {
+        syncStateFromRule()
+      }
+    }
+  }
+
+  private func syncStateFromRule() {
+    if let rule = geofenceRule {
+      selectedRuleType = rule.ruleType
+      selectedLocationIds = Set(rule.locationReferences.map { $0.savedLocationId })
+      var refs: [UUID: ProfileLocationReference] = [:]
+      for ref in rule.locationReferences {
+        refs[ref.savedLocationId] = ref
+      }
+      locationReferences = refs
+    } else {
+      selectedRuleType = .within
+      selectedLocationIds = []
+      locationReferences = [:]
     }
   }
 
