@@ -27,6 +27,7 @@ struct AddLocationView: View {
   @State private var searchResults: [MKMapItem] = []
   @State private var isSearching: Bool = false
   @State private var isFetchingCurrentLocation: Bool = false
+  @State private var showingMapPicker: Bool = false
 
   @State private var mapRegion = MKCoordinateRegion(
     center: CLLocationCoordinate2D(latitude: 51.5074, longitude: -0.1278),
@@ -102,6 +103,18 @@ struct AddLocationView: View {
             }
           }
           .disabled(isFetchingCurrentLocation)
+
+          Button {
+            showingMapPicker = true
+          } label: {
+            HStack {
+              Image(systemName: "map")
+                .foregroundColor(themeManager.themeColor)
+              Text("Select on Map")
+                .foregroundColor(.primary)
+              Spacer()
+            }
+          }
 
           // Search field
           HStack {
@@ -185,6 +198,9 @@ struct AddLocationView: View {
               }
               .frame(height: 200)
               .clipShape(RoundedRectangle(cornerRadius: 12))
+              .onTapGesture {
+                showingMapPicker = true
+              }
 
               HStack {
                 Text("10m")
@@ -253,6 +269,18 @@ struct AddLocationView: View {
         if let message = errorMessage {
           Text(message)
         }
+      }
+      .sheet(isPresented: $showingMapPicker) {
+        MapLocationPicker(
+          initialCoordinate: hasSetLocation
+            ? CLLocationCoordinate2D(latitude: latitude, longitude: longitude) : nil
+        ) { coordinate in
+          latitude = coordinate.latitude
+          longitude = coordinate.longitude
+          hasSetLocation = true
+          reverseGeocode(CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude))
+        }
+        .environmentObject(themeManager)
       }
       .onAppear { updateMapRegion() }
       .onChange(of: latitude) { _, _ in updateMapRegion() }
