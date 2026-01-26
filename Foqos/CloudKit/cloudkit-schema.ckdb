@@ -93,3 +93,99 @@ DEFINE SCHEMA
         GRANT CREATE TO "_icloud",
         GRANT READ TO "_world"
     );
+
+    // Same-user multi-device sync record types (stored in DeviceSync zone)
+
+    RECORD TYPE SyncedProfile (
+        "___createTime"         TIMESTAMP QUERYABLE SORTABLE,
+        "___createdBy"          REFERENCE QUERYABLE,
+        "___etag"               STRING,
+        "___modTime"            TIMESTAMP QUERYABLE SORTABLE,
+        "___modifiedBy"         REFERENCE QUERYABLE,
+        "___recordID"           REFERENCE QUERYABLE,
+        profileId               STRING QUERYABLE SEARCHABLE,
+        name                    STRING QUERYABLE SEARCHABLE SORTABLE,
+        createdAt               TIMESTAMP QUERYABLE SORTABLE,
+        updatedAt               TIMESTAMP QUERYABLE SORTABLE,
+        blockingStrategyId      STRING,
+        strategyData            BYTES,
+        order                   INT64 QUERYABLE SORTABLE,
+        enableLiveActivity      INT64,
+        reminderTimeInSeconds   INT64,
+        customReminderMessage   STRING,
+        enableBreaks            INT64,
+        breakTimeInMinutes      INT64,
+        enableStrictMode        INT64,
+        enableAllowMode         INT64,
+        enableAllowModeDomains  INT64,
+        enableSafariBlocking    INT64,
+        physicalUnblockNFCTagId STRING,
+        physicalUnblockQRCodeId STRING,
+        domains                 LIST<STRING>,
+        scheduleData            BYTES,
+        geofenceRuleData        BYTES,
+        disableBackgroundStops  INT64,
+        isManaged               INT64 QUERYABLE,
+        managedByChildId        STRING QUERYABLE,
+        lastModified            TIMESTAMP QUERYABLE SORTABLE,
+        originDeviceId          STRING QUERYABLE,
+        version                 INT64 QUERYABLE SORTABLE,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_creator"
+    );
+
+    RECORD TYPE SyncedSession (
+        "___createTime"   TIMESTAMP QUERYABLE SORTABLE,
+        "___createdBy"    REFERENCE QUERYABLE,
+        "___etag"         STRING,
+        "___modTime"      TIMESTAMP QUERYABLE SORTABLE,
+        "___modifiedBy"   REFERENCE QUERYABLE,
+        "___recordID"     REFERENCE QUERYABLE,
+        sessionId         STRING QUERYABLE SEARCHABLE,
+        profileId         STRING QUERYABLE SEARCHABLE,
+        startTime         TIMESTAMP QUERYABLE SORTABLE,
+        endTime           TIMESTAMP QUERYABLE SORTABLE,
+        breakStartTime    TIMESTAMP,
+        breakEndTime      TIMESTAMP,
+        originDeviceId    STRING QUERYABLE,
+        lastModified      TIMESTAMP QUERYABLE SORTABLE,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_creator"
+    );
+
+    RECORD TYPE SyncedLocation (
+        "___createTime"       TIMESTAMP QUERYABLE SORTABLE,
+        "___createdBy"        REFERENCE QUERYABLE,
+        "___etag"             STRING,
+        "___modTime"          TIMESTAMP QUERYABLE SORTABLE,
+        "___modifiedBy"       REFERENCE QUERYABLE,
+        "___recordID"         REFERENCE QUERYABLE,
+        locationId            STRING QUERYABLE SEARCHABLE,
+        name                  STRING QUERYABLE SEARCHABLE SORTABLE,
+        latitude              DOUBLE,
+        longitude             DOUBLE,
+        defaultRadiusMeters   DOUBLE,
+        isLocked              INT64 QUERYABLE,
+        lastModified          TIMESTAMP QUERYABLE SORTABLE,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_creator"
+    );
+
+    RECORD TYPE SyncResetRequest (
+        "___createTime"            TIMESTAMP QUERYABLE SORTABLE,
+        "___createdBy"             REFERENCE QUERYABLE,
+        "___etag"                  STRING,
+        "___modTime"               TIMESTAMP QUERYABLE SORTABLE,
+        "___modifiedBy"            REFERENCE QUERYABLE,
+        "___recordID"              REFERENCE QUERYABLE,
+        requestId                  STRING QUERYABLE SEARCHABLE,
+        clearRemoteAppSelections   INT64,
+        requestedAt                TIMESTAMP QUERYABLE SORTABLE,
+        originDeviceId             STRING QUERYABLE,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_creator"
+    );

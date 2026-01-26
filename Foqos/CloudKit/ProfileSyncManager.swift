@@ -234,6 +234,11 @@ class ProfileSyncManager: ObservableObject {
       try await pullSessions()
       try await pullLocations()
 
+      // Request push of local data (SyncCoordinator will handle this)
+      await MainActor.run {
+        NotificationCenter.default.post(name: .localDataPushRequested, object: nil)
+      }
+
       await MainActor.run {
         self.isSyncing = false
         self.syncStatus = .idle
@@ -288,7 +293,7 @@ class ProfileSyncManager: ObservableObject {
           }
 
           // Delete the processed reset request
-          try? await privateDatabase.deleteRecord(withID: recordID)
+          _ = try? await privateDatabase.deleteRecord(withID: recordID)
         }
       }
     } catch let error as CKError {
@@ -308,11 +313,31 @@ class ProfileSyncManager: ObservableObject {
     guard profile.isSynced else { return }
 
     let syncedProfile = SyncedProfile(from: profile, originDeviceId: deviceId)
-    let record = syncedProfile.toCKRecord(in: syncZoneID)
+    try await pushSyncedProfile(syncedProfile)
+  }
+
+  /// Push a SyncedProfile to CloudKit (handles create and update)
+  func pushSyncedProfile(_ syncedProfile: SyncedProfile) async throws {
+    guard isEnabled else { throw SyncError.syncDisabled }
+
+    let recordID = CKRecord.ID(recordName: syncedProfile.profileId.uuidString, zoneID: syncZoneID)
 
     do {
+      // Try to fetch existing record first
+      let existingRecord = try? await privateDatabase.record(for: recordID)
+
+      let record: CKRecord
+      if let existing = existingRecord {
+        // Update existing record
+        record = existing
+        syncedProfile.updateCKRecord(record)
+      } else {
+        // Create new record
+        record = syncedProfile.toCKRecord(in: syncZoneID)
+      }
+
       _ = try await privateDatabase.save(record)
-      print("ProfileSyncManager: Pushed profile '\(profile.name)' to CloudKit")
+      print("ProfileSyncManager: Pushed profile '\(syncedProfile.name)' to CloudKit")
     } catch {
       print("ProfileSyncManager: Failed to push profile - \(error)")
       throw SyncError.saveFailed(error)
@@ -419,11 +444,11 @@ class ProfileSyncManager: ObservableObject {
   func pullSessions() async throws {
     guard isEnabled else { throw SyncError.syncDisabled }
 
-    // Only fetch active sessions (endTime is nil)
-    let predicate = NSPredicate(format: "%K == nil", SyncedSession.FieldKey.endTime.rawValue)
+    // Fetch all sessions - CloudKit doesn't support nil comparisons in predicates,
+    // so we fetch all and filter locally for active sessions
     let query = CKQuery(
       recordType: SyncedSession.recordType,
-      predicate: predicate
+      predicate: NSPredicate(value: true)
     )
 
     do {
@@ -437,7 +462,10 @@ class ProfileSyncManager: ObservableObject {
         if case .success(let record) = result,
           let syncedSession = SyncedSession(from: record)
         {
-          syncedSessions.append(syncedSession)
+          // Only include active sessions (endTime is nil)
+          if syncedSession.isActive {
+            syncedSessions.append(syncedSession)
+          }
         }
       }
 
@@ -483,11 +511,31 @@ class ProfileSyncManager: ObservableObject {
     guard isEnabled else { throw SyncError.syncDisabled }
 
     let syncedLocation = SyncedLocation(from: location)
-    let record = syncedLocation.toCKRecord(in: syncZoneID)
+    try await pushSyncedLocation(syncedLocation)
+  }
+
+  /// Push a SyncedLocation to CloudKit (handles create and update)
+  func pushSyncedLocation(_ syncedLocation: SyncedLocation) async throws {
+    guard isEnabled else { throw SyncError.syncDisabled }
+
+    let recordID = CKRecord.ID(recordName: syncedLocation.locationId.uuidString, zoneID: syncZoneID)
 
     do {
+      // Try to fetch existing record first
+      let existingRecord = try? await privateDatabase.record(for: recordID)
+
+      let record: CKRecord
+      if let existing = existingRecord {
+        // Update existing record
+        record = existing
+        syncedLocation.updateCKRecord(record)
+      } else {
+        // Create new record
+        record = syncedLocation.toCKRecord(in: syncZoneID)
+      }
+
       _ = try await privateDatabase.save(record)
-      print("ProfileSyncManager: Pushed location '\(location.name)' to CloudKit")
+      print("ProfileSyncManager: Pushed location '\(syncedLocation.name)' to CloudKit")
     } catch {
       print("ProfileSyncManager: Failed to push location - \(error)")
       throw SyncError.saveFailed(error)
@@ -677,4 +725,5 @@ extension Notification.Name {
   static let syncedSessionsReceived = Notification.Name("syncedSessionsReceived")
   static let syncedLocationsReceived = Notification.Name("syncedLocationsReceived")
   static let syncResetRequested = Notification.Name("syncResetRequested")
+  static let localDataPushRequested = Notification.Name("localDataPushRequested")
 }

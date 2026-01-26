@@ -63,6 +63,53 @@ class SyncCoordinator: ObservableObject {
         self?.handleSyncReset(clearAppSelections: clearAppSelections)
       }
       .store(in: &cancellables)
+
+    // Observe local data push requests (push local data to CloudKit)
+    NotificationCenter.default.publisher(for: .localDataPushRequested)
+      .receive(on: DispatchQueue.main)
+      .sink { [weak self] _ in
+        Task { @MainActor in
+          self?.pushLocalData()
+        }
+      }
+      .store(in: &cancellables)
+  }
+
+  // MARK: - Local Data Push
+
+  /// Push all local synced profiles and locations to CloudKit
+  @MainActor
+  private func pushLocalData() {
+    guard let context = modelContext else {
+      print("SyncCoordinator: No model context available for local push")
+      return
+    }
+
+    do {
+      let profiles = try BlockedProfiles.fetchProfiles(in: context)
+      let locations = try SavedLocation.fetchAll(in: context)
+
+      // Create sync objects on main queue (accesses SwiftData properties)
+      let deviceId = SharedData.deviceSyncId.uuidString
+      let syncedProfiles = profiles
+        .filter { $0.isSynced }
+        .map { SyncedProfile(from: $0, originDeviceId: deviceId) }
+      let syncedLocations = locations.map { SyncedLocation(from: $0) }
+
+      Task.detached {
+        // Push synced profiles
+        for syncedProfile in syncedProfiles {
+          try? await ProfileSyncManager.shared.pushSyncedProfile(syncedProfile)
+        }
+
+        // Push all locations
+        for syncedLocation in syncedLocations {
+          try? await ProfileSyncManager.shared.pushSyncedLocation(syncedLocation)
+        }
+      }
+    } catch {
+      print("SyncCoordinator: Error pushing local data - \(error)")
+    }
   }
 
   // MARK: - Profile Handling

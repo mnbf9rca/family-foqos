@@ -91,7 +91,12 @@ struct SyncedProfile: Codable, Equatable {
   func toCKRecord(in zoneID: CKRecordZone.ID) -> CKRecord {
     let recordID = CKRecord.ID(recordName: profileId.uuidString, zoneID: zoneID)
     let record = CKRecord(recordType: SyncedProfile.recordType, recordID: recordID)
+    updateCKRecord(record)
+    return record
+  }
 
+  /// Update an existing CKRecord with this profile's values
+  func updateCKRecord(_ record: CKRecord) {
     record[FieldKey.profileId.rawValue] = profileId.uuidString
     record[FieldKey.name.rawValue] = name
     record[FieldKey.createdAt.rawValue] = createdAt
@@ -119,8 +124,6 @@ struct SyncedProfile: Codable, Equatable {
     record[FieldKey.lastModified.rawValue] = lastModified
     record[FieldKey.originDeviceId.rawValue] = originDeviceId
     record[FieldKey.version.rawValue] = version
-
-    return record
   }
 
   init?(from record: CKRecord) {
@@ -355,7 +358,12 @@ struct SyncedLocation: Codable, Equatable {
   func toCKRecord(in zoneID: CKRecordZone.ID) -> CKRecord {
     let recordID = CKRecord.ID(recordName: locationId.uuidString, zoneID: zoneID)
     let record = CKRecord(recordType: SyncedLocation.recordType, recordID: recordID)
+    updateCKRecord(record)
+    return record
+  }
 
+  /// Update an existing CKRecord with this location's values
+  func updateCKRecord(_ record: CKRecord) {
     record[FieldKey.locationId.rawValue] = locationId.uuidString
     record[FieldKey.name.rawValue] = name
     record[FieldKey.latitude.rawValue] = latitude
@@ -363,8 +371,6 @@ struct SyncedLocation: Codable, Equatable {
     record[FieldKey.defaultRadiusMeters.rawValue] = defaultRadiusMeters
     record[FieldKey.isLocked.rawValue] = isLocked
     record[FieldKey.lastModified.rawValue] = lastModified
-
-    return record
   }
 
   init?(from record: CKRecord) {
