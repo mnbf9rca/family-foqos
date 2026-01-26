@@ -158,14 +158,16 @@ class SyncCoordinator: ObservableObject {
     }
 
     // Reconcile deletions: remove local profiles not in remote set
-    // Only delete profiles that were synced from remote (not originated here)
+    // Only delete profiles that have been synced at least once (syncVersion > 0)
+    // This avoids deleting locally-created profiles that haven't been pushed yet
     do {
       let localProfiles = try BlockedProfiles.fetchProfiles(in: context)
       for profile in localProfiles {
-        // If profile is not in remote and wasn't originated from this device, delete it
+        // Only consider profiles that have been synced at least once
+        guard profile.syncVersion > 0 else { continue }
+
+        // If profile was synced but is no longer in remote, it was deleted remotely
         if !remoteProfileIds.contains(profile.id) {
-          // Check if this profile has any recent remote activity before deleting
-          // to avoid race conditions during initial sync
           print("SyncCoordinator: Removing profile '\(profile.name)' deleted from remote")
           try BlockedProfiles.deleteProfile(profile, in: context)
         }

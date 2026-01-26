@@ -36,7 +36,7 @@ struct foqosApp: App {
   @StateObject private var ratingManager = RatingManager()
 
   // Singletons for shared functionality
-  @StateObject private var startegyManager = StrategyManager.shared
+  @StateObject private var strategyManager = StrategyManager.shared
   @StateObject private var liveActivityManager = LiveActivityManager.shared
   @StateObject private var themeManager = ThemeManager.shared
 
@@ -111,7 +111,7 @@ struct foqosApp: App {
           }
         }
         .environmentObject(requestAuthorizer)
-        .environmentObject(startegyManager)
+        .environmentObject(strategyManager)
         .environmentObject(navigationManager)
         .environmentObject(nfcWriter)
         .environmentObject(ratingManager)
@@ -124,7 +124,7 @@ struct foqosApp: App {
           // Set up sync coordinator with model context
           syncCoordinator.setModelContext(container.mainContext)
           // Set up remote session observers
-          startegyManager.setupRemoteSessionObservers()
+          strategyManager.setupRemoteSessionObservers()
           // Initialize sync if enabled
           if profileSyncManager.isEnabled {
             Task {
