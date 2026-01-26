@@ -124,17 +124,22 @@ class StrategyManager: ObservableObject {
 
     isCheckingGeofence = true
 
-    Task {
-      let result = await locationManager.checkGeofenceRule(rule: rule, context: context)
+    // Capture saved locations before entering the Task to avoid Sendable warnings
+    let ruleToCheck = rule
+    let savedLocationsSnapshot = (try? SavedLocation.fetchAll(in: context)) ?? []
 
-      await MainActor.run {
-        self.isCheckingGeofence = false
+    Task { @MainActor in
+      let result = await locationManager.checkGeofenceRule(
+        rule: ruleToCheck,
+        savedLocations: savedLocationsSnapshot
+      )
 
-        if result.isSatisfied {
-          self.stopBlocking(context: context)
-        } else {
-          self.errorMessage = result.failureMessage ?? "Location restriction not met."
-        }
+      self.isCheckingGeofence = false
+
+      if result.isSatisfied {
+        self.stopBlocking(context: context)
+      } else {
+        self.errorMessage = result.failureMessage ?? "Location restriction not met."
       }
     }
   }
@@ -461,17 +466,22 @@ class StrategyManager: ObservableObject {
 
     isCheckingGeofence = true
 
-    Task {
-      let result = await locationManager.checkGeofenceRule(rule: rule, context: context)
+    // Capture saved locations before entering the Task to avoid Sendable warnings
+    let ruleToCheck = rule
+    let savedLocationsSnapshot = (try? SavedLocation.fetchAll(in: context)) ?? []
 
-      await MainActor.run {
-        self.isCheckingGeofence = false
+    Task { @MainActor in
+      let result = await locationManager.checkGeofenceRule(
+        rule: ruleToCheck,
+        savedLocations: savedLocationsSnapshot
+      )
 
-        if result.isSatisfied {
-          self.performEmergencyUnblock(context: context, session: session)
-        } else {
-          self.errorMessage = result.failureMessage ?? "Location restriction not met."
-        }
+      self.isCheckingGeofence = false
+
+      if result.isSatisfied {
+        self.performEmergencyUnblock(context: context, session: session)
+      } else {
+        self.errorMessage = result.failureMessage ?? "Location restriction not met."
       }
     }
   }

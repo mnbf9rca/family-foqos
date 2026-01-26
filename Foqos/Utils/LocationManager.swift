@@ -9,6 +9,7 @@ class LocationManager: NSObject, ObservableObject {
 
   private let locationManager = CLLocationManager()
   private var locationContinuation: CheckedContinuation<CLLocation, Error>?
+  private var authorizationContinuation: CheckedContinuation<CLAuthorizationStatus, Never>?
 
   @Published private(set) var authorizationStatus: CLAuthorizationStatus = .notDetermined
 
@@ -24,6 +25,22 @@ class LocationManager: NSObject, ObservableObject {
   /// Request location authorization if not already determined
   func requestAuthorization() {
     if locationManager.authorizationStatus == .notDetermined {
+      locationManager.requestWhenInUseAuthorization()
+    }
+  }
+
+  /// Request location authorization and wait for the result
+  /// Returns the authorization status after the user responds to the permission prompt
+  func requestAuthorizationAndWait() async -> CLAuthorizationStatus {
+    let currentStatus = locationManager.authorizationStatus
+
+    // If already determined, return immediately
+    guard currentStatus == .notDetermined else {
+      return currentStatus
+    }
+
+    return await withCheckedContinuation { continuation in
+      self.authorizationContinuation = continuation
       locationManager.requestWhenInUseAuthorization()
     }
   }
@@ -169,8 +186,16 @@ extension LocationManager: CLLocationManagerDelegate {
   }
 
   func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+    let status = manager.authorizationStatus
+
+    // Resume any pending authorization continuation
+    if let continuation = authorizationContinuation {
+      authorizationContinuation = nil
+      continuation.resume(returning: status)
+    }
+
     DispatchQueue.main.async {
-      self.authorizationStatus = manager.authorizationStatus
+      self.authorizationStatus = status
     }
   }
 }

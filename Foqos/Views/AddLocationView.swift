@@ -90,7 +90,9 @@ struct AddLocationView: View {
         Section("Location") {
           // Current location button
           Button {
-            fetchCurrentLocation()
+            Task {
+              await fetchCurrentLocation()
+            }
           } label: {
             HStack {
               Image(systemName: "location.fill")
@@ -169,8 +171,8 @@ struct AddLocationView: View {
         // Map preview
         if hasSetLocation {
           Section("Preview") {
-            Map(coordinateRegion: $mapRegion, annotationItems: [LocationAnnotation(coordinate: CLLocationCoordinate2D(latitude: latitude, longitude: longitude))]) { annotation in
-              MapAnnotation(coordinate: annotation.coordinate) {
+            Map(position: .constant(.region(mapRegion))) {
+              Annotation("", coordinate: CLLocationCoordinate2D(latitude: latitude, longitude: longitude)) {
                 ZStack {
                   Circle()
                     .fill(themeManager.themeColor.opacity(0.2))
@@ -257,10 +259,20 @@ struct AddLocationView: View {
     }
   }
 
-  private func fetchCurrentLocation() {
-    // Request permission if needed
+  private func fetchCurrentLocation() async {
+    // Request permission if needed and wait for the result
     if locationManager.isNotDetermined {
-      locationManager.requestAuthorization()
+      isFetchingCurrentLocation = true
+      let status = await locationManager.requestAuthorizationAndWait()
+      if status != .authorizedWhenInUse && status != .authorizedAlways {
+        isFetchingCurrentLocation = false
+        if status == .denied {
+          errorMessage = "Location access is denied. Please enable it in Settings."
+        } else {
+          errorMessage = "Please allow location access to use this feature."
+        }
+        return
+      }
     }
 
     guard locationManager.isAuthorized else {
@@ -274,24 +286,18 @@ struct AddLocationView: View {
 
     isFetchingCurrentLocation = true
 
-    Task {
-      do {
-        let location = try await locationManager.getCurrentLocation()
-        await MainActor.run {
-          latitude = location.coordinate.latitude
-          longitude = location.coordinate.longitude
-          hasSetLocation = true
-          isFetchingCurrentLocation = false
+    do {
+      let location = try await locationManager.getCurrentLocation()
+      latitude = location.coordinate.latitude
+      longitude = location.coordinate.longitude
+      hasSetLocation = true
+      isFetchingCurrentLocation = false
 
-          // Suggest a name based on reverse geocoding
-          reverseGeocode(location)
-        }
-      } catch {
-        await MainActor.run {
-          errorMessage = "Failed to get current location. Please try again."
-          isFetchingCurrentLocation = false
-        }
-      }
+      // Suggest a name based on reverse geocoding
+      reverseGeocode(location)
+    } catch {
+      errorMessage = "Failed to get current location. Please try again."
+      isFetchingCurrentLocation = false
     }
   }
 
@@ -392,12 +398,6 @@ struct AddLocationView: View {
       errorMessage = "Failed to save location: \(error.localizedDescription)"
     }
   }
-}
-
-// Helper for map annotation
-private struct LocationAnnotation: Identifiable {
-  let id = UUID()
-  let coordinate: CLLocationCoordinate2D
 }
 
 #Preview {

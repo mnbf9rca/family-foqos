@@ -239,30 +239,32 @@ struct GeofenceMapPreview: View {
   }
 
   var body: some View {
-    Map(coordinateRegion: $region, annotationItems: locations) { location in
-      MapAnnotation(coordinate: CLLocationCoordinate2D(latitude: location.latitude, longitude: location.longitude)) {
+    Map(position: .constant(.region(region))) {
+      ForEach(locations) { location in
         let reference = locationReferences[location.id]
         let radius = reference?.radiusOverrideMeters ?? location.defaultRadiusMeters
 
-        VStack(spacing: 2) {
-          ZStack {
-            Circle()
-              .fill(themeManager.themeColor.opacity(0.2))
-              .frame(width: radiusToSize(radius), height: radiusToSize(radius))
-            Circle()
-              .stroke(themeManager.themeColor, lineWidth: 2)
-              .frame(width: radiusToSize(radius), height: radiusToSize(radius))
-            Image(systemName: "mappin.circle.fill")
-              .font(.title2)
-              .foregroundColor(themeManager.themeColor)
+        Annotation(location.name, coordinate: CLLocationCoordinate2D(latitude: location.latitude, longitude: location.longitude)) {
+          VStack(spacing: 2) {
+            ZStack {
+              Circle()
+                .fill(themeManager.themeColor.opacity(0.2))
+                .frame(width: radiusToSize(radius), height: radiusToSize(radius))
+              Circle()
+                .stroke(themeManager.themeColor, lineWidth: 2)
+                .frame(width: radiusToSize(radius), height: radiusToSize(radius))
+              Image(systemName: "mappin.circle.fill")
+                .font(.title2)
+                .foregroundColor(themeManager.themeColor)
+            }
+            Text(location.name)
+              .font(.caption2)
+              .fontWeight(.medium)
+              .padding(.horizontal, 4)
+              .padding(.vertical, 2)
+              .background(Color(.systemBackground).opacity(0.9))
+              .clipShape(Capsule())
           }
-          Text(location.name)
-            .font(.caption2)
-            .fontWeight(.medium)
-            .padding(.horizontal, 4)
-            .padding(.vertical, 2)
-            .background(Color(.systemBackground).opacity(0.9))
-            .clipShape(Capsule())
         }
       }
     }
