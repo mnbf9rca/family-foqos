@@ -13,6 +13,8 @@ struct AddLocationView: View {
   @ObservedObject private var lockCodeManager = LockCodeManager.shared
   @ObservedObject private var locationManager = LocationManager.shared
 
+  @Query(sort: \SavedLocation.name) private var existingLocations: [SavedLocation]
+
   // If editing an existing location
   var editingLocation: SavedLocation?
   var onDelete: (() -> Void)?
@@ -53,8 +55,23 @@ struct AddLocationView: View {
     return SavedLocation.radiusSteps[index]
   }
 
+  private var normalizedName: String {
+    name.trimmingCharacters(in: .whitespaces).lowercased()
+  }
+
+  private var isDuplicateName: Bool {
+    guard !normalizedName.isEmpty else { return false }
+    return existingLocations.contains { location in
+      // Exclude the location being edited
+      if let editing = editingLocation, location.id == editing.id {
+        return false
+      }
+      return location.name.lowercased() == normalizedName
+    }
+  }
+
   private var canSave: Bool {
-    return !name.trimmingCharacters(in: .whitespaces).isEmpty && hasSetLocation
+    return !name.trimmingCharacters(in: .whitespaces).isEmpty && hasSetLocation && !isDuplicateName
   }
 
   init(editingLocation: SavedLocation? = nil, onDelete: (() -> Void)? = nil) {
@@ -82,9 +99,16 @@ struct AddLocationView: View {
   var body: some View {
     NavigationStack {
       Form {
-        Section("Name") {
+        Section {
           TextField("Location Name", text: $name)
             .textContentType(.none)
+        } header: {
+          Text("Name")
+        } footer: {
+          if isDuplicateName {
+            Text("A location with this name already exists")
+              .foregroundColor(.red)
+          }
         }
 
         Section("Location") {
