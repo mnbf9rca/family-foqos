@@ -66,7 +66,7 @@ struct AddLocationView: View {
       if let editing = editingLocation, location.id == editing.id {
         return false
       }
-      return location.name.lowercased() == normalizedName
+      return location.name.trimmingCharacters(in: .whitespaces).lowercased() == normalizedName
     }
   }
 
