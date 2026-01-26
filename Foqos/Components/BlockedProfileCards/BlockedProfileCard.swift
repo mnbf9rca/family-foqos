@@ -17,6 +17,7 @@ struct BlockedProfileCard: View {
   var onEditTapped: () -> Void
   var onStatsTapped: () -> Void = {}
   var onBreakTapped: () -> Void
+  var onAppSelectionTapped: () -> Void = {}
 
   // Keep a reference to the CardBackground to access color
   private var cardBackground: CardBackground {
@@ -44,6 +45,7 @@ struct BlockedProfileCard: View {
               hasReminders: profile.reminderTimeInSeconds != nil,
               enableBreaks: profile.enableBreaks,
               enableStrictMode: profile.enableStrictMode,
+              isSynced: profile.isSynced
             )
           }
 
@@ -118,6 +120,17 @@ struct BlockedProfileCard: View {
             sessionCount: profile.sessions.count,
             domainsCount: profile.domains?.count ?? 0
           )
+        }
+
+        // Show app selection banner if needed
+        if profile.needsAppSelection {
+          Button(action: {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            onAppSelectionTapped()
+          }) {
+            AppSelectionRequiredBanner()
+          }
+          .buttonStyle(.plain)
         }
 
         Spacer(minLength: 4)

@@ -12,8 +12,10 @@ struct SettingsView: View {
   @EnvironmentObject var strategyManager: StrategyManager
 
   @ObservedObject private var appModeManager = AppModeManager.shared
+  @ObservedObject private var profileSyncManager = ProfileSyncManager.shared
 
   @State private var showResetBlockingStateAlert = false
+  @State private var showResetSyncAlert = false
   @State private var showParentDashboard = false
   @State private var showChildDashboard = false
   @State private var showSavedLocations = false
@@ -24,6 +26,19 @@ struct SettingsView: View {
   private var appVersion: String {
     Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
       ?? "1.0"
+  }
+
+  private var syncStatusColor: Color {
+    switch profileSyncManager.syncStatus {
+    case .disabled:
+      return .gray
+    case .idle:
+      return .green
+    case .syncing:
+      return .orange
+    case .error:
+      return .red
+    }
   }
 
   var body: some View {
@@ -102,6 +117,92 @@ struct SettingsView: View {
           Text("Location")
         } footer: {
           Text("Save locations to restrict when profiles can be stopped based on your physical location.")
+        }
+
+        // Device Sync Section
+        Section {
+          Toggle(isOn: $profileSyncManager.isEnabled) {
+            HStack {
+              Image(systemName: "arrow.triangle.2.circlepath.icloud.fill")
+                .foregroundStyle(themeManager.themeColor)
+                .font(.title3)
+
+              VStack(alignment: .leading, spacing: 2) {
+                Text("Enable Profile Sync")
+                  .font(.headline)
+                Text("Sync profiles across your devices")
+                  .font(.caption)
+                  .foregroundColor(.secondary)
+              }
+            }
+          }
+          .tint(themeManager.themeColor)
+          .onChange(of: profileSyncManager.isEnabled) { _, enabled in
+            if enabled {
+              Task {
+                await profileSyncManager.setupSync()
+              }
+            }
+          }
+
+          if profileSyncManager.isEnabled {
+            HStack {
+              Text("Sync Status")
+                .foregroundStyle(.primary)
+              Spacer()
+              HStack(spacing: 8) {
+                if profileSyncManager.isSyncing {
+                  ProgressView()
+                    .scaleEffect(0.8)
+                } else {
+                  Circle()
+                    .fill(syncStatusColor)
+                    .frame(width: 8, height: 8)
+                }
+                Text(profileSyncManager.syncStatus.displayText)
+                  .foregroundStyle(.secondary)
+                  .font(.subheadline)
+              }
+            }
+
+            if let lastSync = profileSyncManager.lastSyncDate {
+              HStack {
+                Text("Last Synced")
+                  .foregroundStyle(.primary)
+                Spacer()
+                Text(lastSync, style: .relative)
+                  .foregroundStyle(.secondary)
+                  .font(.subheadline)
+              }
+            }
+
+            Button {
+              Task {
+                await profileSyncManager.performFullSync()
+              }
+            } label: {
+              HStack {
+                Image(systemName: "arrow.clockwise")
+                  .foregroundColor(themeManager.themeColor)
+                Text("Sync Now")
+                  .foregroundColor(.primary)
+                Spacer()
+                if profileSyncManager.isSyncing {
+                  ProgressView()
+                    .scaleEffect(0.8)
+                }
+              }
+            }
+            .disabled(profileSyncManager.isSyncing)
+          }
+        } header: {
+          Text("Device Sync")
+        } footer: {
+          if profileSyncManager.isEnabled {
+            Text("Profiles marked as synced will be available on all your devices. App selections must be configured separately on each device.")
+          } else {
+            Text("Enable to sync profiles across your iPhone and iPad via iCloud.")
+          }
         }
 
         // Family Controls Section
@@ -235,6 +336,15 @@ struct SettingsView: View {
               Text("Reset Blocking State")
                 .foregroundColor(themeManager.themeColor)
             }
+
+            if profileSyncManager.isEnabled {
+              Button {
+                showResetSyncAlert = true
+              } label: {
+                Text("Reset Syncing")
+                  .foregroundColor(themeManager.themeColor)
+              }
+            }
           }
         }
       }
@@ -254,6 +364,21 @@ struct SettingsView: View {
         }
       } message: {
         Text("This will clear all app restrictions and remove any ghost schedules. Only use this if you're locked out and no profile is active.")
+      }
+      .alert("Reset Syncing", isPresented: $showResetSyncAlert) {
+        Button("Cancel", role: .cancel) { }
+        Button("Keep App Selections") {
+          Task {
+            try? await profileSyncManager.resetSync(clearRemoteAppSelections: false)
+          }
+        }
+        Button("Clear App Selections", role: .destructive) {
+          Task {
+            try? await profileSyncManager.resetSync(clearRemoteAppSelections: true)
+          }
+        }
+      } message: {
+        Text("This will re-sync from this device. Choose how other devices should respond:\n\n• Keep app selections: Other devices keep their blocked apps\n• Clear app selections: Other devices must re-select apps")
       }
       .sheet(isPresented: $showSavedLocations) {
         SavedLocationsView()

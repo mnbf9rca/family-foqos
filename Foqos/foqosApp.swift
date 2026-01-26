@@ -44,6 +44,10 @@ struct foqosApp: App {
   @StateObject private var appModeManager = AppModeManager.shared
   @StateObject private var cloudKitManager = CloudKitManager.shared
 
+  // Device sync for same-user multi-device sync
+  @StateObject private var profileSyncManager = ProfileSyncManager.shared
+  @StateObject private var syncCoordinator = SyncCoordinator.shared
+
   // CloudKit share acceptance
   @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
@@ -115,6 +119,19 @@ struct foqosApp: App {
         .environmentObject(themeManager)
         .environmentObject(appModeManager)
         .environmentObject(cloudKitManager)
+        .environmentObject(profileSyncManager)
+        .onAppear {
+          // Set up sync coordinator with model context
+          syncCoordinator.setModelContext(container.mainContext)
+          // Set up remote session observers
+          startegyManager.setupRemoteSessionObservers()
+          // Initialize sync if enabled
+          if profileSyncManager.isEnabled {
+            Task {
+              await profileSyncManager.setupSync()
+            }
+          }
+        }
     }
     .handlesExternalEvents(matching: ["*"])  // Handle all external events including CloudKit shares
     .modelContainer(container)
