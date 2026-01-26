@@ -283,12 +283,13 @@ class SyncCoordinator: ObservableObject {
         continue
       }
 
-      // Start remote session directly via StrategyManager
-      print("SyncCoordinator: Starting remote session for profile \(syncedSession.profileId)")
+      // Start remote session directly via StrategyManager with synced startTime
+      print("SyncCoordinator: Starting remote session for profile \(syncedSession.profileId) with startTime \(syncedSession.startTime)")
       StrategyManager.shared.startRemoteSession(
         context: context,
         profileId: syncedSession.profileId,
-        sessionId: syncedSession.sessionId
+        sessionId: syncedSession.sessionId,
+        startTime: syncedSession.startTime
       )
 
       // Track that this profile's session was triggered by remote

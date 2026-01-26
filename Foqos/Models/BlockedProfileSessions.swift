@@ -39,12 +39,13 @@ class BlockedProfileSession {
   init(
     tag: String,
     blockedProfile: BlockedProfiles,
-    forceStarted: Bool = false
+    forceStarted: Bool = false,
+    startTime: Date = Date()
   ) {
     self.id = UUID().uuidString
     self.tag = tag
     self.blockedProfile = blockedProfile
-    self.startTime = Date()
+    self.startTime = startTime
     self.forceStarted = forceStarted
 
     // Add this session to the profile's sessions array
@@ -104,12 +105,14 @@ class BlockedProfileSession {
     in context: ModelContext,
     withTag tag: String,
     withProfile profile: BlockedProfiles,
-    forceStart: Bool = false
+    forceStart: Bool = false,
+    startTime: Date = Date()
   ) -> BlockedProfileSession {
     let newSession = BlockedProfileSession(
       tag: tag,
       blockedProfile: profile,
-      forceStarted: forceStart
+      forceStarted: forceStart,
+      startTime: startTime
     )
 
     SharedData.createActiveSharedSession(for: newSession.toSnapshot())

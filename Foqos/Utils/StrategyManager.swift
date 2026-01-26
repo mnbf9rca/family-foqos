@@ -1017,7 +1017,8 @@ class StrategyManager: ObservableObject {
   func startRemoteSession(
     context: ModelContext,
     profileId: UUID,
-    sessionId: UUID
+    sessionId: UUID,
+    startTime: Date
   ) {
     guard !processingRemoteChange else { return }
     processingRemoteChange = true
@@ -1037,15 +1038,22 @@ class StrategyManager: ObservableObject {
         return
       }
 
-      // Start blocking with manual strategy (bypasses NFC/QR requirements)
-      let manualStrategy = getStrategy(id: ManualBlockingStrategy.id)
-      _ = manualStrategy.startBlocking(
-        context: context,
-        profile: profile,
-        forceStart: true
+      // Activate restrictions
+      appBlocker.activateRestrictions(for: BlockedProfiles.getSnapshot(for: profile))
+
+      // Create session with synced startTime
+      let activeSession = BlockedProfileSession.createSession(
+        in: context,
+        withTag: "remote-sync",
+        withProfile: profile,
+        forceStart: true,
+        startTime: startTime
       )
 
-      print("StrategyManager: Started remote session for profile '\(profile.name)'")
+      // Set as active session
+      self.activeSession = activeSession
+
+      print("StrategyManager: Started remote session for profile '\(profile.name)' with synced startTime")
     } catch {
       print("StrategyManager: Error starting remote session - \(error)")
     }
