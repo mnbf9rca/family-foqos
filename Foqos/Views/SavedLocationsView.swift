@@ -144,7 +144,7 @@ struct SavedLocationsView: View {
   }
 
   private func handleEdit(_ location: SavedLocation) {
-    if location.isLocked && appModeManager.currentMode != .parent {
+    if location.isLocked && appModeManager.currentMode == .child {
       // For locked locations in non-parent mode, require code verification
       // For now, allow editing if they can verify the lock code
       locationToEdit = location
@@ -154,7 +154,7 @@ struct SavedLocationsView: View {
   }
 
   private func handleDelete(_ location: SavedLocation) {
-    if location.isLocked && appModeManager.currentMode != .parent {
+    if location.isLocked && appModeManager.currentMode == .child {
       pendingDeleteLocation = location
       showingLockCodeEntry = true
     } else {

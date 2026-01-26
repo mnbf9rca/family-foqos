@@ -83,7 +83,7 @@ class StrategyManager: ObservableObject {
       // Check if the active profile is managed and requires unlock
       if let session = activeSession,
         session.blockedProfile.isManaged,
-        appModeManager.currentMode != .parent,
+        appModeManager.currentMode == .child,
         !lockCodeManager.isUnlocked(session.blockedProfile.id)
       {
         print("Manual stop blocked: Managed profile requires lock code")
@@ -149,8 +149,8 @@ class StrategyManager: ObservableObject {
   func canStopBlocking() -> Bool {
     guard let session = activeSession else { return true }
 
-    // If it's a managed profile on a non-parent device, check if unlocked
-    if session.blockedProfile.isManaged && appModeManager.currentMode != .parent {
+    // If it's a managed profile on a child device, check if unlocked
+    if session.blockedProfile.isManaged && appModeManager.currentMode == .child {
       return lockCodeManager.isUnlocked(session.blockedProfile.id)
     }
 
@@ -167,7 +167,7 @@ class StrategyManager: ObservableObject {
   func getStopBlockedReason() -> String? {
     guard let session = activeSession else { return nil }
 
-    if session.blockedProfile.isManaged && appModeManager.currentMode != .parent
+    if session.blockedProfile.isManaged && appModeManager.currentMode == .child
       && !lockCodeManager.isUnlocked(session.blockedProfile.id)
     {
       return "This profile is parent-controlled. Enter the lock code to stop blocking."
@@ -424,7 +424,7 @@ class StrategyManager: ObservableObject {
 
     // Check if the active profile is managed and requires unlock
     if activeSession.blockedProfile.isManaged,
-      appModeManager.currentMode != .parent,
+      appModeManager.currentMode == .child,
       !lockCodeManager.isUnlocked(activeSession.blockedProfile.id)
     {
       print("Emergency unblock blocked: Managed profile requires lock code")

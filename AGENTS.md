@@ -204,3 +204,40 @@ strategy.onSessionCreation = { [weak self] status in
 - Mock dependencies for unit tests
 - Test both success and failure paths
 - Name tests descriptively: `testGivenX_WhenY_ThenZ()`
+
+## App Modes & Lock Code Behavior
+
+The app has three operating modes with distinct lock code behaviors:
+
+| Mode | Lock Code | Can Create Unlocked Items | Can Create Locked Items | Blocked by Locked Items |
+|------|-----------|--------------------------|------------------------|------------------------|
+| **Individual** | None possible | Yes | No | No |
+| **Parent** | Can SET code | Yes | Yes | No (full access) |
+| **Child** | Synced from parent | Yes | No | Yes (requires code) |
+
+### Critical Rule for Lock Checks
+
+When checking if lock code restrictions apply:
+- **CORRECT:** `appModeManager.currentMode == .child`
+- **WRONG:** `appModeManager.currentMode != .parent`
+
+The wrong pattern blocks both Individual AND Child modes. Only Child mode should be blocked by lock codes.
+
+### When to Show Lock-Related UI
+
+- **Lock toggles** (to create locked items): Show only in Parent mode
+  ```swift
+  appModeManager.currentMode == .parent && lockCodeManager.hasAnyLockCode
+  ```
+
+- **Lock verification prompts** (to edit/delete locked items): Show only in Child mode
+  ```swift
+  item.isLocked && appModeManager.currentMode == .child
+  ```
+
+## Build Output
+
+When running xcodebuild commands, pipe output through xcpretty for cleaner build status:
+```bash
+xcodebuild -project FamilyFoqos.xcodeproj -scheme FamilyFoqos -configuration Debug build 2>&1 | xcpretty
+```

@@ -120,7 +120,7 @@ struct BlockedProfileView: View {
 
   /// Whether editing should be disabled
   private var editingDisabled: Bool {
-    isBlocking || (isManagedProfile && !isUnlockedForEditing && appModeManager.currentMode != .parent)
+    isBlocking || (isManagedProfile && !isUnlockedForEditing && appModeManager.currentMode == .child)
   }
 
   /// Whether to show the managed toggle (only in parent mode when lock code exists)
@@ -223,7 +223,7 @@ struct BlockedProfileView: View {
         }
 
         // Show managed profile lock status
-        if isManagedProfile && !isUnlockedForEditing && appModeManager.currentMode != .parent {
+        if isManagedProfile && !isUnlockedForEditing && appModeManager.currentMode == .child {
           Section {
             HStack {
               Image(systemName: "lock.shield.fill")
@@ -524,7 +524,7 @@ struct BlockedProfileView: View {
 
                 Button(role: .destructive) {
                   // If managed profile on child device, require code
-                  if isManagedProfile && appModeManager.currentMode != .parent && !isUnlockedForEditing {
+                  if isManagedProfile && appModeManager.currentMode == .child && !isUnlockedForEditing {
                     pendingAction = .delete
                     showingLockCodeEntry = true
                   } else {
