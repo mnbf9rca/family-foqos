@@ -17,6 +17,7 @@ struct BlockedProfileCarousel: View {
   var onBreakTapped: (BlockedProfiles) -> Void
   var onManageTapped: () -> Void
   var onEmergencyTapped: () -> Void
+  var onAppSelectionTapped: (BlockedProfiles) -> Void = { _ in }
 
   // State for tracking current profile index and drag gesture
   @State private var currentIndex: Int = 0
@@ -59,7 +60,8 @@ struct BlockedProfileCarousel: View {
     onStatsTapped: @escaping (BlockedProfiles) -> Void,
     onBreakTapped: @escaping (BlockedProfiles) -> Void,
     onManageTapped: @escaping () -> Void,
-    onEmergencyTapped: @escaping () -> Void
+    onEmergencyTapped: @escaping () -> Void,
+    onAppSelectionTapped: @escaping (BlockedProfiles) -> Void = { _ in }
   ) {
     self.profiles = profiles
     self.isBlocking = isBlocking
@@ -75,6 +77,7 @@ struct BlockedProfileCarousel: View {
     self.onBreakTapped = onBreakTapped
     self.onManageTapped = onManageTapped
     self.onEmergencyTapped = onEmergencyTapped
+    self.onAppSelectionTapped = onAppSelectionTapped
   }
 
   // Initialize current index based on active profile or starting profile
@@ -145,6 +148,9 @@ struct BlockedProfileCarousel: View {
                   },
                   onBreakTapped: {
                     onBreakTapped(profiles[index])
+                  },
+                  onAppSelectionTapped: {
+                    onAppSelectionTapped(profiles[index])
                   }
                 )
                 .frame(width: cardWidth)

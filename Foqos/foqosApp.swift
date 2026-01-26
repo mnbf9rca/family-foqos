@@ -174,6 +174,10 @@ class AppDelegate: NSObject, UIApplicationDelegate {
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
   ) -> Bool {
     print("AppDelegate: didFinishLaunchingWithOptions")
+
+    // Register for remote notifications to receive CloudKit push notifications
+    application.registerForRemoteNotifications()
+
     return true
   }
 
@@ -186,6 +190,43 @@ class AppDelegate: NSObject, UIApplicationDelegate {
     let config = UISceneConfiguration(name: nil, sessionRole: connectingSceneSession.role)
     config.delegateClass = SceneDelegate.self
     return config
+  }
+
+  // MARK: - Remote Notification Handling
+
+  func application(
+    _ application: UIApplication,
+    didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
+  ) {
+    print("AppDelegate: Registered for remote notifications")
+  }
+
+  func application(
+    _ application: UIApplication,
+    didFailToRegisterForRemoteNotificationsWithError error: Error
+  ) {
+    print("AppDelegate: Failed to register for remote notifications - \(error)")
+  }
+
+  func application(
+    _ application: UIApplication,
+    didReceiveRemoteNotification userInfo: [AnyHashable: Any],
+    fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
+  ) {
+    print("AppDelegate: Received remote notification")
+
+    // Check if this is a CloudKit notification
+    if let ckNotification = CKNotification(fromRemoteNotificationDictionary: userInfo) {
+      print("AppDelegate: CloudKit notification received - type: \(ckNotification.notificationType.rawValue)")
+
+      // Handle the notification via ProfileSyncManager
+      Task {
+        await ProfileSyncManager.shared.handleRemoteNotification()
+        completionHandler(.newData)
+      }
+    } else {
+      completionHandler(.noData)
+    }
   }
 
 }

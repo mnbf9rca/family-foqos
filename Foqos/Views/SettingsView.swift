@@ -137,13 +137,6 @@ struct SettingsView: View {
             }
           }
           .tint(themeManager.themeColor)
-          .onChange(of: profileSyncManager.isEnabled) { _, enabled in
-            if enabled {
-              Task {
-                await profileSyncManager.setupSync()
-              }
-            }
-          }
 
           if profileSyncManager.isEnabled {
             HStack {

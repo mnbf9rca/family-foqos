@@ -1003,68 +1003,14 @@ class StrategyManager: ObservableObject {
 
   // MARK: - Remote Session Sync
 
-  /// Set up observers for remote session changes from other devices
+  /// Set up observers for remote session changes from other devices.
+  /// Note: Session sync is now handled directly by SyncCoordinator which calls
+  /// startRemoteSession/stopRemoteSession methods. This method is kept for future
+  /// extensibility but no longer observes .syncedSessionsReceived.
   func setupRemoteSessionObservers() {
-    NotificationCenter.default.addObserver(
-      self,
-      selector: #selector(handleRemoteSessionsReceived(_:)),
-      name: .syncedSessionsReceived,
-      object: nil
-    )
-  }
-
-  @objc private func handleRemoteSessionsReceived(_ notification: Notification) {
-    guard let sessions = notification.userInfo?["sessions"] as? [SyncedSession] else {
-      return
-    }
-
-    // Find active session from remote
-    guard let remoteActiveSession = sessions.first(where: { $0.isActive }) else {
-      // No active remote session - check if we should stop local session
-      if let localSession = activeSession,
-        localSession.blockedProfile.isSynced,
-        !processingRemoteChange
-      {
-        // Check if there's a matching ended session
-        let localSessionId = UUID(uuidString: localSession.id)
-        if sessions.contains(where: { $0.sessionId == localSessionId && !$0.isActive }) {
-          print("StrategyManager: Remote session ended, stopping local session")
-          // Session was ended on another device - we need context to stop
-          // Post notification to request stop from view that has context
-          NotificationCenter.default.post(
-            name: .remoteSessionStopRequested,
-            object: nil,
-            userInfo: ["profileId": localSession.blockedProfile.id]
-          )
-        }
-      }
-      return
-    }
-
-    // Check if we already have this session active
-    if let localSession = activeSession,
-      UUID(uuidString: localSession.id) == remoteActiveSession.sessionId
-    {
-      print("StrategyManager: Remote session already active locally")
-      return
-    }
-
-    // Check if we have a different session active
-    if activeSession != nil {
-      print("StrategyManager: Different session already active, ignoring remote session")
-      return
-    }
-
-    // Post notification to start remote session (needs context from view)
-    print("StrategyManager: Remote session started, requesting local start")
-    NotificationCenter.default.post(
-      name: .remoteSessionStartRequested,
-      object: nil,
-      userInfo: [
-        "profileId": remoteActiveSession.profileId,
-        "sessionId": remoteActiveSession.sessionId
-      ]
-    )
+    // SyncCoordinator now handles session sync directly by calling
+    // startRemoteSession() and stopRemoteSession() methods.
+    // No notification observers needed here.
   }
 
   /// Start a session triggered by remote device

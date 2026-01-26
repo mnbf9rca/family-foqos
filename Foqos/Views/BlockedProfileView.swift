@@ -773,6 +773,10 @@ struct BlockedProfileView: View {
         : nil
 
       if let existingProfile = profile {
+        // Track if sync was disabled (for CloudKit deletion)
+        let wasSynced = existingProfile.isSynced
+        let profileId = existingProfile.id
+
         // Update existing profile
         let updatedProfile = try BlockedProfiles.updateProfile(
           existingProfile,
@@ -804,8 +808,14 @@ struct BlockedProfileView: View {
         // Schedule restrictions
         DeviceActivityCenterUtil.scheduleTimerActivity(for: updatedProfile)
 
-        // Push to sync if synced
-        SyncCoordinator.shared.pushProfileIfSynced(updatedProfile)
+        // Handle sync state changes
+        if wasSynced && !isSynced {
+          // Sync was disabled - delete from CloudKit
+          SyncCoordinator.shared.deleteProfileFromSync(profileId, wasSynced: true)
+        } else {
+          // Push to sync if still synced
+          SyncCoordinator.shared.pushProfileIfSynced(updatedProfile)
+        }
       } else {
         let newProfile = try BlockedProfiles.createProfile(
           in: modelContext,

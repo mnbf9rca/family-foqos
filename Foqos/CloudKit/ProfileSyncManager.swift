@@ -188,9 +188,12 @@ class ProfileSyncManager: ObservableObject {
   private func setupSubscriptions() async throws {
     guard !subscriptionsCreated else { return }
 
-    // Create subscription for all record types in the sync zone
-    let subscriptionID = "device-sync-changes"
-    let subscription = CKDatabaseSubscription(subscriptionID: subscriptionID)
+    // Create zone-scoped subscription for changes in our sync zone only
+    let subscriptionID = "device-sync-zone-changes"
+    let subscription = CKRecordZoneSubscription(
+      zoneID: syncZoneID,
+      subscriptionID: subscriptionID
+    )
 
     let notificationInfo = CKSubscription.NotificationInfo()
     notificationInfo.shouldSendContentAvailable = true
@@ -199,12 +202,12 @@ class ProfileSyncManager: ObservableObject {
     do {
       _ = try await privateDatabase.save(subscription)
       subscriptionsCreated = true
-      print("ProfileSyncManager: Created subscription for sync changes")
+      print("ProfileSyncManager: Created zone subscription for sync changes")
     } catch let error as CKError {
       if error.code == .serverRejectedRequest {
         // Subscription might already exist
         subscriptionsCreated = true
-        print("ProfileSyncManager: Subscription already exists")
+        print("ProfileSyncManager: Zone subscription already exists")
       } else {
         throw SyncError.subscriptionFailed(error)
       }
@@ -223,7 +226,10 @@ class ProfileSyncManager: ObservableObject {
     }
 
     do {
-      // Pull remote changes first
+      // Check for reset requests first (from other devices)
+      try await pullResetRequests()
+
+      // Pull remote changes
       try await pullProfiles()
       try await pullSessions()
       try await pullLocations()
@@ -243,6 +249,54 @@ class ProfileSyncManager: ObservableObject {
         self.syncStatus = .error("Sync failed")
         self.error = .fetchFailed(error)
       }
+    }
+  }
+
+  // MARK: - Reset Request Handling
+
+  /// Pull and process reset requests from other devices
+  private func pullResetRequests() async throws {
+    let query = CKQuery(
+      recordType: SyncResetRequest.recordType,
+      predicate: NSPredicate(value: true)
+    )
+
+    do {
+      let (results, _) = try await privateDatabase.records(
+        matching: query,
+        inZoneWith: syncZoneID
+      )
+
+      for (recordID, result) in results {
+        if case .success(let record) = result,
+          let resetRequest = SyncResetRequest(from: record)
+        {
+          // Skip requests from this device
+          if resetRequest.originDeviceId == deviceId {
+            continue
+          }
+
+          print("ProfileSyncManager: Processing reset request from device \(resetRequest.originDeviceId)")
+
+          // Notify coordinator to handle the reset
+          await MainActor.run {
+            NotificationCenter.default.post(
+              name: .syncResetRequested,
+              object: nil,
+              userInfo: ["clearAppSelections": resetRequest.clearRemoteAppSelections]
+            )
+          }
+
+          // Delete the processed reset request
+          try? await privateDatabase.deleteRecord(withID: recordID)
+        }
+      }
+    } catch let error as CKError {
+      if error.code == .zoneNotFound || error.code == .unknownItem {
+        print("ProfileSyncManager: No reset requests found")
+        return
+      }
+      throw SyncError.fetchFailed(error)
     }
   }
 

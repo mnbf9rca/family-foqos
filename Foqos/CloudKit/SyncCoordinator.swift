@@ -10,6 +10,10 @@ class SyncCoordinator: ObservableObject {
   private var cancellables = Set<AnyCancellable>()
   private var modelContext: ModelContext?
 
+  /// Tracks profile IDs that have active sessions started via remote trigger.
+  /// Used to determine which sessions should be auto-stopped when remote ends.
+  private var remoteTriggeredProfileIds: Set<UUID> = []
+
   private init() {
     setupNotificationObservers()
   }
@@ -71,6 +75,9 @@ class SyncCoordinator: ObservableObject {
 
     let deviceId = SharedData.deviceSyncId.uuidString
 
+    // Collect remote profile IDs for deletion reconciliation
+    let remoteProfileIds = Set(syncedProfiles.map { $0.profileId })
+
     for syncedProfile in syncedProfiles {
       // Skip profiles originating from this device
       if syncedProfile.originDeviceId == deviceId {
@@ -93,6 +100,26 @@ class SyncCoordinator: ObservableObject {
       } catch {
         print("SyncCoordinator: Error handling synced profile - \(error)")
       }
+    }
+
+    // Reconcile deletions: remove local synced profiles not in remote set
+    // Only delete profiles that were synced from remote (not originated here)
+    do {
+      let localProfiles = try BlockedProfiles.fetchProfiles(in: context)
+      for profile in localProfiles {
+        // Only consider profiles that are marked as synced
+        guard profile.isSynced else { continue }
+
+        // If profile is not in remote and wasn't originated from this device, delete it
+        if !remoteProfileIds.contains(profile.id) {
+          // Check if this profile has any recent remote activity before deleting
+          // to avoid race conditions during initial sync
+          print("SyncCoordinator: Removing profile '\(profile.name)' deleted from remote")
+          try BlockedProfiles.deleteProfile(profile, in: context)
+        }
+      }
+    } catch {
+      print("SyncCoordinator: Error reconciling profile deletions - \(error)")
     }
 
     try? context.save()
@@ -181,34 +208,63 @@ class SyncCoordinator: ObservableObject {
 
     let deviceId = SharedData.deviceSyncId.uuidString
 
+    // Get profile IDs with active remote sessions (from other devices)
+    let remoteActiveProfileIds = Set(
+      syncedSessions
+        .filter { $0.originDeviceId != deviceId && $0.isActive }
+        .map { $0.profileId }
+    )
+
+    // Check for sessions to START
     for syncedSession in syncedSessions {
       // Skip sessions originating from this device
       if syncedSession.originDeviceId == deviceId {
         continue
       }
 
-      // Only process active sessions (for start propagation)
-      // Session end is handled via StrategyManager notification
-      if syncedSession.isActive {
-        // Check if we already have this session
-        if (try? BlockedProfileSession.findSession(
-          byID: syncedSession.sessionId.uuidString,
-          in: context
-        )) != nil {
-          // Session already exists locally
-          print("SyncCoordinator: Session already exists locally")
-          continue
-        }
+      // Only process active sessions for start propagation
+      guard syncedSession.isActive else { continue }
 
-        // Post notification for StrategyManager to start the session
-        NotificationCenter.default.post(
-          name: .remoteSessionStartRequested,
-          object: nil,
-          userInfo: [
-            "profileId": syncedSession.profileId,
-            "sessionId": syncedSession.sessionId
-          ]
-        )
+      // Skip if we already have an active session for this profile
+      if let existingSession = StrategyManager.shared.activeSession,
+        existingSession.blockedProfile.id == syncedSession.profileId
+      {
+        print("SyncCoordinator: Session already active for profile")
+        continue
+      }
+
+      // Start remote session directly via StrategyManager
+      print("SyncCoordinator: Starting remote session for profile \(syncedSession.profileId)")
+      StrategyManager.shared.startRemoteSession(
+        context: context,
+        profileId: syncedSession.profileId,
+        sessionId: syncedSession.sessionId
+      )
+
+      // Track that this profile's session was triggered by remote
+      remoteTriggeredProfileIds.insert(syncedSession.profileId)
+    }
+
+    // Check for sessions to STOP
+    // Only stop if:
+    // 1. We have a local active session for a synced profile
+    // 2. That profile's session was triggered by remote (not started locally)
+    // 3. The remote no longer has an active session for that profile
+    if let localActiveSession = StrategyManager.shared.activeSession,
+      localActiveSession.blockedProfile.isSynced
+    {
+      let localProfileId = localActiveSession.blockedProfile.id
+
+      // Only auto-stop if this session was triggered by remote
+      if remoteTriggeredProfileIds.contains(localProfileId) {
+        // Check if remote no longer has active session for this profile
+        if !remoteActiveProfileIds.contains(localProfileId) {
+          print("SyncCoordinator: Remote session ended, stopping local session for profile \(localProfileId)")
+          StrategyManager.shared.stopRemoteSession(context: context, profileId: localProfileId)
+
+          // Remove from tracking
+          remoteTriggeredProfileIds.remove(localProfileId)
+        }
       }
     }
   }
@@ -241,15 +297,17 @@ class SyncCoordinator: ObservableObject {
             print("SyncCoordinator: Updated location '\(syncedLocation.name)' from remote")
           }
         } else {
-          // Create new location from synced data
-          _ = try SavedLocation.create(
-            in: context,
+          // Create new location from synced data with original ID preserved
+          let location = SavedLocation(
+            id: syncedLocation.locationId,
             name: syncedLocation.name,
             latitude: syncedLocation.latitude,
             longitude: syncedLocation.longitude,
             defaultRadiusMeters: syncedLocation.defaultRadiusMeters,
             isLocked: syncedLocation.isLocked
           )
+          context.insert(location)
+          try context.save()
           print("SyncCoordinator: Created location '\(syncedLocation.name)' from remote")
         }
       } catch {
@@ -282,9 +340,33 @@ class SyncCoordinator: ObservableObject {
       }
     }
 
-    // Trigger a full sync to get fresh data
+    // Re-push all local synced profiles and locations to CloudKit
     Task {
+      await rePushLocalSyncedData(context: context)
+
+      // Then trigger a full sync to get any data from other devices
       await ProfileSyncManager.shared.performFullSync()
+    }
+  }
+
+  /// Re-push all local synced profiles and locations to CloudKit after a reset
+  private func rePushLocalSyncedData(context: ModelContext) async {
+    do {
+      // Re-push synced profiles
+      let profiles = try BlockedProfiles.fetchProfiles(in: context)
+      for profile in profiles where profile.isSynced {
+        try? await ProfileSyncManager.shared.pushProfile(profile)
+        print("SyncCoordinator: Re-pushed profile '\(profile.name)' after reset")
+      }
+
+      // Re-push synced locations
+      let locations = try SavedLocation.fetchAll(in: context)
+      for location in locations {
+        try? await ProfileSyncManager.shared.pushLocation(location)
+        print("SyncCoordinator: Re-pushed location '\(location.name)' after reset")
+      }
+    } catch {
+      print("SyncCoordinator: Error re-pushing data after reset - \(error)")
     }
   }
 
@@ -293,9 +375,14 @@ class SyncCoordinator: ObservableObject {
   /// Push a profile to CloudKit when it's marked as synced
   func pushProfileIfSynced(_ profile: BlockedProfiles) {
     guard profile.isSynced else { return }
+    guard let context = modelContext else {
+      print("SyncCoordinator: No model context available for push")
+      return
+    }
 
-    // Increment version before pushing
+    // Increment version before pushing and persist
     profile.syncVersion += 1
+    try? context.save()
 
     Task {
       try? await ProfileSyncManager.shared.pushProfile(profile)
