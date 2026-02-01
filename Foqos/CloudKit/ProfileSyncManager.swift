@@ -144,9 +144,11 @@ class ProfileSyncManager: ObservableObject {
       try await createSyncZoneIfNeeded()
 
       // Migrate legacy session records to new format
+      let userRecordID = try await container.userRecordID()
       let migration = SessionSyncMigration(
         database: privateDatabase,
-        zoneID: syncZoneID
+        zoneID: syncZoneID,
+        userRecordName: userRecordID.recordName
       )
       await migration.migrateIfNeeded()
 
