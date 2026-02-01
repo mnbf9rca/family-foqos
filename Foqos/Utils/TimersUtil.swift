@@ -127,7 +127,7 @@ class TimersUtil {
       do {
         try BGTaskScheduler.shared.submit(request)
       } catch {
-        print("Could not schedule background task: \(error)")
+        Log.info("Could not schedule background task: \(error)", category: .timer)
       }
     }
   }
@@ -182,9 +182,7 @@ class TimersUtil {
 
         UNUserNotificationCenter.current().add(request) { error in
           if let error = error {
-            print(
-              "Error scheduling notification: \(error.localizedDescription)"
-            )
+            Log.info("Error scheduling notification: \(error.localizedDescription)", category: .timer)
             completion(.failure(error))
           } else {
             // Also schedule as background task for resilience when app is killed
@@ -246,9 +244,7 @@ class TimersUtil {
       granted,
       error in
       if let error = error {
-        print(
-          "Error requesting notification authorization: \(error.localizedDescription)"
-        )
+        Log.info("Error requesting notification authorization: \(error.localizedDescription)", category: .timer)
         completion(.failure(error))
         return
       }

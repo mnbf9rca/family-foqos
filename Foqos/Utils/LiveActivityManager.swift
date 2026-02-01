@@ -44,10 +44,10 @@ class LiveActivityManager: ObservableObject {
       }) {
         // Found the existing activity
         self.currentActivity = existingActivity
-        print("Restored existing Live Activity with ID: \(existingActivity.id)")
+        Log.info("Restored existing Live Activity with ID: \(existingActivity.id)", category: .liveActivity)
       } else {
         // The activity no longer exists, clean up the stored ID
-        print("No existing activity found with saved ID, removing reference")
+        Log.info("No existing activity found with saved ID, removing reference", category: .liveActivity)
         removeActivityId()
       }
     }
@@ -56,7 +56,7 @@ class LiveActivityManager: ObservableObject {
   func startSessionActivity(session: BlockedProfileSession) {
     // Check if Live Activities are supported
     guard isSupported else {
-      print("Live Activities are not supported on this device")
+      Log.info("Live Activities are not supported on this device", category: .liveActivity)
       return
     }
 
@@ -67,13 +67,13 @@ class LiveActivityManager: ObservableObject {
 
     // Check if we already have an activity running
     if currentActivity != nil {
-      print("Live Activity is already running, will update instead")
+      Log.info("Live Activity is already running, will update instead", category: .liveActivity)
       updateSessionActivity(session: session)
       return
     }
 
     if session.blockedProfile.enableLiveActivity == false {
-      print("Activity is disabled for profile")
+      Log.info("Activity is disabled for profile", category: .liveActivity)
       return
     }
 
@@ -97,17 +97,17 @@ class LiveActivityManager: ObservableObject {
       currentActivity = activity
 
       saveActivityId(activity.id)
-      print("Started Live Activity with ID: \(activity.id) for profile: \(profileName)")
+      Log.info("Started Live Activity with ID: \(activity.id) for profile: \(profileName)", category: .liveActivity)
       return
     } catch {
-      print("Error starting Live Activity: \(error.localizedDescription)")
+      Log.info("Error starting Live Activity: \(error.localizedDescription)", category: .liveActivity)
       return
     }
   }
 
   func updateSessionActivity(session: BlockedProfileSession) {
     guard let activity = currentActivity else {
-      print("No Live Activity to update")
+      Log.info("No Live Activity to update", category: .liveActivity)
       return
     }
 
@@ -121,13 +121,13 @@ class LiveActivityManager: ObservableObject {
     Task {
       let content = ActivityContent(state: updatedState, staleDate: nil)
       await activity.update(content)
-      print("Updated Live Activity with ID: \(activity.id)")
+      Log.info("Updated Live Activity with ID: \(activity.id)", category: .liveActivity)
     }
   }
 
   func updateBreakState(session: BlockedProfileSession) {
     guard let activity = currentActivity else {
-      print("No Live Activity to update for break state")
+      Log.info("No Live Activity to update for break state", category: .liveActivity)
       return
     }
 
@@ -141,13 +141,13 @@ class LiveActivityManager: ObservableObject {
     Task {
       let content = ActivityContent(state: updatedState, staleDate: nil)
       await activity.update(content)
-      print("Updated Live Activity break state: \(session.isBreakActive)")
+      Log.info("Updated Live Activity break state: \(session.isBreakActive)", category: .liveActivity)
     }
   }
 
   func endSessionActivity() {
     guard let activity = currentActivity else {
-      print("No Live Activity to end")
+      Log.info("No Live Activity to end", category: .liveActivity)
       return
     }
 
@@ -159,7 +159,7 @@ class LiveActivityManager: ObservableObject {
     Task {
       let content = ActivityContent(state: completedState, staleDate: nil)
       await activity.end(content, dismissalPolicy: .immediate)
-      print("Ended Live Activity")
+      Log.info("Ended Live Activity", category: .liveActivity)
     }
 
     // Remove the stored activity ID when ending the activity

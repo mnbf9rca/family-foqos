@@ -89,7 +89,7 @@ extension ShareCoordinator: UICloudSharingControllerDelegate {
         failedToSaveShareWithError error: Error
     ) {
         shareError = "Failed to save share: \(error.localizedDescription)"
-        print("CloudKit share save failed: \(error)")
+        Log.info("CloudKit share save failed: \(error)", category: .cloudKit)
     }
 
     func itemTitle(for csc: UICloudSharingController) -> String? {

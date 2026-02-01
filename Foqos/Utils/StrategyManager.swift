@@ -98,7 +98,7 @@ class StrategyManager: ObservableObject {
         appModeManager.currentMode == .child,
         !lockCodeManager.isUnlocked(session.blockedProfile.id)
       {
-        print("Manual stop blocked: Managed profile requires lock code")
+        Log.info("Manual stop blocked: Managed profile requires lock code", category: .strategy)
         errorMessage = "This profile is parent-controlled. Enter the lock code to stop blocking."
         return
       }
@@ -304,7 +304,7 @@ class StrategyManager: ObservableObject {
 
   func toggleBreak(context: ModelContext) {
     guard let session = activeSession else {
-      print("active session does not exist")
+      Log.info("active session does not exist", category: .strategy)
       return
     }
 
@@ -381,9 +381,7 @@ class StrategyManager: ObservableObject {
 
       if let localActiveSession = getActiveSession(context: context) {
         if localActiveSession.blockedProfile.disableBackgroundStops {
-          print(
-            "profile: \(localActiveSession.blockedProfile.name) has disable background stops enabled, not stopping it"
-          )
+          Log.info("profile: \(localActiveSession.blockedProfile.name) has disable background stops enabled, not stopping it", category: .strategy)
           self.errorMessage =
             "profile: \(localActiveSession.blockedProfile.name) has disable background stops enabled, not stopping it"
           return
@@ -397,9 +395,7 @@ class StrategyManager: ObservableObject {
           )
 
         if localActiveSession.blockedProfile.id != profile.id {
-          print(
-            "User is switching sessions from deep link"
-          )
+          Log.info("User is switching sessions from deep link", category: .strategy)
 
           _ = manualStrategy.startBlocking(
             context: context,
@@ -437,9 +433,7 @@ class StrategyManager: ObservableObject {
       }
 
       if let localActiveSession = getActiveSession(context: context) {
-        print(
-          "session is already active for profile: \(localActiveSession.blockedProfile.name), not starting a new one"
-        )
+        Log.info("session is already active for profile: \(localActiveSession.blockedProfile.name), not starting a new one", category: .strategy)
         return
       }
 
@@ -496,25 +490,19 @@ class StrategyManager: ObservableObject {
       let manualStrategy = getStrategy(id: ManualBlockingStrategy.id)
 
       guard let localActiveSession = getActiveSession(context: context) else {
-        print(
-          "session is not active for profile: \(profile.name), not stopping it"
-        )
+        Log.info("session is not active for profile: \(profile.name), not stopping it", category: .strategy)
         return
       }
 
       if localActiveSession.blockedProfile.id != profile.id {
-        print(
-          "session is not active for profile: \(profile.name), not stopping it"
-        )
+        Log.info("session is not active for profile: \(profile.name), not stopping it", category: .strategy)
         self.errorMessage =
           "session is not active for profile: \(profile.name), not stopping it"
         return
       }
 
       if profile.disableBackgroundStops {
-        print(
-          "profile: \(profile.name) has disable background stops enabled, not stopping it"
-        )
+        Log.info("profile: \(profile.name) has disable background stops enabled, not stopping it", category: .strategy)
         self.errorMessage =
           "profile: \(profile.name) has disable background stops enabled, not stopping it"
         return
@@ -549,7 +537,7 @@ class StrategyManager: ObservableObject {
       appModeManager.currentMode == .child,
       !lockCodeManager.isUnlocked(activeSession.blockedProfile.id)
     {
-      print("Emergency unblock blocked: Managed profile requires lock code")
+      Log.info("Emergency unblock blocked: Managed profile requires lock code", category: .strategy)
       errorMessage =
         "This profile is parent-controlled. Enter the lock code to use emergency unblock."
       return
@@ -734,8 +722,9 @@ class StrategyManager: ObservableObject {
             case .started(let seq):
               Log.info("Session synced with seq=\(seq)", category: .strategy)
             case .alreadyActive(let existing):
-              print(
-                "StrategyManager: Joined existing session from \(existing.sessionOriginDevice ?? "unknown")"
+              Log.info(
+                "Joined existing session from \(existing.sessionOriginDevice ?? "unknown")",
+                category: .strategy
               )
               // Reconcile local startTime to match authoritative remote startTime
               if let remoteStartTime = existing.startTime,
@@ -811,12 +800,12 @@ class StrategyManager: ObservableObject {
 
   private func startBreak(context: ModelContext) {
     guard let session = activeSession else {
-      print("Breaks only available in active session")
+      Log.info("Breaks only available in active session", category: .strategy)
       return
     }
 
     if !session.isBreakAvailable {
-      print("Breaks is not availble")
+      Log.info("Breaks is not availble", category: .strategy)
       return
     }
 
@@ -838,12 +827,12 @@ class StrategyManager: ObservableObject {
 
   private func stopBreak(context: ModelContext) {
     guard let session = activeSession else {
-      print("Breaks only available in active session")
+      Log.info("Breaks only available in active session", category: .strategy)
       return
     }
 
     if !session.isBreakAvailable {
-      print("Breaks is not availble")
+      Log.info("Breaks is not availble", category: .strategy)
       return
     }
 
@@ -900,8 +889,9 @@ class StrategyManager: ObservableObject {
           case .started(let seq):
             Log.info("Scheduled session synced with seq=\(seq)", category: .strategy)
           case .alreadyActive(let existing):
-            print(
-              "StrategyManager: Scheduled session joined existing from \(existing.sessionOriginDevice ?? "unknown")"
+            Log.info(
+              "Scheduled session joined existing from \(existing.sessionOriginDevice ?? "unknown")",
+              category: .strategy
             )
             // Reconcile local startTime to match authoritative remote startTime
             if let remoteStartTime = existing.startTime,
@@ -959,9 +949,7 @@ class StrategyManager: ObservableObject {
     activeProfile: BlockedProfiles?
   ) {
     guard let definedProfile = activeProfile else {
-      print(
-        "No active profile found, calling stop blocking with no session"
-      )
+      Log.info("No active profile found, calling stop blocking with no session", category: .strategy)
       return
     }
 
@@ -982,9 +970,7 @@ class StrategyManager: ObservableObject {
 
   private func stopBlocking(context: ModelContext) {
     guard let session = activeSession else {
-      print(
-        "No active session found, calling stop blocking with no session"
-      )
+      Log.info("No active session found, calling stop blocking with no session", category: .strategy)
       return
     }
 
@@ -1034,49 +1020,43 @@ class StrategyManager: ObservableObject {
     let scheduleActivities = scheduleTimerActivity.getAllScheduleTimerActivities(
       from: allActivities)
 
-    print(
-      "Found \(scheduleActivities.count) schedule timer activities out of \(allActivities.count) total activities"
-    )
+    Log.info("Found \(scheduleActivities.count) schedule timer activities out of \(allActivities.count) total activities", category: .strategy)
 
     for activity in scheduleActivities {
       let rawValue = activity.rawValue
       guard let profileId = UUID(uuidString: rawValue) else {
         // This shouldn't happen since we filtered above, but print just in case
-        print("Unexpected: failed to parse profile id from filtered activity: \(rawValue)")
+        Log.info("Unexpected: failed to parse profile id from filtered activity: \(rawValue)", category: .strategy)
         continue
       }
 
       do {
         if let profile = try BlockedProfiles.findProfile(byID: profileId, in: context) {
           if profile.schedule == nil {
-            print(
-              "Profile '\(profile.name)' has no schedule but has device activity registered. Removing ghost schedule..."
-            )
+            Log.info("Profile '\(profile.name)' has no schedule but has device activity registered. Removing ghost schedule...", category: .strategy)
             DeviceActivityCenterUtil.removeScheduleTimerActivities(for: profile)
           } else {
-            print("Profile '\(profile.name)' has schedule - activity is valid ✅")
+            Log.info("Profile '\(profile.name)' has schedule - activity is valid ✅", category: .strategy)
           }
         } else {
           // Profile truly doesn't exist in database
-          print("No profile found for activity \(rawValue). Removing orphaned schedule...")
+          Log.info("No profile found for activity \(rawValue). Removing orphaned schedule...", category: .strategy)
           DeviceActivityCenterUtil.removeScheduleTimerActivities(for: activity)
         }
       } catch {
         // Database error occurred - do NOT delete the schedule since we don't know the true state
-        print(
-          "Error fetching profile \(rawValue): \(error.localizedDescription). Skipping cleanup for safety."
-        )
+        Log.info("Error fetching profile \(rawValue): \(error.localizedDescription). Skipping cleanup for safety.", category: .strategy)
       }
     }
   }
 
   func resetBlockingState(context: ModelContext) {
     guard !isBlocking else {
-      print("Cannot reset blocking state while a profile is active")
+      Log.info("Cannot reset blocking state while a profile is active", category: .strategy)
       return
     }
 
-    print("Resetting blocking state...")
+    Log.info("Resetting blocking state...", category: .strategy)
 
     // Clean up ghost schedules
     cleanUpGhostSchedules(context: context)
@@ -1090,7 +1070,7 @@ class StrategyManager: ObservableObject {
     // Remove all strategy timer activities
     DeviceActivityCenterUtil.removeAllStrategyTimerActivities()
 
-    print("Blocking state reset complete")
+    Log.info("Blocking state reset complete", category: .strategy)
   }
 
   // MARK: - Remote Session Sync

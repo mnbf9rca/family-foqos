@@ -73,7 +73,7 @@ extension NFCWriter: NFCTagReaderSessionDelegate {
           self.errorMessage = "Tag moved away. Please hold it steady."
         default:
           // Log the actual error for debugging
-          print("⚠️ NFC Writer error: \(readerError.code.rawValue) - \(error.localizedDescription)")
+          Log.info("⚠️ NFC Writer error: \(readerError.code.rawValue) - \(error.localizedDescription)", category: .nfc)
           self.errorMessage = error.localizedDescription
         }
       }

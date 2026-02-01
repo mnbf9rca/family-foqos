@@ -90,9 +90,7 @@ class SessionSyncMigration {
         // Check if a ProfileSessionRecord already exists for this profile
         let existingResult = await SessionSyncService.shared.fetchSession(profileId: profileId)
         if case .found = existingResult {
-          print(
-            "SessionSyncMigration: ProfileSessionRecord already exists for \(profileId), deleting legacy records only"
-          )
+          Log.info("SessionSyncMigration: ProfileSessionRecord already exists for \(profileId), deleting legacy records only", category: .sync)
         } else {
           // Create new unified record
           var profileSession = ProfileSessionRecord(profileId: profileId)

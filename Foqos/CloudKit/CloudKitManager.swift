@@ -619,7 +619,7 @@ class CloudKitManager: ObservableObject {
         do {
             let rootRecord = try await privateDatabase.record(for: rootRecordID)
             guard let shareRef = rootRecord.share else {
-                print("CloudKitManager: No share exists yet")
+                Log.info("CloudKitManager: No share exists yet", category: .cloudKit)
                 return
             }
             share = try await privateDatabase.record(for: shareRef.recordID) as! CKShare
