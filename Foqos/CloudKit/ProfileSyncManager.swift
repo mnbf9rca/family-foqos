@@ -10,11 +10,8 @@ class ProfileSyncManager: ObservableObject {
 
   // MARK: - CloudKit Configuration
 
-  private let containerIdentifier = "iCloud.com.cynexia.family-foqos"
-  private let syncZoneName = "DeviceSync"
-
   private lazy var container: CKContainer = {
-    CKContainer(identifier: containerIdentifier)
+    CKContainer(identifier: CloudKitConstants.containerIdentifier)
   }()
 
   private var privateDatabase: CKDatabase {
@@ -22,7 +19,7 @@ class ProfileSyncManager: ObservableObject {
   }
 
   private var syncZoneID: CKRecordZone.ID {
-    CKRecordZone.ID(zoneName: syncZoneName, ownerName: CKCurrentUserDefaultName)
+    CKRecordZone.ID(zoneName: CloudKitConstants.syncZoneName, ownerName: CKCurrentUserDefaultName)
   }
 
   // MARK: - Published State
@@ -146,6 +143,13 @@ class ProfileSyncManager: ObservableObject {
       // Create sync zone if needed
       try await createSyncZoneIfNeeded()
 
+      // Migrate legacy session records to new format
+      let migration = SessionSyncMigration(
+        database: privateDatabase,
+        zoneID: syncZoneID
+      )
+      await migration.migrateIfNeeded()
+
       // Set up subscriptions for remote changes
       try await setupSubscriptions()
 
@@ -171,7 +175,7 @@ class ProfileSyncManager: ObservableObject {
     do {
       _ = try await privateDatabase.save(zone)
       syncZoneVerified = true
-      print("ProfileSyncManager: Created sync zone: \(syncZoneName)")
+      print("ProfileSyncManager: Created sync zone: \(CloudKitConstants.syncZoneName)")
     } catch _ as CKError {
       // Check if zone already exists
       do {
@@ -231,7 +235,8 @@ class ProfileSyncManager: ObservableObject {
 
       // Pull remote changes
       try await pullProfiles()
-      try await pullSessions()
+      try await pullSessions()  // Legacy session sync
+      try await pullProfileSessionRecords()  // New CAS-based session sync
       try await pullLocations()
 
       // Request push of local data (SyncCoordinator will handle this)
@@ -502,6 +507,71 @@ class ProfileSyncManager: ObservableObject {
     }
   }
 
+  /// Pull session records using the new ProfileSessionRecord format (CAS-based)
+  func pullProfileSessionRecords() async throws {
+    guard isEnabled else { throw SyncError.syncDisabled }
+
+    // Query all ProfileSession records with pagination
+    let query = CKQuery(
+      recordType: ProfileSessionRecord.recordType,
+      predicate: NSPredicate(value: true)
+    )
+
+    do {
+      var sessions: [ProfileSessionRecord] = []
+      var cursor: CKQueryOperation.Cursor? = nil
+
+      // First batch
+      let (initialResults, initialCursor) = try await privateDatabase.records(
+        matching: query,
+        inZoneWith: syncZoneID
+      )
+
+      for (_, result) in initialResults {
+        if case .success(let record) = result,
+          let session = ProfileSessionRecord(from: record)
+        {
+          sessions.append(session)
+        }
+      }
+      cursor = initialCursor
+
+      // Continue fetching while there are more results
+      while let currentCursor = cursor {
+        let (moreResults, nextCursor) = try await privateDatabase.records(
+          continuingMatchFrom: currentCursor
+        )
+
+        for (_, result) in moreResults {
+          if case .success(let record) = result,
+            let session = ProfileSessionRecord(from: record)
+          {
+            sessions.append(session)
+          }
+        }
+        cursor = nextCursor
+      }
+
+      print("ProfileSyncManager: Pulled \(sessions.count) session records from CloudKit")
+
+      // Notify coordinator about sessions
+      let sessionsToSend = sessions
+      await MainActor.run {
+        NotificationCenter.default.post(
+          name: .profileSessionRecordsReceived,
+          object: nil,
+          userInfo: [ProfileSessionRecord.sessionsUserInfoKey: sessionsToSend]
+        )
+      }
+    } catch let error as CKError {
+      if error.code == .zoneNotFound || error.code == .unknownItem {
+        print("ProfileSyncManager: No session records found in CloudKit")
+        return
+      }
+      throw SyncError.fetchFailed(error)
+    }
+  }
+
   // MARK: - Location Sync
 
   /// Push a location to CloudKit
@@ -724,4 +794,5 @@ extension Notification.Name {
   static let syncedLocationsReceived = Notification.Name("syncedLocationsReceived")
   static let syncResetRequested = Notification.Name("syncResetRequested")
   static let localDataPushRequested = Notification.Name("localDataPushRequested")
+  static let profileSessionRecordsReceived = Notification.Name("profileSessionRecordsReceived")
 }

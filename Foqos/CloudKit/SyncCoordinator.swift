@@ -35,12 +35,28 @@ class SyncCoordinator: ObservableObject {
       }
       .store(in: &cancellables)
 
-    // Observe synced sessions
+    // Observe synced sessions (legacy - kept for backwards compatibility)
     NotificationCenter.default.publisher(for: .syncedSessionsReceived)
       .receive(on: DispatchQueue.main)
       .sink { [weak self] notification in
         guard let sessions = notification.userInfo?["sessions"] as? [SyncedSession] else { return }
         self?.handleSyncedSessions(sessions)
+      }
+      .store(in: &cancellables)
+
+    // Observe new ProfileSessionRecord notifications
+    NotificationCenter.default.publisher(for: .profileSessionRecordsReceived)
+      .receive(on: DispatchQueue.main)
+      .sink { [weak self] notification in
+        guard
+          let sessions = notification.userInfo?[ProfileSessionRecord.sessionsUserInfoKey]
+            as? [ProfileSessionRecord]
+        else {
+          return
+        }
+        MainActor.assumeIsolated {
+          self?.handleProfileSessionRecords(sessions)
+        }
       }
       .store(in: &cancellables)
 
@@ -319,6 +335,107 @@ class SyncCoordinator: ObservableObject {
           remoteTriggeredProfileIds.remove(localProfileId)
         }
       }
+    }
+  }
+
+  // MARK: - New Session Handling (CAS-based)
+
+  /// Handle ProfileSessionRecord notifications from the new sync system
+  @MainActor
+  private func handleProfileSessionRecords(_ sessions: [ProfileSessionRecord]) {
+    guard let context = modelContext else {
+      print("SyncCoordinator: No model context available")
+      return
+    }
+
+    let deviceId = SharedData.deviceSyncId.uuidString
+
+    for session in sessions {
+      applySessionState(session, context: context, deviceId: deviceId)
+    }
+  }
+
+  /// Sync session state for a specific profile using the new CAS-based system
+  @MainActor
+  func handleSessionSync(for profileId: UUID) async {
+    guard let context = modelContext else {
+      print("SyncCoordinator: No model context available")
+      return
+    }
+
+    let deviceId = SharedData.deviceSyncId.uuidString
+
+    // Fetch authoritative state from CloudKit
+    let result = await SessionSyncService.shared.fetchSession(profileId: profileId)
+
+    switch result {
+    case .found(let session):
+      applySessionState(session, context: context, deviceId: deviceId)
+
+    case .notFound:
+      // No session record - ensure local is stopped
+      if let active = StrategyManager.shared.activeSession,
+        active.blockedProfile.id == profileId
+      {
+        print("SyncCoordinator: No remote session, stopping local")
+        StrategyManager.shared.stopRemoteSession(context: context, profileId: profileId)
+      }
+
+    case .error(let error):
+      print("SyncCoordinator: Error fetching session - \(error)")
+    }
+  }
+
+  @MainActor
+  private func applySessionState(
+    _ session: ProfileSessionRecord,
+    context: ModelContext,
+    deviceId: String
+  ) {
+    let profileId = session.profileId
+
+    // Check if this came from us
+    if session.lastModifiedBy == deviceId {
+      print("SyncCoordinator: Ignoring our own update for \(profileId)")
+      return
+    }
+
+    let localActive = StrategyManager.shared.activeSession?.blockedProfile.id == profileId
+
+    if session.isActive && !localActive {
+      // Remote is active, local is not - start locally
+      print("SyncCoordinator: Remote session active, starting locally")
+
+      if let startTime = session.startTime {
+        StrategyManager.shared.startRemoteSession(
+          context: context,
+          profileId: profileId,
+          sessionId: UUID(),  // Local tracking only
+          startTime: startTime
+        )
+        remoteTriggeredProfileIds.insert(profileId)
+      }
+
+    } else if !session.isActive && localActive {
+      // Remote is stopped, local is active - stop locally
+      // In the single-record model, the CloudKit record is authoritative
+      print("SyncCoordinator: Remote session stopped, stopping locally")
+      StrategyManager.shared.stopRemoteSession(context: context, profileId: profileId)
+      remoteTriggeredProfileIds.remove(profileId)
+    }
+  }
+
+  /// Sync session state for all profiles that might be active
+  func syncAllProfileSessions() async {
+    guard let context = modelContext else { return }
+
+    do {
+      let profiles = try BlockedProfiles.fetchProfiles(in: context)
+      for profile in profiles {
+        await handleSessionSync(for: profile.id)
+      }
+    } catch {
+      print("SyncCoordinator: Error fetching profiles for sync - \(error)")
     }
   }
 

@@ -1,0 +1,38 @@
+{
+  "configurations" : [
+    {
+      "id" : "AA2956A9-08EF-4163-B30E-E4C361137D8D",
+      "name" : "Test Scheme Action",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "performanceAntipatternCheckerEnabled" : true,
+    "targetForVariableExpansion" : {
+      "containerPath" : "container:FamilyFoqos.xcodeproj",
+      "identifier" : "801B20942CB363A10073E9E2",
+      "name" : "FamilyFoqos"
+    }
+  },
+  "testTargets" : [
+    {
+      "parallelizable" : true,
+      "target" : {
+        "containerPath" : "container:FamilyFoqos.xcodeproj",
+        "identifier" : "801B20A52CB363A20073E9E2",
+        "name" : "foqosTests"
+      }
+    },
+    {
+      "parallelizable" : true,
+      "target" : {
+        "containerPath" : "container:FamilyFoqos.xcodeproj",
+        "identifier" : "801B20AF2CB363A20073E9E2",
+        "name" : "foqosUITests"
+      }
+    }
+  ],
+  "version" : 1
+}

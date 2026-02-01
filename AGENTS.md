@@ -5,22 +5,25 @@ This file provides guidelines for agentic coding assistants working on the Famil
 ## Build & Test Commands
 
 ### Building
+
+Use `xcpretty` to simplify output.
+
 ```bash
 # Open in Xcode
 open FamilyFoqos.xcodeproj
 
 # Build from command line
-xcodebuild -project FamilyFoqos.xcodeproj -scheme FamilyFoqos -configuration Debug build
+xcodebuild -project FamilyFoqos.xcodeproj -scheme FamilyFoqos -configuration Debug build | xcpretty
 ```
 
 ### Running Tests
-This project currently does not have unit tests. When adding tests, use:
+The project has unit tests in the `FoqosTests` target. Run tests using:
 ```bash
 # Run all tests
-xcodebuild test -project FamilyFoqos.xcodeproj -scheme FamilyFoqos -destination 'platform=iOS Simulator,name=iPhone 15'
+xcodebuild test -project FamilyFoqos.xcodeproj -scheme FamilyFoqos -destination 'platform=iOS Simulator,name=iPhone 15' | xcpretty
 
 # Run a single test class
-xcodebuild test -project FamilyFoqos.xcodeproj -scheme FamilyFoqos -destination 'platform=iOS Simulator,name=iPhone 15' -only-testing:foqosTests/ClassName
+xcodebuild test -project FamilyFoqos.xcodeproj -scheme FamilyFoqos -destination 'platform=iOS Simulator,name=iPhone 15' -only-testing:FoqosTests/ClassName | xcpretty
 ```
 
 ### Code Formatting
