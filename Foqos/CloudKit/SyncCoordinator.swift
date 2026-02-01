@@ -48,10 +48,13 @@ class SyncCoordinator: ObservableObject {
     NotificationCenter.default.publisher(for: .profileSessionRecordsReceived)
       .receive(on: DispatchQueue.main)
       .sink { [weak self] notification in
-        guard let sessions = notification.userInfo?["sessions"] as? [ProfileSessionRecord] else {
+        guard
+          let sessions = notification.userInfo?[ProfileSessionRecord.sessionsUserInfoKey]
+            as? [ProfileSessionRecord]
+        else {
           return
         }
-        Task { @MainActor in
+        MainActor.assumeIsolated {
           self?.handleProfileSessionRecords(sessions)
         }
       }
@@ -414,12 +417,11 @@ class SyncCoordinator: ObservableObject {
       }
 
     } else if !session.isActive && localActive {
-      // Remote is stopped, local is active - stop locally if remote-triggered
-      if remoteTriggeredProfileIds.contains(profileId) {
-        print("SyncCoordinator: Remote session stopped, stopping locally")
-        StrategyManager.shared.stopRemoteSession(context: context, profileId: profileId)
-        remoteTriggeredProfileIds.remove(profileId)
-      }
+      // Remote is stopped, local is active - stop locally
+      // In the single-record model, the CloudKit record is authoritative
+      print("SyncCoordinator: Remote session stopped, stopping locally")
+      StrategyManager.shared.stopRemoteSession(context: context, profileId: profileId)
+      remoteTriggeredProfileIds.remove(profileId)
     }
   }
 

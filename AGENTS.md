@@ -17,13 +17,13 @@ xcodebuild -project FamilyFoqos.xcodeproj -scheme FamilyFoqos -configuration Deb
 ```
 
 ### Running Tests
-This project currently does not have unit tests. When adding tests, use:
+The project has unit tests in the `FoqosTests` target. Run tests using:
 ```bash
 # Run all tests
 xcodebuild test -project FamilyFoqos.xcodeproj -scheme FamilyFoqos -destination 'platform=iOS Simulator,name=iPhone 15' | xcpretty
 
 # Run a single test class
-xcodebuild test -project FamilyFoqos.xcodeproj -scheme FamilyFoqos -destination 'platform=iOS Simulator,name=iPhone 15' -only-testing:foqosTests/ClassName | xcpretty
+xcodebuild test -project FamilyFoqos.xcodeproj -scheme FamilyFoqos -destination 'platform=iOS Simulator,name=iPhone 15' -only-testing:FoqosTests/ClassName | xcpretty
 ```
 
 ### Code Formatting

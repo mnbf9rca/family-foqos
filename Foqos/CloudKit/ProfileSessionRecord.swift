@@ -12,6 +12,11 @@ struct ProfileSessionRecord: Codable, Equatable, Sendable {
 
   /// Deterministic record name based on profile ID
   var recordName: String {
+    Self.recordName(for: profileId)
+  }
+
+  /// Generate the record name for a given profile ID
+  static func recordName(for profileId: UUID) -> String {
     "ProfileSession_\(profileId.uuidString)"
   }
 
@@ -38,6 +43,9 @@ struct ProfileSessionRecord: Codable, Equatable, Sendable {
   // MARK: - CloudKit
 
   static let recordType = "ProfileSession"
+
+  /// Key used in NotificationCenter userInfo for session records
+  static let sessionsUserInfoKey = "sessions"
 
   enum FieldKey: String {
     case profileId

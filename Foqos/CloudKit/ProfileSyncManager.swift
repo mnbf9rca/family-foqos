@@ -511,25 +511,45 @@ class ProfileSyncManager: ObservableObject {
   func pullProfileSessionRecords() async throws {
     guard isEnabled else { throw SyncError.syncDisabled }
 
-    // Query all ProfileSession records
+    // Query all ProfileSession records with pagination
     let query = CKQuery(
       recordType: ProfileSessionRecord.recordType,
       predicate: NSPredicate(value: true)
     )
 
     do {
-      let (results, _) = try await privateDatabase.records(
+      var sessions: [ProfileSessionRecord] = []
+      var cursor: CKQueryOperation.Cursor? = nil
+
+      // First batch
+      let (initialResults, initialCursor) = try await privateDatabase.records(
         matching: query,
         inZoneWith: syncZoneID
       )
 
-      var sessions: [ProfileSessionRecord] = []
-      for (_, result) in results {
+      for (_, result) in initialResults {
         if case .success(let record) = result,
           let session = ProfileSessionRecord(from: record)
         {
           sessions.append(session)
         }
+      }
+      cursor = initialCursor
+
+      // Continue fetching while there are more results
+      while let currentCursor = cursor {
+        let (moreResults, nextCursor) = try await privateDatabase.records(
+          continuingMatchFrom: currentCursor
+        )
+
+        for (_, result) in moreResults {
+          if case .success(let record) = result,
+            let session = ProfileSessionRecord(from: record)
+          {
+            sessions.append(session)
+          }
+        }
+        cursor = nextCursor
       }
 
       print("ProfileSyncManager: Pulled \(sessions.count) session records from CloudKit")
@@ -540,7 +560,7 @@ class ProfileSyncManager: ObservableObject {
         NotificationCenter.default.post(
           name: .profileSessionRecordsReceived,
           object: nil,
-          userInfo: ["sessions": sessionsToSend]
+          userInfo: [ProfileSessionRecord.sessionsUserInfoKey: sessionsToSend]
         )
       }
     } catch let error as CKError {

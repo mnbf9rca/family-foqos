@@ -54,7 +54,7 @@ actor SessionSyncService {
 
   /// Fetch the current session record for a profile
   func fetchSession(profileId: UUID) async -> FetchResult {
-    let recordName = "ProfileSession_\(profileId.uuidString)"
+    let recordName = ProfileSessionRecord.recordName(for: profileId)
     let recordID = CKRecord.ID(recordName: recordName, zoneID: syncZoneID)
 
     do {
@@ -288,13 +288,16 @@ actor SessionSyncService {
       operation.savePolicy = policy
       operation.qualityOfService = .userInitiated
 
-      var hasResumed = false
+      // Use nonisolated(unsafe) to allow mutation across callbacks
+      // This is safe because CloudKit guarantees these callbacks are serialized
+      nonisolated(unsafe) var hasResumed = false
 
-      operation.perRecordSaveBlock = { recordID, result in
+      operation.perRecordSaveBlock = { _, result in
         guard !hasResumed else { return }
         hasResumed = true
         switch result {
         case .success(let savedRecord):
+          // Return the saved record which has updated server fields (recordChangeTag)
           continuation.resume(returning: savedRecord)
         case .failure(let error):
           continuation.resume(throwing: error)
@@ -302,12 +305,14 @@ actor SessionSyncService {
       }
 
       operation.modifyRecordsResultBlock = { result in
-        // Only handle if perRecordSaveBlock didn't fire
+        // Only handle if perRecordSaveBlock didn't fire (edge case for batch failures)
         guard !hasResumed else { return }
         hasResumed = true
         switch result {
         case .success:
-          continuation.resume(returning: record)
+          // This shouldn't happen for single record saves - perRecordSaveBlock should fire
+          // But if it does, we can't return the updated record, so fail gracefully
+          continuation.resume(throwing: SessionSyncError.unexpectedState)
         case .failure(let error):
           continuation.resume(throwing: error)
         }

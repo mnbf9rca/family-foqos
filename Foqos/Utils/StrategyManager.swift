@@ -737,6 +737,14 @@ class StrategyManager: ObservableObject {
               print(
                 "StrategyManager: Joined existing session from \(existing.sessionOriginDevice ?? "unknown")"
               )
+              // Reconcile local startTime to match authoritative remote startTime
+              if let remoteStartTime = existing.startTime,
+                let currentSession = self.activeSession,
+                currentSession.startTime != remoteStartTime
+              {
+                currentSession.startTime = remoteStartTime
+                print("StrategyManager: Reconciled local startTime to \(remoteStartTime)")
+              }
             case .error(let error):
               print("StrategyManager: Failed to sync session start - \(error)")
             }
@@ -773,8 +781,17 @@ class StrategyManager: ObservableObject {
               print("StrategyManager: Session was already stopped")
             case .conflict(let current):
               print("StrategyManager: Stop conflict, current seq=\(current.sequenceNumber)")
-              // Retry stop
-              _ = await SessionSyncService.shared.stopSession(profileId: endedProfile.id)
+              // Retry stop once
+              let retryResult = await SessionSyncService.shared.stopSession(
+                profileId: endedProfile.id)
+              switch retryResult {
+              case .stopped(let seq):
+                print("StrategyManager: Stop retry succeeded with seq=\(seq)")
+              case .alreadyStopped:
+                print("StrategyManager: Stop retry found session already stopped")
+              case .conflict, .error:
+                print("StrategyManager: Stop retry failed - \(retryResult)")
+              }
             case .error(let error):
               print("StrategyManager: Failed to sync session stop - \(error)")
             }
@@ -886,6 +903,14 @@ class StrategyManager: ObservableObject {
             print(
               "StrategyManager: Scheduled session joined existing from \(existing.sessionOriginDevice ?? "unknown")"
             )
+            // Reconcile local startTime to match authoritative remote startTime
+            if let remoteStartTime = existing.startTime,
+              let currentSession = self.activeSession,
+              currentSession.startTime != remoteStartTime
+            {
+              currentSession.startTime = remoteStartTime
+              print("StrategyManager: Reconciled scheduled session startTime to \(remoteStartTime)")
+            }
           case .error(let error):
             print("StrategyManager: Failed to sync scheduled session - \(error)")
           }
@@ -902,10 +927,11 @@ class StrategyManager: ObservableObject {
       )
 
       // Sync scheduled session end using CAS (if global sync is enabled)
-      if profileSyncManager.isEnabled, completedScheduleSession.endTime != nil {
+      if profileSyncManager.isEnabled, let endTime = completedScheduleSession.endTime {
         Task {
           let result = await SessionSyncService.shared.stopSession(
-            profileId: completedScheduleSession.blockedProfileId
+            profileId: completedScheduleSession.blockedProfileId,
+            endTime: endTime
           )
 
           switch result {

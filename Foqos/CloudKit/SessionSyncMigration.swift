@@ -14,29 +14,44 @@ class SessionSyncMigration {
 
   /// Check if migration is needed and perform it
   func migrateIfNeeded() async {
-    // Check for legacy records
+    // Check for legacy records with pagination
     let legacyQuery = CKQuery(
       recordType: SyncedSession.recordType,
       predicate: NSPredicate(value: true)
     )
 
     do {
-      let (results, _) = try await privateDatabase.records(
+      var allResults: [(CKRecord.ID, Result<CKRecord, Error>)] = []
+      var cursor: CKQueryOperation.Cursor? = nil
+
+      // First batch
+      let (initialResults, initialCursor) = try await privateDatabase.records(
         matching: legacyQuery,
         inZoneWith: syncZoneID
       )
+      allResults.append(contentsOf: initialResults)
+      cursor = initialCursor
 
-      if results.isEmpty {
+      // Continue fetching while there are more results
+      while let currentCursor = cursor {
+        let (moreResults, nextCursor) = try await privateDatabase.records(
+          continuingMatchFrom: currentCursor
+        )
+        allResults.append(contentsOf: moreResults)
+        cursor = nextCursor
+      }
+
+      if allResults.isEmpty {
         print("SessionSyncMigration: No legacy records to migrate")
         return
       }
 
-      print("SessionSyncMigration: Found \(results.count) legacy records")
+      print("SessionSyncMigration: Found \(allResults.count) legacy records")
 
       // Group by profile ID
       var profileSessions: [UUID: [(CKRecord.ID, SyncedSession)]] = [:]
 
-      for (recordID, result) in results {
+      for (recordID, result) in allResults {
         if case .success(let record) = result,
           let session = SyncedSession(from: record)
         {
