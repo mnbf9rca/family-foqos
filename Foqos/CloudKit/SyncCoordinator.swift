@@ -276,13 +276,6 @@ class SyncCoordinator: ObservableObject {
 
     let deviceId = SharedData.deviceSyncId.uuidString
 
-    // Get profile IDs with active remote sessions (from other devices)
-    let remoteActiveProfileIds = Set(
-      syncedSessions
-        .filter { $0.originDeviceId != deviceId && $0.isActive }
-        .map { $0.profileId }
-    )
-
     // Check for sessions to START
     for syncedSession in syncedSessions {
       // Skip sessions originating from this device
@@ -314,28 +307,11 @@ class SyncCoordinator: ObservableObject {
       remoteTriggeredProfileIds.insert(syncedSession.profileId)
     }
 
-    // Check for sessions to STOP
-    // Only stop if:
-    // 1. We have a local active session and global sync is enabled
-    // 2. That profile's session was triggered by remote (not started locally)
-    // 3. The remote no longer has an active session for that profile
-    if let localActiveSession = StrategyManager.shared.activeSession,
-      ProfileSyncManager.shared.isEnabled
-    {
-      let localProfileId = localActiveSession.blockedProfile.id
-
-      // Only auto-stop if this session was triggered by remote
-      if remoteTriggeredProfileIds.contains(localProfileId) {
-        // Check if remote no longer has active session for this profile
-        if !remoteActiveProfileIds.contains(localProfileId) {
-          Log.info("Remote session ended, stopping local session for profile \(localProfileId)", category: .sync)
-          StrategyManager.shared.stopRemoteSession(context: context, profileId: localProfileId)
-
-          // Remove from tracking
-          remoteTriggeredProfileIds.remove(localProfileId)
-        }
-      }
-    }
+    // LEGACY STOP LOGIC DISABLED
+    // The new CAS-based ProfileSessionRecord system is now authoritative for session state.
+    // This legacy handler receives empty arrays (no legacy SyncedSession records exist after
+    // migration), which was incorrectly interpreted as "session ended".
+    // Session stops are now handled exclusively by handleProfileSessionRecords().
   }
 
   // MARK: - New Session Handling (CAS-based)
