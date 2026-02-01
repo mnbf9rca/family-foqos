@@ -732,7 +732,7 @@ class StrategyManager: ObservableObject {
 
             switch result {
             case .started(let seq):
-              print("StrategyManager: Session synced with seq=\(seq)")
+              Log.info("Session synced with seq=\(seq)", category: .strategy)
             case .alreadyActive(let existing):
               print(
                 "StrategyManager: Joined existing session from \(existing.sessionOriginDevice ?? "unknown")"
@@ -743,10 +743,10 @@ class StrategyManager: ObservableObject {
                 currentSession.startTime != remoteStartTime
               {
                 currentSession.startTime = remoteStartTime
-                print("StrategyManager: Reconciled local startTime to \(remoteStartTime)")
+                Log.info("Reconciled local startTime to \(remoteStartTime)", category: .strategy)
               }
             case .error(let error):
-              print("StrategyManager: Failed to sync session start - \(error)")
+              Log.info("Failed to sync session start - \(error)", category: .strategy)
             }
           }
         }
@@ -776,24 +776,24 @@ class StrategyManager: ObservableObject {
 
             switch result {
             case .stopped(let seq):
-              print("StrategyManager: Session stop synced with seq=\(seq)")
+              Log.info("Session stop synced with seq=\(seq)", category: .strategy)
             case .alreadyStopped:
-              print("StrategyManager: Session was already stopped")
+              Log.info("Session was already stopped", category: .strategy)
             case .conflict(let current):
-              print("StrategyManager: Stop conflict, current seq=\(current.sequenceNumber)")
+              Log.info("Stop conflict, current seq=\(current.sequenceNumber)", category: .strategy)
               // Retry stop once
               let retryResult = await SessionSyncService.shared.stopSession(
                 profileId: endedProfile.id)
               switch retryResult {
               case .stopped(let seq):
-                print("StrategyManager: Stop retry succeeded with seq=\(seq)")
+                Log.info("Stop retry succeeded with seq=\(seq)", category: .strategy)
               case .alreadyStopped:
-                print("StrategyManager: Stop retry found session already stopped")
+                Log.info("Stop retry found session already stopped", category: .strategy)
               case .conflict, .error:
-                print("StrategyManager: Stop retry failed - \(retryResult)")
+                Log.info("Stop retry failed - \(retryResult)", category: .strategy)
               }
             case .error(let error):
-              print("StrategyManager: Failed to sync session stop - \(error)")
+              Log.info("Failed to sync session stop - \(error)", category: .strategy)
             }
           }
         }
@@ -898,7 +898,7 @@ class StrategyManager: ObservableObject {
 
           switch result {
           case .started(let seq):
-            print("StrategyManager: Scheduled session synced with seq=\(seq)")
+            Log.info("Scheduled session synced with seq=\(seq)", category: .strategy)
           case .alreadyActive(let existing):
             print(
               "StrategyManager: Scheduled session joined existing from \(existing.sessionOriginDevice ?? "unknown")"
@@ -909,10 +909,10 @@ class StrategyManager: ObservableObject {
               currentSession.startTime != remoteStartTime
             {
               currentSession.startTime = remoteStartTime
-              print("StrategyManager: Reconciled scheduled session startTime to \(remoteStartTime)")
+              Log.info("Reconciled scheduled session startTime to \(remoteStartTime)", category: .strategy)
             }
           case .error(let error):
-            print("StrategyManager: Failed to sync scheduled session - \(error)")
+            Log.info("Failed to sync scheduled session - \(error)", category: .strategy)
           }
         }
       }
@@ -936,9 +936,9 @@ class StrategyManager: ObservableObject {
 
           switch result {
           case .stopped(let seq):
-            print("StrategyManager: Scheduled session stop synced with seq=\(seq)")
+            Log.info("Scheduled session stop synced with seq=\(seq)", category: .strategy)
           case .alreadyStopped:
-            print("StrategyManager: Scheduled session was already stopped")
+            Log.info("Scheduled session was already stopped", category: .strategy)
           case .conflict, .error:
             break  // Handle silently for completed sessions
           }
@@ -1119,13 +1119,13 @@ class StrategyManager: ObservableObject {
 
     do {
       guard let profile = try BlockedProfiles.findProfile(byID: profileId, in: context) else {
-        print("StrategyManager: Profile not found for remote session")
+        Log.info("Profile not found for remote session", category: .strategy)
         return
       }
 
       // Check if profile has local app selection
       if profile.needsAppSelection {
-        print("StrategyManager: Profile needs app selection, cannot start remotely")
+        Log.info("Profile needs app selection, cannot start remotely", category: .strategy)
         errorMessage = "Profile '\(profile.name)' is active on another device but needs app selection on this device."
         return
       }
@@ -1145,9 +1145,9 @@ class StrategyManager: ObservableObject {
       // Set as active session
       self.activeSession = activeSession
 
-      print("StrategyManager: Started remote session for profile '\(profile.name)' with synced startTime")
+      Log.info("Started remote session for profile '\(profile.name)' with synced startTime", category: .strategy)
     } catch {
-      print("StrategyManager: Error starting remote session - \(error)")
+      Log.info("Error starting remote session - \(error)", category: .strategy)
     }
   }
 
@@ -1161,7 +1161,7 @@ class StrategyManager: ObservableObject {
     guard let session = activeSession,
       session.blockedProfile.id == profileId
     else {
-      print("StrategyManager: No matching active session to stop")
+      Log.info("No matching active session to stop", category: .strategy)
       return
     }
 
@@ -1169,7 +1169,7 @@ class StrategyManager: ObservableObject {
     let manualStrategy = getStrategy(id: ManualBlockingStrategy.id)
     _ = manualStrategy.stopBlocking(context: context, session: session)
 
-    print("StrategyManager: Stopped session via remote trigger")
+    Log.info("Stopped session via remote trigger", category: .strategy)
   }
 }
 
