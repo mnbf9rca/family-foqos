@@ -94,7 +94,7 @@ class AuthorizationVerifier: ObservableObject {
     do {
       try await AuthorizationCenter.shared.requestAuthorization(for: .child)
       persistAuthorizationType(.child)
-      print("AuthorizationVerifier: Child authorization successful")
+      Log.info("Child authorization successful", category: .authorization)
       return .authorized
     } catch let error as NSError {
       print(
@@ -122,10 +122,10 @@ class AuthorizationVerifier: ObservableObject {
     do {
       try await AuthorizationCenter.shared.requestAuthorization(for: .individual)
       persistAuthorizationType(.individual)
-      print("AuthorizationVerifier: Individual authorization successful")
+      Log.info("Individual authorization successful", category: .authorization)
       return true
     } catch {
-      print("AuthorizationVerifier: Individual authorization failed - \(error)")
+      Log.info("Individual authorization failed - \(error)", category: .authorization)
       return false
     }
   }
@@ -147,7 +147,7 @@ class AuthorizationVerifier: ObservableObject {
     let cloudKitManager = CloudKitManager.shared
     let appModeManager = AppModeManager.shared
 
-    print("AuthorizationVerifier: Handling authorization loss")
+    Log.info("Handling authorization loss", category: .authorization)
 
     // Clear CloudKit shared state first
     await cloudKitManager.clearSharedState()
