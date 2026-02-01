@@ -35,16 +35,7 @@ class SyncCoordinator: ObservableObject {
       }
       .store(in: &cancellables)
 
-    // Observe synced sessions (legacy - kept for backwards compatibility)
-    NotificationCenter.default.publisher(for: .syncedSessionsReceived)
-      .receive(on: DispatchQueue.main)
-      .sink { [weak self] notification in
-        guard let sessions = notification.userInfo?["sessions"] as? [SyncedSession] else { return }
-        self?.handleSyncedSessions(sessions)
-      }
-      .store(in: &cancellables)
-
-    // Observe new ProfileSessionRecord notifications
+    // Observe ProfileSessionRecord notifications (CAS-based session sync)
     NotificationCenter.default.publisher(for: .profileSessionRecordsReceived)
       .receive(on: DispatchQueue.main)
       .sink { [weak self] notification in
@@ -266,57 +257,9 @@ class SyncCoordinator: ObservableObject {
     Log.info("Created profile '\(profile.name)' from remote (needs app selection)", category: .sync)
   }
 
-  // MARK: - Session Handling
+  // MARK: - Session Handling (CAS-based)
 
-  private func handleSyncedSessions(_ syncedSessions: [SyncedSession]) {
-    guard let context = modelContext else {
-      Log.info("No model context available", category: .sync)
-      return
-    }
-
-    let deviceId = SharedData.deviceSyncId.uuidString
-
-    // Check for sessions to START
-    for syncedSession in syncedSessions {
-      // Skip sessions originating from this device
-      if syncedSession.originDeviceId == deviceId {
-        continue
-      }
-
-      // Only process active sessions for start propagation
-      guard syncedSession.isActive else { continue }
-
-      // Skip if we already have an active session for this profile
-      if let existingSession = StrategyManager.shared.activeSession,
-        existingSession.blockedProfile.id == syncedSession.profileId
-      {
-        Log.info("Session already active for profile", category: .sync)
-        continue
-      }
-
-      // Start remote session directly via StrategyManager with synced startTime
-      Log.info("Starting remote session for profile \(syncedSession.profileId) with startTime \(syncedSession.startTime)", category: .sync)
-      StrategyManager.shared.startRemoteSession(
-        context: context,
-        profileId: syncedSession.profileId,
-        sessionId: syncedSession.sessionId,
-        startTime: syncedSession.startTime
-      )
-
-      // Track that this profile's session was triggered by remote
-      remoteTriggeredProfileIds.insert(syncedSession.profileId)
-    }
-
-    // LEGACY STOP LOGIC DISABLED
-    // The new CAS-based ProfileSessionRecord system is now authoritative for session state.
-    // This legacy handler receives empty arrays (no legacy SyncedSession records exist after
-    // migration), which was incorrectly interpreted as "session ended".
-    // Session stops are now handled exclusively by handleProfileSessionRecords().
-  }
-
-  // MARK: - New Session Handling (CAS-based)
-
-  /// Handle ProfileSessionRecord notifications from the new sync system
+  /// Handle ProfileSessionRecord notifications from the sync system
   @MainActor
   private func handleProfileSessionRecords(_ sessions: [ProfileSessionRecord]) {
     guard let context = modelContext else {
