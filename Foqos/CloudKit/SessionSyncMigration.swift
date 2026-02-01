@@ -7,6 +7,13 @@ class SessionSyncMigration {
   private let privateDatabase: CKDatabase
   private let syncZoneID: CKRecordZone.ID
 
+  private static let migrationCompleteKey = "SessionSyncMigrationComplete"
+
+  private static var isMigrationComplete: Bool {
+    get { UserDefaults.standard.bool(forKey: migrationCompleteKey) }
+    set { UserDefaults.standard.set(newValue, forKey: migrationCompleteKey) }
+  }
+
   init(database: CKDatabase, zoneID: CKRecordZone.ID) {
     self.privateDatabase = database
     self.syncZoneID = zoneID
@@ -14,6 +21,11 @@ class SessionSyncMigration {
 
   /// Check if migration is needed and perform it
   func migrateIfNeeded() async {
+    // Skip if migration already completed
+    if Self.isMigrationComplete {
+      return
+    }
+
     // Check for legacy records with pagination
     let legacyQuery = CKQuery(
       recordType: SyncedSession.recordType,
@@ -43,6 +55,7 @@ class SessionSyncMigration {
 
       if allResults.isEmpty {
         print("SessionSyncMigration: No legacy records to migrate")
+        Self.isMigrationComplete = true
         return
       }
 
@@ -105,11 +118,13 @@ class SessionSyncMigration {
         print("SessionSyncMigration: Deleted \(sessions.count) legacy records for \(profileId)")
       }
 
+      Self.isMigrationComplete = true
       print("SessionSyncMigration: Migration complete")
 
     } catch let error as CKError {
       if error.code == .zoneNotFound || error.code == .unknownItem {
         print("SessionSyncMigration: No sync zone or legacy records found")
+        Self.isMigrationComplete = true
         return
       }
       print("SessionSyncMigration: Error during migration - \(error)")
