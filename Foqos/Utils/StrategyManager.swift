@@ -53,6 +53,14 @@ class StrategyManager: ObservableObject {
   // Track if we're currently processing a remote session change
   private var processingRemoteChange = false
 
+  /// Whether session changes should be synced to CloudKit.
+  /// Returns false when processing remote changes (to avoid echo loops)
+  /// or when sync is disabled.
+  /// Note: All access is @MainActor-isolated, eliminating race conditions.
+  private var shouldSyncSessionChange: Bool {
+    profileSyncManager.isEnabled && !processingRemoteChange
+  }
+
   var isBlocking: Bool {
     return activeSession?.isActive == true
   }
@@ -711,8 +719,7 @@ class StrategyManager: ObservableObject {
         WidgetCenter.shared.reloadTimelines(ofKind: "ProfileControlWidget")
 
         // Sync session start using CAS (if global sync is enabled)
-        // Skip sync if processing a remote change - we're just following, not initiating
-        if self.profileSyncManager.isEnabled && !self.processingRemoteChange {
+        if self.shouldSyncSessionChange {
           Task {
             let result = await SessionSyncService.shared.startSession(
               profileId: session.blockedProfile.id,
@@ -758,8 +765,7 @@ class StrategyManager: ObservableObject {
         DeviceActivityCenterUtil.removeAllStrategyTimerActivities()
 
         // Sync session stop using CAS (if global sync is enabled)
-        // Skip sync if processing a remote change - we're just following, not initiating
-        if self.profileSyncManager.isEnabled && !self.processingRemoteChange {
+        if self.shouldSyncSessionChange {
           Task {
             let result = await SessionSyncService.shared.stopSession(
               profileId: endedProfile.id
