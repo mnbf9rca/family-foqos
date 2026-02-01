@@ -253,33 +253,62 @@ class ProfileSyncManager: ObservableObject {
     )
 
     do {
-      let (results, _) = try await privateDatabase.records(
+      // Collect all legacy record IDs with pagination
+      var recordIDsToDelete: [CKRecord.ID] = []
+      var cursor: CKQueryOperation.Cursor? = nil
+
+      // First batch
+      let (initialResults, initialCursor) = try await privateDatabase.records(
         matching: query,
-        inZoneWith: syncZoneID,
-        resultsLimit: 100
+        inZoneWith: syncZoneID
       )
 
-      if results.isEmpty {
+      for (recordID, _) in initialResults {
+        recordIDsToDelete.append(recordID)
+      }
+      cursor = initialCursor
+
+      // Continue fetching while there are more results
+      while let currentCursor = cursor {
+        let (moreResults, nextCursor) = try await privateDatabase.records(
+          continuingMatchFrom: currentCursor
+        )
+
+        for (recordID, _) in moreResults {
+          recordIDsToDelete.append(recordID)
+        }
+        cursor = nextCursor
+      }
+
+      if recordIDsToDelete.isEmpty {
         // No legacy records - mark complete, no notice needed
         setLegacyCleanupComplete(for: userRecordName)
         Log.info("No legacy session records found", category: .sync)
         return false
       }
 
-      // Delete all legacy records
-      Log.info("Found \(results.count) legacy session records, deleting", category: .sync)
+      // Delete all legacy records, tracking failures
+      Log.info("Found \(recordIDsToDelete.count) legacy session records, deleting", category: .sync)
 
-      for (recordID, _) in results {
+      var allDeletesSucceeded = true
+      for recordID in recordIDsToDelete {
         do {
           try await privateDatabase.deleteRecord(withID: recordID)
         } catch {
           Log.info("Failed to delete legacy record \(recordID) - \(error)", category: .sync)
+          allDeletesSucceeded = false
         }
       }
 
-      setLegacyCleanupComplete(for: userRecordName)
-      Log.info("Legacy session cleanup complete", category: .sync)
-      return true  // Should show notice
+      // Only mark complete if all deletions succeeded
+      if allDeletesSucceeded {
+        setLegacyCleanupComplete(for: userRecordName)
+        Log.info("Legacy session cleanup complete", category: .sync)
+      } else {
+        Log.info("Legacy session cleanup incomplete - some deletions failed, will retry next sync", category: .sync)
+      }
+
+      return true  // Should show notice (records were found)
 
     } catch let error as CKError {
       if error.code == .unknownItem || error.code == .zoneNotFound {
