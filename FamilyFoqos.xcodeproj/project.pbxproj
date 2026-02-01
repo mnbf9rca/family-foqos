@@ -17,6 +17,7 @@
 		80FF388E2D80DB540032BC5E /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 80C6CAFA2D4301B3008680F4 /* WidgetKit.framework */; };
 		80FF388F2D80DB540032BC5E /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 80C6CAFC2D4301B3008680F4 /* SwiftUI.framework */; };
 		80FF389C2D80DB560032BC5E /* FoqosWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 80FF388D2D80DB540032BC5E /* FoqosWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		9A34CC082F3F0000DEADBEEF /* LogTailTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A34CC072F3F0000DEADBEEF /* LogTailTests.swift */; };
 		D45AF1862F2F62700091A2E7 /* ConcurrentSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D45AF1832F2F62700091A2E7 /* ConcurrentSessionTests.swift */; };
 		D45AF1872F2F62700091A2E7 /* MockSessionSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D45AF1812F2F62700091A2E7 /* MockSessionSyncService.swift */; };
 		D45AF1882F2F62700091A2E7 /* ProfileSessionRecordTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D45AF1842F2F62700091A2E7 /* ProfileSessionRecordTests.swift */; };
@@ -89,6 +90,7 @@
 		80C6CAFC2D4301B3008680F4 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		80DBF6132CB776D100EEA8A6 /* DeviceActivity.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = DeviceActivity.framework; path = System/Library/Frameworks/DeviceActivity.framework; sourceTree = SDKROOT; };
 		80FF388D2D80DB540032BC5E /* FoqosWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = FoqosWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		9A34CC072F3F0000DEADBEEF /* LogTailTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogTailTests.swift; sourceTree = "<group>"; };
 		D45AF1812F2F62700091A2E7 /* MockSessionSyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockSessionSyncService.swift; sourceTree = "<group>"; };
 		D45AF1832F2F62700091A2E7 /* ConcurrentSessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConcurrentSessionTests.swift; sourceTree = "<group>"; };
 		D45AF1842F2F62700091A2E7 /* ProfileSessionRecordTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileSessionRecordTests.swift; sourceTree = "<group>"; };
@@ -318,6 +320,7 @@
 			children = (
 				D45AF1822F2F62700091A2E7 /* Mocks */,
 				D45AF1832F2F62700091A2E7 /* ConcurrentSessionTests.swift */,
+				9A34CC072F3F0000DEADBEEF /* LogTailTests.swift */,
 				D45AF1842F2F62700091A2E7 /* ProfileSessionRecordTests.swift */,
 			);
 			path = FoqosTests;
@@ -583,6 +586,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				D45AF1862F2F62700091A2E7 /* ConcurrentSessionTests.swift in Sources */,
+				9A34CC082F3F0000DEADBEEF /* LogTailTests.swift in Sources */,
 				D45AF1872F2F62700091A2E7 /* MockSessionSyncService.swift in Sources */,
 				D45AF1882F2F62700091A2E7 /* ProfileSessionRecordTests.swift in Sources */,
 			);
