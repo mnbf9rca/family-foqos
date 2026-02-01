@@ -126,7 +126,7 @@ protocol BlockingStrategy {
 - Use `try-catch` for throwing functions
 - Provide descriptive error messages for user feedback
 - Use `fatalError()` only for truly unrecoverable states (e.g., ModelContainer initialization)
-- Use `print()` for debugging, remove before production
+- Use `Log.debug()` for debugging instead of print()
 
 ```swift
 do {
@@ -135,6 +135,46 @@ do {
   errorMessage = "Failed to save changes: \(error.localizedDescription)"
 }
 ```
+
+### Logging
+
+The app uses a custom privacy-focused logging framework. Use `Log` instead of `print()`:
+
+```swift
+import Foundation  // Log is available globally
+
+// Use appropriate level and category
+Log.debug("Button tapped", category: .ui)
+Log.info("Session started for profile: \(profileId)", category: .session)
+Log.warning("Sync conflict detected", category: .sync)
+Log.error("Failed to save: \(error.localizedDescription)", category: .cloudKit)
+```
+
+**Log Levels:**
+- `debug`: Detailed debugging info (hidden in production)
+- `info`: Normal operations worth noting
+- `warning`: Potential issues that don't block functionality
+- `error`: Failures that need attention
+
+**Log Categories:**
+- `.app` - General app lifecycle
+- `.cloudKit` - CloudKit operations
+- `.sync` - Profile/session sync
+- `.strategy` - Blocking strategy operations
+- `.session` - Session lifecycle
+- `.ui` - User interface events
+- `.location` - Geofence/location
+- `.nfc` - NFC operations
+- `.timer` - Timer/scheduling
+- `.authorization` - FamilyControls auth
+- `.liveActivity` - Live Activity widgets
+- `.familyControls` - Device restrictions
+
+**Privacy:**
+- Never log passwords, lock codes, or personal identifiers
+- Profile names are acceptable (user-defined)
+- UUIDs and timestamps are acceptable
+- Users can export and share logs via Settings → Debug → Export Logs
 
 ### Control Flow
 - Use `guard` for early returns and validation
