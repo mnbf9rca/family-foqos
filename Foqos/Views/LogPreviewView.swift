@@ -31,7 +31,7 @@ struct LogPreviewView: View {
         } else {
           ScrollView {
             VStack(alignment: .leading, spacing: 8) {
-              Text("Showing last \(maxPreviewLines) lines")
+              Text("Showing up to \(maxPreviewLines) lines")
                 .font(.caption)
                 .foregroundColor(.secondary)
                 .padding(.horizontal)
@@ -63,8 +63,8 @@ struct LogPreviewView: View {
 
   private func loadLogs() {
     DispatchQueue.global(qos: .userInitiated).async {
-      // Tail last 1000 lines to avoid UI hang on large logs
-      let content = Log.shared.getLogContentTail(maxLines: 1000)
+      // Tail last N lines to avoid UI hang on large logs
+      let content = Log.shared.getLogContentTail(maxLines: maxPreviewLines)
       DispatchQueue.main.async {
         logContent = content
         isLoading = false

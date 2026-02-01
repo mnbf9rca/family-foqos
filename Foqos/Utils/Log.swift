@@ -324,6 +324,8 @@ final class Log {
 
   /// Get tailed log content (last N lines) for preview - avoids loading massive logs
   func getLogContentTail(maxLines: Int) -> String {
+    guard maxLines > 0 else { return "" }
+
     let urls = getLogFileURLs()  // Current file first, then rotated
     var collectedLines: [String] = []
 
