@@ -11,6 +11,7 @@ struct DebugView: View {
 
   @State private var activeProfile: BlockedProfiles?
   @State private var showCopyConfirmation = false
+  @State private var showingLogExport = false
 
   private var deviceActivities: [DeviceActivityName] {
     DeviceActivityCenterUtil.getDeviceActivities()
@@ -76,8 +77,30 @@ struct DebugView: View {
               )
             }
           }
+
+          // Diagnostics section - always visible
+          DebugSection(title: "Diagnostics") {
+            Button {
+              showingLogExport = true
+            } label: {
+              HStack {
+                Image(systemName: "square.and.arrow.up")
+                Text("Export Logs")
+                Spacer()
+                Image(systemName: "chevron.right")
+                  .foregroundColor(.secondary)
+              }
+              .padding()
+              .background(Color(.secondarySystemBackground))
+              .cornerRadius(10)
+            }
+            .buttonStyle(.plain)
+          }
         }
         .padding()
+      }
+      .sheet(isPresented: $showingLogExport) {
+        LogExportView()
       }
       .navigationTitle("Debug Mode")
       .toolbar {
