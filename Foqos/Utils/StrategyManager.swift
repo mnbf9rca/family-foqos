@@ -722,16 +722,27 @@ class StrategyManager: ObservableObject {
         // Refresh widgets when session starts
         WidgetCenter.shared.reloadTimelines(ofKind: "ProfileControlWidget")
 
-        // Sync session start to other devices (if global sync is enabled)
+        // Sync session start using CAS (if global sync is enabled)
         if self.profileSyncManager.isEnabled {
           Task {
-            try? await self.profileSyncManager.pushSession(session)
+            let result = await SessionSyncService.shared.startSession(
+              profileId: session.blockedProfile.id,
+              startTime: session.startTime
+            )
+
+            switch result {
+            case .started(let seq):
+              print("StrategyManager: Session synced with seq=\(seq)")
+            case .alreadyActive(let existing):
+              print(
+                "StrategyManager: Joined existing session from \(existing.sessionOriginDevice ?? "unknown")"
+              )
+            case .error(let error):
+              print("StrategyManager: Failed to sync session start - \(error)")
+            }
           }
         }
       case .ended(let endedProfile):
-        // Capture session ID before clearing for sync
-        let endedSessionId = self.activeSession?.id
-
         self.activeSession = nil
         self.liveActivityManager.endSessionActivity()
         self.scheduleReminder(profile: endedProfile)
@@ -748,10 +759,25 @@ class StrategyManager: ObservableObject {
         // Remove all strategy timer activities
         DeviceActivityCenterUtil.removeAllStrategyTimerActivities()
 
-        // Sync session end to other devices (if global sync is enabled)
-        if self.profileSyncManager.isEnabled, let sessionId = endedSessionId {
+        // Sync session stop using CAS (if global sync is enabled)
+        if self.profileSyncManager.isEnabled {
           Task {
-            try? await self.profileSyncManager.pushSessionEnd(sessionId, endTime: Date())
+            let result = await SessionSyncService.shared.stopSession(
+              profileId: endedProfile.id
+            )
+
+            switch result {
+            case .stopped(let seq):
+              print("StrategyManager: Session stop synced with seq=\(seq)")
+            case .alreadyStopped:
+              print("StrategyManager: Session was already stopped")
+            case .conflict(let current):
+              print("StrategyManager: Stop conflict, current seq=\(current.sequenceNumber)")
+              // Retry stop
+              _ = await SessionSyncService.shared.stopSession(profileId: endedProfile.id)
+            case .error(let error):
+              print("StrategyManager: Failed to sync session stop - \(error)")
+            }
           }
         }
       }
@@ -843,6 +869,28 @@ class StrategyManager: ObservableObject {
         in: context,
         withSnapshot: activeScheduledSession
       )
+
+      // Sync scheduled session start using CAS (if global sync is enabled)
+      // This ensures multi-device coordination for scheduled profile activations
+      if profileSyncManager.isEnabled {
+        Task {
+          let result = await SessionSyncService.shared.startSession(
+            profileId: activeScheduledSession.blockedProfileId,
+            startTime: activeScheduledSession.startTime
+          )
+
+          switch result {
+          case .started(let seq):
+            print("StrategyManager: Scheduled session synced with seq=\(seq)")
+          case .alreadyActive(let existing):
+            print(
+              "StrategyManager: Scheduled session joined existing from \(existing.sessionOriginDevice ?? "unknown")"
+            )
+          case .error(let error):
+            print("StrategyManager: Failed to sync scheduled session - \(error)")
+          }
+        }
+      }
     }
 
     // Process any completed scheduled sessions
@@ -852,6 +900,24 @@ class StrategyManager: ObservableObject {
         in: context,
         withSnapshot: completedScheduleSession
       )
+
+      // Sync scheduled session end using CAS (if global sync is enabled)
+      if profileSyncManager.isEnabled, completedScheduleSession.endTime != nil {
+        Task {
+          let result = await SessionSyncService.shared.stopSession(
+            profileId: completedScheduleSession.blockedProfileId
+          )
+
+          switch result {
+          case .stopped(let seq):
+            print("StrategyManager: Scheduled session stop synced with seq=\(seq)")
+          case .alreadyStopped:
+            print("StrategyManager: Scheduled session was already stopped")
+          case .conflict, .error:
+            break  // Handle silently for completed sessions
+          }
+        }
+      }
     }
 
     // Flush completed scheduled sessions
