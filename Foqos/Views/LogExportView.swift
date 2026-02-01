@@ -6,6 +6,7 @@ struct LogExportView: View {
   @State private var showingShareSheet = false
   @State private var shareURL: URL?
   @State private var errorMessage: String?
+  @State private var showingPreview = false
   @State private var logStats: LogStats = LogStats()
 
   struct LogStats {
@@ -41,6 +42,19 @@ struct LogExportView: View {
         }
 
         Section {
+          Button {
+            showingPreview = true
+          } label: {
+            HStack {
+              Image(systemName: "doc.text.magnifyingglass")
+              Text("Preview Logs")
+              Spacer()
+              Image(systemName: "chevron.right")
+                .foregroundColor(.secondary)
+            }
+          }
+          .disabled(logStats.fileCount == 0)
+
           Button {
             exportLogs()
           } label: {
@@ -104,6 +118,9 @@ struct LogExportView: View {
         if let url = shareURL {
           ShareSheet(activityItems: [url])
         }
+      }
+      .sheet(isPresented: $showingPreview) {
+        LogPreviewView()
       }
       .onAppear {
         refreshStats()
