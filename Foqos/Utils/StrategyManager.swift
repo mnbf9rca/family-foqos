@@ -805,7 +805,7 @@ class StrategyManager: ObservableObject {
     }
 
     if !session.isBreakAvailable {
-      Log.info("Breaks is not availble", category: .strategy)
+      Log.info("Breaks is not available", category: .strategy)
       return
     }
 
@@ -832,7 +832,7 @@ class StrategyManager: ObservableObject {
     }
 
     if !session.isBreakAvailable {
-      Log.info("Breaks is not availble", category: .strategy)
+      Log.info("Breaks is not available", category: .strategy)
       return
     }
 

@@ -12,6 +12,18 @@ import FamilyControls
 import SwiftData
 import SwiftUI
 
+/// Redact query and fragment from URL for safe logging (may contain tokens)
+private func redactedURLString(_ url: URL) -> String {
+  var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+  if components?.query != nil {
+    components?.query = "[REDACTED]"
+  }
+  if components?.fragment != nil {
+    components?.fragment = "[REDACTED]"
+  }
+  return components?.string ?? url.host ?? "unknown"
+}
+
 private let container: ModelContainer = {
   do {
     // Configure SwiftData to use local storage only (not CloudKit sync)
@@ -82,7 +94,7 @@ struct foqosApp: App {
           }
         }
         .onOpenURL { url in
-          Log.info("onOpenURL triggered with: \(url.absoluteString)", category: .app)
+          Log.info("onOpenURL triggered with: \(redactedURLString(url))", category: .app)
           handleURL(url)
         }
         .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { userActivity in
@@ -147,7 +159,7 @@ struct foqosApp: App {
   }
 
   private func handleURL(_ url: URL) {
-    Log.info("handleURL called with: \(url.absoluteString)", category: .app)
+    Log.info("handleURL called with: \(redactedURLString(url))", category: .app)
 
     // CloudKit share URLs are handled automatically by the system
     // via userDidAcceptCloudKitShareWith - we don't need to do anything here
@@ -253,7 +265,7 @@ class SceneDelegate: NSObject, UIWindowSceneDelegate {
 
     // Check URL contexts
     for urlContext in connectionOptions.urlContexts {
-      Log.debug("Found URL: \(urlContext.url)", category: .app)
+      Log.debug("Found URL: \(redactedURLString(urlContext.url))", category: .app)
     }
   }
 
@@ -266,7 +278,7 @@ class SceneDelegate: NSObject, UIWindowSceneDelegate {
   // Called when app is already running and receives URLs
   func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
     for context in URLContexts {
-      Log.debug("openURLContexts - \(context.url)", category: .app)
+      Log.debug("openURLContexts - \(redactedURLString(context.url))", category: .app)
     }
   }
 

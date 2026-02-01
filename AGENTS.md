@@ -20,10 +20,10 @@ xcodebuild -project FamilyFoqos.xcodeproj -scheme FamilyFoqos -configuration Deb
 The project has unit tests in the `FoqosTests` target. Run tests using:
 ```bash
 # Run all tests
-xcodebuild test -project FamilyFoqos.xcodeproj -scheme FamilyFoqos -destination 'platform=iOS Simulator,name=iPhone 15' | xcpretty
+xcodebuild test -project FamilyFoqos.xcodeproj -scheme FamilyFoqos -destination 'platform=iOS Simulator,name=iPhone 17' | xcpretty
 
 # Run a single test class
-xcodebuild test -project FamilyFoqos.xcodeproj -scheme FamilyFoqos -destination 'platform=iOS Simulator,name=iPhone 15' -only-testing:FoqosTests/ClassName | xcpretty
+xcodebuild test -project FamilyFoqos.xcodeproj -scheme FamilyFoqos -destination 'platform=iOS Simulator,name=iPhone 17' -only-testing:FoqosTests/ClassName | xcpretty
 ```
 
 ### Code Formatting
@@ -174,7 +174,7 @@ Log.error("Failed to save: \(error.localizedDescription)", category: .cloudKit)
 - Never log passwords, lock codes, or personal identifiers
 - Profile names are acceptable (user-defined)
 - UUIDs and timestamps are acceptable
-- Users can export and share logs via Settings → Debug → Export Logs
+- Users can export and share logs via Home → version footer tap → Debug Mode → Export Logs
 
 ### Control Flow
 - Use `guard` for early returns and validation

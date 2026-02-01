@@ -46,10 +46,10 @@ final class LogExportManager {
     let deviceInfoURL = stagingDir.appendingPathComponent("device-info.txt")
     try deviceInfo.write(to: deviceInfoURL, atomically: true, encoding: .utf8)
 
-    // Create zip archive
-    try createZipArchive(from: stagingDir, to: archiveURL)
+    // Create zip archive (returns actual URL, which may be .txt if fallback is used)
+    let actualArchiveURL = try createZipArchive(from: stagingDir, to: archiveURL)
 
-    return archiveURL
+    return actualArchiveURL
   }
 
   /// Generate device and app info for debugging context
@@ -88,30 +88,41 @@ final class LogExportManager {
   }
 
   /// Create zip using Cocoa compression
-  private func createZipArchive(from sourceDir: URL, to archiveURL: URL) throws {
+  /// Returns the actual URL of the created archive (may differ from archiveURL if fallback is used)
+  private func createZipArchive(from sourceDir: URL, to archiveURL: URL) throws -> URL {
     // Use NSFileCoordinator for zip creation (available on iOS)
     let coordinator = NSFileCoordinator()
-    var error: NSError?
+    var coordinatorError: NSError?
+    var copySucceeded = false
 
     coordinator.coordinate(
       readingItemAt: sourceDir,
       options: .forUploading,
-      error: &error
+      error: &coordinatorError
     ) { zipURL in
-      try? fileManager.copyItem(at: zipURL, to: archiveURL)
+      do {
+        try fileManager.copyItem(at: zipURL, to: archiveURL)
+        copySucceeded = true
+      } catch {
+        Log.warning("Failed to copy zip file: \(error.localizedDescription)", category: .app)
+      }
     }
 
-    if let error = error {
+    if coordinatorError != nil || !copySucceeded {
       // Fallback: create combined text file if zip fails
-      try createCombinedLogFile(from: sourceDir, to: archiveURL)
+      let txtURL = try createCombinedLogFile(from: sourceDir, to: archiveURL)
       Log.warning(
-        "Zip creation failed, using combined text fallback: \(error.localizedDescription)",
+        "Zip creation failed, using combined text fallback: \(coordinatorError?.localizedDescription ?? "copy failed")",
         category: .app)
+      return txtURL
     }
+
+    return archiveURL
   }
 
   /// Fallback: combine all logs into a single text file
-  private func createCombinedLogFile(from sourceDir: URL, to destURL: URL) throws {
+  /// Returns the URL of the created text file
+  private func createCombinedLogFile(from sourceDir: URL, to destURL: URL) throws -> URL {
     var combined = ""
 
     let files = try fileManager.contentsOfDirectory(at: sourceDir, includingPropertiesForKeys: nil)
@@ -126,6 +137,7 @@ final class LogExportManager {
     // Change extension to .txt for combined file
     let txtURL = destURL.deletingPathExtension().appendingPathExtension("txt")
     try combined.write(to: txtURL, atomically: true, encoding: .utf8)
+    return txtURL
   }
 
   /// Present share sheet with log archive

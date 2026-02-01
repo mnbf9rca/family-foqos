@@ -298,7 +298,7 @@ final class Log {
       urls.append(currentFile)
     }
 
-    for i in 1...maxLogFiles {
+    for i in 1..<maxLogFiles {
       let rotatedFile = logDir.appendingPathComponent("foqos.\(i).log")
       if fileManager.fileExists(atPath: rotatedFile.path) {
         urls.append(rotatedFile)
