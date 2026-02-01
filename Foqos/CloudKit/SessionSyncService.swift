@@ -168,8 +168,9 @@ actor SessionSyncService {
         cachedRecords[profileId] = (savedRecord, session)
       }
 
-      print(
-        "SessionSyncService: \(isStart ? "Started" : "Updated") session for \(profileId) with seq=\(newSequence)"
+      Log.info(
+        "\(isStart ? "Started" : "Updated") session for \(profileId) with seq=\(newSequence)",
+        category: .sync
       )
       return .started(sequenceNumber: newSequence)
 
