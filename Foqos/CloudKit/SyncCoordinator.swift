@@ -353,6 +353,7 @@ class SyncCoordinator: ObservableObject {
   }
 
   /// Sync session state for a specific profile using the new CAS-based system
+  @MainActor
   func handleSessionSync(for profileId: UUID) async {
     guard let context = modelContext else {
       print("SyncCoordinator: No model context available")
@@ -366,19 +367,15 @@ class SyncCoordinator: ObservableObject {
 
     switch result {
     case .found(let session):
-      await MainActor.run {
-        applySessionState(session, context: context, deviceId: deviceId)
-      }
+      applySessionState(session, context: context, deviceId: deviceId)
 
     case .notFound:
       // No session record - ensure local is stopped
-      await MainActor.run {
-        if let active = StrategyManager.shared.activeSession,
-          active.blockedProfile.id == profileId
-        {
-          print("SyncCoordinator: No remote session, stopping local")
-          StrategyManager.shared.stopRemoteSession(context: context, profileId: profileId)
-        }
+      if let active = StrategyManager.shared.activeSession,
+        active.blockedProfile.id == profileId
+      {
+        print("SyncCoordinator: No remote session, stopping local")
+        StrategyManager.shared.stopRemoteSession(context: context, profileId: profileId)
       }
 
     case .error(let error):

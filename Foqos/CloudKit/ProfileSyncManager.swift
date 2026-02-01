@@ -538,11 +538,12 @@ class ProfileSyncManager: ObservableObject {
       print("ProfileSyncManager: Pulled \(sessions.count) session records from CloudKit")
 
       // Notify coordinator about sessions
+      let sessionsToSend = sessions
       await MainActor.run {
         NotificationCenter.default.post(
           name: .profileSessionRecordsReceived,
           object: nil,
-          userInfo: ["sessions": sessions]
+          userInfo: ["sessions": sessionsToSend]
         )
       }
     } catch let error as CKError {

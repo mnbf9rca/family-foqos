@@ -17,6 +17,9 @@
 		80FF388E2D80DB540032BC5E /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 80C6CAFA2D4301B3008680F4 /* WidgetKit.framework */; };
 		80FF388F2D80DB540032BC5E /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 80C6CAFC2D4301B3008680F4 /* SwiftUI.framework */; };
 		80FF389C2D80DB560032BC5E /* FoqosWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 80FF388D2D80DB540032BC5E /* FoqosWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		D45AF1862F2F62700091A2E7 /* ConcurrentSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D45AF1832F2F62700091A2E7 /* ConcurrentSessionTests.swift */; };
+		D45AF1872F2F62700091A2E7 /* MockSessionSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D45AF1812F2F62700091A2E7 /* MockSessionSyncService.swift */; };
+		D45AF1882F2F62700091A2E7 /* ProfileSessionRecordTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D45AF1842F2F62700091A2E7 /* ProfileSessionRecordTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -86,6 +89,10 @@
 		80C6CAFC2D4301B3008680F4 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		80DBF6132CB776D100EEA8A6 /* DeviceActivity.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = DeviceActivity.framework; path = System/Library/Frameworks/DeviceActivity.framework; sourceTree = SDKROOT; };
 		80FF388D2D80DB540032BC5E /* FoqosWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = FoqosWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		D45AF1812F2F62700091A2E7 /* MockSessionSyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockSessionSyncService.swift; sourceTree = "<group>"; };
+		D45AF1832F2F62700091A2E7 /* ConcurrentSessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConcurrentSessionTests.swift; sourceTree = "<group>"; };
+		D45AF1842F2F62700091A2E7 /* ProfileSessionRecordTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileSessionRecordTests.swift; sourceTree = "<group>"; };
+		D45AF2F42F2F62F10091A2E7 /* FamilyFoqos.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = text; path = FamilyFoqos.xctestplan; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -261,6 +268,8 @@
 		801B208C2CB363A10073E9E2 = {
 			isa = PBXGroup;
 			children = (
+				D45AF2F42F2F62F10091A2E7 /* FamilyFoqos.xctestplan */,
+				D45AF1852F2F62700091A2E7 /* FoqosTests */,
 				801B20972CB363A10073E9E2 /* Foqos */,
 				80FF38902D80DB540032BC5E /* FoqosWidget */,
 				8017130C2DE6C78C00B77FE1 /* FoqosDeviceMonitor */,
@@ -294,6 +303,24 @@
 				808A3C4D2E4ACD18002A7812 /* ManagedSettingsUI.framework */,
 			);
 			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		D45AF1822F2F62700091A2E7 /* Mocks */ = {
+			isa = PBXGroup;
+			children = (
+				D45AF1812F2F62700091A2E7 /* MockSessionSyncService.swift */,
+			);
+			path = Mocks;
+			sourceTree = "<group>";
+		};
+		D45AF1852F2F62700091A2E7 /* FoqosTests */ = {
+			isa = PBXGroup;
+			children = (
+				D45AF1822F2F62700091A2E7 /* Mocks */,
+				D45AF1832F2F62700091A2E7 /* ConcurrentSessionTests.swift */,
+				D45AF1842F2F62700091A2E7 /* ProfileSessionRecordTests.swift */,
+			);
+			path = FoqosTests;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -555,6 +582,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D45AF1862F2F62700091A2E7 /* ConcurrentSessionTests.swift in Sources */,
+				D45AF1872F2F62700091A2E7 /* MockSessionSyncService.swift in Sources */,
+				D45AF1882F2F62700091A2E7 /* ProfileSessionRecordTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -913,7 +943,7 @@
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2,7";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/foqos.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/foqos";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/FamilyFoqos.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/FamilyFoqos";
 				XROS_DEPLOYMENT_TARGET = 2.0;
 			};
 			name = Debug;
@@ -936,7 +966,7 @@
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2,7";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/foqos.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/foqos";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/FamilyFoqos.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/FamilyFoqos";
 				XROS_DEPLOYMENT_TARGET = 2.0;
 			};
 			name = Release;

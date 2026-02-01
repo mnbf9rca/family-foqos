@@ -1,6 +1,6 @@
 import XCTest
 
-@testable import foqos
+@testable import FamilyFoqos
 
 final class ConcurrentSessionTests: XCTestCase {
 
@@ -53,7 +53,7 @@ final class ConcurrentSessionTests: XCTestCase {
   func testConcurrentScheduleTriggersFirstWins() async {
     // Simulate Device A winning the race (Device B gets conflict)
     await mockService.reset()
-    mockService.simulateConflictOnce = true
+    await mockService.setSimulateConflictOnce(true)
 
     // Device B tries to start (but A already won)
     let resultB = await mockService.startSession(

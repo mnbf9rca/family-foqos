@@ -1,6 +1,6 @@
 import Foundation
 
-@testable import foqos
+@testable import FamilyFoqos
 
 /// Mock implementation for testing session sync without CloudKit
 actor MockSessionSyncService {
@@ -78,5 +78,9 @@ actor MockSessionSyncService {
   func reset() {
     records.removeAll()
     simulateConflictOnce = false
+  }
+
+  func setSimulateConflictOnce(_ value: Bool) {
+    simulateConflictOnce = value
   }
 }

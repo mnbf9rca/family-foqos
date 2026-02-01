@@ -1,6 +1,6 @@
 import XCTest
 
-@testable import foqos
+@testable import FamilyFoqos
 
 final class ProfileSessionRecordTests: XCTestCase {
 
