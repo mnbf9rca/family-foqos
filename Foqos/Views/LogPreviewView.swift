@@ -5,7 +5,7 @@ struct LogPreviewView: View {
   @State private var logContent: String = ""
   @State private var searchText: String = ""
   @State private var isLoading: Bool = true
-  private let maxPreviewLines = 1000
+  private let maxPreviewLines = 100
 
   private var filteredContent: String {
     if searchText.isEmpty {
