@@ -240,97 +240,11 @@ struct SyncedProfile: Codable, Equatable {
   }
 }
 
-// MARK: - SyncedSession
+// MARK: - SyncedSession (Legacy)
 
-/// CloudKit record representation of a session for same-user multi-device sync.
-struct SyncedSession: Codable, Equatable {
-  var sessionId: UUID
-  var profileId: UUID
-  var startTime: Date
-  var endTime: Date?  // nil = active
-  var breakStartTime: Date?
-  var breakEndTime: Date?
-  var originDeviceId: String
-  var lastModified: Date
-
-  // MARK: - CloudKit Record Type
-
+/// Legacy session record type - kept only for cleanup of old records
+enum LegacySyncedSession {
   static let recordType = "SyncedSession"
-
-  // MARK: - CloudKit Field Keys
-
-  enum FieldKey: String {
-    case sessionId
-    case profileId
-    case startTime
-    case endTime
-    case breakStartTime
-    case breakEndTime
-    case originDeviceId
-    case lastModified
-  }
-
-  // MARK: - CloudKit Conversion
-
-  func toCKRecord(in zoneID: CKRecordZone.ID) -> CKRecord {
-    let recordID = CKRecord.ID(recordName: sessionId.uuidString, zoneID: zoneID)
-    let record = CKRecord(recordType: SyncedSession.recordType, recordID: recordID)
-
-    record[FieldKey.sessionId.rawValue] = sessionId.uuidString
-    record[FieldKey.profileId.rawValue] = profileId.uuidString
-    record[FieldKey.startTime.rawValue] = startTime
-    record[FieldKey.endTime.rawValue] = endTime
-    record[FieldKey.breakStartTime.rawValue] = breakStartTime
-    record[FieldKey.breakEndTime.rawValue] = breakEndTime
-    record[FieldKey.originDeviceId.rawValue] = originDeviceId
-    record[FieldKey.lastModified.rawValue] = lastModified
-
-    return record
-  }
-
-  init?(from record: CKRecord) {
-    guard record.recordType == SyncedSession.recordType,
-      let sessionIdString = record[FieldKey.sessionId.rawValue] as? String,
-      let sessionId = UUID(uuidString: sessionIdString),
-      let profileIdString = record[FieldKey.profileId.rawValue] as? String,
-      let profileId = UUID(uuidString: profileIdString),
-      let startTime = record[FieldKey.startTime.rawValue] as? Date,
-      let originDeviceId = record[FieldKey.originDeviceId.rawValue] as? String,
-      let lastModified = record[FieldKey.lastModified.rawValue] as? Date
-    else {
-      return nil
-    }
-
-    self.sessionId = sessionId
-    self.profileId = profileId
-    self.startTime = startTime
-    self.endTime = record[FieldKey.endTime.rawValue] as? Date
-    self.breakStartTime = record[FieldKey.breakStartTime.rawValue] as? Date
-    self.breakEndTime = record[FieldKey.breakEndTime.rawValue] as? Date
-    self.originDeviceId = originDeviceId
-    self.lastModified = lastModified
-  }
-
-  // MARK: - Initialization from BlockedProfileSession
-
-  init(
-    from session: BlockedProfileSession,
-    originDeviceId: String
-  ) {
-    self.sessionId = UUID(uuidString: session.id) ?? UUID()
-    self.profileId = session.blockedProfile.id
-    self.startTime = session.startTime
-    self.endTime = session.endTime
-    self.breakStartTime = session.breakStartTime
-    self.breakEndTime = session.breakEndTime
-    self.originDeviceId = originDeviceId
-    self.lastModified = Date()
-  }
-
-  /// Whether this session is currently active (no end time)
-  var isActive: Bool {
-    return endTime == nil
-  }
 }
 
 // MARK: - SyncedLocation

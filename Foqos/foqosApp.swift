@@ -60,6 +60,9 @@ struct foqosApp: App {
   @StateObject private var profileSyncManager = ProfileSyncManager.shared
   @StateObject private var syncCoordinator = SyncCoordinator.shared
 
+  // Sync upgrade notice (shown when legacy session records are cleaned up)
+  @State private var showSyncUpgradeAlert = false
+
   // CloudKit share acceptance
   @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
@@ -121,6 +124,22 @@ struct foqosApp: App {
           ChildAuthorizationRequiredView {
             cloudKitManager.clearChildAuthorizationFailure()
           }
+        }
+        .onReceive(profileSyncManager.$shouldShowSyncUpgradeNotice) { shouldShow in
+          if shouldShow {
+            showSyncUpgradeAlert = true
+            profileSyncManager.shouldShowSyncUpgradeNotice = false
+          }
+        }
+        .alert(
+          "Multi-Device Sync Upgraded",
+          isPresented: $showSyncUpgradeAlert
+        ) {
+          Button("OK", role: .cancel) {}
+        } message: {
+          Text(
+            "Session sync has been improved. Please update Family Foqos on all your devices to ensure sessions sync correctly."
+          )
         }
         .environmentObject(requestAuthorizer)
         .environmentObject(strategyManager)

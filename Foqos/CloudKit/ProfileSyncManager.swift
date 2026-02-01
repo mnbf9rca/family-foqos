@@ -30,6 +30,8 @@ class ProfileSyncManager: ObservableObject {
   @Published var connectedDeviceCount: Int = 0
   @Published var lastSyncDate: Date?
   @Published var error: SyncError?
+  /// Set to true when legacy records were cleaned up and user should be notified
+  @Published var shouldShowSyncUpgradeNotice = false
 
   // MARK: - Private State
 
@@ -40,6 +42,18 @@ class ProfileSyncManager: ObservableObject {
   // Device identifier for this device
   var deviceId: String {
     SharedData.deviceSyncId.uuidString
+  }
+
+  private func legacyCleanupKey(for userRecordName: String) -> String {
+    "family_foqos_legacy_session_cleanup_complete_" + userRecordName
+  }
+
+  private func isLegacyCleanupComplete(for userRecordName: String) -> Bool {
+    UserDefaults.standard.bool(forKey: legacyCleanupKey(for: userRecordName))
+  }
+
+  private func setLegacyCleanupComplete(for userRecordName: String) {
+    UserDefaults.standard.set(true, forKey: legacyCleanupKey(for: userRecordName))
   }
 
   // MARK: - Initialization
@@ -143,17 +157,16 @@ class ProfileSyncManager: ObservableObject {
       // Create sync zone if needed
       try await createSyncZoneIfNeeded()
 
-      // Migrate legacy session records to new format
-      let userRecordID = try await container.userRecordID()
-      let migration = SessionSyncMigration(
-        database: privateDatabase,
-        zoneID: syncZoneID,
-        userRecordName: userRecordID.recordName
-      )
-      await migration.migrateIfNeeded()
-
       // Set up subscriptions for remote changes
       try await setupSubscriptions()
+
+      // Clean up legacy session records if present
+      let foundLegacyRecords = await cleanupLegacySessionsIfNeeded()
+      if foundLegacyRecords {
+        await MainActor.run {
+          self.shouldShowSyncUpgradeNotice = true
+        }
+      }
 
       // Perform initial sync
       await performFullSync()
@@ -220,6 +233,97 @@ class ProfileSyncManager: ObservableObject {
     }
   }
 
+  // MARK: - Legacy Cleanup
+
+  /// Check for and delete legacy SyncedSession records.
+  /// Returns true if legacy records were found and deleted (should show notice).
+  private func cleanupLegacySessionsIfNeeded() async -> Bool {
+    // Get user record name to track cleanup per account
+    guard let userRecordID = try? await container.userRecordID() else {
+      return false
+    }
+    let userRecordName = userRecordID.recordName
+
+    // Skip if already done for this account
+    guard !isLegacyCleanupComplete(for: userRecordName) else { return false }
+
+    let query = CKQuery(
+      recordType: LegacySyncedSession.recordType,
+      predicate: NSPredicate(value: true)
+    )
+
+    do {
+      // Collect all legacy record IDs with pagination
+      var recordIDsToDelete: [CKRecord.ID] = []
+      var cursor: CKQueryOperation.Cursor? = nil
+
+      // First batch
+      let (initialResults, initialCursor) = try await privateDatabase.records(
+        matching: query,
+        inZoneWith: syncZoneID
+      )
+
+      for (recordID, _) in initialResults {
+        recordIDsToDelete.append(recordID)
+      }
+      cursor = initialCursor
+
+      // Continue fetching while there are more results
+      while let currentCursor = cursor {
+        let (moreResults, nextCursor) = try await privateDatabase.records(
+          continuingMatchFrom: currentCursor
+        )
+
+        for (recordID, _) in moreResults {
+          recordIDsToDelete.append(recordID)
+        }
+        cursor = nextCursor
+      }
+
+      if recordIDsToDelete.isEmpty {
+        // No legacy records - mark complete, no notice needed
+        setLegacyCleanupComplete(for: userRecordName)
+        Log.info("No legacy session records found", category: .sync)
+        return false
+      }
+
+      // Delete all legacy records, tracking failures
+      Log.info("Found \(recordIDsToDelete.count) legacy session records, deleting", category: .sync)
+
+      var allDeletesSucceeded = true
+      for recordID in recordIDsToDelete {
+        do {
+          try await privateDatabase.deleteRecord(withID: recordID)
+        } catch {
+          Log.info("Failed to delete legacy record \(recordID) - \(error)", category: .sync)
+          allDeletesSucceeded = false
+        }
+      }
+
+      // Only mark complete if all deletions succeeded
+      if allDeletesSucceeded {
+        setLegacyCleanupComplete(for: userRecordName)
+        Log.info("Legacy session cleanup complete", category: .sync)
+      } else {
+        Log.info("Legacy session cleanup incomplete - some deletions failed, will retry next sync", category: .sync)
+      }
+
+      return true  // Should show notice (records were found)
+
+    } catch let error as CKError {
+      if error.code == .unknownItem || error.code == .zoneNotFound {
+        // No records exist
+        setLegacyCleanupComplete(for: userRecordName)
+        return false
+      }
+      Log.info("Error checking for legacy sessions - \(error)", category: .sync)
+      return false
+    } catch {
+      Log.info("Error checking for legacy sessions - \(error)", category: .sync)
+      return false
+    }
+  }
+
   // MARK: - Full Sync
 
   /// Perform a full sync of all profiles, sessions, and locations
@@ -237,8 +341,7 @@ class ProfileSyncManager: ObservableObject {
 
       // Pull remote changes
       try await pullProfiles()
-      try await pullSessions()  // Legacy session sync
-      try await pullProfileSessionRecords()  // New CAS-based session sync
+      try await pullProfileSessionRecords()  // CAS-based session sync
       try await pullLocations()
 
       // Request push of local data (SyncCoordinator will handle this)
@@ -410,104 +513,6 @@ class ProfileSyncManager: ObservableObject {
   }
 
   // MARK: - Session Sync
-
-  /// Push a session to CloudKit (for start/stop propagation)
-  func pushSession(_ session: BlockedProfileSession) async throws {
-    guard isEnabled else { throw SyncError.syncDisabled }
-
-    let syncedSession = SyncedSession(from: session, originDeviceId: deviceId)
-    let record = syncedSession.toCKRecord(in: syncZoneID)
-
-    do {
-      _ = try await privateDatabase.save(record)
-      Log.info("Pushed session to CloudKit (active: \(syncedSession.isActive))", category: .sync)
-    } catch {
-      Log.info("Failed to push session - \(error)", category: .sync)
-      throw SyncError.saveFailed(error)
-    }
-  }
-
-  /// Update session end time in CloudKit (for stop propagation)
-  func pushSessionEnd(_ sessionId: String, endTime: Date) async throws {
-    guard isEnabled else { throw SyncError.syncDisabled }
-
-    let recordID = CKRecord.ID(recordName: sessionId, zoneID: syncZoneID)
-
-    do {
-      let record = try await privateDatabase.record(for: recordID)
-      record[SyncedSession.FieldKey.endTime.rawValue] = endTime
-      record[SyncedSession.FieldKey.lastModified.rawValue] = Date()
-      _ = try await privateDatabase.save(record)
-      Log.info("Updated session end time in CloudKit", category: .sync)
-    } catch {
-      Log.info("Failed to update session end time - \(error)", category: .sync)
-      throw SyncError.saveFailed(error)
-    }
-  }
-
-  /// Pull all active sessions from CloudKit
-  func pullSessions() async throws {
-    guard isEnabled else { throw SyncError.syncDisabled }
-
-    // Fetch all sessions - CloudKit doesn't support nil comparisons in predicates,
-    // so we fetch all and filter locally for active sessions
-    let query = CKQuery(
-      recordType: SyncedSession.recordType,
-      predicate: NSPredicate(value: true)
-    )
-
-    do {
-      let (results, _) = try await privateDatabase.records(
-        matching: query,
-        inZoneWith: syncZoneID
-      )
-
-      var syncedSessions: [SyncedSession] = []
-      for (_, result) in results {
-        if case .success(let record) = result,
-          let syncedSession = SyncedSession(from: record)
-        {
-          // Only include active sessions (endTime is nil)
-          if syncedSession.isActive {
-            syncedSessions.append(syncedSession)
-          }
-        }
-      }
-
-      Log.info("Pulled \(syncedSessions.count) active sessions from CloudKit", category: .sync)
-
-      // Notify about received sessions
-      let sessions = syncedSessions
-      await MainActor.run {
-        NotificationCenter.default.post(
-          name: .syncedSessionsReceived,
-          object: nil,
-          userInfo: ["sessions": sessions]
-        )
-      }
-    } catch let error as CKError {
-      if error.code == .zoneNotFound || error.code == .unknownItem {
-        Log.info("No sessions found in CloudKit", category: .sync)
-        return
-      }
-      throw SyncError.fetchFailed(error)
-    }
-  }
-
-  /// Delete a session from CloudKit
-  func deleteSession(_ sessionId: String) async throws {
-    guard isEnabled else { throw SyncError.syncDisabled }
-
-    let recordID = CKRecord.ID(recordName: sessionId, zoneID: syncZoneID)
-
-    do {
-      try await privateDatabase.deleteRecord(withID: recordID)
-      Log.info("Deleted session from CloudKit", category: .sync)
-    } catch {
-      Log.info("Failed to delete session - \(error)", category: .sync)
-      throw SyncError.deleteFailed(error)
-    }
-  }
 
   /// Pull session records using the new ProfileSessionRecord format (CAS-based)
   func pullProfileSessionRecords() async throws {
@@ -735,9 +740,9 @@ class ProfileSyncManager: ObservableObject {
       try await privateDatabase.deleteRecord(withID: recordID)
     }
 
-    // Fetch and delete all sessions
+    // Fetch and delete all legacy sessions
     let sessionQuery = CKQuery(
-      recordType: SyncedSession.recordType,
+      recordType: LegacySyncedSession.recordType,
       predicate: NSPredicate(value: true)
     )
     let (sessionResults, _) = try await privateDatabase.records(
@@ -792,7 +797,6 @@ class ProfileSyncManager: ObservableObject {
 
 extension Notification.Name {
   static let syncedProfilesReceived = Notification.Name("syncedProfilesReceived")
-  static let syncedSessionsReceived = Notification.Name("syncedSessionsReceived")
   static let syncedLocationsReceived = Notification.Name("syncedLocationsReceived")
   static let syncResetRequested = Notification.Name("syncResetRequested")
   static let localDataPushRequested = Notification.Name("localDataPushRequested")
