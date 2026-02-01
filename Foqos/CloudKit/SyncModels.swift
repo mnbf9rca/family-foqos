@@ -1,6 +1,14 @@
 import CloudKit
 import Foundation
 
+// MARK: - CloudKit Constants
+
+/// Shared CloudKit configuration used across all sync services
+enum CloudKitConstants {
+  static let containerIdentifier = "iCloud.com.cynexia.family-foqos"
+  static let syncZoneName = "DeviceSync"
+}
+
 // MARK: - SyncedProfile
 
 /// CloudKit record representation of a profile for same-user multi-device sync.

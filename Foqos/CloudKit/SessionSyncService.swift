@@ -8,11 +8,8 @@ actor SessionSyncService {
 
   // MARK: - CloudKit Configuration
 
-  private let containerIdentifier = "iCloud.com.cynexia.family-foqos"
-  private let syncZoneName = "DeviceSync"
-
   private lazy var container: CKContainer = {
-    CKContainer(identifier: containerIdentifier)
+    CKContainer(identifier: CloudKitConstants.containerIdentifier)
   }()
 
   private var privateDatabase: CKDatabase {
@@ -20,7 +17,7 @@ actor SessionSyncService {
   }
 
   private var syncZoneID: CKRecordZone.ID {
-    CKRecordZone.ID(zoneName: syncZoneName, ownerName: CKCurrentUserDefaultName)
+    CKRecordZone.ID(zoneName: CloudKitConstants.syncZoneName, ownerName: CKCurrentUserDefaultName)
   }
 
   private var deviceId: String {

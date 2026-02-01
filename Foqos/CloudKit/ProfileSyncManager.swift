@@ -10,11 +10,8 @@ class ProfileSyncManager: ObservableObject {
 
   // MARK: - CloudKit Configuration
 
-  private let containerIdentifier = "iCloud.com.cynexia.family-foqos"
-  private let syncZoneName = "DeviceSync"
-
   private lazy var container: CKContainer = {
-    CKContainer(identifier: containerIdentifier)
+    CKContainer(identifier: CloudKitConstants.containerIdentifier)
   }()
 
   private var privateDatabase: CKDatabase {
@@ -22,7 +19,7 @@ class ProfileSyncManager: ObservableObject {
   }
 
   private var syncZoneID: CKRecordZone.ID {
-    CKRecordZone.ID(zoneName: syncZoneName, ownerName: CKCurrentUserDefaultName)
+    CKRecordZone.ID(zoneName: CloudKitConstants.syncZoneName, ownerName: CKCurrentUserDefaultName)
   }
 
   // MARK: - Published State
@@ -178,7 +175,7 @@ class ProfileSyncManager: ObservableObject {
     do {
       _ = try await privateDatabase.save(zone)
       syncZoneVerified = true
-      print("ProfileSyncManager: Created sync zone: \(syncZoneName)")
+      print("ProfileSyncManager: Created sync zone: \(CloudKitConstants.syncZoneName)")
     } catch _ as CKError {
       // Check if zone already exists
       do {

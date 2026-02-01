@@ -4,7 +4,7 @@ import Foundation
 /// Represents the authoritative session state for a single profile.
 /// There is exactly ONE of these records per profile in CloudKit.
 /// All devices read/write to this same record using CAS for consistency.
-struct ProfileSessionRecord: Codable, Equatable {
+struct ProfileSessionRecord: Codable, Equatable, Sendable {
 
   // MARK: - Identity
 
