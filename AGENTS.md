@@ -174,7 +174,9 @@ Log.error("Failed to save: \(error.localizedDescription)", category: .cloudKit)
 - Never log passwords, lock codes, or personal identifiers
 - Profile names are acceptable (user-defined)
 - UUIDs and timestamps are acceptable
-- Users can export and share logs via Home → version footer tap → Debug Mode → Export Logs
+- Users can export and share logs via:
+  - Home → version footer "Debug mode" link (when profile active) → Export Logs
+  - Settings → Diagnostics → Debug Mode → Export Logs
 
 ### Control Flow
 - Use `guard` for early returns and validation
