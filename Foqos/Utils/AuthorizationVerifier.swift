@@ -97,9 +97,7 @@ class AuthorizationVerifier: ObservableObject {
       Log.info("Child authorization successful", category: .authorization)
       return .authorized
     } catch let error as NSError {
-      print(
-        "AuthorizationVerifier: Child authorization failed - domain: \(error.domain), code: \(error.code)"
-      )
+      Log.info("AuthorizationVerifier: Child authorization failed - domain: \(error.domain), code: \(error.code)", category: .authorization)
 
       // FamilyControls errors indicating this isn't a child device
       if error.domain == "FamilyControls" || error.domain == "com.apple.FamilyControls" {
