@@ -75,6 +75,7 @@ import WidgetKit
 - **Booleans**: Prefix with `is`, `has`, `enable`, `allow` (e.g., `isActive`, `hasPermission`)
 - **Private properties**: camelCase, no underscore prefix
 - **Static properties**: camelCase or PascalCase based on usage
+- **UserDefaults keys**: Use `family_foqos_` prefix (e.g., `family_foqos_app_mode`)
 
 ### SwiftUI Patterns
 - Use `@State` for local view state

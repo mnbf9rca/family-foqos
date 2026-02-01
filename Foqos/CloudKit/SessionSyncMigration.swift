@@ -6,14 +6,32 @@ class SessionSyncMigration {
 
   private let privateDatabase: CKDatabase
   private let syncZoneID: CKRecordZone.ID
+  private let userRecordName: String
 
-  init(database: CKDatabase, zoneID: CKRecordZone.ID) {
+  private static let migrationCompleteKeyPrefix = "family_foqos_session_sync_migration_complete_"
+
+  private var migrationCompleteKey: String {
+    Self.migrationCompleteKeyPrefix + userRecordName
+  }
+
+  private var isMigrationComplete: Bool {
+    get { UserDefaults.standard.bool(forKey: migrationCompleteKey) }
+    set { UserDefaults.standard.set(newValue, forKey: migrationCompleteKey) }
+  }
+
+  init(database: CKDatabase, zoneID: CKRecordZone.ID, userRecordName: String) {
     self.privateDatabase = database
     self.syncZoneID = zoneID
+    self.userRecordName = userRecordName
   }
 
   /// Check if migration is needed and perform it
   func migrateIfNeeded() async {
+    // Skip if migration already completed for this account
+    if isMigrationComplete {
+      return
+    }
+
     // Check for legacy records with pagination
     let legacyQuery = CKQuery(
       recordType: SyncedSession.recordType,
@@ -43,6 +61,7 @@ class SessionSyncMigration {
 
       if allResults.isEmpty {
         print("SessionSyncMigration: No legacy records to migrate")
+        isMigrationComplete = true
         return
       }
 
@@ -58,6 +77,9 @@ class SessionSyncMigration {
           profileSessions[session.profileId, default: []].append((recordID, session))
         }
       }
+
+      // Track migration errors - only mark complete if all profiles migrate successfully
+      var migrationErrors = 0
 
       // Create new ProfileSessionRecord for each profile
       for (profileId, sessions) in profileSessions {
@@ -90,6 +112,7 @@ class SessionSyncMigration {
             print("SessionSyncMigration: Created ProfileSessionRecord for \(profileId)")
           } catch {
             print("SessionSyncMigration: Failed to create ProfileSessionRecord for \(profileId) - \(error)")
+            migrationErrors += 1
             continue
           }
         }
@@ -100,16 +123,24 @@ class SessionSyncMigration {
             try await privateDatabase.deleteRecord(withID: recordID)
           } catch {
             print("SessionSyncMigration: Failed to delete legacy record \(recordID) - \(error)")
+            migrationErrors += 1
           }
         }
         print("SessionSyncMigration: Deleted \(sessions.count) legacy records for \(profileId)")
       }
 
-      print("SessionSyncMigration: Migration complete")
+      // Only mark migration complete if no errors occurred
+      if migrationErrors == 0 {
+        isMigrationComplete = true
+        print("SessionSyncMigration: Migration complete")
+      } else {
+        print("SessionSyncMigration: Migration finished with \(migrationErrors) errors, will retry on next sync")
+      }
 
     } catch let error as CKError {
       if error.code == .zoneNotFound || error.code == .unknownItem {
         print("SessionSyncMigration: No sync zone or legacy records found")
+        isMigrationComplete = true
         return
       }
       print("SessionSyncMigration: Error during migration - \(error)")
