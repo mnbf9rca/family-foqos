@@ -126,7 +126,7 @@ struct BlockedProfileListView: View {
       let remainingProfiles = try BlockedProfiles.fetchProfiles(in: context)
       try BlockedProfiles.reorderProfiles(remainingProfiles, in: context)
     } catch {
-      print("Failed to delete or reorder profiles: \(error)")
+      Log.error("Failed to delete or reorder profiles: \(error)", category: .ui)
     }
   }
 
@@ -137,7 +137,7 @@ struct BlockedProfileListView: View {
     do {
       try BlockedProfiles.reorderProfiles(reorderedProfiles, in: context)
     } catch {
-      print("Failed to reorder profiles: \(error)")
+      Log.error("Failed to reorder profiles: \(error)", category: .ui)
     }
   }
 }
