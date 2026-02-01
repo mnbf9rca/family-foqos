@@ -60,12 +60,12 @@ class SessionSyncMigration {
       }
 
       if allResults.isEmpty {
-        print("SessionSyncMigration: No legacy records to migrate")
+        Log.info("No legacy records to migrate", category: .sync)
         isMigrationComplete = true
         return
       }
 
-      print("SessionSyncMigration: Found \(allResults.count) legacy records")
+      Log.info("Found \(allResults.count) legacy records", category: .sync)
 
       // Group by profile ID
       var profileSessions: [UUID: [(CKRecord.ID, SyncedSession)]] = [:]
@@ -90,9 +90,7 @@ class SessionSyncMigration {
         // Check if a ProfileSessionRecord already exists for this profile
         let existingResult = await SessionSyncService.shared.fetchSession(profileId: profileId)
         if case .found = existingResult {
-          print(
-            "SessionSyncMigration: ProfileSessionRecord already exists for \(profileId), deleting legacy records only"
-          )
+          Log.info("SessionSyncMigration: ProfileSessionRecord already exists for \(profileId), deleting legacy records only", category: .sync)
         } else {
           // Create new unified record
           var profileSession = ProfileSessionRecord(profileId: profileId)
@@ -109,9 +107,9 @@ class SessionSyncMigration {
           // Save new record
           do {
             _ = try await privateDatabase.save(newRecord)
-            print("SessionSyncMigration: Created ProfileSessionRecord for \(profileId)")
+            Log.info("Created ProfileSessionRecord for \(profileId)", category: .sync)
           } catch {
-            print("SessionSyncMigration: Failed to create ProfileSessionRecord for \(profileId) - \(error)")
+            Log.info("Failed to create ProfileSessionRecord for \(profileId) - \(error)", category: .sync)
             migrationErrors += 1
             continue
           }
@@ -122,30 +120,30 @@ class SessionSyncMigration {
           do {
             try await privateDatabase.deleteRecord(withID: recordID)
           } catch {
-            print("SessionSyncMigration: Failed to delete legacy record \(recordID) - \(error)")
+            Log.info("Failed to delete legacy record \(recordID) - \(error)", category: .sync)
             migrationErrors += 1
           }
         }
-        print("SessionSyncMigration: Deleted \(sessions.count) legacy records for \(profileId)")
+        Log.info("Deleted \(sessions.count) legacy records for \(profileId)", category: .sync)
       }
 
       // Only mark migration complete if no errors occurred
       if migrationErrors == 0 {
         isMigrationComplete = true
-        print("SessionSyncMigration: Migration complete")
+        Log.info("Migration complete", category: .sync)
       } else {
-        print("SessionSyncMigration: Migration finished with \(migrationErrors) errors, will retry on next sync")
+        Log.info("Migration finished with \(migrationErrors) errors, will retry on next sync", category: .sync)
       }
 
     } catch let error as CKError {
       if error.code == .zoneNotFound || error.code == .unknownItem {
-        print("SessionSyncMigration: No sync zone or legacy records found")
+        Log.info("No sync zone or legacy records found", category: .sync)
         isMigrationComplete = true
         return
       }
-      print("SessionSyncMigration: Error during migration - \(error)")
+      Log.info("Error during migration - \(error)", category: .sync)
     } catch {
-      print("SessionSyncMigration: Error during migration - \(error)")
+      Log.info("Error during migration - \(error)", category: .sync)
     }
   }
 }

@@ -98,12 +98,12 @@ class SyncCoordinator: ObservableObject {
   @MainActor
   private func pushLocalData() {
     guard ProfileSyncManager.shared.isEnabled else {
-      print("SyncCoordinator: Global sync disabled, skipping push")
+      Log.info("Global sync disabled, skipping push", category: .sync)
       return
     }
 
     guard let context = modelContext else {
-      print("SyncCoordinator: No model context available for local push")
+      Log.info("No model context available for local push", category: .sync)
       return
     }
 
@@ -111,14 +111,14 @@ class SyncCoordinator: ObservableObject {
       let profiles = try BlockedProfiles.fetchProfiles(in: context)
       let locations = try SavedLocation.fetchAll(in: context)
 
-      print("SyncCoordinator: Found \(profiles.count) profiles to sync")
+      Log.info("Found \(profiles.count) profiles to sync", category: .sync)
 
       // Create sync objects on main queue (accesses SwiftData properties)
       let deviceId = SharedData.deviceSyncId.uuidString
       let syncedProfiles = profiles.map { SyncedProfile(from: $0, originDeviceId: deviceId) }
       let syncedLocations = locations.map { SyncedLocation(from: $0) }
 
-      print("SyncCoordinator: Pushing \(syncedProfiles.count) profiles and \(syncedLocations.count) locations to CloudKit")
+      Log.info("Pushing \(syncedProfiles.count) profiles and \(syncedLocations.count) locations to CloudKit", category: .sync)
 
       Task.detached {
         // Push synced profiles
@@ -132,7 +132,7 @@ class SyncCoordinator: ObservableObject {
         }
       }
     } catch {
-      print("SyncCoordinator: Error pushing local data - \(error)")
+      Log.info("Error pushing local data - \(error)", category: .sync)
     }
   }
 
@@ -140,7 +140,7 @@ class SyncCoordinator: ObservableObject {
 
   private func handleSyncedProfiles(_ syncedProfiles: [SyncedProfile]) {
     guard let context = modelContext else {
-      print("SyncCoordinator: No model context available")
+      Log.info("No model context available", category: .sync)
       return
     }
 
@@ -169,7 +169,7 @@ class SyncCoordinator: ObservableObject {
           createLocalProfile(from: syncedProfile, in: context)
         }
       } catch {
-        print("SyncCoordinator: Error handling synced profile - \(error)")
+        Log.info("Error handling synced profile - \(error)", category: .sync)
       }
     }
 
@@ -184,12 +184,12 @@ class SyncCoordinator: ObservableObject {
 
         // If profile was synced but is no longer in remote, it was deleted remotely
         if !remoteProfileIds.contains(profile.id) {
-          print("SyncCoordinator: Removing profile '\(profile.name)' deleted from remote")
+          Log.info("Removing profile '\(profile.name)' deleted from remote", category: .sync)
           try BlockedProfiles.deleteProfile(profile, in: context)
         }
       }
     } catch {
-      print("SyncCoordinator: Error reconciling profile deletions - \(error)")
+      Log.info("Error reconciling profile deletions - \(error)", category: .sync)
     }
 
     try? context.save()
@@ -227,7 +227,7 @@ class SyncCoordinator: ObservableObject {
     // Update snapshot for extensions
     BlockedProfiles.updateSnapshot(for: profile)
 
-    print("SyncCoordinator: Updated profile '\(profile.name)' from remote")
+    Log.info("Updated profile '\(profile.name)' from remote", category: .sync)
   }
 
   private func createLocalProfile(from synced: SyncedProfile, in context: ModelContext) {
@@ -263,14 +263,14 @@ class SyncCoordinator: ObservableObject {
     context.insert(profile)
     BlockedProfiles.updateSnapshot(for: profile)
 
-    print("SyncCoordinator: Created profile '\(profile.name)' from remote (needs app selection)")
+    Log.info("Created profile '\(profile.name)' from remote (needs app selection)", category: .sync)
   }
 
   // MARK: - Session Handling
 
   private func handleSyncedSessions(_ syncedSessions: [SyncedSession]) {
     guard let context = modelContext else {
-      print("SyncCoordinator: No model context available")
+      Log.info("No model context available", category: .sync)
       return
     }
 
@@ -297,12 +297,12 @@ class SyncCoordinator: ObservableObject {
       if let existingSession = StrategyManager.shared.activeSession,
         existingSession.blockedProfile.id == syncedSession.profileId
       {
-        print("SyncCoordinator: Session already active for profile")
+        Log.info("Session already active for profile", category: .sync)
         continue
       }
 
       // Start remote session directly via StrategyManager with synced startTime
-      print("SyncCoordinator: Starting remote session for profile \(syncedSession.profileId) with startTime \(syncedSession.startTime)")
+      Log.info("Starting remote session for profile \(syncedSession.profileId) with startTime \(syncedSession.startTime)", category: .sync)
       StrategyManager.shared.startRemoteSession(
         context: context,
         profileId: syncedSession.profileId,
@@ -328,7 +328,7 @@ class SyncCoordinator: ObservableObject {
       if remoteTriggeredProfileIds.contains(localProfileId) {
         // Check if remote no longer has active session for this profile
         if !remoteActiveProfileIds.contains(localProfileId) {
-          print("SyncCoordinator: Remote session ended, stopping local session for profile \(localProfileId)")
+          Log.info("Remote session ended, stopping local session for profile \(localProfileId)", category: .sync)
           StrategyManager.shared.stopRemoteSession(context: context, profileId: localProfileId)
 
           // Remove from tracking
@@ -344,7 +344,7 @@ class SyncCoordinator: ObservableObject {
   @MainActor
   private func handleProfileSessionRecords(_ sessions: [ProfileSessionRecord]) {
     guard let context = modelContext else {
-      print("SyncCoordinator: No model context available")
+      Log.info("No model context available", category: .sync)
       return
     }
 
@@ -359,7 +359,7 @@ class SyncCoordinator: ObservableObject {
   @MainActor
   func handleSessionSync(for profileId: UUID) async {
     guard let context = modelContext else {
-      print("SyncCoordinator: No model context available")
+      Log.info("No model context available", category: .sync)
       return
     }
 
@@ -377,12 +377,12 @@ class SyncCoordinator: ObservableObject {
       if let active = StrategyManager.shared.activeSession,
         active.blockedProfile.id == profileId
       {
-        print("SyncCoordinator: No remote session, stopping local")
+        Log.info("No remote session, stopping local", category: .sync)
         StrategyManager.shared.stopRemoteSession(context: context, profileId: profileId)
       }
 
     case .error(let error):
-      print("SyncCoordinator: Error fetching session - \(error)")
+      Log.info("Error fetching session - \(error)", category: .sync)
     }
   }
 
@@ -396,7 +396,7 @@ class SyncCoordinator: ObservableObject {
 
     // Check if this came from us
     if session.lastModifiedBy == deviceId {
-      print("SyncCoordinator: Ignoring our own update for \(profileId)")
+      Log.info("Ignoring our own update for \(profileId)", category: .sync)
       return
     }
 
@@ -404,7 +404,7 @@ class SyncCoordinator: ObservableObject {
 
     if session.isActive && !localActive {
       // Remote is active, local is not - start locally
-      print("SyncCoordinator: Remote session active, starting locally")
+      Log.info("Remote session active, starting locally", category: .sync)
 
       if let startTime = session.startTime {
         StrategyManager.shared.startRemoteSession(
@@ -419,7 +419,7 @@ class SyncCoordinator: ObservableObject {
     } else if !session.isActive && localActive {
       // Remote is stopped, local is active - stop locally
       // In the single-record model, the CloudKit record is authoritative
-      print("SyncCoordinator: Remote session stopped, stopping locally")
+      Log.info("Remote session stopped, stopping locally", category: .sync)
       StrategyManager.shared.stopRemoteSession(context: context, profileId: profileId)
       remoteTriggeredProfileIds.remove(profileId)
     }
@@ -435,7 +435,7 @@ class SyncCoordinator: ObservableObject {
         await handleSessionSync(for: profile.id)
       }
     } catch {
-      print("SyncCoordinator: Error fetching profiles for sync - \(error)")
+      Log.info("Error fetching profiles for sync - \(error)", category: .sync)
     }
   }
 
@@ -443,7 +443,7 @@ class SyncCoordinator: ObservableObject {
 
   private func handleSyncedLocations(_ syncedLocations: [SyncedLocation]) {
     guard let context = modelContext else {
-      print("SyncCoordinator: No model context available")
+      Log.info("No model context available", category: .sync)
       return
     }
 
@@ -464,7 +464,7 @@ class SyncCoordinator: ObservableObject {
               defaultRadiusMeters: syncedLocation.defaultRadiusMeters,
               isLocked: syncedLocation.isLocked
             )
-            print("SyncCoordinator: Updated location '\(syncedLocation.name)' from remote")
+            Log.info("Updated location '\(syncedLocation.name)' from remote", category: .sync)
           }
         } else {
           // Create new location from synced data with original ID preserved
@@ -478,10 +478,10 @@ class SyncCoordinator: ObservableObject {
           )
           context.insert(location)
           try context.save()
-          print("SyncCoordinator: Created location '\(syncedLocation.name)' from remote")
+          Log.info("Created location '\(syncedLocation.name)' from remote", category: .sync)
         }
       } catch {
-        print("SyncCoordinator: Error handling synced location - \(error)")
+        Log.info("Error handling synced location - \(error)", category: .sync)
       }
     }
   }
@@ -490,7 +490,7 @@ class SyncCoordinator: ObservableObject {
 
   private func handleSyncReset(clearAppSelections: Bool) {
     guard let context = modelContext else {
-      print("SyncCoordinator: No model context available")
+      Log.info("No model context available", category: .sync)
       return
     }
 
@@ -504,9 +504,9 @@ class SyncCoordinator: ObservableObject {
           BlockedProfiles.updateSnapshot(for: profile)
         }
         try context.save()
-        print("SyncCoordinator: Cleared app selections for all profiles")
+        Log.info("Cleared app selections for all profiles", category: .sync)
       } catch {
-        print("SyncCoordinator: Error clearing app selections - \(error)")
+        Log.info("Error clearing app selections - \(error)", category: .sync)
       }
     }
 
@@ -526,17 +526,17 @@ class SyncCoordinator: ObservableObject {
       let profiles = try BlockedProfiles.fetchProfiles(in: context)
       for profile in profiles {
         try? await ProfileSyncManager.shared.pushProfile(profile)
-        print("SyncCoordinator: Re-pushed profile '\(profile.name)' after reset")
+        Log.info("Re-pushed profile '\(profile.name)' after reset", category: .sync)
       }
 
       // Re-push all locations
       let locations = try SavedLocation.fetchAll(in: context)
       for location in locations {
         try? await ProfileSyncManager.shared.pushLocation(location)
-        print("SyncCoordinator: Re-pushed location '\(location.name)' after reset")
+        Log.info("Re-pushed location '\(location.name)' after reset", category: .sync)
       }
     } catch {
-      print("SyncCoordinator: Error re-pushing data after reset - \(error)")
+      Log.info("Error re-pushing data after reset - \(error)", category: .sync)
     }
   }
 
@@ -546,7 +546,7 @@ class SyncCoordinator: ObservableObject {
   func pushProfile(_ profile: BlockedProfiles) {
     guard ProfileSyncManager.shared.isEnabled else { return }
     guard let context = modelContext else {
-      print("SyncCoordinator: No model context available for push")
+      Log.info("No model context available for push", category: .sync)
       return
     }
 

@@ -212,7 +212,7 @@ class LockCodeManager: ObservableObject {
         if appModeManager.currentMode == .child {
             let authType = AuthorizationVerifier.shared.currentAuthorizationType
             guard authType == .child else {
-                print("LockCodeManager: Authorization type mismatch, clearing cached codes")
+                Log.info("Authorization type mismatch, clearing cached codes", category: .app)
                 return false
             }
         }

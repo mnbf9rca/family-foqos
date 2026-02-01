@@ -30,9 +30,9 @@ class DeviceActivityCenterUtil {
       // Remove any existing schedule and create a new one
       stopActivities(for: [deviceActivityName], with: center)
       try center.startMonitoring(deviceActivityName, during: deviceActivitySchedule)
-      print("Scheduled restrictions from \(intervalStart) to \(intervalEnd) daily")
+      Log.info("Scheduled restrictions from \(intervalStart) to \(intervalEnd) daily", category: .timer)
     } catch {
-      print("Failed to start monitoring: \(error.localizedDescription)")
+      Log.info("Failed to start monitoring: \(error.localizedDescription)", category: .timer)
     }
   }
 
@@ -53,15 +53,15 @@ class DeviceActivityCenterUtil {
       // Remove any existing schedule and create a new one
       stopActivities(for: [deviceActivityName], with: center)
       try center.startMonitoring(deviceActivityName, during: deviceActivitySchedule)
-      print("Scheduled break timer activity from \(intervalStart) to \(intervalEnd) daily")
+      Log.info("Scheduled break timer activity from \(intervalStart) to \(intervalEnd) daily", category: .timer)
     } catch {
-      print("Failed to start break timer activity: \(error.localizedDescription)")
+      Log.info("Failed to start break timer activity: \(error.localizedDescription)", category: .timer)
     }
   }
 
   static func startStrategyTimerActivity(for profile: BlockedProfiles) {
     guard let strategyData = profile.strategyData else {
-      print("No strategy data found for profile: \(profile.id.uuidString)")
+      Log.info("No strategy data found for profile: \(profile.id.uuidString)", category: .timer)
       return
     }
     let timerData = StrategyTimerData.toStrategyTimerData(from: strategyData)
@@ -84,9 +84,9 @@ class DeviceActivityCenterUtil {
       // Remove any existing activity and create a new one
       stopActivities(for: [deviceActivityName], with: center)
       try center.startMonitoring(deviceActivityName, during: deviceActivitySchedule)
-      print("Scheduled strategy timer activity from \(intervalStart) to \(intervalEnd) daily")
+      Log.info("Scheduled strategy timer activity from \(intervalStart) to \(intervalEnd) daily", category: .timer)
     } catch {
-      print("Failed to start strategy timer activity: \(error.localizedDescription)")
+      Log.info("Failed to start strategy timer activity: \(error.localizedDescription)", category: .timer)
     }
   }
 
@@ -146,7 +146,7 @@ class DeviceActivityCenterUtil {
 
     if activities.isEmpty {
       // No activities to stop
-      print("No activities to stop")
+      Log.info("No activities to stop", category: .timer)
       return
     }
 

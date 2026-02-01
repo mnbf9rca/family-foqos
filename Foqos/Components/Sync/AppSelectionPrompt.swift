@@ -136,9 +136,9 @@ struct AppSelectionPrompt: View {
         selection: localSelection,
         needsAppSelection: false
       )
-      print("AppSelectionPrompt: Saved app selection for profile '\(profile.name)'")
+      Log.info("Saved app selection for profile '\(profile.name)'", category: .ui)
     } catch {
-      print("AppSelectionPrompt: Failed to save - \(error)")
+      Log.error("Failed to save app selection: \(error)", category: .ui)
     }
   }
 }

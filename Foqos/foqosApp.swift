@@ -12,6 +12,18 @@ import FamilyControls
 import SwiftData
 import SwiftUI
 
+/// Redact query and fragment from URL for safe logging (may contain tokens)
+private func redactedURLString(_ url: URL) -> String {
+  var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+  if components?.query != nil {
+    components?.query = "[REDACTED]"
+  }
+  if components?.fragment != nil {
+    components?.fragment = "[REDACTED]"
+  }
+  return components?.string ?? url.host ?? "unknown"
+}
+
 private let container: ModelContainer = {
   do {
     // Configure SwiftData to use local storage only (not CloudKit sync)
@@ -54,7 +66,7 @@ struct foqosApp: App {
   @Environment(\.scenePhase) private var scenePhase
 
   init() {
-    print("foqosApp: init() called")
+    Log.info("init() called", category: .app)
     TimersUtil.registerBackgroundTasks()
 
     let asyncDependency: @Sendable () async -> (ModelContainer) = {
@@ -72,21 +84,21 @@ struct foqosApp: App {
       // Route to appropriate view based on app mode
       rootView
         .onAppear {
-          print("foqosApp: rootView onAppear")
+          Log.debug("rootView onAppear", category: .app)
         }
         .onChange(of: scenePhase) { oldPhase, newPhase in
-          print("foqosApp: scenePhase changed from \(oldPhase) to \(newPhase)")
+          Log.debug("scenePhase changed from \(oldPhase) to \(newPhase)", category: .app)
           if newPhase == .active {
             // Verify child authorization when app becomes active
             verifyChildAuthorizationIfNeeded()
           }
         }
         .onOpenURL { url in
-          print("foqosApp: onOpenURL triggered with: \(url.absoluteString)")
+          Log.info("onOpenURL triggered with: \(redactedURLString(url))", category: .app)
           handleURL(url)
         }
         .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { userActivity in
-          print("foqosApp: NSUserActivityTypeBrowsingWeb received")
+          Log.debug("NSUserActivityTypeBrowsingWeb received", category: .app)
           guard let url = userActivity.webpageURL else {
             return
           }
@@ -147,7 +159,7 @@ struct foqosApp: App {
   }
 
   private func handleURL(_ url: URL) {
-    print("foqosApp: handleURL called with: \(url.absoluteString)")
+    Log.info("handleURL called with: \(redactedURLString(url))", category: .app)
 
     // CloudKit share URLs are handled automatically by the system
     // via userDidAcceptCloudKitShareWith - we don't need to do anything here
@@ -155,7 +167,7 @@ struct foqosApp: App {
     if let components = URLComponents(url: url, resolvingAgainstBaseURL: true),
       components.host == "www.icloud.com" || url.absoluteString.contains("cloudkit")
     {
-      print("foqosApp: Detected CloudKit URL - system should handle via AppDelegate")
+      Log.debug("Detected CloudKit URL - system should handle via AppDelegate", category: .cloudKit)
       return
     }
 
@@ -173,7 +185,7 @@ class AppDelegate: NSObject, UIApplicationDelegate {
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
   ) -> Bool {
-    print("AppDelegate: didFinishLaunchingWithOptions")
+    Log.info("didFinishLaunchingWithOptions", category: .app)
 
     // Register for remote notifications to receive CloudKit push notifications
     application.registerForRemoteNotifications()
@@ -186,7 +198,7 @@ class AppDelegate: NSObject, UIApplicationDelegate {
     configurationForConnecting connectingSceneSession: UISceneSession,
     options: UIScene.ConnectionOptions
   ) -> UISceneConfiguration {
-    print("AppDelegate: configurationForConnecting")
+    Log.debug("configurationForConnecting", category: .app)
     let config = UISceneConfiguration(name: nil, sessionRole: connectingSceneSession.role)
     config.delegateClass = SceneDelegate.self
     return config
@@ -198,14 +210,14 @@ class AppDelegate: NSObject, UIApplicationDelegate {
     _ application: UIApplication,
     didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
   ) {
-    print("AppDelegate: Registered for remote notifications")
+    Log.info("Registered for remote notifications", category: .app)
   }
 
   func application(
     _ application: UIApplication,
     didFailToRegisterForRemoteNotificationsWithError error: Error
   ) {
-    print("AppDelegate: Failed to register for remote notifications - \(error)")
+    Log.error("Failed to register for remote notifications: \(error)", category: .app)
   }
 
   func application(
@@ -213,11 +225,11 @@ class AppDelegate: NSObject, UIApplicationDelegate {
     didReceiveRemoteNotification userInfo: [AnyHashable: Any],
     fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
   ) {
-    print("AppDelegate: Received remote notification")
+    Log.info("Received remote notification", category: .cloudKit)
 
     // Check if this is a CloudKit notification
     if let ckNotification = CKNotification(fromRemoteNotificationDictionary: userInfo) {
-      print("AppDelegate: CloudKit notification received - type: \(ckNotification.notificationType.rawValue)")
+      Log.info("CloudKit notification received - type: \(ckNotification.notificationType.rawValue)", category: .cloudKit)
 
       // Handle the notification via ProfileSyncManager
       Task {
@@ -237,36 +249,36 @@ class SceneDelegate: NSObject, UIWindowSceneDelegate {
 
   // Called when app launches fresh with the share
   func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
-    print("SceneDelegate: willConnectTo")
+    Log.debug("willConnectTo", category: .app)
 
     // Check if launched with a CloudKit share
     if let metadata = connectionOptions.cloudKitShareMetadata {
-      print("SceneDelegate: Found CloudKit share in connectionOptions!")
+      Log.info("Found CloudKit share in connectionOptions", category: .cloudKit)
       acceptCloudKitShare(metadata)
     }
 
     // Check user activities
     for activity in connectionOptions.userActivities {
-      print("SceneDelegate: Found activity: \(activity.activityType)")
+      Log.debug("Found activity: \(activity.activityType)", category: .app)
       handleUserActivity(activity)
     }
 
     // Check URL contexts
     for urlContext in connectionOptions.urlContexts {
-      print("SceneDelegate: Found URL: \(urlContext.url)")
+      Log.debug("Found URL: \(redactedURLString(urlContext.url))", category: .app)
     }
   }
 
   // Called when app is already running and receives a user activity
   func scene(_ scene: UIScene, continue userActivity: NSUserActivity) {
-    print("SceneDelegate: continue userActivity - \(userActivity.activityType)")
+    Log.debug("continue userActivity - \(userActivity.activityType)", category: .app)
     handleUserActivity(userActivity)
   }
 
   // Called when app is already running and receives URLs
   func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
     for context in URLContexts {
-      print("SceneDelegate: openURLContexts - \(context.url)")
+      Log.debug("openURLContexts - \(redactedURLString(context.url))", category: .app)
     }
   }
 
@@ -275,23 +287,23 @@ class SceneDelegate: NSObject, UIWindowSceneDelegate {
     _ windowScene: UIWindowScene,
     userDidAcceptCloudKitShareWith cloudKitShareMetadata: CKShare.Metadata
   ) {
-    print("SceneDelegate: userDidAcceptCloudKitShareWith!")
+    Log.info("userDidAcceptCloudKitShareWith", category: .cloudKit)
     acceptCloudKitShare(cloudKitShareMetadata)
   }
 
   private func handleUserActivity(_ activity: NSUserActivity) {
-    print("SceneDelegate: handleUserActivity - type: \(activity.activityType)")
+    Log.debug("handleUserActivity - type: \(activity.activityType)", category: .app)
 
     // Try to extract CloudKit share metadata
     if let metadata = activity.userInfo?["CKShareMetadata"] as? CKShare.Metadata {
-      print("SceneDelegate: Found CKShareMetadata in userInfo")
+      Log.info("Found CKShareMetadata in userInfo", category: .cloudKit)
       acceptCloudKitShare(metadata)
       return
     }
 
     // Log all userInfo keys for debugging
     if let userInfo = activity.userInfo {
-      print("SceneDelegate: userInfo keys: \(userInfo.keys)")
+      Log.debug("userInfo keys: \(userInfo.keys)", category: .app)
     }
   }
 }
@@ -299,13 +311,13 @@ class SceneDelegate: NSObject, UIWindowSceneDelegate {
 // MARK: - Shared CloudKit Share Acceptance
 
 func acceptCloudKitShare(_ metadata: CKShare.Metadata) {
-  print("acceptCloudKitShare: Processing share")
-  print("acceptCloudKitShare: Container ID = \(metadata.containerIdentifier)")
+  Log.info("Processing share", category: .cloudKit)
+  Log.info("Container ID = \(metadata.containerIdentifier)", category: .cloudKit)
 
   Task {
     do {
       try await CloudKitManager.shared.acceptShare(metadata: metadata)
-      print("acceptCloudKitShare: Successfully accepted CloudKit share")
+      Log.info("Successfully accepted CloudKit share", category: .cloudKit)
 
       // Fetch shared lock codes immediately
       _ = try? await CloudKitManager.shared.fetchSharedLockCodes()
@@ -320,14 +332,14 @@ func acceptCloudKitShare(_ metadata: CKShare.Metadata) {
       }
     } catch CloudKitError.childAuthorizationRequired {
       // Show the authorization required view instead of a generic error
-      print("acceptCloudKitShare: Child authorization required")
+      Log.warning("Child authorization required", category: .authorization)
       await MainActor.run {
         CloudKitManager.shared.setChildAuthorizationFailure(
           message: CloudKitError.childAuthorizationRequired.errorDescription ?? "Child authorization required"
         )
       }
     } catch {
-      print("acceptCloudKitShare: Failed - \(error)")
+      Log.error("Share acceptance failed: \(error)", category: .cloudKit)
       await MainActor.run {
         CloudKitManager.shared.shareAcceptedMessage =
           "Failed to accept invitation: \(error.localizedDescription)"

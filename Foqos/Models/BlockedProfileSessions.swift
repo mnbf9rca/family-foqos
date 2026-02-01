@@ -129,7 +129,7 @@ class BlockedProfileSession {
 
     guard let existingProfile = try? BlockedProfiles.findProfile(byID: profileID, in: context)
     else {
-      print("Profile not found when creating session from snapshot")
+      Log.warning("Profile not found when creating session from snapshot", category: .session)
       return
     }
 

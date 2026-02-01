@@ -109,9 +109,7 @@ extension NFCScannerUtil: NFCTagReaderSessionDelegate {
         let tagId = tag.identifier.hexEncodedString()
 
         if let error = error {
-          print(
-            "⚠️ NDEF read failed (non-critical): \(error.localizedDescription). using tag id: \(tagId)"
-          )
+          Log.info("⚠️ NDEF read failed (non-critical): \(error.localizedDescription). using tag id: \(tagId)", category: .nfc)
         }
 
         // Still use the identifier - works for all tag types
@@ -138,9 +136,7 @@ extension NFCScannerUtil: NFCTagReaderSessionDelegate {
         let tagId = tag.identifier.hexEncodedString()
 
         if let error = error {
-          print(
-            "⚠️ ISO15693 NDEF read failed (non-critical): \(error.localizedDescription). using tag id: \(tagId)"
-          )
+          Log.info("⚠️ ISO15693 NDEF read failed (non-critical): \(error.localizedDescription). using tag id: \(tagId)", category: .nfc)
         }
 
         self.handleTagData(

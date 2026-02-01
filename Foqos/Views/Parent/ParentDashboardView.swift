@@ -313,7 +313,7 @@ struct ParentDashboardView: View {
             do {
                 try await cloudKitManager.syncShareParticipantsToFamilyMembers()
             } catch {
-                print("ParentDashboardView: Failed to sync share participants - \(error)")
+                Log.error("Failed to sync share participants: \(error)", category: .cloudKit)
             }
 
             _ = try await cloudKitManager.fetchFamilyMembers()

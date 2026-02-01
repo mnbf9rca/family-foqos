@@ -88,7 +88,7 @@ actor SessionSyncService {
     case .found(let existing):
       if existing.isActive {
         // Session already active - join it instead of creating new
-        print("SessionSyncService: Session already active for \(profileId), joining")
+        Log.info("Session already active for \(profileId), joining", category: .sync)
         return .alreadyActive(session: existing)
       }
       // Session exists but inactive - try to activate it
@@ -168,15 +168,16 @@ actor SessionSyncService {
         cachedRecords[profileId] = (savedRecord, session)
       }
 
-      print(
-        "SessionSyncService: \(isStart ? "Started" : "Updated") session for \(profileId) with seq=\(newSequence)"
+      Log.info(
+        "\(isStart ? "Started" : "Updated") session for \(profileId) with seq=\(newSequence)",
+        category: .sync
       )
       return .started(sequenceNumber: newSequence)
 
     } catch let error as CKError {
       if error.code == .serverRecordChanged {
         // Another device won the race - fetch their version and join
-        print("SessionSyncService: CAS conflict for \(profileId), fetching winner's session")
+        Log.info("CAS conflict for \(profileId), fetching winner's session", category: .sync)
         let refetchResult = await fetchSession(profileId: profileId)
 
         switch refetchResult {
@@ -210,7 +211,7 @@ actor SessionSyncService {
     switch fetchResult {
     case .found(let existing):
       if !existing.isActive {
-        print("SessionSyncService: Session already stopped for \(profileId)")
+        Log.info("Session already stopped for \(profileId)", category: .sync)
         return .alreadyStopped
       }
       return await deactivateSession(profileId: profileId, endTime: endTime)
@@ -251,13 +252,13 @@ actor SessionSyncService {
         cachedRecords[profileId] = (savedRecord, session)
       }
 
-      print("SessionSyncService: Stopped session for \(profileId) with seq=\(newSequence)")
+      Log.info("Stopped session for \(profileId) with seq=\(newSequence)", category: .sync)
       return .stopped(sequenceNumber: newSequence)
 
     } catch let error as CKError {
       if error.code == .serverRecordChanged {
         // Conflict - fetch current state
-        print("SessionSyncService: CAS conflict on stop for \(profileId)")
+        Log.info("CAS conflict on stop for \(profileId)", category: .sync)
         let refetchResult = await fetchSession(profileId: profileId)
 
         switch refetchResult {

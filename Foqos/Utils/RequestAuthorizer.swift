@@ -24,13 +24,13 @@ class RequestAuthorizer: ObservableObject {
                     // Individual and parent modes use .individual authorization
                     // Parent still controls their own device, just creates policies for others
                     try await AuthorizationCenter.shared.requestAuthorization(for: .individual)
-                    print("Individual authorization successful for mode: \(mode)")
+                    Log.info("Individual authorization successful for mode: \(mode)", category: .authorization)
 
                 case .child:
                     // Child mode uses .child authorization
                     // This requires parent approval via Screen Time Family Sharing
                     try await AuthorizationCenter.shared.requestAuthorization(for: .child)
-                    print("Child authorization successful")
+                    Log.info("Child authorization successful", category: .authorization)
                 }
 
                 await MainActor.run {
@@ -38,7 +38,7 @@ class RequestAuthorizer: ObservableObject {
                     self.authorizationError = nil
                 }
             } catch {
-                print("Error requesting authorization: \(error)")
+                Log.info("Error requesting authorization: \(error)", category: .authorization)
                 await MainActor.run {
                     self.isAuthorized = false
                     self.authorizationError = self.describeAuthorizationError(error, for: mode)

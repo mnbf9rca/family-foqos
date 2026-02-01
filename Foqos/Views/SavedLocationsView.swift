@@ -195,7 +195,7 @@ struct SavedLocationsView: View {
       }
       try context.save()
     } catch {
-      print("Failed to update profiles after location deletion: \(error)")
+      Log.error("Failed to update profiles after location deletion: \(error)", category: .location)
     }
   }
 }

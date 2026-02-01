@@ -72,7 +72,7 @@ class CloudKitManager: ObservableObject {
                 await fetchCurrentUserRecordID()
             }
         } catch {
-            print("CloudKit account status error: \(error)")
+            Log.error("Account status error: \(error)", category: .cloudKit)
             await MainActor.run {
                 self.isSignedIn = false
             }
@@ -87,7 +87,7 @@ class CloudKitManager: ObservableObject {
                 self.currentUserRecordID = recordID
             }
         } catch {
-            print("Failed to fetch user record ID: \(error)")
+            Log.error("Failed to fetch user record ID: \(error)", category: .cloudKit)
         }
     }
 
@@ -103,7 +103,7 @@ class CloudKitManager: ObservableObject {
         do {
             _ = try await privateDatabase.save(zone)
             policyZoneVerified = true
-            print("Created policy zone: \(policyZoneName)")
+            Log.info("Created policy zone: \(policyZoneName)", category: .cloudKit)
         } catch _ as CKError {
             // Zone already exists - that's fine, mark as verified
             // CKError codes that indicate zone exists: save succeeds silently for existing zones,
@@ -111,7 +111,7 @@ class CloudKitManager: ObservableObject {
             do {
                 _ = try await privateDatabase.recordZone(for: policyZoneID)
                 policyZoneVerified = true
-                print("Policy zone already exists: \(policyZoneName)")
+                Log.debug("Policy zone already exists: \(policyZoneName)", category: .cloudKit)
                 return
             } catch {
                 // Zone truly doesn't exist and creation failed
@@ -148,13 +148,13 @@ class CloudKitManager: ObservableObject {
 
         do {
             _ = try await privateDatabase.record(for: rootRecordID)
-            print("CloudKitManager: FamilyRoot exists")
+            Log.debug("FamilyRoot exists", category: .cloudKit)
         } catch let error as CKError where error.code == .unknownItem {
-            print("CloudKitManager: Creating FamilyRoot record")
+            Log.info("Creating FamilyRoot record", category: .cloudKit)
             let rootRecord = CKRecord(recordType: "FamilyRoot", recordID: rootRecordID)
             rootRecord["createdAt"] = Date()
             _ = try await privateDatabase.save(rootRecord)
-            print("CloudKitManager: FamilyRoot created")
+            Log.info("FamilyRoot created", category: .cloudKit)
         }
     }
 
@@ -162,7 +162,7 @@ class CloudKitManager: ObservableObject {
 
     /// Save a family member to CloudKit
     func saveFamilyMember(_ member: FamilyMember) async throws {
-        print("CloudKitManager: Saving family member '\(member.displayName)' as \(member.role.displayName)")
+        Log.info("Saving family member '\(member.displayName)' as \(member.role.displayName)", category: .cloudKit)
 
         try await createPolicyZoneIfNeeded()
         try await ensureFamilyRootExists()
@@ -178,9 +178,9 @@ class CloudKitManager: ObservableObject {
                     self.familyMembers.append(member)
                 }
             }
-            print("CloudKitManager: Saved family member: \(member.displayName)")
+            Log.info("Saved family member: \(member.displayName)", category: .cloudKit)
         } catch {
-            print("CloudKitManager: Failed to save family member - \(error)")
+            Log.error("Failed to save family member: \(error)", category: .cloudKit)
             throw CloudKitError.saveFailed(error)
         }
     }
@@ -198,7 +198,7 @@ class CloudKitManager: ObservableObject {
             await MainActor.run {
                 self.familyMembers.removeAll { $0.id == member.id }
             }
-            print("CloudKitManager: Deleted family member: \(member.displayName)")
+            Log.info("Deleted family member: \(member.displayName)", category: .cloudKit)
         } catch {
             throw CloudKitError.deleteFailed(error)
         }
@@ -221,7 +221,7 @@ class CloudKitManager: ObservableObject {
         let name =
             participant.userIdentity.nameComponents?.formatted()
             ?? participant.userIdentity.lookupInfo?.emailAddress ?? "Unknown"
-        print("CloudKitManager: Removed participant '\(name)' from share")
+        Log.info("Removed participant '\(name)' from share", category: .cloudKit)
 
         await refreshShareParticipants()
     }
@@ -229,7 +229,7 @@ class CloudKitManager: ObservableObject {
     /// Revoke a user's access to the family share
     private func revokeShareAccess(forUserRecordName userRecordName: String?) async {
         guard let userRecordName = userRecordName else {
-            print("CloudKitManager: No userRecordName to revoke")
+            Log.debug("No userRecordName to revoke", category: .cloudKit)
             return
         }
 
@@ -239,7 +239,7 @@ class CloudKitManager: ObservableObject {
             let rootRecord = try await privateDatabase.record(for: rootRecordID)
 
             guard let shareRef = rootRecord.share else {
-                print("CloudKitManager: No share exists to revoke from")
+                Log.debug("No share exists to revoke from", category: .cloudKit)
                 return
             }
 
@@ -255,15 +255,15 @@ class CloudKitManager: ObservableObject {
                 try await privateDatabase.save(share)
                 await MainActor.run { self.activeZoneShare = share }
 
-                print("CloudKitManager: Revoked share access for \(userRecordName)")
+                Log.info("Revoked share access for \(userRecordName)", category: .cloudKit)
 
                 // Refresh participants list
                 await refreshShareParticipants()
             } else {
-                print("CloudKitManager: Participant not found in share")
+                Log.debug("Participant not found in share", category: .cloudKit)
             }
         } catch {
-            print("CloudKitManager: Failed to revoke share access - \(error)")
+            Log.error("Failed to revoke share access: \(error)", category: .cloudKit)
         }
     }
 
@@ -314,7 +314,7 @@ class CloudKitManager: ObservableObject {
 
     /// Save a lock code to CloudKit (parent operation)
     func saveLockCode(_ lockCode: FamilyLockCode) async throws {
-        print("CloudKitManager: Saving lock code")
+        Log.info("Saving lock code", category: .cloudKit)
 
         try await createPolicyZoneIfNeeded()
         try await ensureFamilyRootExists()
@@ -325,11 +325,11 @@ class CloudKitManager: ObservableObject {
         let record: CKRecord
         do {
             record = try await privateDatabase.record(for: recordID)
-            print("CloudKitManager: Updating existing lock code record")
+            Log.debug("Updating existing lock code record", category: .cloudKit)
         } catch let error as CKError where error.code == .unknownItem {
             // Record doesn't exist, create new one
             record = CKRecord(recordType: FamilyLockCode.recordType, recordID: recordID)
-            print("CloudKitManager: Creating new lock code record")
+            Log.debug("Creating new lock code record", category: .cloudKit)
         }
 
         // Update record fields
@@ -362,9 +362,9 @@ class CloudKitManager: ObservableObject {
                     self.lockCodes.append(lockCode)
                 }
             }
-            print("CloudKitManager: Saved lock code successfully")
+            Log.info("Saved lock code successfully", category: .cloudKit)
         } catch {
-            print("CloudKitManager: Failed to save lock code - \(error)")
+            Log.error("Failed to save lock code: \(error)", category: .cloudKit)
             throw CloudKitError.saveFailed(error)
         }
     }
@@ -378,7 +378,7 @@ class CloudKitManager: ObservableObject {
             await MainActor.run {
                 self.lockCodes.removeAll { $0.id == lockCode.id }
             }
-            print("CloudKitManager: Deleted lock code successfully")
+            Log.info("Deleted lock code successfully", category: .cloudKit)
         } catch {
             throw CloudKitError.deleteFailed(error)
         }
@@ -458,7 +458,7 @@ class CloudKitManager: ObservableObject {
                     }
                 }
             } catch {
-                print("Failed to fetch lock codes from zone \(zone.zoneID): \(error)")
+                Log.error("Failed to fetch lock codes from zone \(zone.zoneID): \(error)", category: .cloudKit)
             }
         }
 
@@ -494,7 +494,7 @@ class CloudKitManager: ObservableObject {
             if let shareRef = rootRecord.share {
                 let share = try await privateDatabase.record(for: shareRef.recordID) as! CKShare
                 await MainActor.run { self.activeZoneShare = share }
-                print("CloudKitManager: Found existing family share")
+                Log.debug("Found existing family share", category: .cloudKit)
                 return share
             }
 
@@ -502,7 +502,7 @@ class CloudKitManager: ObservableObject {
             return try await createShareForRoot(rootRecord)
         } catch let error as CKError where error.code == .unknownItem {
             // Root record doesn't exist - create it and share
-            print("CloudKitManager: Creating new family root record")
+            Log.info("Creating new family root record", category: .cloudKit)
             let rootRecord = CKRecord(recordType: "FamilyRoot", recordID: rootRecordID)
             rootRecord["createdAt"] = Date()
 
@@ -528,10 +528,10 @@ class CloudKitManager: ObservableObject {
                 switch result {
                 case .success:
                     Task { @MainActor in self?.activeZoneShare = share }
-                    print("CloudKitManager: Created family share successfully")
+                    Log.info("Created family share successfully", category: .cloudKit)
                     continuation.resume(returning: share)
                 case .failure(let error):
-                    print("CloudKitManager: Failed to create family share - \(error)")
+                    Log.error("Failed to create family share: \(error)", category: .cloudKit)
                     continuation.resume(throwing: CloudKitError.shareFailed(error))
                 }
             }
@@ -554,7 +554,7 @@ class CloudKitManager: ObservableObject {
             // Fetch root record fresh from server
             let rootRecord = try await privateDatabase.record(for: rootRecordID)
             guard let shareRef = rootRecord.share else {
-                print("CloudKitManager: No share exists")
+                Log.debug("No share exists", category: .cloudKit)
                 await MainActor.run { self.shareParticipants = [] }
                 return
             }
@@ -569,15 +569,15 @@ class CloudKitManager: ObservableObject {
                 let name = participant.userIdentity.nameComponents?.formatted() ?? ""
                 let email = participant.userIdentity.lookupInfo?.emailAddress ?? ""
                 let displayInfo = !name.isEmpty ? name : (!email.isEmpty ? email : "Unknown")
-                print("CloudKitManager: Participant '\(displayInfo)' status: \(participant.acceptanceStatus.rawValue)")
+                Log.debug("Participant '\(displayInfo)' status: \(participant.acceptanceStatus.rawValue)", category: .cloudKit)
             }
 
             await MainActor.run {
                 self.shareParticipants = participants
             }
-            print("CloudKitManager: Found \(participants.count) share participants")
+            Log.info("Found \(participants.count) share participants", category: .cloudKit)
         } catch {
-            print("CloudKitManager: Failed to fetch share participants - \(error)")
+            Log.error("Failed to fetch share participants: \(error)", category: .cloudKit)
             await MainActor.run { self.shareParticipants = [] }
         }
     }
@@ -592,7 +592,7 @@ class CloudKitManager: ObservableObject {
         let verificationResult = await AuthorizationVerifier.shared.verifyChildAuthorization()
 
         guard verificationResult.isAuthorized else {
-            print("CloudKitManager: Share acceptance rejected - child authorization required")
+            Log.warning("Share acceptance rejected - child authorization required", category: .authorization)
             throw CloudKitError.childAuthorizationRequired
         }
 
@@ -600,7 +600,7 @@ class CloudKitManager: ObservableObject {
             _ = try await container.accept(metadata)
             // Fetch shared lock codes after accepting
             _ = try? await fetchSharedLockCodes()
-            print("Accepted share successfully")
+            Log.info("Accepted share successfully", category: .cloudKit)
         } catch {
             throw CloudKitError.shareAcceptFailed(error)
         }
@@ -619,13 +619,13 @@ class CloudKitManager: ObservableObject {
         do {
             let rootRecord = try await privateDatabase.record(for: rootRecordID)
             guard let shareRef = rootRecord.share else {
-                print("CloudKitManager: No share exists yet")
+                Log.info("CloudKitManager: No share exists yet", category: .cloudKit)
                 return
             }
             share = try await privateDatabase.record(for: shareRef.recordID) as! CKShare
             await MainActor.run { self.activeZoneShare = share }
         } catch {
-            print("CloudKitManager: Could not fetch share - \(error)")
+            Log.error("Could not fetch share: \(error)", category: .cloudKit)
             return
         }
 
@@ -639,7 +639,7 @@ class CloudKitManager: ObservableObject {
             acceptedParticipants.compactMap { $0.userIdentity.userRecordID?.recordName }
         )
 
-        print("CloudKitManager: Found \(acceptedParticipants.count) accepted participants")
+        Log.info("Found \(acceptedParticipants.count) accepted participants", category: .cloudKit)
 
         // Fetch current family members
         _ = try await fetchFamilyMembers()
@@ -669,9 +669,9 @@ class CloudKitManager: ObservableObject {
 
                 do {
                     try await saveFamilyMember(newMember)
-                    print("CloudKitManager: Created FamilyMember for participant: \(displayName)")
+                    Log.info("Created FamilyMember for participant: \(displayName)", category: .cloudKit)
                 } catch {
-                    print("CloudKitManager: Failed to create FamilyMember - \(error)")
+                    Log.error("Failed to create FamilyMember: \(error)", category: .cloudKit)
                 }
             }
         }
@@ -688,9 +688,9 @@ class CloudKitManager: ObservableObject {
                     await MainActor.run {
                         self.familyMembers.removeAll { $0.id == member.id }
                     }
-                    print("CloudKitManager: Removed FamilyMember who left share: \(member.displayName)")
+                    Log.info("Removed FamilyMember who left share: \(member.displayName)", category: .cloudKit)
                 } catch {
-                    print("CloudKitManager: Failed to remove stale FamilyMember - \(error)")
+                    Log.error("Failed to remove stale FamilyMember: \(error)", category: .cloudKit)
                 }
             }
         }
@@ -704,7 +704,7 @@ class CloudKitManager: ObservableObject {
             let zones = try await sharedDatabase.allRecordZones()
             return !zones.isEmpty
         } catch {
-            print("CloudKitManager: Failed to check family connection - \(error)")
+            Log.error("Failed to check family connection: \(error)", category: .cloudKit)
             return false
         }
     }
@@ -735,7 +735,7 @@ class CloudKitManager: ObservableObject {
             self.isConnectedToFamily = false
             self.sharedLockCodes = []
         }
-        print("CloudKitManager: Cleared shared state after leaving family")
+        Log.info("Cleared shared state after leaving family", category: .cloudKit)
     }
 
     /// Clear child authorization failure state (call when user dismisses error UI)

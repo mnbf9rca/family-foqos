@@ -19,6 +19,7 @@ struct SettingsView: View {
   @State private var showParentDashboard = false
   @State private var showChildDashboard = false
   @State private var showSavedLocations = false
+  @State private var showDebugView = false
 
   @AppStorage("warnWhenActivatingAwayFromLocation") private var warnWhenActivatingAwayFromLocation =
     true
@@ -321,6 +322,33 @@ struct SettingsView: View {
           }
         }
 
+        Section("Diagnostics") {
+          Button {
+            showDebugView = true
+          } label: {
+            HStack {
+              Image(systemName: "ladybug.fill")
+                .foregroundColor(themeManager.themeColor)
+                .font(.title3)
+
+              VStack(alignment: .leading, spacing: 2) {
+                Text("Debug Mode")
+                  .font(.headline)
+                  .foregroundColor(.primary)
+                Text("View logs and export diagnostics")
+                  .font(.caption)
+                  .foregroundColor(.secondary)
+              }
+
+              Spacer()
+
+              Image(systemName: "chevron.right")
+                .foregroundColor(.secondary)
+                .font(.caption)
+            }
+          }
+        }
+
         if !strategyManager.isBlocking {
           Section("Troubleshooting") {
             Button {
@@ -390,6 +418,9 @@ struct SettingsView: View {
               }
             }
         }
+      }
+      .sheet(isPresented: $showDebugView) {
+        DebugView()
       }
       .onChange(of: appModeManager.currentMode) { oldMode, newMode in
         // Auto-dismiss settings when switching from child to individual mode
