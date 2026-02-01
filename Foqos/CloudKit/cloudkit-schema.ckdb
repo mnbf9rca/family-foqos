@@ -135,6 +135,7 @@ DEFINE SCHEMA
         GRANT READ TO "_creator"
     );
 
+    // DEPRECATED: Legacy per-device session sync. Replaced by ProfileSession.
     RECORD TYPE SyncedSession (
         "___createTime"   TIMESTAMP QUERYABLE SORTABLE,
         "___createdBy"    REFERENCE QUERYABLE,
@@ -150,6 +151,29 @@ DEFINE SCHEMA
         breakEndTime      TIMESTAMP,
         originDeviceId    STRING QUERYABLE,
         lastModified      TIMESTAMP QUERYABLE SORTABLE,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_creator"
+    );
+
+    // CAS-based single record per profile for session state (replaces SyncedSession)
+    RECORD TYPE ProfileSession (
+        "___createTime"     TIMESTAMP QUERYABLE SORTABLE,
+        "___createdBy"      REFERENCE QUERYABLE,
+        "___etag"           STRING,
+        "___modTime"        TIMESTAMP QUERYABLE SORTABLE,
+        "___modifiedBy"     REFERENCE QUERYABLE,
+        "___recordID"       REFERENCE QUERYABLE,
+        profileId           STRING QUERYABLE SEARCHABLE,
+        isActive            INT64 QUERYABLE,
+        sequenceNumber      INT64 QUERYABLE SORTABLE,
+        startTime           TIMESTAMP QUERYABLE SORTABLE,
+        endTime             TIMESTAMP QUERYABLE SORTABLE,
+        breakStartTime      TIMESTAMP,
+        breakEndTime        TIMESTAMP,
+        lastModifiedBy      STRING,
+        sessionOriginDevice STRING QUERYABLE,
+        lastModified        TIMESTAMP QUERYABLE SORTABLE,
         GRANT WRITE TO "_creator",
         GRANT CREATE TO "_icloud",
         GRANT READ TO "_creator"
