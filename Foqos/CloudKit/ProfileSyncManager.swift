@@ -125,7 +125,7 @@ class ProfileSyncManager: ObservableObject {
   /// Initialize sync infrastructure (zone and subscriptions)
   func setupSync() async {
     guard isEnabled else {
-      print("ProfileSyncManager: Sync is disabled")
+      Log.info("Sync is disabled", category: .sync)
       return
     }
 
@@ -158,9 +158,9 @@ class ProfileSyncManager: ObservableObject {
       // Perform initial sync
       await performFullSync()
 
-      print("ProfileSyncManager: Setup complete")
+      Log.info("Setup complete", category: .sync)
     } catch {
-      print("ProfileSyncManager: Setup failed - \(error)")
+      Log.info("Setup failed - \(error)", category: .sync)
       await MainActor.run {
         self.error = .zoneCreationFailed(error)
         self.syncStatus = .error("Setup failed")
@@ -177,13 +177,13 @@ class ProfileSyncManager: ObservableObject {
     do {
       _ = try await privateDatabase.save(zone)
       syncZoneVerified = true
-      print("ProfileSyncManager: Created sync zone: \(CloudKitConstants.syncZoneName)")
+      Log.info("Created sync zone: \(CloudKitConstants.syncZoneName)", category: .sync)
     } catch _ as CKError {
       // Check if zone already exists
       do {
         _ = try await privateDatabase.recordZone(for: syncZoneID)
         syncZoneVerified = true
-        print("ProfileSyncManager: Sync zone already exists")
+        Log.info("Sync zone already exists", category: .sync)
       } catch {
         throw SyncError.zoneCreationFailed(error)
       }
@@ -208,12 +208,12 @@ class ProfileSyncManager: ObservableObject {
     do {
       _ = try await privateDatabase.save(subscription)
       subscriptionsCreated = true
-      print("ProfileSyncManager: Created zone subscription for sync changes")
+      Log.info("Created zone subscription for sync changes", category: .sync)
     } catch let error as CKError {
       if error.code == .serverRejectedRequest {
         // Subscription might already exist
         subscriptionsCreated = true
-        print("ProfileSyncManager: Zone subscription already exists")
+        Log.info("Zone subscription already exists", category: .sync)
       } else {
         throw SyncError.subscriptionFailed(error)
       }
@@ -253,9 +253,9 @@ class ProfileSyncManager: ObservableObject {
         self.error = nil
       }
 
-      print("ProfileSyncManager: Full sync complete")
+      Log.info("Full sync complete", category: .sync)
     } catch {
-      print("ProfileSyncManager: Full sync failed - \(error)")
+      Log.info("Full sync failed - \(error)", category: .sync)
       await MainActor.run {
         self.isSyncing = false
         self.syncStatus = .error("Sync failed")
@@ -288,7 +288,7 @@ class ProfileSyncManager: ObservableObject {
             continue
           }
 
-          print("ProfileSyncManager: Processing reset request from device \(resetRequest.originDeviceId)")
+          Log.info("Processing reset request from device \(resetRequest.originDeviceId)", category: .sync)
 
           // Notify coordinator to handle the reset
           await MainActor.run {
@@ -305,7 +305,7 @@ class ProfileSyncManager: ObservableObject {
       }
     } catch let error as CKError {
       if error.code == .zoneNotFound || error.code == .unknownItem {
-        print("ProfileSyncManager: No reset requests found")
+        Log.info("No reset requests found", category: .sync)
         return
       }
       throw SyncError.fetchFailed(error)
@@ -343,9 +343,9 @@ class ProfileSyncManager: ObservableObject {
       }
 
       _ = try await privateDatabase.save(record)
-      print("ProfileSyncManager: Pushed profile '\(syncedProfile.name)' to CloudKit")
+      Log.info("Pushed profile '\(syncedProfile.name)' to CloudKit", category: .sync)
     } catch {
-      print("ProfileSyncManager: Failed to push profile - \(error)")
+      Log.info("Failed to push profile - \(error)", category: .sync)
       throw SyncError.saveFailed(error)
     }
   }
@@ -374,7 +374,7 @@ class ProfileSyncManager: ObservableObject {
         }
       }
 
-      print("ProfileSyncManager: Pulled \(syncedProfiles.count) profiles from CloudKit")
+      Log.info("Pulled \(syncedProfiles.count) profiles from CloudKit", category: .sync)
 
       // Process pulled profiles on main actor with context
       let profiles = syncedProfiles
@@ -387,7 +387,7 @@ class ProfileSyncManager: ObservableObject {
       }
     } catch let error as CKError {
       if error.code == .zoneNotFound || error.code == .unknownItem {
-        print("ProfileSyncManager: No profiles found in CloudKit")
+        Log.info("No profiles found in CloudKit", category: .sync)
         return
       }
       throw SyncError.fetchFailed(error)
@@ -402,9 +402,9 @@ class ProfileSyncManager: ObservableObject {
 
     do {
       try await privateDatabase.deleteRecord(withID: recordID)
-      print("ProfileSyncManager: Deleted profile \(profileId) from CloudKit")
+      Log.info("Deleted profile \(profileId) from CloudKit", category: .sync)
     } catch {
-      print("ProfileSyncManager: Failed to delete profile - \(error)")
+      Log.info("Failed to delete profile - \(error)", category: .sync)
       throw SyncError.deleteFailed(error)
     }
   }
@@ -420,9 +420,9 @@ class ProfileSyncManager: ObservableObject {
 
     do {
       _ = try await privateDatabase.save(record)
-      print("ProfileSyncManager: Pushed session to CloudKit (active: \(syncedSession.isActive))")
+      Log.info("Pushed session to CloudKit (active: \(syncedSession.isActive))", category: .sync)
     } catch {
-      print("ProfileSyncManager: Failed to push session - \(error)")
+      Log.info("Failed to push session - \(error)", category: .sync)
       throw SyncError.saveFailed(error)
     }
   }
@@ -438,9 +438,9 @@ class ProfileSyncManager: ObservableObject {
       record[SyncedSession.FieldKey.endTime.rawValue] = endTime
       record[SyncedSession.FieldKey.lastModified.rawValue] = Date()
       _ = try await privateDatabase.save(record)
-      print("ProfileSyncManager: Updated session end time in CloudKit")
+      Log.info("Updated session end time in CloudKit", category: .sync)
     } catch {
-      print("ProfileSyncManager: Failed to update session end time - \(error)")
+      Log.info("Failed to update session end time - \(error)", category: .sync)
       throw SyncError.saveFailed(error)
     }
   }
@@ -474,7 +474,7 @@ class ProfileSyncManager: ObservableObject {
         }
       }
 
-      print("ProfileSyncManager: Pulled \(syncedSessions.count) active sessions from CloudKit")
+      Log.info("Pulled \(syncedSessions.count) active sessions from CloudKit", category: .sync)
 
       // Notify about received sessions
       let sessions = syncedSessions
@@ -487,7 +487,7 @@ class ProfileSyncManager: ObservableObject {
       }
     } catch let error as CKError {
       if error.code == .zoneNotFound || error.code == .unknownItem {
-        print("ProfileSyncManager: No sessions found in CloudKit")
+        Log.info("No sessions found in CloudKit", category: .sync)
         return
       }
       throw SyncError.fetchFailed(error)
@@ -502,9 +502,9 @@ class ProfileSyncManager: ObservableObject {
 
     do {
       try await privateDatabase.deleteRecord(withID: recordID)
-      print("ProfileSyncManager: Deleted session from CloudKit")
+      Log.info("Deleted session from CloudKit", category: .sync)
     } catch {
-      print("ProfileSyncManager: Failed to delete session - \(error)")
+      Log.info("Failed to delete session - \(error)", category: .sync)
       throw SyncError.deleteFailed(error)
     }
   }
@@ -554,7 +554,7 @@ class ProfileSyncManager: ObservableObject {
         cursor = nextCursor
       }
 
-      print("ProfileSyncManager: Pulled \(sessions.count) session records from CloudKit")
+      Log.info("Pulled \(sessions.count) session records from CloudKit", category: .sync)
 
       // Notify coordinator about sessions
       let sessionsToSend = sessions
@@ -567,7 +567,7 @@ class ProfileSyncManager: ObservableObject {
       }
     } catch let error as CKError {
       if error.code == .zoneNotFound || error.code == .unknownItem {
-        print("ProfileSyncManager: No session records found in CloudKit")
+        Log.info("No session records found in CloudKit", category: .sync)
         return
       }
       throw SyncError.fetchFailed(error)
@@ -605,9 +605,9 @@ class ProfileSyncManager: ObservableObject {
       }
 
       _ = try await privateDatabase.save(record)
-      print("ProfileSyncManager: Pushed location '\(syncedLocation.name)' to CloudKit")
+      Log.info("Pushed location '\(syncedLocation.name)' to CloudKit", category: .sync)
     } catch {
-      print("ProfileSyncManager: Failed to push location - \(error)")
+      Log.info("Failed to push location - \(error)", category: .sync)
       throw SyncError.saveFailed(error)
     }
   }
@@ -636,7 +636,7 @@ class ProfileSyncManager: ObservableObject {
         }
       }
 
-      print("ProfileSyncManager: Pulled \(syncedLocations.count) locations from CloudKit")
+      Log.info("Pulled \(syncedLocations.count) locations from CloudKit", category: .sync)
 
       // Notify about received locations
       let locations = syncedLocations
@@ -649,7 +649,7 @@ class ProfileSyncManager: ObservableObject {
       }
     } catch let error as CKError {
       if error.code == .zoneNotFound || error.code == .unknownItem {
-        print("ProfileSyncManager: No locations found in CloudKit")
+        Log.info("No locations found in CloudKit", category: .sync)
         return
       }
       throw SyncError.fetchFailed(error)
@@ -664,9 +664,9 @@ class ProfileSyncManager: ObservableObject {
 
     do {
       try await privateDatabase.deleteRecord(withID: recordID)
-      print("ProfileSyncManager: Deleted location from CloudKit")
+      Log.info("Deleted location from CloudKit", category: .sync)
     } catch {
-      print("ProfileSyncManager: Failed to delete location - \(error)")
+      Log.info("Failed to delete location - \(error)", category: .sync)
       throw SyncError.deleteFailed(error)
     }
   }
@@ -700,7 +700,7 @@ class ProfileSyncManager: ObservableObject {
         self.lastSyncDate = Date()
       }
 
-      print("ProfileSyncManager: Reset sync complete")
+      Log.info("Reset sync complete", category: .sync)
 
       // Notify to re-push local profiles
       await MainActor.run {
@@ -711,7 +711,7 @@ class ProfileSyncManager: ObservableObject {
         )
       }
     } catch {
-      print("ProfileSyncManager: Reset sync failed - \(error)")
+      Log.info("Reset sync failed - \(error)", category: .sync)
       await MainActor.run {
         self.isSyncing = false
         self.syncStatus = .error("Reset failed")
@@ -774,7 +774,7 @@ class ProfileSyncManager: ObservableObject {
       try await privateDatabase.deleteRecord(withID: recordID)
     }
 
-    print("ProfileSyncManager: Deleted all synced data from CloudKit")
+    Log.info("Deleted all synced data from CloudKit", category: .sync)
   }
 
   // MARK: - Remote Change Handling
@@ -783,7 +783,7 @@ class ProfileSyncManager: ObservableObject {
   func handleRemoteNotification() async {
     guard isEnabled else { return }
 
-    print("ProfileSyncManager: Handling remote notification")
+    Log.info("Handling remote notification", category: .sync)
     await performFullSync()
   }
 }
