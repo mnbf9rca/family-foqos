@@ -5,6 +5,7 @@ struct LogPreviewView: View {
   @State private var logContent: String = ""
   @State private var searchText: String = ""
   @State private var isLoading: Bool = true
+  private let maxPreviewLines = 100
 
   private var filteredContent: String {
     if searchText.isEmpty {
@@ -29,11 +30,18 @@ struct LogPreviewView: View {
           )
         } else {
           ScrollView {
-            Text(filteredContent)
-              .font(.system(.caption, design: .monospaced))
-              .frame(maxWidth: .infinity, alignment: .leading)
-              .padding()
-              .textSelection(.enabled)
+            VStack(alignment: .leading, spacing: 8) {
+              Text("Showing up to \(maxPreviewLines) lines")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .padding(.horizontal)
+
+              Text(filteredContent)
+                .font(.system(.caption, design: .monospaced))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
+                .textSelection(.enabled)
+            }
           }
         }
       }
@@ -55,7 +63,8 @@ struct LogPreviewView: View {
 
   private func loadLogs() {
     DispatchQueue.global(qos: .userInitiated).async {
-      let content = Log.shared.getLogContent()
+      // Tail last N lines to avoid UI hang on large logs
+      let content = Log.shared.getLogContentTail(maxLines: maxPreviewLines)
       DispatchQueue.main.async {
         logContent = content
         isLoading = false

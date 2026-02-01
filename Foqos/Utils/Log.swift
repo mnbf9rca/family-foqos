@@ -322,6 +322,37 @@ final class Log {
     return content
   }
 
+  /// Get tailed log content (last N lines) for preview - avoids loading massive logs
+  func getLogContentTail(maxLines: Int) -> String {
+    guard maxLines > 0 else { return "" }
+
+    let urls = getLogFileURLs()  // Current file first, then rotated
+    var collectedLines: [String] = []
+
+    // Read files newest-first, stop when we have enough lines
+    for url in urls {
+      guard collectedLines.count < maxLines else { break }
+
+      guard let fileContent = try? String(contentsOf: url, encoding: .utf8) else { continue }
+
+      let lines = fileContent.components(separatedBy: "\n").filter { !$0.isEmpty }
+      let neededLines = maxLines - collectedLines.count
+
+      if lines.count <= neededLines {
+        // Prepend all lines from this file (older content goes first)
+        collectedLines.insert(contentsOf: lines, at: 0)
+      } else {
+        // Take only the last neededLines from this file
+        let tailLines = Array(lines.suffix(neededLines))
+        collectedLines.insert(contentsOf: tailLines, at: 0)
+      }
+    }
+
+    // Return most recent lines (last maxLines)
+    let result = Array(collectedLines.suffix(maxLines))
+    return result.joined(separator: "\n")
+  }
+
   /// Clear all log files and in-memory entries
   func clearLogs() {
     queue.async { [weak self] in

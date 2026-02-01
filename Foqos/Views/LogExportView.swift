@@ -142,7 +142,8 @@ struct LogExportView: View {
 
     DispatchQueue.global(qos: .userInitiated).async {
       do {
-        let url = try LogExportManager.shared.getShareableLogFile()
+        // Use zip archive instead of plain text file
+        let url = try LogExportManager.shared.createLogArchive()
 
         DispatchQueue.main.async {
           shareURL = url
