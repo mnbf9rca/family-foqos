@@ -8,7 +8,7 @@ class SessionSyncMigration {
   private let syncZoneID: CKRecordZone.ID
   private let userRecordName: String
 
-  private static let migrationCompleteKeyPrefix = "SessionSyncMigrationComplete_"
+  private static let migrationCompleteKeyPrefix = "family_foqos_session_sync_migration_complete_"
 
   private var migrationCompleteKey: String {
     Self.migrationCompleteKeyPrefix + userRecordName
