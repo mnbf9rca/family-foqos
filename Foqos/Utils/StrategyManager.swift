@@ -711,7 +711,8 @@ class StrategyManager: ObservableObject {
         WidgetCenter.shared.reloadTimelines(ofKind: "ProfileControlWidget")
 
         // Sync session start using CAS (if global sync is enabled)
-        if self.profileSyncManager.isEnabled {
+        // Skip sync if processing a remote change - we're just following, not initiating
+        if self.profileSyncManager.isEnabled && !self.processingRemoteChange {
           Task {
             let result = await SessionSyncService.shared.startSession(
               profileId: session.blockedProfile.id,
@@ -757,7 +758,8 @@ class StrategyManager: ObservableObject {
         DeviceActivityCenterUtil.removeAllStrategyTimerActivities()
 
         // Sync session stop using CAS (if global sync is enabled)
-        if self.profileSyncManager.isEnabled {
+        // Skip sync if processing a remote change - we're just following, not initiating
+        if self.profileSyncManager.isEnabled && !self.processingRemoteChange {
           Task {
             let result = await SessionSyncService.shared.stopSession(
               profileId: endedProfile.id
