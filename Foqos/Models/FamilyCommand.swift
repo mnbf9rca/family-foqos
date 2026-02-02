@@ -30,8 +30,9 @@ struct FamilyCommand: Codable, Identifiable {
 
   /// Generate deterministic record name for idempotent commands
   /// Using this prevents duplicate commands when parent taps button multiple times
-  static func recordName(commandType: FamilyCommandType, targetChildId: String) -> String {
-    "\(commandType.rawValue)-\(targetChildId)"
+  /// Includes parentId to allow multiple parents to send commands to the same child
+  static func recordName(commandType: FamilyCommandType, targetChildId: String, parentId: String) -> String {
+    "\(commandType.rawValue)-\(targetChildId)-\(parentId)"
   }
 }
 
@@ -72,7 +73,7 @@ extension FamilyCommand {
   /// Convert to a CKRecord for saving to CloudKit
   func toCKRecord(in zoneID: CKRecordZone.ID) -> CKRecord {
     let recordName = FamilyCommand.recordName(
-      commandType: commandType, targetChildId: targetChildId)
+      commandType: commandType, targetChildId: targetChildId, parentId: createdBy)
     let recordID = CKRecord.ID(recordName: recordName, zoneID: zoneID)
     let record = CKRecord(recordType: FamilyCommand.recordType, recordID: recordID)
 

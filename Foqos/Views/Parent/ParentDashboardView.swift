@@ -587,6 +587,12 @@ struct FamilyMemberCard: View {
     private func resetEmergencyCount() {
         guard member.role == .child else { return }
 
+        guard let currentUserRecordName = CloudKitManager.shared.currentUserRecordID?.recordName else {
+            resetErrorMessage = "Not signed in to iCloud"
+            showResetError = true
+            return
+        }
+
         isResettingEmergency = true
 
         Task {
@@ -594,7 +600,7 @@ struct FamilyMemberCard: View {
                 let command = FamilyCommand(
                     commandType: .resetEmergencyCount,
                     targetChildId: member.userRecordName,
-                    createdBy: CloudKitManager.shared.currentUserRecordID?.recordName ?? ""
+                    createdBy: currentUserRecordName
                 )
                 try await CloudKitManager.shared.sendCommand(command)
 

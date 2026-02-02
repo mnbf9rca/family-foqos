@@ -416,12 +416,12 @@ class CloudKitManager: ObservableObject {
             Log.debug("No user record ID, skipping command fetch", category: .cloudKit)
             return []
         }
-        let myUserRecordName = userRecordID.recordName
+        let currentUserRecordName = userRecordID.recordName
 
         for zone in zones {
             let query = CKQuery(
                 recordType: FamilyCommand.recordType,
-                predicate: NSPredicate(format: "targetChildId == %@", myUserRecordName)
+                predicate: NSPredicate(format: "targetChildId == %@", currentUserRecordName)
             )
 
             do {
@@ -451,7 +451,7 @@ class CloudKitManager: ObservableObject {
 
         for zone in zones {
             let recordName = FamilyCommand.recordName(
-                commandType: command.commandType, targetChildId: command.targetChildId)
+                commandType: command.commandType, targetChildId: command.targetChildId, parentId: command.createdBy)
             let recordID = CKRecord.ID(recordName: recordName, zoneID: zone.zoneID)
 
             do {
@@ -468,10 +468,13 @@ class CloudKitManager: ObservableObject {
         }
     }
 
+    private static let staleCommandMaxAgeDays = 7
+    private static let secondsPerDay: TimeInterval = 86400
+
     /// Clean up stale commands older than maxAge (any client can call this)
     /// This ensures commands are cleaned up even if the target child leaves the family
-    func cleanupStaleCommands(maxAgeDays: Int = 7) async {
-        let maxAge: TimeInterval = Double(maxAgeDays) * 24 * 60 * 60
+    func cleanupStaleCommands(maxAgeDays: Int = CloudKitManager.staleCommandMaxAgeDays) async {
+        let maxAge: TimeInterval = Double(maxAgeDays) * CloudKitManager.secondsPerDay
         let cutoffDate = Date().addingTimeInterval(-maxAge)
 
         // Clean up from shared database (for children)
