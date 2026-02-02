@@ -14,6 +14,9 @@ class BlockedProfileSession {
   var breakStartTime: Date?
   var breakEndTime: Date?
 
+  var oneMoreMinuteUsed: Bool = false
+  var oneMoreMinuteStartTime: Date?
+
   var forceStarted: Bool = false
 
   var isActive: Bool {
@@ -29,6 +32,15 @@ class BlockedProfileSession {
     return blockedProfile.enableBreaks == true
       && breakStartTime != nil
       && breakEndTime == nil
+  }
+
+  var isOneMoreMinuteActive: Bool {
+    guard let startTime = oneMoreMinuteStartTime else { return false }
+    return Date().timeIntervalSince(startTime) < 60
+  }
+
+  var isOneMoreMinuteAvailable: Bool {
+    return !oneMoreMinuteUsed && !isBreakActive
   }
 
   var duration: TimeInterval {
@@ -66,6 +78,11 @@ class BlockedProfileSession {
     self.breakEndTime = breakEndTime
   }
 
+  func startOneMoreMinute() {
+    oneMoreMinuteUsed = true
+    oneMoreMinuteStartTime = Date()
+  }
+
   func endSession() {
     let endTime = Date()
 
@@ -85,7 +102,9 @@ class BlockedProfileSession {
       endTime: endTime,
       breakStartTime: breakStartTime,
       breakEndTime: breakEndTime,
-      forceStarted: forceStarted
+      forceStarted: forceStarted,
+      oneMoreMinuteUsed: oneMoreMinuteUsed,
+      oneMoreMinuteStartTime: oneMoreMinuteStartTime
     )
   }
 
@@ -141,6 +160,8 @@ class BlockedProfileSession {
       existingSession.breakStartTime = snapshot.breakStartTime
       existingSession.breakEndTime = snapshot.breakEndTime
       existingSession.forceStarted = snapshot.forceStarted
+      existingSession.oneMoreMinuteUsed = snapshot.oneMoreMinuteUsed
+      existingSession.oneMoreMinuteStartTime = snapshot.oneMoreMinuteStartTime
 
       // manually save to ensure changes are persisted
       try? context.save()
@@ -159,6 +180,8 @@ class BlockedProfileSession {
     newSession.endTime = snapshot.endTime
     newSession.breakStartTime = snapshot.breakStartTime
     newSession.breakEndTime = snapshot.breakEndTime
+    newSession.oneMoreMinuteUsed = snapshot.oneMoreMinuteUsed
+    newSession.oneMoreMinuteStartTime = snapshot.oneMoreMinuteStartTime
 
     // Let auto-save handle inserts
     context.insert(newSession)
