@@ -384,14 +384,22 @@ class StrategyManager: ObservableObject {
     oneMoreMinuteTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
       guard let self = self else { return }
 
-      self.oneMoreMinuteTimeRemaining -= 1
-
-      if let session = self.activeSession {
-        self.liveActivityManager.updateOneMoreMinuteState(
-          session: session, timeRemaining: self.oneMoreMinuteTimeRemaining)
+      guard let session = self.activeSession,
+        let startTime = session.oneMoreMinuteStartTime
+      else {
+        self.endOneMoreMinute()
+        Log.info("One more minute ended - no session or start time", category: .strategy)
+        return
       }
 
-      if self.oneMoreMinuteTimeRemaining <= 0 {
+      let elapsed = Date().timeIntervalSince(startTime)
+      let remaining = max(0, 60 - elapsed)
+      self.oneMoreMinuteTimeRemaining = remaining
+
+      self.liveActivityManager.updateOneMoreMinuteState(
+        session: session, timeRemaining: self.oneMoreMinuteTimeRemaining)
+
+      if remaining <= 0 {
         self.endOneMoreMinute()
         Log.info("One more minute ended - restrictions re-activated", category: .strategy)
       }

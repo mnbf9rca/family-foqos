@@ -113,13 +113,20 @@ class LiveActivityManager: ObservableObject {
       return
     }
 
+    let oneMoreMinuteTimeRemaining: TimeInterval
+    if session.isOneMoreMinuteActive, let startTime = session.oneMoreMinuteStartTime {
+      oneMoreMinuteTimeRemaining = max(0, 60 - Date().timeIntervalSince(startTime))
+    } else {
+      oneMoreMinuteTimeRemaining = 0
+    }
+
     let updatedState = FoqosWidgetAttributes.ContentState(
       startTime: session.startTime,
       isBreakActive: session.isBreakActive,
       breakStartTime: session.breakStartTime,
       breakEndTime: session.breakEndTime,
-      isOneMoreMinuteActive: false,
-      oneMoreMinuteTimeRemaining: 0
+      isOneMoreMinuteActive: session.isOneMoreMinuteActive,
+      oneMoreMinuteTimeRemaining: oneMoreMinuteTimeRemaining
     )
 
     Task {
@@ -135,13 +142,20 @@ class LiveActivityManager: ObservableObject {
       return
     }
 
+    let oneMoreMinuteTimeRemaining: TimeInterval
+    if session.isOneMoreMinuteActive, let startTime = session.oneMoreMinuteStartTime {
+      oneMoreMinuteTimeRemaining = max(0, 60 - Date().timeIntervalSince(startTime))
+    } else {
+      oneMoreMinuteTimeRemaining = 0
+    }
+
     let updatedState = FoqosWidgetAttributes.ContentState(
       startTime: session.startTime,
       isBreakActive: session.isBreakActive,
       breakStartTime: session.breakStartTime,
       breakEndTime: session.breakEndTime,
-      isOneMoreMinuteActive: false,
-      oneMoreMinuteTimeRemaining: 0
+      isOneMoreMinuteActive: session.isOneMoreMinuteActive,
+      oneMoreMinuteTimeRemaining: oneMoreMinuteTimeRemaining
     )
 
     Task {

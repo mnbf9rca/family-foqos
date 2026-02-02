@@ -96,36 +96,36 @@ final class OneMoreMinuteTests: XCTestCase {
     // When oneMoreMinuteUsed is false and not on break, should be available
     // This tests the logic: !oneMoreMinuteUsed && !isBreakActive
 
-    let notUsed = false
-    let notOnBreak = false
-    let isAvailable = !notUsed && !notOnBreak
+    let oneMoreMinuteUsed = false
+    let isBreakActive = false
+    let isAvailable = !oneMoreMinuteUsed && !isBreakActive
 
     XCTAssertTrue(isAvailable)
   }
 
   func testOneMoreMinuteNotAvailableWhenAlreadyUsed() {
     // When oneMoreMinuteUsed is true, should not be available
-    let alreadyUsed = true
-    let notOnBreak = false
-    let isAvailable = !alreadyUsed && !notOnBreak
+    let oneMoreMinuteUsed = true
+    let isBreakActive = false
+    let isAvailable = !oneMoreMinuteUsed && !isBreakActive
 
     XCTAssertFalse(isAvailable)
   }
 
   func testOneMoreMinuteNotAvailableWhenOnBreak() {
     // When on break, should not be available (even if not used)
-    let notUsed = false
-    let onBreak = true
-    let isAvailable = !notUsed && !onBreak
+    let oneMoreMinuteUsed = false
+    let isBreakActive = true
+    let isAvailable = !oneMoreMinuteUsed && !isBreakActive
 
     XCTAssertFalse(isAvailable)
   }
 
   func testOneMoreMinuteNotAvailableWhenUsedAndOnBreak() {
     // When both used and on break, should not be available
-    let alreadyUsed = true
-    let onBreak = true
-    let isAvailable = !alreadyUsed && !onBreak
+    let oneMoreMinuteUsed = true
+    let isBreakActive = true
+    let isAvailable = !oneMoreMinuteUsed && !isBreakActive
 
     XCTAssertFalse(isAvailable)
   }
