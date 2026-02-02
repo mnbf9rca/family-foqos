@@ -42,6 +42,8 @@ struct BlockedProfileView: View {
   @State private var enableAllowModeDomain: Bool = false
   @State private var enableSafariBlocking: Bool = true
   @State private var disableBackgroundStops: Bool = false
+  @State private var preActivationReminderEnabled: Bool = false
+  @State private var preActivationReminderMinutes: Int = 1
   @State private var domains: [String] = []
 
   @State private var physicalUnblockNFCTagId: String?
@@ -162,6 +164,12 @@ struct BlockedProfileView: View {
     )
     _disableBackgroundStops = State(
       initialValue: profile?.disableBackgroundStops ?? false
+    )
+    _preActivationReminderEnabled = State(
+      initialValue: profile?.preActivationReminderEnabled ?? false
+    )
+    _preActivationReminderMinutes = State(
+      initialValue: Int(profile?.preActivationReminderMinutes ?? 1)
     )
     _reminderTimeInMinutes = State(
       initialValue: Int(profile?.reminderTimeInSeconds ?? 900) / 60
@@ -455,6 +463,36 @@ struct BlockedProfileView: View {
                   customReminderMessage = String(newValue.prefix(178))
                 }
               }
+              .disabled(isBlocking)
+            }
+          }
+
+          CustomToggle(
+            title: "Pre-Activation Reminder",
+            description: schedule.isActive
+              ? "Get notified before this profile's scheduled start time."
+              : "Add a schedule to enable pre-activation reminders.",
+            isOn: $preActivationReminderEnabled,
+            isDisabled: isBlocking || !schedule.isActive
+          )
+
+          if preActivationReminderEnabled && schedule.isActive {
+            VStack(alignment: .leading, spacing: 8) {
+              HStack {
+                Text("Remind me")
+                Spacer()
+                Text("\(preActivationReminderMinutes) minute\(preActivationReminderMinutes == 1 ? "" : "s") before")
+                  .foregroundColor(.secondary)
+              }
+
+              Slider(
+                value: Binding(
+                  get: { Double(preActivationReminderMinutes) },
+                  set: { preActivationReminderMinutes = Int($0) }
+                ),
+                in: 1...5,
+                step: 1
+              )
               .disabled(isBlocking)
             }
           }
@@ -770,6 +808,8 @@ struct BlockedProfileView: View {
           schedule: schedule,
           geofenceRule: geofenceRule,
           disableBackgroundStops: disableBackgroundStops,
+          preActivationReminderEnabled: preActivationReminderEnabled,
+          preActivationReminderMinutes: UInt8(preActivationReminderMinutes),
           isManaged: isManaged,
           managedByChildId: managedChildId,
           needsAppSelection: false  // Clear needsAppSelection since user is saving with app selection
@@ -802,6 +842,8 @@ struct BlockedProfileView: View {
           schedule: schedule,
           geofenceRule: geofenceRule,
           disableBackgroundStops: disableBackgroundStops,
+          preActivationReminderEnabled: preActivationReminderEnabled,
+          preActivationReminderMinutes: UInt8(preActivationReminderMinutes),
           isManaged: isManaged,
           managedByChildId: managedChildId
         )
