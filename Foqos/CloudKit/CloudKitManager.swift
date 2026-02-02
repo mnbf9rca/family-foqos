@@ -468,6 +468,52 @@ class CloudKitManager: ObservableObject {
         }
     }
 
+    /// Clean up stale commands older than maxAge (any client can call this)
+    /// This ensures commands are cleaned up even if the target child leaves the family
+    func cleanupStaleCommands(maxAgeDays: Int = 7) async {
+        let maxAge: TimeInterval = Double(maxAgeDays) * 24 * 60 * 60
+        let cutoffDate = Date().addingTimeInterval(-maxAge)
+
+        // Clean up from shared database (for children)
+        do {
+            let zones = try await sharedDatabase.allRecordZones()
+            for zone in zones {
+                await cleanupStaleCommandsInZone(zone.zoneID, database: sharedDatabase, cutoffDate: cutoffDate)
+            }
+        } catch {
+            Log.debug("No shared zones to cleanup: \(error)", category: .cloudKit)
+        }
+
+        // Clean up from private database (for parents)
+        if policyZoneVerified {
+            await cleanupStaleCommandsInZone(policyZoneID, database: privateDatabase, cutoffDate: cutoffDate)
+        }
+    }
+
+    private func cleanupStaleCommandsInZone(_ zoneID: CKRecordZone.ID, database: CKDatabase, cutoffDate: Date) async {
+        let query = CKQuery(
+            recordType: FamilyCommand.recordType,
+            predicate: NSPredicate(format: "createdAt < %@", cutoffDate as NSDate)
+        )
+
+        do {
+            let (results, _) = try await database.records(matching: query, inZoneWith: zoneID)
+
+            for (recordID, result) in results {
+                if case .success = result {
+                    do {
+                        try await database.deleteRecord(withID: recordID)
+                        Log.info("Cleaned up stale command: \(recordID.recordName)", category: .cloudKit)
+                    } catch {
+                        Log.error("Failed to delete stale command: \(error)", category: .cloudKit)
+                    }
+                }
+            }
+        } catch {
+            Log.debug("No stale commands to cleanup in zone \(zoneID): \(error)", category: .cloudKit)
+        }
+    }
+
     /// Fetch all lock codes created by this parent
     func fetchLockCodes() async throws -> [FamilyLockCode] {
         try await createPolicyZoneIfNeeded()
@@ -630,6 +676,9 @@ class CloudKitManager: ObservableObject {
 
     /// Fetch and refresh share participants (for parent dashboard)
     func refreshShareParticipants() async {
+        // Clean up any stale commands while we're syncing
+        await cleanupStaleCommands()
+
         // Clear cached share to force fresh fetch from server
         await MainActor.run { self.activeZoneShare = nil }
 

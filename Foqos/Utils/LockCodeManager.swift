@@ -267,6 +267,9 @@ class LockCodeManager: ObservableObject {
             return
         }
 
+        // Clean up any stale commands (from any user, not just this child)
+        await cloudKitManager.cleanupStaleCommands()
+
         do {
             let commands = try await cloudKitManager.fetchPendingCommands()
 
