@@ -384,6 +384,90 @@ class CloudKitManager: ObservableObject {
         }
     }
 
+    // MARK: - Family Commands (Parent to Child)
+
+    /// Send a command to a child device (parent operation)
+    func sendCommand(_ command: FamilyCommand) async throws {
+        Log.info("Sending command: \(command.commandType.rawValue) to child", category: .cloudKit)
+
+        try await createPolicyZoneIfNeeded()
+        try await ensureFamilyRootExists()
+
+        let record = command.toCKRecord(in: policyZoneID)
+
+        do {
+            _ = try await privateDatabase.save(record)
+            Log.info("Command sent successfully", category: .cloudKit)
+        } catch {
+            Log.error("Failed to send command: \(error)", category: .cloudKit)
+            throw CloudKitError.saveFailed(error)
+        }
+    }
+
+    /// Fetch pending commands for this child device (child operation)
+    func fetchPendingCommands() async throws -> [FamilyCommand] {
+        // Fetch from shared database (commands shared via CKShare)
+        let zones = try await sharedDatabase.allRecordZones()
+
+        var allCommands: [FamilyCommand] = []
+
+        // Get this device's user record name to filter commands for us
+        guard let userRecordID = currentUserRecordID else {
+            Log.debug("No user record ID, skipping command fetch", category: .cloudKit)
+            return []
+        }
+        let myUserRecordName = userRecordID.recordName
+
+        for zone in zones {
+            let query = CKQuery(
+                recordType: FamilyCommand.recordType,
+                predicate: NSPredicate(format: "targetChildId == %@", myUserRecordName)
+            )
+
+            do {
+                let (results, _) = try await sharedDatabase.records(
+                    matching: query,
+                    inZoneWith: zone.zoneID
+                )
+
+                for (_, result) in results {
+                    if case .success(let record) = result,
+                        let command = FamilyCommand(from: record)
+                    {
+                        allCommands.append(command)
+                    }
+                }
+            } catch {
+                Log.error("Failed to fetch commands from zone \(zone.zoneID): \(error)", category: .cloudKit)
+            }
+        }
+
+        return allCommands
+    }
+
+    /// Delete a command after processing (child operation)
+    func deleteCommand(_ command: FamilyCommand) async throws {
+        let zones = try await sharedDatabase.allRecordZones()
+
+        for zone in zones {
+            let recordName = FamilyCommand.recordName(
+                commandType: command.commandType, targetChildId: command.targetChildId)
+            let recordID = CKRecord.ID(recordName: recordName, zoneID: zone.zoneID)
+
+            do {
+                try await sharedDatabase.deleteRecord(withID: recordID)
+                Log.info("Deleted command: \(command.commandType.rawValue)", category: .cloudKit)
+                return
+            } catch let error as CKError where error.code == .unknownItem {
+                // Record not in this zone, try next
+                continue
+            } catch {
+                Log.error("Failed to delete command: \(error)", category: .cloudKit)
+                throw CloudKitError.deleteFailed(error)
+            }
+        }
+    }
+
     /// Fetch all lock codes created by this parent
     func fetchLockCodes() async throws -> [FamilyLockCode] {
         try await createPolicyZoneIfNeeded()
