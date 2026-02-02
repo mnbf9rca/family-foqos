@@ -85,7 +85,9 @@ class LiveActivityManager: ObservableObject {
       startTime: session.startTime,
       isBreakActive: session.isBreakActive,
       breakStartTime: session.breakStartTime,
-      breakEndTime: session.breakEndTime
+      breakEndTime: session.breakEndTime,
+      isOneMoreMinuteActive: false,
+      oneMoreMinuteTimeRemaining: 0
     )
 
     do {
@@ -115,7 +117,9 @@ class LiveActivityManager: ObservableObject {
       startTime: session.startTime,
       isBreakActive: session.isBreakActive,
       breakStartTime: session.breakStartTime,
-      breakEndTime: session.breakEndTime
+      breakEndTime: session.breakEndTime,
+      isOneMoreMinuteActive: false,
+      oneMoreMinuteTimeRemaining: 0
     )
 
     Task {
@@ -135,13 +139,38 @@ class LiveActivityManager: ObservableObject {
       startTime: session.startTime,
       isBreakActive: session.isBreakActive,
       breakStartTime: session.breakStartTime,
-      breakEndTime: session.breakEndTime
+      breakEndTime: session.breakEndTime,
+      isOneMoreMinuteActive: false,
+      oneMoreMinuteTimeRemaining: 0
     )
 
     Task {
       let content = ActivityContent(state: updatedState, staleDate: nil)
       await activity.update(content)
       Log.info("Updated Live Activity break state: \(session.isBreakActive)", category: .liveActivity)
+    }
+  }
+
+  func updateOneMoreMinuteState(session: BlockedProfileSession, timeRemaining: TimeInterval) {
+    guard let activity = currentActivity else {
+      Log.info("No Live Activity to update for one-more-minute state", category: .liveActivity)
+      return
+    }
+
+    let updatedState = FoqosWidgetAttributes.ContentState(
+      startTime: session.startTime,
+      isBreakActive: session.isBreakActive,
+      breakStartTime: session.breakStartTime,
+      breakEndTime: session.breakEndTime,
+      isOneMoreMinuteActive: session.isOneMoreMinuteActive,
+      oneMoreMinuteTimeRemaining: timeRemaining
+    )
+
+    Task {
+      let content = ActivityContent(state: updatedState, staleDate: nil)
+      await activity.update(content)
+      Log.info(
+        "Updated Live Activity one-more-minute: \(timeRemaining)s remaining", category: .liveActivity)
     }
   }
 
