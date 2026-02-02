@@ -22,6 +22,7 @@
 		D4EECE1B2F3135FB0075C93E /* ProfileSessionRecordTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4EECE172F3135FB0075C93E /* ProfileSessionRecordTests.swift */; };
 		D4EECE1C2F3135FB0075C93E /* OneMoreMinuteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4EECE162F3135FB0075C93E /* OneMoreMinuteTests.swift */; };
 		D4EECE1D2F3135FB0075C93E /* LogTailTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4EECE152F3135FB0075C93E /* LogTailTests.swift */; };
+		D4EED3F52F3165EE0075C93E /* PreActivationReminderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4EED3F42F3165EE0075C93E /* PreActivationReminderTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -96,6 +97,7 @@
 		D4EECE152F3135FB0075C93E /* LogTailTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogTailTests.swift; sourceTree = "<group>"; };
 		D4EECE162F3135FB0075C93E /* OneMoreMinuteTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OneMoreMinuteTests.swift; sourceTree = "<group>"; };
 		D4EECE172F3135FB0075C93E /* ProfileSessionRecordTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileSessionRecordTests.swift; sourceTree = "<group>"; };
+		D4EED3F42F3165EE0075C93E /* PreActivationReminderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreActivationReminderTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -318,10 +320,11 @@
 		D4EECE182F3135FB0075C93E /* FoqosTests */ = {
 			isa = PBXGroup;
 			children = (
-				D4EECE132F3135FB0075C93E /* Mocks */,
 				D4EECE142F3135FB0075C93E /* ConcurrentSessionTests.swift */,
 				D4EECE152F3135FB0075C93E /* LogTailTests.swift */,
+				D4EECE132F3135FB0075C93E /* Mocks */,
 				D4EECE162F3135FB0075C93E /* OneMoreMinuteTests.swift */,
+				D4EED3F42F3165EE0075C93E /* PreActivationReminderTests.swift */,
 				D4EECE172F3135FB0075C93E /* ProfileSessionRecordTests.swift */,
 			);
 			path = FoqosTests;
@@ -586,6 +589,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D4EED3F52F3165EE0075C93E /* PreActivationReminderTests.swift in Sources */,
 				D4EECE192F3135FB0075C93E /* MockSessionSyncService.swift in Sources */,
 				D4EECE1A2F3135FB0075C93E /* ConcurrentSessionTests.swift in Sources */,
 				D4EECE1B2F3135FB0075C93E /* ProfileSessionRecordTests.swift in Sources */,
