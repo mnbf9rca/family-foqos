@@ -494,6 +494,10 @@ struct FamilyMemberCard: View {
     let onRemove: () -> Void
 
     @State private var showRemoveConfirmation = false
+    @State private var isResettingEmergency = false
+    @State private var showResetSuccess = false
+    @State private var showResetError = false
+    @State private var resetErrorMessage = ""
 
     var body: some View {
         HStack(spacing: 12) {
@@ -528,11 +532,37 @@ struct FamilyMemberCard: View {
                 .fill(member.isActive ? Color.green : Color.gray)
                 .frame(width: 8, height: 8)
 
-            Button(role: .destructive) {
-                showRemoveConfirmation = true
+            Menu {
+                if member.role == .child {
+                    Button {
+                        resetEmergencyCount()
+                    } label: {
+                        Label("Reset Emergency Count", systemImage: "arrow.counterclockwise")
+                    }
+                    .disabled(isResettingEmergency)
+                }
+
+                Button(role: .destructive) {
+                    showRemoveConfirmation = true
+                } label: {
+                    Label("Remove", systemImage: "trash")
+                }
             } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .foregroundColor(.secondary)
+                if isResettingEmergency {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                } else if showResetSuccess {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundColor(.green)
+                } else {
+                    Image(systemName: "ellipsis.circle")
+                        .foregroundColor(.secondary)
+                }
+            }
+            .alert("Error", isPresented: $showResetError) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(resetErrorMessage)
             }
         }
         .padding()
@@ -551,6 +581,40 @@ struct FamilyMemberCard: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This will unlink \(member.displayName) from locked Foqos controls. They will no longer receive your lock code.")
+        }
+    }
+
+    private func resetEmergencyCount() {
+        guard member.role == .child else { return }
+
+        isResettingEmergency = true
+
+        Task {
+            do {
+                let command = FamilyCommand(
+                    commandType: .resetEmergencyCount,
+                    targetChildId: member.userRecordName,
+                    createdBy: CloudKitManager.shared.currentUserRecordID?.recordName ?? ""
+                )
+                try await CloudKitManager.shared.sendCommand(command)
+
+                await MainActor.run {
+                    isResettingEmergency = false
+                    showResetSuccess = true
+                }
+
+                // Auto-dismiss success after 2 seconds
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                await MainActor.run {
+                    showResetSuccess = false
+                }
+            } catch {
+                await MainActor.run {
+                    isResettingEmergency = false
+                    resetErrorMessage = error.localizedDescription
+                    showResetError = true
+                }
+            }
         }
     }
 }
