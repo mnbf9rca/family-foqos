@@ -36,6 +36,9 @@ enum SharedData {
     var enableAllowModeDomains: Bool
     var enableSafariBlocking: Bool
 
+    var preActivationReminderEnabled: Bool?
+    var preActivationReminderMinutes: UInt8?
+
     var domains: [String]?
     var physicalUnblockNFCTagId: String?
     var physicalUnblockQRCodeId: String?

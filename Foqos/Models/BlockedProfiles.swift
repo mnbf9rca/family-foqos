@@ -337,6 +337,8 @@ class BlockedProfiles {
       enableAllowMode: profile.enableAllowMode,
       enableAllowModeDomains: profile.enableAllowModeDomains,
       enableSafariBlocking: profile.enableSafariBlocking,
+      preActivationReminderEnabled: profile.preActivationReminderEnabled,
+      preActivationReminderMinutes: profile.preActivationReminderMinutes,
       domains: profile.domains,
       physicalUnblockNFCTagId: profile.physicalUnblockNFCTagId,
       physicalUnblockQRCodeId: profile.physicalUnblockQRCodeId,
