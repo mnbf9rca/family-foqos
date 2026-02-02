@@ -5,6 +5,12 @@ import SwiftUI
 
 class DeviceActivityCenterUtil {
   static func scheduleTimerActivity(for profile: BlockedProfiles) {
+    let timersUtil = TimersUtil()
+    let notificationId = TimersUtil.preActivationReminderIdentifier(for: profile.id)
+
+    // Always cancel any existing pre-activation reminder first
+    timersUtil.cancelNotification(identifier: notificationId)
+
     // Only schedule if the schedule is active
     guard let schedule = profile.schedule else { return }
 
@@ -23,7 +29,7 @@ class DeviceActivityCenterUtil {
     let deviceActivitySchedule = DeviceActivitySchedule(
       intervalStart: intervalStart,
       intervalEnd: intervalEnd,
-      repeats: true,
+      repeats: true
     )
 
     do {
@@ -31,9 +37,63 @@ class DeviceActivityCenterUtil {
       stopActivities(for: [deviceActivityName], with: center)
       try center.startMonitoring(deviceActivityName, during: deviceActivitySchedule)
       Log.info("Scheduled restrictions from \(intervalStart) to \(intervalEnd) daily", category: .timer)
+
+      // Schedule pre-activation reminder if enabled
+      schedulePreActivationReminder(for: profile, schedule: schedule)
     } catch {
       Log.info("Failed to start monitoring: \(error.localizedDescription)", category: .timer)
     }
+  }
+
+  /// Schedule a notification before the profile's scheduled activation time
+  private static func schedulePreActivationReminder(
+    for profile: BlockedProfiles,
+    schedule: BlockedProfileSchedule
+  ) {
+    guard profile.preActivationReminderEnabled else { return }
+    guard schedule.isTodayScheduled() else { return }
+
+    let timersUtil = TimersUtil()
+    let notificationId = TimersUtil.preActivationReminderIdentifier(for: profile.id)
+
+    // Calculate seconds until the scheduled start time
+    let calendar = Calendar.current
+    let now = Date()
+
+    guard let scheduledStart = calendar.date(
+      bySettingHour: schedule.startHour,
+      minute: schedule.startMinute,
+      second: 0,
+      of: now
+    ) else { return }
+
+    // Calculate reminder time (start time minus reminder minutes)
+    let reminderMinutes = Int(profile.preActivationReminderMinutes)
+    guard let reminderTime = calendar.date(
+      byAdding: .minute,
+      value: -reminderMinutes,
+      to: scheduledStart
+    ) else { return }
+
+    let secondsUntilReminder = reminderTime.timeIntervalSince(now)
+
+    // Only schedule if the reminder time is in the future
+    guard secondsUntilReminder > 0 else {
+      Log.debug("Pre-activation reminder time has passed for profile: \(profile.name)", category: .timer)
+      return
+    }
+
+    let title = "\(profile.name) starts in \(reminderMinutes) minute\(reminderMinutes == 1 ? "" : "s")"
+    let message = "Your scheduled focus session is about to begin."
+
+    timersUtil.scheduleNotification(
+      title: title,
+      message: message,
+      seconds: secondsUntilReminder,
+      identifier: notificationId
+    )
+
+    Log.info("Scheduled pre-activation reminder for \(profile.name) in \(Int(secondsUntilReminder)) seconds", category: .timer)
   }
 
   static func startBreakTimerActivity(for profile: BlockedProfiles) {

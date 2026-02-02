@@ -28,6 +28,13 @@ class TimersUtil {
     "com.cynexia.family-foqos.backgroundprocessing"
   static let backgroundTaskUserDefaultsKey = "com.cynexia.family-foqos.backgroundtasks"
 
+  // Pre-activation reminder notification identifier prefix
+  static let preActivationReminderPrefix = "pre-activation-reminder-"
+
+  static func preActivationReminderIdentifier(for profileId: UUID) -> String {
+    return preActivationReminderPrefix + profileId.uuidString
+  }
+
   private var backgroundTasks: [String: [String: Any]] {
     get {
       UserDefaults.standard.dictionary(
