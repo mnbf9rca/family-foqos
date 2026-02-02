@@ -3,257 +3,266 @@ import Foundation
 import UserNotifications
 
 // MARK: - Notification Constants
-extension Notification.Name {
-  fileprivate static let backgroundTaskExecuted = Notification.Name(
-    "BackgroundTaskExecuted"
-  )
+
+private extension Notification.Name {
+    static let backgroundTaskExecuted = Notification.Name(
+        "BackgroundTaskExecuted"
+    )
 }
 
 /// Represents the result of a notification request
 enum NotificationResult {
-  case success
-  case failure(Error?)
+    case success
+    case failure(Error?)
 
-  var succeeded: Bool {
-    if case .success = self {
-      return true
+    var succeeded: Bool {
+        if case .success = self {
+            return true
+        }
+        return false
     }
-    return false
-  }
 }
 
 class TimersUtil {
-  // Constants for background task identifiers
-  static let backgroundProcessingTaskIdentifier =
-    "com.cynexia.family-foqos.backgroundprocessing"
-  static let backgroundTaskUserDefaultsKey = "com.cynexia.family-foqos.backgroundtasks"
+    /// Constants for background task identifiers
+    static let backgroundProcessingTaskIdentifier =
+        "com.cynexia.family-foqos.backgroundprocessing"
+    static let backgroundTaskUserDefaultsKey = "com.cynexia.family-foqos.backgroundtasks"
 
-  private var backgroundTasks: [String: [String: Any]] {
-    get {
-      UserDefaults.standard.dictionary(
-        forKey: Self.backgroundTaskUserDefaultsKey
-      )
-        as? [String: [String: Any]] ?? [:]
-    }
-    set {
-      UserDefaults.standard.set(
-        newValue,
-        forKey: Self.backgroundTaskUserDefaultsKey
-      )
-    }
-  }
+    /// Pre-activation reminder notification identifier prefix
+    static let preActivationReminderPrefix = "pre-activation-reminder-"
 
-  // Register background tasks with the system - call this in app launch
-  static func registerBackgroundTasks() {
-    BGTaskScheduler.shared.register(
-      forTaskWithIdentifier: backgroundProcessingTaskIdentifier,
-      using: nil
-    ) { task in
-      guard let processingTask = task as? BGProcessingTask else {
-        task.setTaskCompleted(success: false)
-        return
-      }
-      Self.handleBackgroundProcessingTask(processingTask)
-    }
-  }
-
-  private static func handleBackgroundProcessingTask(_ task: BGProcessingTask) {
-    let timerUtil = TimersUtil()
-
-    // Get all pending tasks from UserDefaults
-    let tasks = timerUtil.backgroundTasks
-    var completedTaskIds: [String] = []
-    var hasExecutedTasks = false
-
-    for (taskId, taskInfo) in tasks {
-      if let executionTime = taskInfo["executionTime"] as? Date,
-        executionTime <= Date()
-      {
-        // Task is due for execution
-        if let notificationId = taskInfo["notificationId"] as? String {
-          // This was a notification task, we can cancel it as the system will handle it
-          timerUtil.cancelNotification(identifier: notificationId)
-        }
-
-        // Execute any custom code via notification callback
-        NotificationCenter.default.post(
-          name: .backgroundTaskExecuted,
-          object: nil,
-          userInfo: ["taskId": taskId]
-        )
-
-        completedTaskIds.append(taskId)
-        hasExecutedTasks = true
-      }
+    static func preActivationReminderIdentifier(for profileId: UUID) -> String {
+        return preActivationReminderPrefix + profileId.uuidString
     }
 
-    // Remove completed tasks
-    var updatedTasks = tasks
-    for taskId in completedTaskIds {
-      updatedTasks.removeValue(forKey: taskId)
-    }
-    timerUtil.backgroundTasks = updatedTasks
-
-    // Schedule next background task if needed
-    if !updatedTasks.isEmpty {
-      timerUtil.scheduleBackgroundProcessing()
-    }
-
-    task.setTaskCompleted(success: hasExecutedTasks)
-  }
-
-  // Schedule a background processing task
-  func scheduleBackgroundProcessing() {
-    let request = BGProcessingTaskRequest(
-      identifier: Self.backgroundProcessingTaskIdentifier
-    )
-    request.requiresNetworkConnectivity = false
-    request.requiresExternalPower = false
-
-    // Find the earliest task execution time
-    var earliestDate: Date?
-    for (_, taskInfo) in backgroundTasks {
-      if let executionTime = taskInfo["executionTime"] as? Date {
-        if earliestDate == nil || executionTime < earliestDate! {
-          earliestDate = executionTime
-        }
-      }
-    }
-
-    // Set the earliest start date if there's a pending task
-    if let earliestDate = earliestDate {
-      request.earliestBeginDate = earliestDate
-
-      do {
-        try BGTaskScheduler.shared.submit(request)
-      } catch {
-        Log.info("Could not schedule background task: \(error)", category: .timer)
-      }
-    }
-  }
-
-  // Cancel a specific background task
-  func cancelBackgroundTask(taskId: String) {
-    var tasks = backgroundTasks
-    tasks.removeValue(forKey: taskId)
-    backgroundTasks = tasks
-  }
-
-  // Cancel all background tasks
-  func cancelAllBackgroundTasks() {
-    backgroundTasks = [:]
-    BGTaskScheduler.shared.cancel(
-      taskRequestWithIdentifier: Self.backgroundProcessingTaskIdentifier
-    )
-  }
-
-  @discardableResult
-  func scheduleNotification(
-    title: String,
-    message: String,
-    seconds: TimeInterval,
-    identifier: String? = nil,
-    completion: @escaping (NotificationResult) -> Void = { _ in }
-  ) -> String {
-    let notificationId = identifier ?? UUID().uuidString
-
-    // Request authorization before scheduling
-    requestNotificationAuthorization { result in
-      switch result {
-      case .failure(let error):
-        completion(.failure(error))
-        return
-      case .success:
-        // Proceed with scheduling the notification
-        let content = UNMutableNotificationContent()
-        content.title = title
-        content.body = message
-        content.sound = .default
-
-        let trigger = UNTimeIntervalNotificationTrigger(
-          timeInterval: seconds,
-          repeats: false
-        )
-        let request = UNNotificationRequest(
-          identifier: notificationId,
-          content: content,
-          trigger: trigger
-        )
-
-        UNUserNotificationCenter.current().add(request) { error in
-          if let error = error {
-            Log.info("Error scheduling notification: \(error.localizedDescription)", category: .timer)
-            completion(.failure(error))
-          } else {
-            // Also schedule as background task for resilience when app is killed
-            let taskId = UUID().uuidString
-            self.scheduleBackgroundTask(
-              taskId: taskId,
-              executionTime: Date().addingTimeInterval(seconds),
-              notificationId: notificationId
+    private var backgroundTasks: [String: [String: Any]] {
+        get {
+            UserDefaults.standard.dictionary(
+                forKey: Self.backgroundTaskUserDefaultsKey
             )
-            completion(.success)
-          }
+                as? [String: [String: Any]] ?? [:]
         }
-      }
+        set {
+            UserDefaults.standard.set(
+                newValue,
+                forKey: Self.backgroundTaskUserDefaultsKey
+            )
+        }
     }
 
-    return notificationId
-  }
-
-  func cancelNotification(identifier: String) {
-    UNUserNotificationCenter.current().removePendingNotificationRequests(
-      withIdentifiers: [identifier])
-  }
-
-  func cancelAllNotifications() {
-    UNUserNotificationCenter.current()
-      .removeAllPendingNotificationRequests()
-  }
-
-  func cancelAll() {
-    cancelAllNotifications()
-    cancelAllBackgroundTasks()
-  }
-
-  // Schedule a background task
-  private func scheduleBackgroundTask(
-    taskId: String,
-    executionTime: Date,
-    notificationId: String? = nil
-  ) {
-    // Store task information in UserDefaults
-    var tasks = backgroundTasks
-    var taskInfo: [String: Any] = ["executionTime": executionTime]
-    if let notificationId = notificationId {
-      taskInfo["notificationId"] = notificationId
+    /// Register background tasks with the system - call this in app launch
+    static func registerBackgroundTasks() {
+        BGTaskScheduler.shared.register(
+            forTaskWithIdentifier: backgroundProcessingTaskIdentifier,
+            using: nil
+        ) { task in
+            guard let processingTask = task as? BGProcessingTask else {
+                task.setTaskCompleted(success: false)
+                return
+            }
+            Self.handleBackgroundProcessingTask(processingTask)
+        }
     }
-    tasks[taskId] = taskInfo
-    backgroundTasks = tasks
 
-    // Schedule the background processing task
-    scheduleBackgroundProcessing()
-  }
+    private static func handleBackgroundProcessingTask(_ task: BGProcessingTask) {
+        let timerUtil = TimersUtil()
 
-  // Request authorization to send notifications
-  private func requestNotificationAuthorization(
-    completion: @escaping (NotificationResult) -> Void = { _ in }
-  ) {
-    let center = UNUserNotificationCenter.current()
-    center.requestAuthorization(options: [.alert, .sound]) {
-      granted,
-      error in
-      if let error = error {
-        Log.info("Error requesting notification authorization: \(error.localizedDescription)", category: .timer)
-        completion(.failure(error))
-        return
-      }
+        // Get all pending tasks from UserDefaults
+        let tasks = timerUtil.backgroundTasks
+        var completedTaskIds: [String] = []
+        var hasExecutedTasks = false
 
-      if granted {
-        completion(.success)
-      } else {
-        completion(.failure(nil))
-      }
+        for (taskId, taskInfo) in tasks {
+            if let executionTime = taskInfo["executionTime"] as? Date,
+               executionTime <= Date()
+            {
+                // Task is due for execution
+                if let notificationId = taskInfo["notificationId"] as? String {
+                    // This was a notification task, we can cancel it as the system will handle it
+                    timerUtil.cancelNotification(identifier: notificationId)
+                }
+
+                // Execute any custom code via notification callback
+                NotificationCenter.default.post(
+                    name: .backgroundTaskExecuted,
+                    object: nil,
+                    userInfo: ["taskId": taskId]
+                )
+
+                completedTaskIds.append(taskId)
+                hasExecutedTasks = true
+            }
+        }
+
+        // Remove completed tasks
+        var updatedTasks = tasks
+        for taskId in completedTaskIds {
+            updatedTasks.removeValue(forKey: taskId)
+        }
+        timerUtil.backgroundTasks = updatedTasks
+
+        // Schedule next background task if needed
+        if !updatedTasks.isEmpty {
+            timerUtil.scheduleBackgroundProcessing()
+        }
+
+        task.setTaskCompleted(success: hasExecutedTasks)
     }
-  }
+
+    /// Schedule a background processing task
+    func scheduleBackgroundProcessing() {
+        let request = BGProcessingTaskRequest(
+            identifier: Self.backgroundProcessingTaskIdentifier
+        )
+        request.requiresNetworkConnectivity = false
+        request.requiresExternalPower = false
+
+        // Find the earliest task execution time
+        var earliestDate: Date?
+        for (_, taskInfo) in backgroundTasks {
+            if let executionTime = taskInfo["executionTime"] as? Date {
+                if earliestDate == nil || executionTime < earliestDate! {
+                    earliestDate = executionTime
+                }
+            }
+        }
+
+        // Set the earliest start date if there's a pending task
+        if let earliestDate = earliestDate {
+            request.earliestBeginDate = earliestDate
+
+            do {
+                try BGTaskScheduler.shared.submit(request)
+            } catch {
+                Log.info("Could not schedule background task: \(error)", category: .timer)
+            }
+        }
+    }
+
+    /// Cancel a specific background task
+    func cancelBackgroundTask(taskId: String) {
+        var tasks = backgroundTasks
+        tasks.removeValue(forKey: taskId)
+        backgroundTasks = tasks
+    }
+
+    /// Cancel all background tasks
+    func cancelAllBackgroundTasks() {
+        backgroundTasks = [:]
+        BGTaskScheduler.shared.cancel(
+            taskRequestWithIdentifier: Self.backgroundProcessingTaskIdentifier
+        )
+    }
+
+    @discardableResult
+    func scheduleNotification(
+        title: String,
+        message: String,
+        seconds: TimeInterval,
+        identifier: String? = nil,
+        completion: @escaping (NotificationResult) -> Void = { _ in }
+    ) -> String {
+        let notificationId = identifier ?? UUID().uuidString
+
+        // Request authorization before scheduling
+        requestNotificationAuthorization { result in
+            switch result {
+            case let .failure(error):
+                completion(.failure(error))
+                return
+            case .success:
+                // Proceed with scheduling the notification
+                let content = UNMutableNotificationContent()
+                content.title = title
+                content.body = message
+                content.sound = .default
+
+                let trigger = UNTimeIntervalNotificationTrigger(
+                    timeInterval: seconds,
+                    repeats: false
+                )
+                let request = UNNotificationRequest(
+                    identifier: notificationId,
+                    content: content,
+                    trigger: trigger
+                )
+
+                UNUserNotificationCenter.current().add(request) { error in
+                    if let error = error {
+                        Log.info("Error scheduling notification: \(error.localizedDescription)", category: .timer)
+                        completion(.failure(error))
+                    } else {
+                        // Also schedule as background task for resilience when app is killed
+                        let taskId = UUID().uuidString
+                        self.scheduleBackgroundTask(
+                            taskId: taskId,
+                            executionTime: Date().addingTimeInterval(seconds),
+                            notificationId: notificationId
+                        )
+                        completion(.success)
+                    }
+                }
+            }
+        }
+
+        return notificationId
+    }
+
+    func cancelNotification(identifier: String) {
+        UNUserNotificationCenter.current().removePendingNotificationRequests(
+            withIdentifiers: [identifier]
+        )
+    }
+
+    func cancelAllNotifications() {
+        UNUserNotificationCenter.current()
+            .removeAllPendingNotificationRequests()
+    }
+
+    func cancelAll() {
+        cancelAllNotifications()
+        cancelAllBackgroundTasks()
+    }
+
+    /// Schedule a background task
+    private func scheduleBackgroundTask(
+        taskId: String,
+        executionTime: Date,
+        notificationId: String? = nil
+    ) {
+        // Store task information in UserDefaults
+        var tasks = backgroundTasks
+        var taskInfo: [String: Any] = ["executionTime": executionTime]
+        if let notificationId = notificationId {
+            taskInfo["notificationId"] = notificationId
+        }
+        tasks[taskId] = taskInfo
+        backgroundTasks = tasks
+
+        // Schedule the background processing task
+        scheduleBackgroundProcessing()
+    }
+
+    /// Request authorization to send notifications
+    private func requestNotificationAuthorization(
+        completion: @escaping (NotificationResult) -> Void = { _ in }
+    ) {
+        let center = UNUserNotificationCenter.current()
+        center.requestAuthorization(options: [.alert, .sound]) {
+            granted,
+                error in
+            if let error = error {
+                Log.info("Error requesting notification authorization: \(error.localizedDescription)", category: .timer)
+                completion(.failure(error))
+                return
+            }
+
+            if granted {
+                completion(.success)
+            } else {
+                completion(.failure(nil))
+            }
+        }
+    }
 }

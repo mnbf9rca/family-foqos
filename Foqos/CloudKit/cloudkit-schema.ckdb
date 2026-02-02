@@ -136,6 +136,8 @@ DEFINE SCHEMA
         enableAllowMode         INT64,
         enableAllowModeDomains  INT64,
         enableSafariBlocking    INT64,
+        preActivationReminderEnabled  INT64,
+        preActivationReminderMinutes  INT64,
         physicalUnblockNFCTagId STRING,
         physicalUnblockQRCodeId STRING,
         domains                 LIST<STRING>,
