@@ -96,6 +96,8 @@ struct foqosApp: App {
                         verifyChildAuthorizationIfNeeded()
                         // Resume One More Minute timer if it was active before backgrounding
                         StrategyManager.shared.resumeOneMoreMinuteIfNeeded()
+                        // Reschedule pre-activation reminders (handles warm returns on new days)
+                        PreActivationReminderScheduler.rescheduleAllReminders(context: container.mainContext)
                     }
                 }
                 .onOpenURL { url in

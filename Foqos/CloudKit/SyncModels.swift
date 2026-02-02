@@ -175,8 +175,10 @@ struct SyncedProfile: Codable, Equatable {
         enableAllowModeDomains = record[FieldKey.enableAllowModeDomains.rawValue] as? Bool ?? false
         enableSafariBlocking = record[FieldKey.enableSafariBlocking.rawValue] as? Bool ?? true
         preActivationReminderEnabled = record[FieldKey.preActivationReminderEnabled.rawValue] as? Bool ?? false
-        if let reminderMinutes = record[FieldKey.preActivationReminderMinutes.rawValue] as? Int {
-            preActivationReminderMinutes = UInt8(reminderMinutes)
+        if let reminderMinutes = record[FieldKey.preActivationReminderMinutes.rawValue] as? Int,
+           let minutes = UInt8(exactly: reminderMinutes),
+           (1...5).contains(reminderMinutes) {
+            preActivationReminderMinutes = minutes
         } else {
             preActivationReminderMinutes = 1
         }
