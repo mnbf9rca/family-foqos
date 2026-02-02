@@ -193,6 +193,9 @@ class LockCodeManager: ObservableObject {
                 self.cachedLockCodes = codes
                 self.error = nil
             }
+
+            // Also check for pending commands from parent
+            await processPendingCommands()
         } catch {
             await MainActor.run {
                 self.error = error.localizedDescription
@@ -253,6 +256,48 @@ class LockCodeManager: ObservableObject {
     var canVerifyCode: Bool {
         let codesToCheck = appModeManager.currentMode == .parent ? lockCodes : cachedLockCodes
         return !codesToCheck.isEmpty
+    }
+
+    // MARK: - Command Processing (Child Mode)
+
+    /// Check for and process any pending commands from parent
+    /// Called automatically during fetchSharedLockCodes
+    private func processPendingCommands() async {
+        guard appModeManager.currentMode == .child else {
+            return
+        }
+
+        // Clean up any stale commands (from any user, not just this child)
+        await cloudKitManager.cleanupStaleCommands()
+
+        do {
+            let commands = try await cloudKitManager.fetchPendingCommands()
+
+            for command in commands {
+                await processCommand(command)
+            }
+        } catch {
+            Log.error("Failed to fetch pending commands: \(error)", category: .cloudKit)
+        }
+    }
+
+    private func processCommand(_ command: FamilyCommand) async {
+        Log.info("Processing command: \(command.commandType.rawValue)", category: .cloudKit)
+
+        switch command.commandType {
+        case .resetEmergencyCount:
+            await MainActor.run {
+                StrategyManager.shared.resetEmergencyUnblocks()
+            }
+            Log.info("Emergency count reset by parent", category: .cloudKit)
+        }
+
+        // Delete the command after processing
+        do {
+            try await cloudKitManager.deleteCommand(command)
+        } catch {
+            Log.error("Failed to delete processed command: \(error)", category: .cloudKit)
+        }
     }
 
     // MARK: - Temporary Unlock Session

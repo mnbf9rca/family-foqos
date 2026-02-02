@@ -79,6 +79,23 @@ DEFINE SCHEMA
         GRANT READ TO "_world"
     );
 
+    RECORD TYPE FamilyCommand (
+        "___createTime" TIMESTAMP QUERYABLE SORTABLE,
+        "___createdBy"  REFERENCE QUERYABLE,
+        "___etag"       STRING,
+        "___modTime"    TIMESTAMP QUERYABLE SORTABLE,
+        "___modifiedBy" REFERENCE QUERYABLE,
+        "___recordID"   REFERENCE QUERYABLE,
+        id              STRING QUERYABLE SEARCHABLE SORTABLE,
+        commandType     STRING QUERYABLE SEARCHABLE,
+        targetChildId   STRING QUERYABLE SEARCHABLE,
+        createdAt       TIMESTAMP QUERYABLE SORTABLE,
+        createdBy       STRING QUERYABLE,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_world"
+    );
+
     RECORD TYPE "cloudkit.share" (
         "___createTime"               TIMESTAMP QUERYABLE SORTABLE,
         "___createdBy"                REFERENCE QUERYABLE,

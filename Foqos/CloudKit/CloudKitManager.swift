@@ -384,6 +384,139 @@ class CloudKitManager: ObservableObject {
         }
     }
 
+    // MARK: - Family Commands (Parent to Child)
+
+    /// Send a command to a child device (parent operation)
+    func sendCommand(_ command: FamilyCommand) async throws {
+        Log.info("Sending command: \(command.commandType.rawValue) to child", category: .cloudKit)
+
+        try await createPolicyZoneIfNeeded()
+        try await ensureFamilyRootExists()
+
+        let record = command.toCKRecord(in: policyZoneID)
+
+        do {
+            _ = try await privateDatabase.save(record)
+            Log.info("Command sent successfully", category: .cloudKit)
+        } catch {
+            Log.error("Failed to send command: \(error)", category: .cloudKit)
+            throw CloudKitError.saveFailed(error)
+        }
+    }
+
+    /// Fetch pending commands for this child device (child operation)
+    func fetchPendingCommands() async throws -> [FamilyCommand] {
+        // Fetch from shared database (commands shared via CKShare)
+        let zones = try await sharedDatabase.allRecordZones()
+
+        var allCommands: [FamilyCommand] = []
+
+        // Get this device's user record name to filter commands for us
+        guard let userRecordID = currentUserRecordID else {
+            Log.debug("No user record ID, skipping command fetch", category: .cloudKit)
+            return []
+        }
+        let currentUserRecordName = userRecordID.recordName
+
+        for zone in zones {
+            let query = CKQuery(
+                recordType: FamilyCommand.recordType,
+                predicate: NSPredicate(format: "targetChildId == %@", currentUserRecordName)
+            )
+
+            do {
+                let (results, _) = try await sharedDatabase.records(
+                    matching: query,
+                    inZoneWith: zone.zoneID
+                )
+
+                for (_, result) in results {
+                    if case .success(let record) = result,
+                        let command = FamilyCommand(from: record)
+                    {
+                        allCommands.append(command)
+                    }
+                }
+            } catch {
+                Log.error("Failed to fetch commands from zone \(zone.zoneID): \(error)", category: .cloudKit)
+            }
+        }
+
+        return allCommands
+    }
+
+    /// Delete a command after processing (child operation)
+    func deleteCommand(_ command: FamilyCommand) async throws {
+        let zones = try await sharedDatabase.allRecordZones()
+
+        for zone in zones {
+            let recordName = FamilyCommand.recordName(
+                commandType: command.commandType, targetChildId: command.targetChildId, parentId: command.createdBy)
+            let recordID = CKRecord.ID(recordName: recordName, zoneID: zone.zoneID)
+
+            do {
+                try await sharedDatabase.deleteRecord(withID: recordID)
+                Log.info("Deleted command: \(command.commandType.rawValue)", category: .cloudKit)
+                return
+            } catch let error as CKError where error.code == .unknownItem {
+                // Record not in this zone, try next
+                continue
+            } catch {
+                Log.error("Failed to delete command: \(error)", category: .cloudKit)
+                throw CloudKitError.deleteFailed(error)
+            }
+        }
+    }
+
+    private static let staleCommandMaxAgeDays = 7
+    private static let secondsPerDay: TimeInterval = 86400
+
+    /// Clean up stale commands older than maxAge (any client can call this)
+    /// This ensures commands are cleaned up even if the target child leaves the family
+    func cleanupStaleCommands(maxAgeDays: Int = CloudKitManager.staleCommandMaxAgeDays) async {
+        let maxAge: TimeInterval = Double(maxAgeDays) * CloudKitManager.secondsPerDay
+        let cutoffDate = Date().addingTimeInterval(-maxAge)
+
+        // Clean up from shared database (for children)
+        do {
+            let zones = try await sharedDatabase.allRecordZones()
+            for zone in zones {
+                await cleanupStaleCommandsInZone(zone.zoneID, database: sharedDatabase, cutoffDate: cutoffDate)
+            }
+        } catch {
+            Log.debug("No shared zones to cleanup: \(error)", category: .cloudKit)
+        }
+
+        // Clean up from private database (for parents)
+        if policyZoneVerified {
+            await cleanupStaleCommandsInZone(policyZoneID, database: privateDatabase, cutoffDate: cutoffDate)
+        }
+    }
+
+    private func cleanupStaleCommandsInZone(_ zoneID: CKRecordZone.ID, database: CKDatabase, cutoffDate: Date) async {
+        let query = CKQuery(
+            recordType: FamilyCommand.recordType,
+            predicate: NSPredicate(format: "createdAt < %@", cutoffDate as NSDate)
+        )
+
+        do {
+            let (results, _) = try await database.records(matching: query, inZoneWith: zoneID)
+
+            for (recordID, result) in results {
+                if case .success = result {
+                    do {
+                        try await database.deleteRecord(withID: recordID)
+                        Log.info("Cleaned up stale command: \(recordID.recordName)", category: .cloudKit)
+                    } catch {
+                        Log.error("Failed to delete stale command: \(error)", category: .cloudKit)
+                    }
+                }
+            }
+        } catch {
+            Log.debug("No stale commands to cleanup in zone \(zoneID): \(error)", category: .cloudKit)
+        }
+    }
+
     /// Fetch all lock codes created by this parent
     func fetchLockCodes() async throws -> [FamilyLockCode] {
         try await createPolicyZoneIfNeeded()
@@ -546,6 +679,9 @@ class CloudKitManager: ObservableObject {
 
     /// Fetch and refresh share participants (for parent dashboard)
     func refreshShareParticipants() async {
+        // Clean up any stale commands while we're syncing
+        await cleanupStaleCommands()
+
         // Clear cached share to force fresh fetch from server
         await MainActor.run { self.activeZoneShare = nil }
 

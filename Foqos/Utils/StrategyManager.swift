@@ -411,6 +411,30 @@ class StrategyManager: ObservableObject {
     oneMoreMinuteTimer = nil
   }
 
+  /// Resume the One More Minute timer if it was active when app went to background
+  /// Call this when app returns to foreground
+  func resumeOneMoreMinuteIfNeeded() {
+    guard let session = activeSession,
+      let startTime = session.oneMoreMinuteStartTime
+    else {
+      return
+    }
+
+    let elapsed = Date().timeIntervalSince(startTime)
+    let remaining = max(0, 60 - elapsed)
+
+    if remaining > 0 {
+      // Time still remaining - restart the timer
+      oneMoreMinuteTimeRemaining = remaining
+      startOneMoreMinuteTimer()
+      Log.info("Resumed one more minute timer with \(Int(remaining))s remaining", category: .strategy)
+    } else {
+      // Time expired while in background - end it now
+      endOneMoreMinute()
+      Log.info("One more minute expired while in background", category: .strategy)
+    }
+  }
+
   func startTimer() {
     timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
       guard let session = self.activeSession else { return }
