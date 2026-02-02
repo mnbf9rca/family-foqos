@@ -164,6 +164,8 @@ struct foqosApp: App {
               await profileSyncManager.setupSync()
             }
           }
+          // Reschedule pre-activation reminders for today
+          PreActivationReminderScheduler.rescheduleAllReminders(context: container.mainContext)
         }
     }
     .handlesExternalEvents(matching: ["*"])  // Handle all external events including CloudKit shares
