@@ -94,6 +94,8 @@ struct foqosApp: App {
           if newPhase == .active {
             // Verify child authorization when app becomes active
             verifyChildAuthorizationIfNeeded()
+            // Resume One More Minute timer if it was active before backgrounding
+            StrategyManager.shared.resumeOneMoreMinuteIfNeeded()
           }
         }
         .onOpenURL { url in
