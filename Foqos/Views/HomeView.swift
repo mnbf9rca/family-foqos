@@ -88,6 +88,14 @@ struct HomeView: View {
     return strategyManager.isBreakActive
   }
 
+  var isOneMoreMinuteActive: Bool {
+    return strategyManager.isOneMoreMinuteActive
+  }
+
+  var isOneMoreMinuteAvailable: Bool {
+    return strategyManager.isOneMoreMinuteAvailable
+  }
+
   var body: some View {
     ScrollView(showsIndicators: false) {
       VStack(alignment: .leading, spacing: 30) {
@@ -171,6 +179,12 @@ struct HomeView: View {
             onAppSelectionTapped: { profile in
               // Open profile editor to configure app selection
               profileToEdit = profile
+            },
+            isOneMoreMinuteActive: isOneMoreMinuteActive,
+            isOneMoreMinuteAvailable: isOneMoreMinuteAvailable,
+            oneMoreMinuteTimeRemaining: strategyManager.oneMoreMinuteTimeRemaining,
+            onOneMoreMinuteTapped: { _ in
+              strategyManager.startOneMoreMinute(context: context)
             }
           )
         }

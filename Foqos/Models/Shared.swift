@@ -68,6 +68,9 @@ enum SharedData {
     var breakEndTime: Date?
 
     var forceStarted: Bool
+
+    var oneMoreMinuteUsed: Bool = false
+    var oneMoreMinuteStartTime: Date?
   }
 
   // MARK: – Persisted snapshots keyed by profile ID (UUID string)

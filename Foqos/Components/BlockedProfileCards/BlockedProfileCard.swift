@@ -19,6 +19,11 @@ struct BlockedProfileCard: View {
   var onBreakTapped: () -> Void
   var onAppSelectionTapped: () -> Void = {}
 
+  var isOneMoreMinuteActive: Bool = false
+  var isOneMoreMinuteAvailable: Bool = false
+  var oneMoreMinuteTimeRemaining: TimeInterval = 0
+  var onOneMoreMinuteTapped: () -> Void = {}
+
   // Keep a reference to the CardBackground to access color
   private var cardBackground: CardBackground {
     CardBackground(isActive: isActive, customColor: themeManager.themeColor)
@@ -141,7 +146,11 @@ struct BlockedProfileCard: View {
           elapsedTime: elapsedTime,
           onStartTapped: onStartTapped,
           onStopTapped: onStopTapped,
-          onBreakTapped: onBreakTapped
+          onBreakTapped: onBreakTapped,
+          isOneMoreMinuteActive: isOneMoreMinuteActive,
+          isOneMoreMinuteAvailable: isOneMoreMinuteAvailable,
+          oneMoreMinuteTimeRemaining: oneMoreMinuteTimeRemaining,
+          onOneMoreMinuteTapped: onOneMoreMinuteTapped
         )
       }
       .padding(16)

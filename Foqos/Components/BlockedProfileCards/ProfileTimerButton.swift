@@ -15,6 +15,12 @@ struct ProfileTimerButton: View {
 
   let onBreakTapped: () -> Void
 
+  let isOneMoreMinuteActive: Bool
+  let isOneMoreMinuteAvailable: Bool
+  let oneMoreMinuteTimeRemaining: TimeInterval
+
+  let onOneMoreMinuteTapped: () -> Void
+
   var breakMessage: String {
     return "Hold to" + (isBreakActive ? " Stop Break" : " Start Break")
   }
@@ -84,6 +90,16 @@ struct ProfileTimerButton: View {
           onBreakTapped()
         }
       }
+
+      // One more minute button (show when active but not on break)
+      if isActive && !isBreakActive {
+        OneMoreMinuteButton(
+          isActive: isOneMoreMinuteActive,
+          isAvailable: isOneMoreMinuteAvailable,
+          timeRemaining: oneMoreMinuteTimeRemaining,
+          onTapped: onOneMoreMinuteTapped
+        )
+      }
     }
   }
 
@@ -105,7 +121,11 @@ struct ProfileTimerButton: View {
       elapsedTime: nil,
       onStartTapped: {},
       onStopTapped: {},
-      onBreakTapped: {}
+      onBreakTapped: {},
+      isOneMoreMinuteActive: false,
+      isOneMoreMinuteAvailable: false,
+      oneMoreMinuteTimeRemaining: 0,
+      onOneMoreMinuteTapped: {}
     )
 
     ProfileTimerButton(
@@ -115,7 +135,25 @@ struct ProfileTimerButton: View {
       elapsedTime: 3665,
       onStartTapped: {},
       onStopTapped: {},
-      onBreakTapped: {}
+      onBreakTapped: {},
+      isOneMoreMinuteActive: false,
+      isOneMoreMinuteAvailable: true,
+      oneMoreMinuteTimeRemaining: 0,
+      onOneMoreMinuteTapped: {}
+    )
+
+    ProfileTimerButton(
+      isActive: true,
+      isBreakAvailable: false,
+      isBreakActive: false,
+      elapsedTime: 3665,
+      onStartTapped: {},
+      onStopTapped: {},
+      onBreakTapped: {},
+      isOneMoreMinuteActive: true,
+      isOneMoreMinuteAvailable: false,
+      oneMoreMinuteTimeRemaining: 45,
+      onOneMoreMinuteTapped: {}
     )
   }
   .padding()

@@ -19,6 +19,11 @@ struct BlockedProfileCarousel: View {
   var onEmergencyTapped: () -> Void
   var onAppSelectionTapped: (BlockedProfiles) -> Void = { _ in }
 
+  let isOneMoreMinuteActive: Bool
+  let isOneMoreMinuteAvailable: Bool
+  let oneMoreMinuteTimeRemaining: TimeInterval
+  var onOneMoreMinuteTapped: (BlockedProfiles) -> Void
+
   // State for tracking current profile index and drag gesture
   @State private var currentIndex: Int = 0
   @State private var dragOffset: CGFloat = 0
@@ -61,7 +66,11 @@ struct BlockedProfileCarousel: View {
     onBreakTapped: @escaping (BlockedProfiles) -> Void,
     onManageTapped: @escaping () -> Void,
     onEmergencyTapped: @escaping () -> Void,
-    onAppSelectionTapped: @escaping (BlockedProfiles) -> Void = { _ in }
+    onAppSelectionTapped: @escaping (BlockedProfiles) -> Void = { _ in },
+    isOneMoreMinuteActive: Bool = false,
+    isOneMoreMinuteAvailable: Bool = false,
+    oneMoreMinuteTimeRemaining: TimeInterval = 0,
+    onOneMoreMinuteTapped: @escaping (BlockedProfiles) -> Void = { _ in }
   ) {
     self.profiles = profiles
     self.isBlocking = isBlocking
@@ -78,6 +87,10 @@ struct BlockedProfileCarousel: View {
     self.onManageTapped = onManageTapped
     self.onEmergencyTapped = onEmergencyTapped
     self.onAppSelectionTapped = onAppSelectionTapped
+    self.isOneMoreMinuteActive = isOneMoreMinuteActive
+    self.isOneMoreMinuteAvailable = isOneMoreMinuteAvailable
+    self.oneMoreMinuteTimeRemaining = oneMoreMinuteTimeRemaining
+    self.onOneMoreMinuteTapped = onOneMoreMinuteTapped
   }
 
   // Initialize current index based on active profile or starting profile
@@ -151,6 +164,12 @@ struct BlockedProfileCarousel: View {
                   },
                   onAppSelectionTapped: {
                     onAppSelectionTapped(profiles[index])
+                  },
+                  isOneMoreMinuteActive: isOneMoreMinuteActive,
+                  isOneMoreMinuteAvailable: isOneMoreMinuteAvailable,
+                  oneMoreMinuteTimeRemaining: oneMoreMinuteTimeRemaining,
+                  onOneMoreMinuteTapped: {
+                    onOneMoreMinuteTapped(profiles[index])
                   }
                 )
                 .frame(width: cardWidth)
