@@ -35,6 +35,10 @@ class BlockedProfiles {
 
   var disableBackgroundStops: Bool = false
 
+  // Pre-activation reminder for scheduled profiles
+  var preActivationReminderEnabled: Bool = false
+  var preActivationReminderMinutes: UInt8 = 1  // 1-5 minutes
+
   var customReminderMessage: String?
 
   // Managed profile fields (parent-controlled)
@@ -80,6 +84,8 @@ class BlockedProfiles {
     schedule: BlockedProfileSchedule? = nil,
     geofenceRule: ProfileGeofenceRule? = nil,
     disableBackgroundStops: Bool = false,
+    preActivationReminderEnabled: Bool = false,
+    preActivationReminderMinutes: UInt8 = 1,
     isManaged: Bool = false,
     managedByChildId: String? = nil,
     syncVersion: Int = 0,
@@ -112,6 +118,8 @@ class BlockedProfiles {
     self.geofenceRule = geofenceRule
 
     self.disableBackgroundStops = disableBackgroundStops
+    self.preActivationReminderEnabled = preActivationReminderEnabled
+    self.preActivationReminderMinutes = preActivationReminderMinutes
     self.isManaged = isManaged
     self.managedByChildId = managedByChildId
     self.syncVersion = syncVersion
@@ -170,6 +178,8 @@ class BlockedProfiles {
     schedule: BlockedProfileSchedule? = nil,
     geofenceRule: ProfileGeofenceRule? = nil,
     disableBackgroundStops: Bool? = nil,
+    preActivationReminderEnabled: Bool? = nil,
+    preActivationReminderMinutes: UInt8? = nil,
     isManaged: Bool? = nil,
     managedByChildId: String? = nil,
     syncVersion: Int? = nil,
@@ -236,6 +246,14 @@ class BlockedProfiles {
 
     if let newDisableBackgroundStops = disableBackgroundStops {
       profile.disableBackgroundStops = newDisableBackgroundStops
+    }
+
+    if let newPreActivationReminderEnabled = preActivationReminderEnabled {
+      profile.preActivationReminderEnabled = newPreActivationReminderEnabled
+    }
+
+    if let newPreActivationReminderMinutes = preActivationReminderMinutes {
+      profile.preActivationReminderMinutes = newPreActivationReminderMinutes
     }
 
     if let newIsManaged = isManaged {
@@ -383,6 +401,8 @@ class BlockedProfiles {
     schedule: BlockedProfileSchedule? = nil,
     geofenceRule: ProfileGeofenceRule? = nil,
     disableBackgroundStops: Bool = false,
+    preActivationReminderEnabled: Bool = false,
+    preActivationReminderMinutes: UInt8 = 1,
     isManaged: Bool = false,
     managedByChildId: String? = nil,
     syncVersion: Int = 0,
@@ -410,6 +430,8 @@ class BlockedProfiles {
       physicalUnblockQRCodeId: physicalUnblockQRCodeId,
       geofenceRule: geofenceRule,
       disableBackgroundStops: disableBackgroundStops,
+      preActivationReminderEnabled: preActivationReminderEnabled,
+      preActivationReminderMinutes: preActivationReminderMinutes,
       isManaged: isManaged,
       managedByChildId: managedByChildId,
       syncVersion: syncVersion,
@@ -455,6 +477,8 @@ class BlockedProfiles {
       schedule: source.schedule,
       geofenceRule: source.geofenceRule,
       disableBackgroundStops: source.disableBackgroundStops,
+      preActivationReminderEnabled: source.preActivationReminderEnabled,
+      preActivationReminderMinutes: source.preActivationReminderMinutes,
       isManaged: source.isManaged,
       managedByChildId: source.managedByChildId,
       syncVersion: 0,  // Reset sync version for cloned profile
