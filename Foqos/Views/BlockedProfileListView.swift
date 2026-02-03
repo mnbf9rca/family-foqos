@@ -18,10 +18,15 @@ struct BlockedProfileListView: View {
   @State private var showErrorAlert = false
   @State private var editMode: EditMode = .inactive
 
+  /// Filtered profiles excluding deleted models
+  private var validProfiles: [BlockedProfiles] {
+    profiles.valid
+  }
+
   var body: some View {
     NavigationStack {
       Group {
-        if profiles.valid.isEmpty {
+        if validProfiles.isEmpty {
           EmptyView(
             iconName: "person.crop.circle.badge.plus",
             headingText:
@@ -29,7 +34,7 @@ struct BlockedProfileListView: View {
           )
         } else {
           List {
-            ForEach(profiles.valid) { profile in
+            ForEach(validProfiles) { profile in
               ProfileRow(profile: profile)
                 .contentShape(Rectangle())
                 .onTapGesture {
@@ -58,7 +63,7 @@ struct BlockedProfileListView: View {
               Image(systemName: "checkmark.circle")
             }
           }
-          if !profiles.isEmpty {
+          if !validProfiles.isEmpty {
             Menu {
               Button {
                 editMode = .active
@@ -105,10 +110,11 @@ struct BlockedProfileListView: View {
   private func deleteProfiles(at offsets: IndexSet) {
     let activeSession = BlockedProfileSession.mostRecentActiveSession(
       in: context)
+    let profilesToDelete = validProfiles
 
     // Check if any of the profiles to delete are active
     for index in offsets {
-      let profile = profiles[index]
+      let profile = profilesToDelete[index]
       if profile.id == activeSession?.blockedProfile.id {
         showErrorAlert = true
         return
@@ -118,7 +124,7 @@ struct BlockedProfileListView: View {
     // Delete the profiles and reorder
     do {
       for index in offsets {
-        let profile = profiles[index]
+        let profile = profilesToDelete[index]
         try BlockedProfiles.deleteProfile(profile, in: context)
       }
 
@@ -131,7 +137,7 @@ struct BlockedProfileListView: View {
   }
 
   private func moveProfiles(from source: IndexSet, to destination: Int) {
-    var reorderedProfiles = Array(profiles)
+    var reorderedProfiles = validProfiles
     reorderedProfiles.move(fromOffsets: source, toOffset: destination)
 
     do {
