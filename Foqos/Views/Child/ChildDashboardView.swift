@@ -25,7 +25,7 @@ struct ChildDashboardView: View {
 
   /// Profiles that are locked (require code to edit)
   private var lockedProfiles: [BlockedProfiles] {
-    allProfiles.filter { $0.isManaged }
+    allProfiles.valid.filter { $0.isManaged }
   }
 
   /// Profiles that are not locked (child can freely edit)
@@ -92,7 +92,7 @@ struct ChildDashboardView: View {
         )
       }
       .sheet(isPresented: $showEditLockedProfiles) {
-        EditLockedProfilesSheet(profiles: allProfiles)
+        EditLockedProfilesSheet(profiles: allProfiles.valid)
       }
       .fullScreenCover(isPresented: $showPersonalProfiles) {
         NavigationStack {

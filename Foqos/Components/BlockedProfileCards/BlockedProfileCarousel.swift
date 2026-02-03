@@ -97,7 +97,7 @@ struct BlockedProfileCarousel: View {
   private func initialSetup() {
     // First priority: active session profile
     if let activeId = activeSessionProfileId,
-      let index = profiles.firstIndex(where: { $0.id == activeId })
+      let index = profiles.valid.firstIndex(where: { $0.id == activeId })
     {
       currentIndex = index
       return
@@ -105,14 +105,14 @@ struct BlockedProfileCarousel: View {
 
     // Second priority: starting profile
     if let startingId = startingProfileId,
-      let index = profiles.firstIndex(where: { $0.id == startingId })
+      let index = profiles.valid.firstIndex(where: { $0.id == startingId })
     {
       currentIndex = index
       return
     }
 
     // Default: first profile if available
-    if profiles.first != nil {
+    if profiles.valid.first != nil {
       currentIndex = 0
       return
     }
@@ -139,37 +139,37 @@ struct BlockedProfileCarousel: View {
             let cardWidth = geometry.size.width - 32  // Padding on sides
 
             HStack(spacing: cardSpacing) {
-              ForEach(profiles.indices, id: \.self) { index in
+              ForEach(profiles.valid.indices, id: \.self) { index in
                 BlockedProfileCard(
-                  profile: profiles[index],
-                  isActive: profiles[index].id
+                  profile: profiles.valid[index],
+                  isActive: profiles.valid[index].id
                     == activeSessionProfileId,
                   isBreakAvailable: isBreakAvailable,
                   isBreakActive: isBreakActive,
                   elapsedTime: elapsedTime,
                   onStartTapped: {
-                    onStartTapped(profiles[index])
+                    onStartTapped(profiles.valid[index])
                   },
                   onStopTapped: {
-                    onStopTapped(profiles[index])
+                    onStopTapped(profiles.valid[index])
                   },
                   onEditTapped: {
-                    onEditTapped(profiles[index])
+                    onEditTapped(profiles.valid[index])
                   },
                   onStatsTapped: {
-                    onStatsTapped(profiles[index])
+                    onStatsTapped(profiles.valid[index])
                   },
                   onBreakTapped: {
-                    onBreakTapped(profiles[index])
+                    onBreakTapped(profiles.valid[index])
                   },
                   onAppSelectionTapped: {
-                    onAppSelectionTapped(profiles[index])
+                    onAppSelectionTapped(profiles.valid[index])
                   },
                   isOneMoreMinuteActive: isOneMoreMinuteActive,
                   isOneMoreMinuteAvailable: isOneMoreMinuteAvailable,
                   oneMoreMinuteTimeRemaining: oneMoreMinuteTimeRemaining,
                   onOneMoreMinuteTapped: {
-                    onOneMoreMinuteTapped(profiles[index])
+                    onOneMoreMinuteTapped(profiles.valid[index])
                   }
                 )
                 .frame(width: cardWidth)
@@ -206,7 +206,7 @@ struct BlockedProfileCarousel: View {
                       offsetAmount < -dragThreshold
 
                     if swipedLeft
-                      && currentIndex < profiles.count - 1
+                      && currentIndex < profiles.valid.count - 1
                     {
                       currentIndex += 1
                     } else if swipedRight
@@ -226,8 +226,8 @@ struct BlockedProfileCarousel: View {
 
         // Page indicator dots
         HStack(spacing: 8) {
-          if !isBlocking && profiles.count > 1 {
-            ForEach(0..<profiles.count, id: \.self) { index in
+          if !isBlocking && profiles.valid.count > 1 {
+            ForEach(0..<profiles.valid.count, id: \.self) { index in
               Circle()
                 .fill(
                   index == currentIndex
@@ -240,7 +240,7 @@ struct BlockedProfileCarousel: View {
           }
         }
         .frame(height: 8)
-        .opacity(!isBlocking && profiles.count > 1 ? 1 : 0)
+        .opacity(!isBlocking && profiles.valid.count > 1 ? 1 : 0)
         .animation(.easeInOut, value: isBlocking)
       }
     }

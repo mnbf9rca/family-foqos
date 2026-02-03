@@ -34,11 +34,11 @@ struct BlockedProfileDataExportView: View {
     NavigationStack {
       Form {
         Section(header: Text("Profiles")) {
-          if profiles.isEmpty {
+          if profiles.valid.isEmpty {
             Text("No profiles yet")
               .foregroundStyle(.secondary)
           } else {
-            ForEach(profiles) { profile in
+            ForEach(profiles.valid) { profile in
               let isSelected = selectedProfileIDs.contains(profile.id)
               HStack {
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")

@@ -21,7 +21,7 @@ struct BlockedProfileListView: View {
   var body: some View {
     NavigationStack {
       Group {
-        if profiles.isEmpty {
+        if profiles.valid.isEmpty {
           EmptyView(
             iconName: "person.crop.circle.badge.plus",
             headingText:
@@ -29,7 +29,7 @@ struct BlockedProfileListView: View {
           )
         } else {
           List {
-            ForEach(profiles) { profile in
+            ForEach(profiles.valid) { profile in
               ProfileRow(profile: profile)
                 .contentShape(Rectangle())
                 .onTapGesture {
