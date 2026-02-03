@@ -148,7 +148,7 @@ class AuthorizationVerifier: ObservableObject {
     Log.info("Handling authorization loss", category: .authorization)
 
     // Clear CloudKit shared state first
-    await cloudKitManager.clearSharedState()
+    cloudKitManager.clearSharedState()
 
     // Clear local authorization state
     clearAuthorizationState()

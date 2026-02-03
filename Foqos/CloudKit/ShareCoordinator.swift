@@ -3,6 +3,7 @@ import SwiftUI
 import UIKit
 
 /// Coordinates CloudKit sharing UI for parent-child policy sharing
+@MainActor
 class ShareCoordinator: NSObject, ObservableObject {
     @Published var isShowingShareSheet = false
     @Published var isShowingLeaveShareSheet = false
@@ -30,16 +31,11 @@ class ShareCoordinator: NSObject, ObservableObject {
             do {
                 let share = try await cloudKitManager.getOrCreateFamilyShare()
                 currentShare = share
-
-                await MainActor.run {
-                    self.isPreparingShare = false
-                    self.isShowingShareSheet = true
-                }
+                self.isPreparingShare = false
+                self.isShowingShareSheet = true
             } catch {
-                await MainActor.run {
-                    self.isPreparingShare = false
-                    self.shareError = error.localizedDescription
-                }
+                self.isPreparingShare = false
+                self.shareError = error.localizedDescription
             }
         }
     }
@@ -65,16 +61,11 @@ class ShareCoordinator: NSObject, ObservableObject {
                 // Fetch the share from the shared database
                 let share = try await cloudKitManager.fetchShareFromSharedDatabase()
                 currentShare = share
-
-                await MainActor.run {
-                    self.isPreparingShare = false
-                    self.isShowingLeaveShareSheet = true
-                }
+                self.isPreparingShare = false
+                self.isShowingLeaveShareSheet = true
             } catch {
-                await MainActor.run {
-                    self.isPreparingShare = false
-                    self.shareError = "Could not find family share: \(error.localizedDescription)"
-                }
+                self.isPreparingShare = false
+                self.shareError = "Could not find family share: \(error.localizedDescription)"
             }
         }
     }
@@ -111,13 +102,9 @@ extension ShareCoordinator: UICloudSharingControllerDelegate {
         isShowingLeaveShareSheet = false
 
         // Clear local state when child leaves
-        Task {
-            await cloudKitManager.clearSharedState()
-            await MainActor.run {
-                self.didLeaveShare = true
-                self.onDidLeaveShare?()
-            }
-        }
+        cloudKitManager.clearSharedState()
+        self.didLeaveShare = true
+        self.onDidLeaveShare?()
     }
 }
 
