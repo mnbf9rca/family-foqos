@@ -3,7 +3,7 @@ import SwiftData
 import SwiftUI
 
 class QRCodeBlockingStrategy: BlockingStrategy {
-  static var id: String = "QRCodeBlockingStrategy"
+  static let id: String = "QRCodeBlockingStrategy"
 
   var name: String = "QR Codes"
   var description: String =

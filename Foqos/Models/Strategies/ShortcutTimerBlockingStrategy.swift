@@ -2,7 +2,7 @@ import SwiftData
 import SwiftUI
 
 class ShortcutTimerBlockingStrategy: BlockingStrategy {
-  static var id: String = "ShortcutTimerBlockingStrategy"
+  static let id: String = "ShortcutTimerBlockingStrategy"
 
   var name: String = "Timer"
   var description: String = "Block for a specified duration"

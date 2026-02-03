@@ -2,7 +2,7 @@ import SwiftData
 import SwiftUI
 
 class NFCTimerBlockingStrategy: BlockingStrategy {
-  static var id: String = "NFCTimerBlockingStrategy"
+  static let id: String = "NFCTimerBlockingStrategy"
 
   var name: String = "NFC + Timer"
   var description: String = "Block for a certain amount of minutes, unblock by using any NFC tag"

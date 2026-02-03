@@ -2,7 +2,7 @@ import SwiftData
 import SwiftUI
 
 class ManualBlockingStrategy: BlockingStrategy {
-  static var id: String = "ManualBlockingStrategy"
+  static let id: String = "ManualBlockingStrategy"
 
   var name: String = "Manual"
   var description: String =

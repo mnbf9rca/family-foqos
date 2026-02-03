@@ -4,7 +4,7 @@ import OSLog
 private let log = Logger(subsystem: "com.cynexia.family-foqos.monitor", category: BreakTimerActivity.id)
 
 class BreakTimerActivity: TimerActivity {
-  static var id: String = "BreakScheduleActivity"
+  static let id: String = "BreakScheduleActivity"
 
   private let appBlocker = AppBlockerUtil()
 
