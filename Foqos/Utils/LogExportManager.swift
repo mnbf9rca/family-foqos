@@ -4,7 +4,7 @@ import UIKit
 import UniformTypeIdentifiers
 
 /// Manages log export, compression, and sharing
-final class LogExportManager {
+final class LogExportManager: @unchecked Sendable {  // SAFETY: Only accesses thread-safe FileManager and Log.shared
   static let shared = LogExportManager()
 
   private let fileManager = FileManager.default
