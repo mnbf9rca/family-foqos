@@ -6,8 +6,9 @@ enum SessionStatus {
   case ended(BlockedProfiles)
 }
 
+@MainActor
 protocol BlockingStrategy {
-  static var id: String { get }
+  nonisolated static var id: String { get }
   var name: String { get }
   var description: String { get }
   var iconType: String { get }
