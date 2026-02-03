@@ -389,11 +389,13 @@ struct AddLocationView: View {
   private func reverseGeocode(_ location: CLLocation) {
     let geocoder = CLGeocoder()
     geocoder.reverseGeocodeLocation(location) { placemarks, error in
-      if let placemark = placemarks?.first, name.isEmpty {
-        if let locality = placemark.locality {
-          name = locality
-        } else if let name = placemark.name {
-          self.name = name
+      Task { @MainActor in
+        if let placemark = placemarks?.first, name.isEmpty {
+          if let locality = placemark.locality {
+            name = locality
+          } else if let name = placemark.name {
+            self.name = name
+          }
         }
       }
     }
@@ -408,9 +410,11 @@ struct AddLocationView: View {
 
     let search = MKLocalSearch(request: request)
     search.start { response, error in
-      isSearching = false
-      if let response = response {
-        searchResults = Array(response.mapItems.prefix(5))
+      Task { @MainActor in
+        isSearching = false
+        if let response = response {
+          searchResults = Array(response.mapItems.prefix(5))
+        }
       }
     }
   }
