@@ -23,32 +23,39 @@ struct BlockedProfileListView: View {
     profiles.valid
   }
 
+  @ViewBuilder
+  private var contentView: some View {
+    if validProfiles.isEmpty {
+      EmptyView(
+        iconName: "person.crop.circle.badge.plus",
+        headingText:
+          "Group and switch between sets of blocked restrictions with customizable profiles"
+      )
+    } else {
+      listView
+    }
+  }
+
+  private var listView: some View {
+    List {
+      ForEach(validProfiles) { profile in
+        ProfileRow(profile: profile)
+          .contentShape(Rectangle())
+          .onTapGesture {
+            if editMode == .inactive {
+              profileToEdit = profile
+            }
+          }
+      }
+      .onDelete(perform: deleteProfiles)
+      .onMove(perform: moveProfiles)
+    }
+    .environment(\.editMode, $editMode)
+  }
+
   var body: some View {
     NavigationStack {
-      Group {
-        if validProfiles.isEmpty {
-          EmptyView(
-            iconName: "person.crop.circle.badge.plus",
-            headingText:
-              "Group and switch between sets of blocked restrictions with customizable profiles"
-          )
-        } else {
-          List {
-            ForEach(validProfiles) { profile in
-              ProfileRow(profile: profile)
-                .contentShape(Rectangle())
-                .onTapGesture {
-                  if editMode == .inactive {
-                    profileToEdit = profile
-                  }
-                }
-            }
-            .onDelete(perform: editMode == .active ? deleteProfiles : nil)
-            .onMove(perform: editMode == .active ? moveProfiles : nil)
-          }
-          .environment(\.editMode, $editMode)
-        }
-      }
+      contentView
       .navigationTitle("Profiles")
       .toolbar {
         ToolbarItem(placement: .topBarLeading) {
