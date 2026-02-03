@@ -58,7 +58,15 @@ class NFCWriter: NSObject, ObservableObject {
 // These wrappers allow passing them through @Sendable closures in callback chains.
 
 private struct NFCSessionBox: @unchecked Sendable {  // SAFETY: NFCTagReaderSession is only used on CoreNFC's internal queue
-  let session: NFCTagReaderSession
+  private let session: NFCTagReaderSession
+
+  init(session: NFCTagReaderSession) {
+    self.session = session
+  }
+
+  func connect(to tag: NFCTag, completionHandler: @escaping @Sendable (Error?) -> Void) {
+    session.connect(to: tag, completionHandler: completionHandler)
+  }
 
   func invalidate(errorMessage: String) {
     session.invalidate(errorMessage: errorMessage)
@@ -176,7 +184,7 @@ extension NFCWriter: NFCTagReaderSessionDelegate {
   nonisolated private func connectAndWrite(
     sessionBox: NFCSessionBox, tagBox: NFCTagBox, messageBox: NFCNDEFMessageBox
   ) {
-    sessionBox.session.connect(to: tagBox.tag) { error in
+    sessionBox.connect(to: tagBox.tag) { error in
       if error != nil {
         sessionBox.invalidate(
           errorMessage: "Connection error. Please hold tag steady and try again.")
