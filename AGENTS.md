@@ -6,6 +6,8 @@ This file provides guidelines for agentic coding assistants working on the Famil
 
 ### Building
 
+Use `./scripts/clean-build.sh` to clean build output.
+
 Use `xcpretty` to simplify output.
 
 ```bash

@@ -39,8 +39,15 @@ class ShieldConfigurationExtension: ShieldConfigurationDataSource {
   private func createCustomShieldConfiguration(for type: BlockedContentType, title: String)
     -> ShieldConfiguration
   {
-    // Get user's selected theme color
-    let brandColor = UIColor(ThemeManager.shared.themeColor)
+    // Get user's selected theme color directly from UserDefaults
+    // (Extension runs in separate process, can't use @MainActor ThemeManager.shared)
+    let colorName =
+      UserDefaults(suiteName: "group.com.cynexia.family-foqos")?
+        .string(forKey: "familyFoqosThemeColorName") ?? "Grimace Purple"
+    let themeColor =
+      ThemeManager.availableColors.first { $0.name == colorName }?.color
+        ?? ThemeManager.availableColors.first!.color
+    let brandColor = UIColor(themeColor)
 
     // Get random fun message
     let randomMessage = getFunBlockMessage(for: type, title: title)

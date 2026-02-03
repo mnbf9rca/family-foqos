@@ -1,10 +1,12 @@
 import SwiftUI
 
+@MainActor
 class ThemeManager: ObservableObject {
   static let shared = ThemeManager()
 
   // Single source of truth for all theme colors
-  static let availableColors: [(name: String, color: Color)] = [
+  // nonisolated: Safe because it's immutable data accessed by Shield extension
+  nonisolated static let availableColors: [(name: String, color: Color)] = [
     ("Grimace Purple", Color(hex: "#894fa3")),
     ("Ocean Blue", Color(hex: "#007aff")),
     ("Mint Fresh", Color(hex: "#00c6bf")),
