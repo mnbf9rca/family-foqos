@@ -5,6 +5,7 @@ import SwiftData
 
 /// Manages same-user multi-device profile sync via iCloud private database.
 /// Handles profile, session, and location synchronization across user's devices.
+@MainActor
 class ProfileSyncManager: ObservableObject {
   static let shared = ProfileSyncManager()
 
@@ -147,10 +148,8 @@ class ProfileSyncManager: ObservableObject {
       // Check iCloud account status
       let status = try await container.accountStatus()
       guard status == .available else {
-        await MainActor.run {
-          self.error = .notSignedIn
-          self.syncStatus = .error("Not signed in to iCloud")
-        }
+        self.error = .notSignedIn
+        self.syncStatus = .error("Not signed in to iCloud")
         return
       }
 
@@ -163,9 +162,7 @@ class ProfileSyncManager: ObservableObject {
       // Clean up legacy session records if present
       let foundLegacyRecords = await cleanupLegacySessionsIfNeeded()
       if foundLegacyRecords {
-        await MainActor.run {
-          self.shouldShowSyncUpgradeNotice = true
-        }
+        self.shouldShowSyncUpgradeNotice = true
       }
 
       // Perform initial sync
@@ -174,10 +171,8 @@ class ProfileSyncManager: ObservableObject {
       Log.info("Setup complete", category: .sync)
     } catch {
       Log.info("Setup failed - \(error)", category: .sync)
-      await MainActor.run {
-        self.error = .zoneCreationFailed(error)
-        self.syncStatus = .error("Setup failed")
-      }
+      self.error = .zoneCreationFailed(error)
+      self.syncStatus = .error("Setup failed")
     }
   }
 
@@ -330,10 +325,8 @@ class ProfileSyncManager: ObservableObject {
   func performFullSync() async {
     guard isEnabled else { return }
 
-    await MainActor.run {
-      self.isSyncing = true
-      self.syncStatus = .syncing
-    }
+    self.isSyncing = true
+    self.syncStatus = .syncing
 
     do {
       // Check for reset requests first (from other devices)
@@ -345,25 +338,19 @@ class ProfileSyncManager: ObservableObject {
       try await pullLocations()
 
       // Request push of local data (SyncCoordinator will handle this)
-      await MainActor.run {
-        NotificationCenter.default.post(name: .localDataPushRequested, object: nil)
-      }
+      NotificationCenter.default.post(name: .localDataPushRequested, object: nil)
 
-      await MainActor.run {
-        self.isSyncing = false
-        self.syncStatus = .idle
-        self.lastSyncDate = Date()
-        self.error = nil
-      }
+      self.isSyncing = false
+      self.syncStatus = .idle
+      self.lastSyncDate = Date()
+      self.error = nil
 
       Log.info("Full sync complete", category: .sync)
     } catch {
       Log.info("Full sync failed - \(error)", category: .sync)
-      await MainActor.run {
-        self.isSyncing = false
-        self.syncStatus = .error("Sync failed")
-        self.error = .fetchFailed(error)
-      }
+      self.isSyncing = false
+      self.syncStatus = .error("Sync failed")
+      self.error = .fetchFailed(error)
     }
   }
 
@@ -394,13 +381,11 @@ class ProfileSyncManager: ObservableObject {
           Log.info("Processing reset request from device \(resetRequest.originDeviceId)", category: .sync)
 
           // Notify coordinator to handle the reset
-          await MainActor.run {
-            NotificationCenter.default.post(
-              name: .syncResetRequested,
-              object: nil,
-              userInfo: ["clearAppSelections": resetRequest.clearRemoteAppSelections]
-            )
-          }
+          NotificationCenter.default.post(
+            name: .syncResetRequested,
+            object: nil,
+            userInfo: ["clearAppSelections": resetRequest.clearRemoteAppSelections]
+          )
 
           // Delete the processed reset request
           _ = try? await privateDatabase.deleteRecord(withID: recordID)
@@ -480,14 +465,11 @@ class ProfileSyncManager: ObservableObject {
       Log.info("Pulled \(syncedProfiles.count) profiles from CloudKit", category: .sync)
 
       // Process pulled profiles on main actor with context
-      let profiles = syncedProfiles
-      await MainActor.run {
-        NotificationCenter.default.post(
-          name: .syncedProfilesReceived,
-          object: nil,
-          userInfo: ["profiles": profiles]
-        )
-      }
+      NotificationCenter.default.post(
+        name: .syncedProfilesReceived,
+        object: nil,
+        userInfo: ["profiles": syncedProfiles]
+      )
     } catch let error as CKError {
       if error.code == .zoneNotFound || error.code == .unknownItem {
         Log.info("No profiles found in CloudKit", category: .sync)
@@ -562,14 +544,11 @@ class ProfileSyncManager: ObservableObject {
       Log.info("Pulled \(sessions.count) session records from CloudKit", category: .sync)
 
       // Notify coordinator about sessions
-      let sessionsToSend = sessions
-      await MainActor.run {
-        NotificationCenter.default.post(
-          name: .profileSessionRecordsReceived,
-          object: nil,
-          userInfo: [ProfileSessionRecord.sessionsUserInfoKey: sessionsToSend]
-        )
-      }
+      NotificationCenter.default.post(
+        name: .profileSessionRecordsReceived,
+        object: nil,
+        userInfo: [ProfileSessionRecord.sessionsUserInfoKey: sessions]
+      )
     } catch let error as CKError {
       if error.code == .zoneNotFound || error.code == .unknownItem {
         Log.info("No session records found in CloudKit", category: .sync)
@@ -644,14 +623,11 @@ class ProfileSyncManager: ObservableObject {
       Log.info("Pulled \(syncedLocations.count) locations from CloudKit", category: .sync)
 
       // Notify about received locations
-      let locations = syncedLocations
-      await MainActor.run {
-        NotificationCenter.default.post(
-          name: .syncedLocationsReceived,
-          object: nil,
-          userInfo: ["locations": locations]
-        )
-      }
+      NotificationCenter.default.post(
+        name: .syncedLocationsReceived,
+        object: nil,
+        userInfo: ["locations": syncedLocations]
+      )
     } catch let error as CKError {
       if error.code == .zoneNotFound || error.code == .unknownItem {
         Log.info("No locations found in CloudKit", category: .sync)
@@ -682,10 +658,8 @@ class ProfileSyncManager: ObservableObject {
   func resetSync(clearRemoteAppSelections: Bool) async throws {
     guard isEnabled else { throw SyncError.syncDisabled }
 
-    await MainActor.run {
-      self.isSyncing = true
-      self.syncStatus = .syncing
-    }
+    self.isSyncing = true
+    self.syncStatus = .syncing
 
     do {
       // Delete all records in the sync zone
@@ -699,28 +673,22 @@ class ProfileSyncManager: ObservableObject {
       let record = resetRequest.toCKRecord(in: syncZoneID)
       _ = try await privateDatabase.save(record)
 
-      await MainActor.run {
-        self.isSyncing = false
-        self.syncStatus = .idle
-        self.lastSyncDate = Date()
-      }
+      self.isSyncing = false
+      self.syncStatus = .idle
+      self.lastSyncDate = Date()
 
       Log.info("Reset sync complete", category: .sync)
 
       // Notify to re-push local profiles
-      await MainActor.run {
-        NotificationCenter.default.post(
-          name: .syncResetRequested,
-          object: nil,
-          userInfo: ["clearAppSelections": clearRemoteAppSelections]
-        )
-      }
+      NotificationCenter.default.post(
+        name: .syncResetRequested,
+        object: nil,
+        userInfo: ["clearAppSelections": clearRemoteAppSelections]
+      )
     } catch {
       Log.info("Reset sync failed - \(error)", category: .sync)
-      await MainActor.run {
-        self.isSyncing = false
-        self.syncStatus = .error("Reset failed")
-      }
+      self.isSyncing = false
+      self.syncStatus = .error("Reset failed")
       throw error
     }
   }
