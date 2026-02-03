@@ -195,8 +195,10 @@ enum SharedData {
     }
 
     static func setOneMoreMinuteStartTime(date: Date) {
-        activeSharedSession?.oneMoreMinuteStartTime = date
-        activeSharedSession?.oneMoreMinuteUsed = true
+        guard var session = activeSharedSession else { return }
+        session.oneMoreMinuteStartTime = date
+        session.oneMoreMinuteUsed = true
+        activeSharedSession = session
     }
 
     // MARK: - Device Sync Settings

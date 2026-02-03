@@ -209,59 +209,47 @@ final class OneMoreMinuteTests: XCTestCase {
 
   // MARK: - SharedData Sync Tests
 
-  func testSetOneMoreMinuteStartTimeUpdatesActiveSession() {
-    // Setup: Create a fresh session snapshot
+  func testSetOneMoreMinuteStartTimeSyncsToSharedData() {
+    // Setup: Create an active session in SharedData
     let profileId = UUID()
-    let sessionStart = Date()
-    var snapshot = SharedData.SessionSnapshot(
+    let initialSnapshot = SharedData.SessionSnapshot(
       id: "test-session",
       tag: "test-tag",
       blockedProfileId: profileId,
-      startTime: sessionStart,
-      forceStarted: false,
-      oneMoreMinuteUsed: false,
-      oneMoreMinuteStartTime: nil
+      startTime: Date(),
+      forceStarted: false
     )
+    SharedData.createActiveSharedSession(for: initialSnapshot)
 
     // Verify initial state
-    XCTAssertFalse(snapshot.oneMoreMinuteUsed)
-    XCTAssertNil(snapshot.oneMoreMinuteStartTime)
+    let beforeSession = SharedData.getActiveSharedSession()
+    XCTAssertNotNil(beforeSession)
+    XCTAssertFalse(beforeSession!.oneMoreMinuteUsed)
+    XCTAssertNil(beforeSession!.oneMoreMinuteStartTime)
 
-    // Simulate what setOneMoreMinuteStartTime does
+    // Act: Call the real API
     let oneMoreMinuteStart = Date()
-    snapshot.oneMoreMinuteStartTime = oneMoreMinuteStart
-    snapshot.oneMoreMinuteUsed = true
+    SharedData.setOneMoreMinuteStartTime(date: oneMoreMinuteStart)
 
-    // Verify the snapshot is updated
-    XCTAssertTrue(snapshot.oneMoreMinuteUsed)
-    XCTAssertEqual(snapshot.oneMoreMinuteStartTime, oneMoreMinuteStart)
+    // Assert: SharedData is updated
+    let afterSession = SharedData.getActiveSharedSession()
+    XCTAssertNotNil(afterSession)
+    XCTAssertTrue(afterSession!.oneMoreMinuteUsed)
+    XCTAssertEqual(afterSession!.oneMoreMinuteStartTime, oneMoreMinuteStart)
+
+    // Cleanup
+    SharedData.flushActiveSession()
   }
 
-  func testOneMoreMinutePreservedAfterSnapshotSync() {
-    // This test verifies that if a snapshot has oneMoreMinuteStartTime set,
-    // it won't be lost during sync operations
+  func testSetOneMoreMinuteStartTimeNoOpWhenNoActiveSession() {
+    // Ensure no active session
+    SharedData.flushActiveSession()
+    XCTAssertNil(SharedData.getActiveSharedSession())
 
-    let profileId = UUID()
-    let sessionStart = Date()
-    let oneMoreMinuteStart = Date()
+    // Act: Call the API with no active session (should not crash)
+    SharedData.setOneMoreMinuteStartTime(date: Date())
 
-    // Create a "SwiftData session" state (simulated)
-    let swiftDataOneMoreMinuteUsed = true
-    let swiftDataOneMoreMinuteStartTime: Date? = oneMoreMinuteStart
-
-    // Create the snapshot with the same state (as should happen after fix)
-    let snapshot = SharedData.SessionSnapshot(
-      id: "test-session",
-      tag: "test-tag",
-      blockedProfileId: profileId,
-      startTime: sessionStart,
-      forceStarted: false,
-      oneMoreMinuteUsed: swiftDataOneMoreMinuteUsed,
-      oneMoreMinuteStartTime: swiftDataOneMoreMinuteStartTime
-    )
-
-    // After sync, the values should match
-    XCTAssertEqual(snapshot.oneMoreMinuteUsed, swiftDataOneMoreMinuteUsed)
-    XCTAssertEqual(snapshot.oneMoreMinuteStartTime, swiftDataOneMoreMinuteStartTime)
+    // Assert: Still no session
+    XCTAssertNil(SharedData.getActiveSharedSession())
   }
 }
