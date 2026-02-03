@@ -2,11 +2,12 @@ import CodeScanner
 import CoreNFC
 import SwiftUI
 
+@MainActor
 class PhysicalReader {
   private let nfcScanner: NFCScannerUtil = NFCScannerUtil()
 
   func readNFCTag(
-    onSuccess: @escaping (String) -> Void,
+    onSuccess: @escaping (String) -> Void
   ) {
     nfcScanner.onTagScanned = { result in
       let tagId = result.url ?? result.id

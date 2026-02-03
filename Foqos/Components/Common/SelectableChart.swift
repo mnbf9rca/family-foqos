@@ -78,6 +78,7 @@ struct SelectableChart<X: Plottable & Comparable, Data: Identifiable, Content: C
 }
 
 // Convenience factory functions
+@MainActor
 struct SelectableChartFactory {
   static func dailyChart<DataType: Identifiable, ContentType: ChartContent>(
     data: [DataType],
