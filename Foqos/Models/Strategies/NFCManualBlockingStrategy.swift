@@ -2,7 +2,7 @@ import SwiftData
 import SwiftUI
 
 class NFCManualBlockingStrategy: BlockingStrategy {
-  static var id: String = "NFCManualBlockingStrategy"
+  static let id: String = "NFCManualBlockingStrategy"
 
   var name: String = "NFC + Manual"
   var description: String = "Block manually, but unblock by using any NFC tag"

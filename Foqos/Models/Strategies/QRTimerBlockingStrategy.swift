@@ -2,7 +2,7 @@ import SwiftData
 import SwiftUI
 
 class QRTimerBlockingStrategy: BlockingStrategy {
-  static var id: String = "QRTimerBlockingStrategy"
+  static let id: String = "QRTimerBlockingStrategy"
 
   var name: String = "QR + Timer"
   var description: String = "Block for a certain amount of minutes, unblock by using any QR code"

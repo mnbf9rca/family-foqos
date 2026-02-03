@@ -2,7 +2,7 @@ import FamilyControls
 import Foundation
 
 enum SharedData {
-    private static let suite = UserDefaults(
+    private nonisolated(unsafe) static let suite = UserDefaults(  // SAFETY: UserDefaults is thread-safe per Apple docs
         suiteName: "group.com.cynexia.family-foqos"
     )!
 

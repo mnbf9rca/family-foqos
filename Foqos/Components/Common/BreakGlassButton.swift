@@ -266,12 +266,14 @@ private struct SeededRandomNumberGenerator: RandomNumberGenerator {
 // Removed convenience initializer that referenced GlassButton to avoid cross-file lint failures.
 
 // MARK: - Haptics helpers
+@MainActor
 private func triggerImpactHaptic() {
   #if canImport(UIKit)
     UIImpactFeedbackGenerator(style: .light).impactOccurred()
   #endif
 }
 
+@MainActor
 private func triggerSuccessHaptic() {
   #if canImport(UIKit)
     UINotificationFeedbackGenerator().notificationOccurred(.success)

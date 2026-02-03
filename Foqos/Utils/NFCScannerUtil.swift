@@ -1,4 +1,4 @@
-import CoreNFC
+@preconcurrency import CoreNFC  // CoreNFC types lack Sendable conformance
 import SwiftUI
 
 struct NFCResult: Equatable {

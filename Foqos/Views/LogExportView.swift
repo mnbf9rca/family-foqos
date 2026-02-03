@@ -138,23 +138,18 @@ struct LogExportView: View {
   }
 
   private func exportLogs() {
-    isExporting = true
+    Task {
+      isExporting = true
+      defer { isExporting = false }
 
-    DispatchQueue.global(qos: .userInitiated).async {
       do {
         // Use zip archive instead of plain text file
-        let url = try LogExportManager.shared.createLogArchive()
-
-        DispatchQueue.main.async {
-          shareURL = url
-          showingShareSheet = true
-          isExporting = false
-        }
+        // createLogArchive() is async and offloads file I/O to a background thread
+        let url = try await LogExportManager.shared.createLogArchive()
+        shareURL = url
+        showingShareSheet = true
       } catch {
-        DispatchQueue.main.async {
-          errorMessage = error.localizedDescription
-          isExporting = false
-        }
+        errorMessage = error.localizedDescription
       }
     }
   }

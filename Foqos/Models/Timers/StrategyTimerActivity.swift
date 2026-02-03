@@ -4,7 +4,7 @@ import OSLog
 private let log: Logger = Logger(subsystem: "com.cynexia.family-foqos.monitor", category: StrategyTimerActivity.id)
 
 class StrategyTimerActivity: TimerActivity {
-  static var id: String = "StrategyTimerActivity"
+  static let id: String = "StrategyTimerActivity"
 
   private let appBlocker = AppBlockerUtil()
 

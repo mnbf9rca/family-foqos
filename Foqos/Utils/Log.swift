@@ -85,7 +85,7 @@ struct LogEntry: Codable, Identifiable {
 }
 
 /// Privacy-focused logging framework with file persistence and export capabilities
-final class Log {
+final class Log: @unchecked Sendable {  // SAFETY: All mutable state protected by serial DispatchQueue
   static let shared = Log()
 
   private let queue = DispatchQueue(label: "com.cynexia.family-foqos.log", qos: .utility)

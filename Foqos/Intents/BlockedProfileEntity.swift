@@ -1,5 +1,5 @@
 import AppIntents
-import SwiftData
+@preconcurrency import SwiftData  // ReferenceWritableKeyPath in SortDescriptor lacks Sendable conformance
 
 struct BlockedProfileEntity: AppEntity, Identifiable {
   let id: UUID
@@ -15,11 +15,11 @@ struct BlockedProfileEntity: AppEntity, Identifiable {
     self.name = profile.name
   }
 
-  static var typeDisplayRepresentation = TypeDisplayRepresentation(
+  nonisolated(unsafe) static var typeDisplayRepresentation = TypeDisplayRepresentation(  // SAFETY: AppIntents requires static var; immutable after init
     name: "Profile"
   )
 
-  static var defaultQuery = BlockedProfilesQuery()
+  nonisolated(unsafe) static var defaultQuery = BlockedProfilesQuery()  // SAFETY: AppIntents requires static var; immutable after init
 
   var displayRepresentation: DisplayRepresentation {
     DisplayRepresentation(title: "\(name)")
