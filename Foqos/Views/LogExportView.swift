@@ -138,18 +138,20 @@ struct LogExportView: View {
   }
 
   private func exportLogs() {
-    isExporting = true
+    Task {
+      isExporting = true
+      defer { isExporting = false }
 
-    // LogExportManager is @MainActor, so we call it directly from the main actor
-    do {
-      // Use zip archive instead of plain text file
-      let url = try LogExportManager.shared.createLogArchive()
-      shareURL = url
-      showingShareSheet = true
-    } catch {
-      errorMessage = error.localizedDescription
+      do {
+        // Use zip archive instead of plain text file
+        // createLogArchive() is async and offloads file I/O to a background thread
+        let url = try await LogExportManager.shared.createLogArchive()
+        shareURL = url
+        showingShareSheet = true
+      } catch {
+        errorMessage = error.localizedDescription
+      }
     }
-    isExporting = false
   }
 
   private func clearLogs() {

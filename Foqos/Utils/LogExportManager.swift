@@ -13,44 +13,53 @@ final class LogExportManager {
   private init() {}
 
   /// Create a zip archive of all log files
-  func createLogArchive() throws -> URL {
-    let tempDir = fileManager.temporaryDirectory
-    let archiveName = "FamilyFoqos-Logs-\(formattedTimestamp()).zip"
-    let archiveURL = tempDir.appendingPathComponent(archiveName)
-
-    // Remove existing archive if present
-    if fileManager.fileExists(atPath: archiveURL.path) {
-      try fileManager.removeItem(at: archiveURL)
-    }
-
+  /// Offloads heavy file I/O to a background thread to avoid blocking the UI
+  func createLogArchive() async throws -> URL {
+    // Capture values that need main actor access
     let logURLs = Log.shared.getLogFileURLs()
     guard !logURLs.isEmpty else {
       throw LogExportError.noLogsAvailable
     }
 
-    // Create a temporary directory for the logs to zip
-    let stagingDir = tempDir.appendingPathComponent("LogExportStaging-\(UUID().uuidString)")
-    try fileManager.createDirectory(at: stagingDir, withIntermediateDirectories: true)
-    defer {
-      try? fileManager.removeItem(at: stagingDir)
-    }
-
-    // Copy log files to staging
-    for (index, url) in logURLs.enumerated() {
-      let destName = index == 0 ? "foqos-current.log" : "foqos-\(index).log"
-      let destURL = stagingDir.appendingPathComponent(destName)
-      try fileManager.copyItem(at: url, to: destURL)
-    }
-
-    // Add device info file
     let deviceInfo = generateDeviceInfo()
-    let deviceInfoURL = stagingDir.appendingPathComponent("device-info.txt")
-    try deviceInfo.write(to: deviceInfoURL, atomically: true, encoding: .utf8)
+    let timestamp = formattedTimestamp()
 
-    // Create zip archive (returns actual URL, which may be .txt if fallback is used)
-    let actualArchiveURL = try createZipArchive(from: stagingDir, to: archiveURL)
+    // Perform heavy file I/O off the main actor
+    return try await Task.detached {
+      let fileManager = FileManager.default
+      let tempDir = fileManager.temporaryDirectory
+      let archiveName = "FamilyFoqos-Logs-\(timestamp).zip"
+      let archiveURL = tempDir.appendingPathComponent(archiveName)
 
-    return actualArchiveURL
+      // Remove existing archive if present
+      if fileManager.fileExists(atPath: archiveURL.path) {
+        try fileManager.removeItem(at: archiveURL)
+      }
+
+      // Create a temporary directory for the logs to zip
+      let stagingDir = tempDir.appendingPathComponent("LogExportStaging-\(UUID().uuidString)")
+      try fileManager.createDirectory(at: stagingDir, withIntermediateDirectories: true)
+      defer {
+        try? fileManager.removeItem(at: stagingDir)
+      }
+
+      // Copy log files to staging
+      for (index, url) in logURLs.enumerated() {
+        let destName = index == 0 ? "foqos-current.log" : "foqos-\(index).log"
+        let destURL = stagingDir.appendingPathComponent(destName)
+        try fileManager.copyItem(at: url, to: destURL)
+      }
+
+      // Add device info file
+      let deviceInfoURL = stagingDir.appendingPathComponent("device-info.txt")
+      try deviceInfo.write(to: deviceInfoURL, atomically: true, encoding: .utf8)
+
+      // Create zip archive (returns actual URL, which may be .txt if fallback is used)
+      let actualArchiveURL = try Self.createZipArchiveSync(
+        from: stagingDir, to: archiveURL, fileManager: fileManager)
+
+      return actualArchiveURL
+    }.value
   }
 
   /// Generate device and app info for debugging context
@@ -88,9 +97,11 @@ final class LogExportManager {
     return formatter.string(from: Date())
   }
 
-  /// Create zip using Cocoa compression
+  /// Create zip using Cocoa compression (static version for use in detached tasks)
   /// Returns the actual URL of the created archive (may differ from archiveURL if fallback is used)
-  private func createZipArchive(from sourceDir: URL, to archiveURL: URL) throws -> URL {
+  private nonisolated static func createZipArchiveSync(
+    from sourceDir: URL, to archiveURL: URL, fileManager: FileManager
+  ) throws -> URL {
     // Use NSFileCoordinator for zip creation (available on iOS)
     let coordinator = NSFileCoordinator()
     var coordinatorError: NSError?
@@ -105,25 +116,29 @@ final class LogExportManager {
         try fileManager.copyItem(at: zipURL, to: archiveURL)
         copySucceeded = true
       } catch {
-        Log.warning("Failed to copy zip file: \(error.localizedDescription)", category: .app)
+        // Cannot use Log here as we're off the main actor
+        print("LogExportManager: Failed to copy zip file: \(error.localizedDescription)")
       }
     }
 
     if coordinatorError != nil || !copySucceeded {
       // Fallback: create combined text file if zip fails
-      let txtURL = try createCombinedLogFile(from: sourceDir, to: archiveURL)
-      Log.warning(
-        "Zip creation failed, using combined text fallback: \(coordinatorError?.localizedDescription ?? "copy failed")",
-        category: .app)
+      let txtURL = try createCombinedLogFileSync(
+        from: sourceDir, to: archiveURL, fileManager: fileManager)
+      print(
+        "LogExportManager: Zip creation failed, using combined text fallback: \(coordinatorError?.localizedDescription ?? "copy failed")"
+      )
       return txtURL
     }
 
     return archiveURL
   }
 
-  /// Fallback: combine all logs into a single text file
+  /// Fallback: combine all logs into a single text file (static version for use in detached tasks)
   /// Returns the URL of the created text file
-  private func createCombinedLogFile(from sourceDir: URL, to destURL: URL) throws -> URL {
+  private nonisolated static func createCombinedLogFileSync(
+    from sourceDir: URL, to destURL: URL, fileManager: FileManager
+  ) throws -> URL {
     var combined = ""
 
     let files = try fileManager.contentsOfDirectory(at: sourceDir, includingPropertiesForKeys: nil)
@@ -143,11 +158,13 @@ final class LogExportManager {
 
   /// Present share sheet with log archive
   func shareLogArchive(from viewController: UIViewController? = nil) {
-    do {
-      let archiveURL = try createLogArchive()
-      presentShareSheet(with: [archiveURL], from: viewController)
-    } catch {
-      Log.error("Failed to create log archive: \(error.localizedDescription)", category: .app)
+    Task {
+      do {
+        let archiveURL = try await createLogArchive()
+        presentShareSheet(with: [archiveURL], from: viewController)
+      } catch {
+        Log.error("Failed to create log archive: \(error.localizedDescription)", category: .app)
+      }
     }
   }
 
