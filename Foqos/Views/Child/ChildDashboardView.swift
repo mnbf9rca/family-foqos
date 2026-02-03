@@ -23,14 +23,19 @@ struct ChildDashboardView: View {
   @State private var showAuthorizationLostAlert = false
   @State private var isVerifyingAuthorization = false
 
+  /// Filtered profiles excluding deleted models
+  private var validProfiles: [BlockedProfiles] {
+    allProfiles.valid
+  }
+
   /// Profiles that are locked (require code to edit)
   private var lockedProfiles: [BlockedProfiles] {
-    allProfiles.filter { $0.isManaged }
+    validProfiles.filter { $0.isManaged }
   }
 
   /// Profiles that are not locked (child can freely edit)
   private var unlockedProfiles: [BlockedProfiles] {
-    allProfiles.filter { !$0.isManaged }
+    validProfiles.filter { !$0.isManaged }
   }
 
   var body: some View {
@@ -92,7 +97,7 @@ struct ChildDashboardView: View {
         )
       }
       .sheet(isPresented: $showEditLockedProfiles) {
-        EditLockedProfilesSheet(profiles: allProfiles)
+        EditLockedProfilesSheet(profiles: validProfiles)
       }
       .fullScreenCover(isPresented: $showPersonalProfiles) {
         NavigationStack {

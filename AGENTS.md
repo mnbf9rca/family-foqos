@@ -107,6 +107,30 @@ class BlockedProfiles {
 }
 ```
 
+### SwiftData Safety with @Query
+
+When iterating `@Query` results with `ForEach`, use the `.valid` extension to filter out deleted models. This prevents crashes when models are deleted via CloudKit sync while the app is in the background.
+
+```swift
+// CORRECT - filters out deleted models
+ForEach(profiles.valid) { profile in
+  ProfileCard(profile: profile)
+}
+
+// WRONG - can crash if a model was deleted but @Query hasn't updated yet
+ForEach(profiles) { profile in
+  ProfileCard(profile: profile)
+}
+```
+
+**Why this matters:** When a SwiftData model is deleted, its `modelContext` becomes `nil`, but `@Query` may still hold a reference to it. Accessing properties on a deleted model causes `EXC_BREAKPOINT`. The `.valid` extension (defined in `Utils/Extensions.swift`) filters these out:
+
+```swift
+extension Array where Element: PersistentModel {
+  var valid: [Element] { filter { $0.modelContext != nil } }
+}
+```
+
 ### Protocols & Strategy Pattern
 - Define clear protocols for extensible behavior
 - Protocol methods should be minimal and focused

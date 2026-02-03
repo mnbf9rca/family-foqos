@@ -35,6 +35,11 @@ struct BlockedProfileCarousel: View {
 
   private var cardHeight: CGFloat = 240
 
+  /// Filtered profiles excluding deleted models
+  private var validProfiles: [BlockedProfiles] {
+    profiles.valid
+  }
+
   private var titleMessage: String {
     return isBlocking ? "Active Profile" : "Profile"
   }
@@ -97,7 +102,7 @@ struct BlockedProfileCarousel: View {
   private func initialSetup() {
     // First priority: active session profile
     if let activeId = activeSessionProfileId,
-      let index = profiles.firstIndex(where: { $0.id == activeId })
+      let index = validProfiles.firstIndex(where: { $0.id == activeId })
     {
       currentIndex = index
       return
@@ -105,14 +110,14 @@ struct BlockedProfileCarousel: View {
 
     // Second priority: starting profile
     if let startingId = startingProfileId,
-      let index = profiles.firstIndex(where: { $0.id == startingId })
+      let index = validProfiles.firstIndex(where: { $0.id == startingId })
     {
       currentIndex = index
       return
     }
 
     // Default: first profile if available
-    if profiles.first != nil {
+    if validProfiles.first != nil {
       currentIndex = 0
       return
     }
@@ -139,37 +144,37 @@ struct BlockedProfileCarousel: View {
             let cardWidth = geometry.size.width - 32  // Padding on sides
 
             HStack(spacing: cardSpacing) {
-              ForEach(profiles.indices, id: \.self) { index in
+              ForEach(validProfiles.indices, id: \.self) { index in
                 BlockedProfileCard(
-                  profile: profiles[index],
-                  isActive: profiles[index].id
+                  profile: validProfiles[index],
+                  isActive: validProfiles[index].id
                     == activeSessionProfileId,
                   isBreakAvailable: isBreakAvailable,
                   isBreakActive: isBreakActive,
                   elapsedTime: elapsedTime,
                   onStartTapped: {
-                    onStartTapped(profiles[index])
+                    onStartTapped(validProfiles[index])
                   },
                   onStopTapped: {
-                    onStopTapped(profiles[index])
+                    onStopTapped(validProfiles[index])
                   },
                   onEditTapped: {
-                    onEditTapped(profiles[index])
+                    onEditTapped(validProfiles[index])
                   },
                   onStatsTapped: {
-                    onStatsTapped(profiles[index])
+                    onStatsTapped(validProfiles[index])
                   },
                   onBreakTapped: {
-                    onBreakTapped(profiles[index])
+                    onBreakTapped(validProfiles[index])
                   },
                   onAppSelectionTapped: {
-                    onAppSelectionTapped(profiles[index])
+                    onAppSelectionTapped(validProfiles[index])
                   },
                   isOneMoreMinuteActive: isOneMoreMinuteActive,
                   isOneMoreMinuteAvailable: isOneMoreMinuteAvailable,
                   oneMoreMinuteTimeRemaining: oneMoreMinuteTimeRemaining,
                   onOneMoreMinuteTapped: {
-                    onOneMoreMinuteTapped(profiles[index])
+                    onOneMoreMinuteTapped(validProfiles[index])
                   }
                 )
                 .frame(width: cardWidth)
@@ -206,7 +211,7 @@ struct BlockedProfileCarousel: View {
                       offsetAmount < -dragThreshold
 
                     if swipedLeft
-                      && currentIndex < profiles.count - 1
+                      && currentIndex < validProfiles.count - 1
                     {
                       currentIndex += 1
                     } else if swipedRight
@@ -226,8 +231,8 @@ struct BlockedProfileCarousel: View {
 
         // Page indicator dots
         HStack(spacing: 8) {
-          if !isBlocking && profiles.count > 1 {
-            ForEach(0..<profiles.count, id: \.self) { index in
+          if !isBlocking && validProfiles.count > 1 {
+            ForEach(0..<validProfiles.count, id: \.self) { index in
               Circle()
                 .fill(
                   index == currentIndex
@@ -240,7 +245,7 @@ struct BlockedProfileCarousel: View {
           }
         }
         .frame(height: 8)
-        .opacity(!isBlocking && profiles.count > 1 ? 1 : 0)
+        .opacity(!isBlocking && validProfiles.count > 1 ? 1 : 0)
         .animation(.easeInOut, value: isBlocking)
       }
     }

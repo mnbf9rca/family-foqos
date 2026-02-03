@@ -4,6 +4,7 @@ import SwiftData
 
 /// Coordinates between ProfileSyncManager notifications and local SwiftData storage.
 /// Handles incoming synced profiles, sessions, and locations from other devices.
+@MainActor
 class SyncCoordinator: ObservableObject {
   static let shared = SyncCoordinator()
 
@@ -45,9 +46,7 @@ class SyncCoordinator: ObservableObject {
         else {
           return
         }
-        MainActor.assumeIsolated {
-          self?.handleProfileSessionRecords(sessions)
-        }
+        self?.handleProfileSessionRecords(sessions)
       }
       .store(in: &cancellables)
 

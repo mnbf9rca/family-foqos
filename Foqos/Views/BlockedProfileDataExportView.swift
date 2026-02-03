@@ -21,6 +21,11 @@ struct BlockedProfileDataExportView: View {
   @State private var isGenerating: Bool = false
   @State private var errorMessage: String? = nil
 
+  /// Filtered profiles excluding deleted models
+  private var validProfiles: [BlockedProfiles] {
+    profiles.valid
+  }
+
   private var isExportDisabled: Bool {
     isGenerating || selectedProfileIDs.isEmpty
   }
@@ -34,11 +39,11 @@ struct BlockedProfileDataExportView: View {
     NavigationStack {
       Form {
         Section(header: Text("Profiles")) {
-          if profiles.isEmpty {
+          if validProfiles.isEmpty {
             Text("No profiles yet")
               .foregroundStyle(.secondary)
           } else {
-            ForEach(profiles) { profile in
+            ForEach(validProfiles) { profile in
               let isSelected = selectedProfileIDs.contains(profile.id)
               HStack {
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
