@@ -206,4 +206,50 @@ final class OneMoreMinuteTests: XCTestCase {
     XCTAssertTrue(state.isOneMoreMinuteActive)
     XCTAssertEqual(state.oneMoreMinuteTimeRemaining, 45)
   }
+
+  // MARK: - SharedData Sync Tests
+
+  func testSetOneMoreMinuteStartTimeSyncsToSharedData() {
+    // Setup: Create an active session in SharedData
+    let profileId = UUID()
+    let initialSnapshot = SharedData.SessionSnapshot(
+      id: "test-session",
+      tag: "test-tag",
+      blockedProfileId: profileId,
+      startTime: Date(),
+      forceStarted: false
+    )
+    SharedData.createActiveSharedSession(for: initialSnapshot)
+
+    // Verify initial state
+    let beforeSession = SharedData.getActiveSharedSession()
+    XCTAssertNotNil(beforeSession)
+    XCTAssertFalse(beforeSession!.oneMoreMinuteUsed)
+    XCTAssertNil(beforeSession!.oneMoreMinuteStartTime)
+
+    // Act: Call the real API
+    let oneMoreMinuteStart = Date()
+    SharedData.setOneMoreMinuteStartTime(date: oneMoreMinuteStart)
+
+    // Assert: SharedData is updated
+    let afterSession = SharedData.getActiveSharedSession()
+    XCTAssertNotNil(afterSession)
+    XCTAssertTrue(afterSession!.oneMoreMinuteUsed)
+    XCTAssertEqual(afterSession!.oneMoreMinuteStartTime, oneMoreMinuteStart)
+
+    // Cleanup
+    SharedData.flushActiveSession()
+  }
+
+  func testSetOneMoreMinuteStartTimeNoOpWhenNoActiveSession() {
+    // Ensure no active session
+    SharedData.flushActiveSession()
+    XCTAssertNil(SharedData.getActiveSharedSession())
+
+    // Act: Call the API with no active session (should not crash)
+    SharedData.setOneMoreMinuteStartTime(date: Date())
+
+    // Assert: Still no session
+    XCTAssertNil(SharedData.getActiveSharedSession())
+  }
 }

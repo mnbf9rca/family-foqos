@@ -79,8 +79,12 @@ class BlockedProfileSession {
   }
 
   func startOneMoreMinute() {
+    let oneMoreMinuteStart = Date()
     oneMoreMinuteUsed = true
-    oneMoreMinuteStartTime = Date()
+    oneMoreMinuteStartTime = oneMoreMinuteStart
+
+    // Sync to SharedData for background/foreground transitions
+    SharedData.setOneMoreMinuteStartTime(date: oneMoreMinuteStart)
   }
 
   func endSession() {
