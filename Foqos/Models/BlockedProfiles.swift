@@ -49,6 +49,83 @@ class BlockedProfiles {
     var syncVersion: Int = 0 // Version counter for conflict resolution (last-write-wins)
     var needsAppSelection: Bool = false // True if synced from another device but no local apps selected
 
+    // MARK: - Trigger System (Schema Version 2)
+
+    /// Schema version for migration and sync conflict detection
+    /// Version 1: Legacy blockingStrategyId system
+    /// Version 2: New start/stop trigger system
+    var profileSchemaVersion: Int = 2
+
+    /// Start triggers - serialized as JSON in SwiftData
+    private var startTriggersData: Data?
+
+    /// Stop conditions - serialized as JSON in SwiftData
+    private var stopConditionsData: Data?
+
+    /// Computed property for start triggers with JSON serialization
+    var startTriggers: ProfileStartTriggers {
+        get {
+            guard let data = startTriggersData else { return ProfileStartTriggers() }
+            return (try? JSONDecoder().decode(ProfileStartTriggers.self, from: data))
+                ?? ProfileStartTriggers()
+        }
+        set {
+            startTriggersData = try? JSONEncoder().encode(newValue)
+        }
+    }
+
+    /// Computed property for stop conditions with JSON serialization
+    var stopConditions: ProfileStopConditions {
+        get {
+            guard let data = stopConditionsData else { return ProfileStopConditions() }
+            return (try? JSONDecoder().decode(ProfileStopConditions.self, from: data))
+                ?? ProfileStopConditions()
+        }
+        set {
+            stopConditionsData = try? JSONEncoder().encode(newValue)
+        }
+    }
+
+    /// NFC tag ID required to start (when startTriggers.specificNFC = true)
+    var startNFCTagId: String?
+
+    /// QR code ID required to start (when startTriggers.specificQR = true)
+    var startQRCodeId: String?
+
+    /// NFC tag ID required to stop (when stopConditions.specificNFC = true)
+    var stopNFCTagId: String?
+
+    /// QR code ID required to stop (when stopConditions.specificQR = true)
+    var stopQRCodeId: String?
+
+    /// Start schedule - serialized as JSON in SwiftData
+    private var startScheduleData: Data?
+
+    /// Stop schedule - serialized as JSON in SwiftData
+    private var stopScheduleData: Data?
+
+    /// Computed property for start schedule with JSON serialization
+    var startSchedule: ProfileScheduleTime? {
+        get {
+            guard let data = startScheduleData else { return nil }
+            return try? JSONDecoder().decode(ProfileScheduleTime.self, from: data)
+        }
+        set {
+            startScheduleData = newValue.flatMap { try? JSONEncoder().encode($0) }
+        }
+    }
+
+    /// Computed property for stop schedule with JSON serialization
+    var stopSchedule: ProfileScheduleTime? {
+        get {
+            guard let data = stopScheduleData else { return nil }
+            return try? JSONDecoder().decode(ProfileScheduleTime.self, from: data)
+        }
+        set {
+            stopScheduleData = newValue.flatMap { try? JSONEncoder().encode($0) }
+        }
+    }
+
     @Relationship var sessions: [BlockedProfileSession] = []
 
     var activeScheduleTimerActivity: DeviceActivityName? {
