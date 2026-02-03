@@ -22,7 +22,7 @@
       "target" : {
         "containerPath" : "container:FamilyFoqos.xcodeproj",
         "identifier" : "801B20A52CB363A20073E9E2",
-        "name" : "foqosTests"
+        "name" : "FoqosTests"
       }
     },
     {
@@ -30,7 +30,7 @@
       "target" : {
         "containerPath" : "container:FamilyFoqos.xcodeproj",
         "identifier" : "801B20AF2CB363A20073E9E2",
-        "name" : "foqosUITests"
+        "name" : "FoqosUITests"
       }
     }
   ],
