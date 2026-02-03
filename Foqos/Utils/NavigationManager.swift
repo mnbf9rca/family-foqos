@@ -1,5 +1,6 @@
 import SwiftUI
 
+@MainActor
 class NavigationManager: ObservableObject {
   @Published var profileId: String? = nil
   @Published var link: URL? = nil
