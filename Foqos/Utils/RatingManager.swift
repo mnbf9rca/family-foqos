@@ -1,6 +1,7 @@
 import StoreKit
 import SwiftUI
 
+@MainActor
 class RatingManager: ObservableObject {
   @AppStorage("launchCount") private var launchCount = 0
   @AppStorage("lastVersionPromptedForReview") private var lastVersionPromptedForReview: String?
