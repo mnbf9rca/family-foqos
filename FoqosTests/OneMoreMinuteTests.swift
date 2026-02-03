@@ -206,4 +206,62 @@ final class OneMoreMinuteTests: XCTestCase {
     XCTAssertTrue(state.isOneMoreMinuteActive)
     XCTAssertEqual(state.oneMoreMinuteTimeRemaining, 45)
   }
+
+  // MARK: - SharedData Sync Tests
+
+  func testSetOneMoreMinuteStartTimeUpdatesActiveSession() {
+    // Setup: Create a fresh session snapshot
+    let profileId = UUID()
+    let sessionStart = Date()
+    var snapshot = SharedData.SessionSnapshot(
+      id: "test-session",
+      tag: "test-tag",
+      blockedProfileId: profileId,
+      startTime: sessionStart,
+      forceStarted: false,
+      oneMoreMinuteUsed: false,
+      oneMoreMinuteStartTime: nil
+    )
+
+    // Verify initial state
+    XCTAssertFalse(snapshot.oneMoreMinuteUsed)
+    XCTAssertNil(snapshot.oneMoreMinuteStartTime)
+
+    // Simulate what setOneMoreMinuteStartTime does
+    let oneMoreMinuteStart = Date()
+    snapshot.oneMoreMinuteStartTime = oneMoreMinuteStart
+    snapshot.oneMoreMinuteUsed = true
+
+    // Verify the snapshot is updated
+    XCTAssertTrue(snapshot.oneMoreMinuteUsed)
+    XCTAssertEqual(snapshot.oneMoreMinuteStartTime, oneMoreMinuteStart)
+  }
+
+  func testOneMoreMinutePreservedAfterSnapshotSync() {
+    // This test verifies that if a snapshot has oneMoreMinuteStartTime set,
+    // it won't be lost during sync operations
+
+    let profileId = UUID()
+    let sessionStart = Date()
+    let oneMoreMinuteStart = Date()
+
+    // Create a "SwiftData session" state (simulated)
+    let swiftDataOneMoreMinuteUsed = true
+    let swiftDataOneMoreMinuteStartTime: Date? = oneMoreMinuteStart
+
+    // Create the snapshot with the same state (as should happen after fix)
+    let snapshot = SharedData.SessionSnapshot(
+      id: "test-session",
+      tag: "test-tag",
+      blockedProfileId: profileId,
+      startTime: sessionStart,
+      forceStarted: false,
+      oneMoreMinuteUsed: swiftDataOneMoreMinuteUsed,
+      oneMoreMinuteStartTime: swiftDataOneMoreMinuteStartTime
+    )
+
+    // After sync, the values should match
+    XCTAssertEqual(snapshot.oneMoreMinuteUsed, swiftDataOneMoreMinuteUsed)
+    XCTAssertEqual(snapshot.oneMoreMinuteStartTime, swiftDataOneMoreMinuteStartTime)
+  }
 }

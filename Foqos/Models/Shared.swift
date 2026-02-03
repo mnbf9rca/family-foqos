@@ -194,6 +194,11 @@ enum SharedData {
         activeSharedSession?.endTime = date
     }
 
+    static func setOneMoreMinuteStartTime(date: Date) {
+        activeSharedSession?.oneMoreMinuteStartTime = date
+        activeSharedSession?.oneMoreMinuteUsed = true
+    }
+
     // MARK: - Device Sync Settings
 
     /// Unique identifier for this device in sync operations.
