@@ -593,3 +593,62 @@ class BlockedProfiles {
         _ = try updateProfile(profile, in: context, domains: newDomains)
     }
 }
+
+// MARK: - Migration
+
+extension BlockedProfiles {
+    /// Current schema version
+    static let currentSchemaVersion = 2
+
+    /// Whether this profile needs migration
+    var needsMigration: Bool {
+        profileSchemaVersion < Self.currentSchemaVersion
+    }
+
+    /// Migrates profile from V1 (blockingStrategyId) to V2 (triggers) if needed
+    func migrateToV2IfNeeded() {
+        guard profileSchemaVersion < 2 else { return }
+
+        // Step 1: Migrate strategy to triggers
+        let (migratedStart, migratedStop) = TriggerMigration.migrateFromStrategy(
+            blockingStrategyId
+        )
+        startTriggers = migratedStart
+        var stop = migratedStop
+
+        // Step 2: Migrate physical unlock
+        if physicalUnblockNFCTagId != nil || physicalUnblockQRCodeId != nil {
+            let (updatedStop, tagId) = TriggerMigration.migratePhysicalUnlock(
+                stopConditions: stop,
+                physicalUnblockNFCTagId: physicalUnblockNFCTagId,
+                physicalUnblockQRCodeId: physicalUnblockQRCodeId
+            )
+            stop = updatedStop
+            if physicalUnblockNFCTagId != nil {
+                stopNFCTagId = tagId
+            } else {
+                stopQRCodeId = tagId
+            }
+        }
+        stopConditions = stop
+
+        // Step 3: Migrate schedule
+        let (start, stopSched) = TriggerMigration.migrateSchedule(schedule)
+        startSchedule = start
+        stopSchedule = stopSched
+
+        // Enable schedule trigger if schedule was active
+        if schedule?.isActive == true {
+            var triggers = startTriggers
+            triggers.schedule = true
+            startTriggers = triggers
+
+            var conditions = stopConditions
+            conditions.schedule = true
+            stopConditions = conditions
+        }
+
+        // Step 4: Mark as migrated
+        profileSchemaVersion = 2
+    }
+}
