@@ -359,6 +359,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 801B20BA2CB363A20073E9E2 /* Build configuration list for PBXNativeTarget "FamilyFoqos" */;
 			buildPhases = (
+				D472D4332F3200DE00AA3453 /* Concurrency Escape Hatch Lint */,
 				801B20912CB363A10073E9E2 /* Sources */,
 				801B20922CB363A10073E9E2 /* Frameworks */,
 				801B20932CB363A10073E9E2 /* Resources */,
@@ -569,6 +570,28 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		D472D4332F3200DE00AA3453 /* Concurrency Escape Hatch Lint */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Concurrency Escape Hatch Lint";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "PATTERNS='@unchecked Sendable|nonisolated\\(unsafe\\)'\nMATCHES=$(grep -rn --include=\"*.swift\" -E \"$PATTERNS\" \"${SRCROOT}/Foqos\" | grep -v \"// SAFETY:\" || true)\nif [ -n \"$MATCHES\" ]; then\n    echo \"error: Concurrency escape hatch without SAFETY justification:\"\n    echo \"$MATCHES\"\n    exit 1\nfi\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		801713062DE6C78C00B77FE1 /* Sources */ = {
