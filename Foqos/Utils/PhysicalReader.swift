@@ -7,7 +7,7 @@ class PhysicalReader {
   private let nfcScanner: NFCScannerUtil = NFCScannerUtil()
 
   func readNFCTag(
-    onSuccess: @escaping @MainActor (String) -> Void
+    onSuccess: @escaping (String) -> Void
   ) {
     nfcScanner.onTagScanned = { result in
       let tagId = result.url ?? result.id
@@ -18,8 +18,8 @@ class PhysicalReader {
   }
 
   func readQRCode(
-    onSuccess: @escaping @MainActor (String) -> Void,
-    onFailure: @escaping @MainActor (String) -> Void
+    onSuccess: @escaping (String) -> Void,
+    onFailure: @escaping (String) -> Void
   ) -> some View {
     return LabeledCodeScannerView(
       heading: "Scan to set",

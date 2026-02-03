@@ -10,8 +10,8 @@ struct NFCResult: Equatable {
 @MainActor
 class NFCScannerUtil: NSObject {
   // Callback closures for handling results and errors
-  var onTagScanned: (@MainActor (NFCResult) -> Void)?
-  var onError: (@MainActor (String) -> Void)?
+  var onTagScanned: ((NFCResult) -> Void)?
+  var onError: ((String) -> Void)?
 
   private var nfcSession: NFCReaderSession?
   private var urlToWrite: String?
