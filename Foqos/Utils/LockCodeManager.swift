@@ -6,6 +6,7 @@ import SwiftUI
 /// Manages lock codes for parent-controlled (managed) profiles.
 /// - Parents: Can create, view, and update lock codes
 /// - Children: Can only verify codes (cannot see them)
+@MainActor
 class LockCodeManager: ObservableObject {
     static let shared = LockCodeManager()
 
@@ -69,8 +70,8 @@ class LockCodeManager: ObservableObject {
             throw LockCodeError.notAuthorized
         }
 
-        await MainActor.run { isLoading = true }
-        defer { Task { await MainActor.run { self.isLoading = false } } }
+        isLoading = true
+        defer { isLoading = false }
 
         // Check if a code with this scope already exists
         if let existingIndex = lockCodes.firstIndex(where: { $0.scope == scope }) {
@@ -79,18 +80,13 @@ class LockCodeManager: ObservableObject {
 
             try await cloudKitManager.saveLockCode(updatedCode)
 
-            let savedCode = updatedCode
-            await MainActor.run {
-                lockCodes[existingIndex] = savedCode
-            }
+            lockCodes[existingIndex] = updatedCode
         } else {
             // Create new lock code
             let newLockCode = FamilyLockCode(code: code, scope: scope)
             try await cloudKitManager.saveLockCode(newLockCode)
 
-            await MainActor.run {
-                lockCodes.append(newLockCode)
-            }
+            lockCodes.append(newLockCode)
         }
     }
 
@@ -101,33 +97,27 @@ class LockCodeManager: ObservableObject {
             throw LockCodeError.notAuthorized
         }
 
-        await MainActor.run { isLoading = true }
-        defer { Task { await MainActor.run { self.isLoading = false } } }
+        isLoading = true
+        defer { isLoading = false }
 
         try await cloudKitManager.deleteLockCode(lockCode)
 
-        await MainActor.run {
-            lockCodes.removeAll { $0.id == lockCode.id }
-        }
+        lockCodes.removeAll { $0.id == lockCode.id }
     }
 
     /// Fetch all lock codes created by this user (parent or individual mode)
     func fetchLockCodes() async {
         guard appModeManager.currentMode != .child else { return }
 
-        await MainActor.run { isLoading = true }
-        defer { Task { await MainActor.run { self.isLoading = false } } }
+        isLoading = true
+        defer { isLoading = false }
 
         do {
             let codes = try await cloudKitManager.fetchLockCodes()
-            await MainActor.run {
-                self.lockCodes = codes
-                self.error = nil
-            }
+            self.lockCodes = codes
+            self.error = nil
         } catch {
-            await MainActor.run {
-                self.error = error.localizedDescription
-            }
+            self.error = error.localizedDescription
         }
     }
 
@@ -171,42 +161,35 @@ class LockCodeManager: ObservableObject {
     private func fetchSharedLockCodes() async {
         guard appModeManager.currentMode == .child else { return }
 
-        await MainActor.run { isLoading = true }
-        defer { Task { await MainActor.run { self.isLoading = false } } }
+        isLoading = true
+        defer { isLoading = false }
 
         // Use centralized authorization verification
         let result = await AuthorizationVerifier.shared.verifyChildAuthorization()
         guard result.isAuthorized else {
             // Let the centralized handler deal with authorization loss
             if let message = await AuthorizationVerifier.shared.verifyIfNeeded() {
-                await MainActor.run {
-                    self.cachedLockCodes = []
-                    self.error = message
-                }
+                self.cachedLockCodes = []
+                self.error = message
             }
             return
         }
 
         do {
             let codes = try await cloudKitManager.fetchSharedLockCodes()
-            await MainActor.run {
-                self.cachedLockCodes = codes
-                self.error = nil
-            }
+            self.cachedLockCodes = codes
+            self.error = nil
 
             // Also check for pending commands from parent
             await processPendingCommands()
         } catch {
-            await MainActor.run {
-                self.error = error.localizedDescription
-            }
+            self.error = error.localizedDescription
         }
     }
 
     /// Verify a code entered by a child
     /// Returns true if the code is valid for the given child
     /// For child mode, verifies authorization status before checking codes
-    @MainActor
     func verifyCode(_ code: String, forChildId childId: String?) -> Bool {
         // Use cached codes for verification
         let codesToCheck = appModeManager.currentMode == .parent ? lockCodes : cachedLockCodes
@@ -241,7 +224,6 @@ class LockCodeManager: ObservableObject {
     }
 
     /// Verify a code for a managed profile
-    @MainActor
     func verifyCodeForProfile(_ code: String, profile: BlockedProfiles) -> Bool {
         return verifyCode(code, forChildId: profile.managedByChildId)
     }
@@ -286,9 +268,7 @@ class LockCodeManager: ObservableObject {
 
         switch command.commandType {
         case .resetEmergencyCount:
-            await MainActor.run {
-                StrategyManager.shared.resetEmergencyUnblocks()
-            }
+            StrategyManager.shared.resetEmergencyUnblocks()
             Log.info("Emergency count reset by parent", category: .cloudKit)
         }
 
