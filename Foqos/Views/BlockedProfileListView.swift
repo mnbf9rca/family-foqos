@@ -1,5 +1,5 @@
 import FamilyControls
-import SwiftData
+@preconcurrency import SwiftData  // ReferenceWritableKeyPath in @Query lacks Sendable conformance
 import SwiftUI
 
 struct BlockedProfileListView: View {

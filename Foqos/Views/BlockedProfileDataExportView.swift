@@ -1,4 +1,4 @@
-import SwiftData
+@preconcurrency import SwiftData  // ReferenceWritableKeyPath in @Query lacks Sendable conformance
 import SwiftUI
 
 struct BlockedProfileDataExportView: View {
