@@ -41,8 +41,8 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "801B20A52CB363A20073E9E2"
-               BuildableName = "foqosTests.xctest"
-               BlueprintName = "foqosTests"
+               BuildableName = "FoqosTests.xctest"
+               BlueprintName = "FoqosTests"
                ReferencedContainer = "container:FamilyFoqos.xcodeproj">
             </BuildableReference>
          </TestableReference>
@@ -52,8 +52,8 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "801B20AF2CB363A20073E9E2"
-               BuildableName = "foqosUITests.xctest"
-               BlueprintName = "foqosUITests"
+               BuildableName = "FoqosUITests.xctest"
+               BlueprintName = "FoqosUITests"
                ReferencedContainer = "container:FamilyFoqos.xcodeproj">
             </BuildableReference>
          </TestableReference>
