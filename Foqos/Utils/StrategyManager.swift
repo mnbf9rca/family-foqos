@@ -4,7 +4,7 @@ import WidgetKit
 
 @MainActor
 class StrategyManager: ObservableObject {
-  static var shared = StrategyManager()
+  static let shared = StrategyManager()
 
   private let appModeManager = AppModeManager.shared
   private let lockCodeManager = LockCodeManager.shared
@@ -383,8 +383,8 @@ class StrategyManager: ObservableObject {
     stopOneMoreMinuteTimer()
 
     oneMoreMinuteTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-      Task { @MainActor [weak self] in
-        guard let self = self else { return }
+      Task { @MainActor in
+        guard let self else { return }
 
         guard let session = self.activeSession,
           let startTime = session.oneMoreMinuteStartTime
@@ -440,8 +440,8 @@ class StrategyManager: ObservableObject {
 
   func startTimer() {
     timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-      Task { @MainActor [weak self] in
-        guard let self = self else { return }
+      Task { @MainActor in
+        guard let self else { return }
         guard let session = self.activeSession else { return }
 
         if session.isBreakActive {
