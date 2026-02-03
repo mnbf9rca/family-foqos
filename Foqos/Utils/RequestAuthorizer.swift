@@ -3,15 +3,14 @@ import FamilyControls
 import ManagedSettings
 import SwiftUI
 
+@MainActor
 class RequestAuthorizer: ObservableObject {
     @Published var isAuthorized = false
     @Published var authorizationError: String?
 
-    private let appModeManager = AppModeManager.shared
-
     /// Request authorization for the current app mode
     func requestAuthorization() {
-        requestAuthorization(for: appModeManager.currentMode)
+        requestAuthorization(for: AppModeManager.shared.currentMode)
     }
 
     /// Request authorization for a specific app mode
@@ -33,16 +32,12 @@ class RequestAuthorizer: ObservableObject {
                     Log.info("Child authorization successful", category: .authorization)
                 }
 
-                await MainActor.run {
-                    self.isAuthorized = true
-                    self.authorizationError = nil
-                }
+                self.isAuthorized = true
+                self.authorizationError = nil
             } catch {
                 Log.info("Error requesting authorization: \(error)", category: .authorization)
-                await MainActor.run {
-                    self.isAuthorized = false
-                    self.authorizationError = self.describeAuthorizationError(error, for: mode)
-                }
+                self.isAuthorized = false
+                self.authorizationError = self.describeAuthorizationError(error, for: mode)
             }
         }
     }

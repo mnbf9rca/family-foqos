@@ -46,6 +46,7 @@ enum AppMode: String, Codable, CaseIterable {
 }
 
 /// Manages the current app mode with persistence
+@MainActor
 class AppModeManager: ObservableObject {
     static let shared = AppModeManager()
 

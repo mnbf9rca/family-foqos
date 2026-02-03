@@ -2,6 +2,7 @@ import SwiftData
 import SwiftUI
 import WidgetKit
 
+@MainActor
 class StrategyManager: ObservableObject {
   static var shared = StrategyManager()
 
@@ -382,26 +383,28 @@ class StrategyManager: ObservableObject {
     stopOneMoreMinuteTimer()
 
     oneMoreMinuteTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-      guard let self = self else { return }
+      Task { @MainActor [weak self] in
+        guard let self = self else { return }
 
-      guard let session = self.activeSession,
-        let startTime = session.oneMoreMinuteStartTime
-      else {
-        self.endOneMoreMinute()
-        Log.info("One more minute ended - no session or start time", category: .strategy)
-        return
-      }
+        guard let session = self.activeSession,
+          let startTime = session.oneMoreMinuteStartTime
+        else {
+          self.endOneMoreMinute()
+          Log.info("One more minute ended - no session or start time", category: .strategy)
+          return
+        }
 
-      let elapsed = Date().timeIntervalSince(startTime)
-      let remaining = max(0, 60 - elapsed)
-      self.oneMoreMinuteTimeRemaining = remaining
+        let elapsed = Date().timeIntervalSince(startTime)
+        let remaining = max(0, 60 - elapsed)
+        self.oneMoreMinuteTimeRemaining = remaining
 
-      self.liveActivityManager.updateOneMoreMinuteState(
-        session: session, timeRemaining: self.oneMoreMinuteTimeRemaining)
+        self.liveActivityManager.updateOneMoreMinuteState(
+          session: session, timeRemaining: self.oneMoreMinuteTimeRemaining)
 
-      if remaining <= 0 {
-        self.endOneMoreMinute()
-        Log.info("One more minute ended - restrictions re-activated", category: .strategy)
+        if remaining <= 0 {
+          self.endOneMoreMinute()
+          Log.info("One more minute ended - restrictions re-activated", category: .strategy)
+        }
       }
     }
   }
@@ -436,20 +439,23 @@ class StrategyManager: ObservableObject {
   }
 
   func startTimer() {
-    timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
-      guard let session = self.activeSession else { return }
+    timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+      Task { @MainActor [weak self] in
+        guard let self = self else { return }
+        guard let session = self.activeSession else { return }
 
-      if session.isBreakActive {
-        // Calculate break time remaining (countdown)
-        guard let breakStartTime = session.breakStartTime else { return }
-        let timeSinceBreakStart = Date().timeIntervalSince(breakStartTime)
-        let breakDurationInSeconds = TimeInterval(session.blockedProfile.breakTimeInMinutes * 60)
-        self.elapsedTime = max(0, breakDurationInSeconds - timeSinceBreakStart)
-      } else {
-        // Calculate session elapsed time
-        let rawElapsedTime = Date().timeIntervalSince(session.startTime)
-        let breakDuration = self.calculateBreakDuration()
-        self.elapsedTime = rawElapsedTime - breakDuration
+        if session.isBreakActive {
+          // Calculate break time remaining (countdown)
+          guard let breakStartTime = session.breakStartTime else { return }
+          let timeSinceBreakStart = Date().timeIntervalSince(breakStartTime)
+          let breakDurationInSeconds = TimeInterval(session.blockedProfile.breakTimeInMinutes * 60)
+          self.elapsedTime = max(0, breakDurationInSeconds - timeSinceBreakStart)
+        } else {
+          // Calculate session elapsed time
+          let rawElapsedTime = Date().timeIntervalSince(session.startTime)
+          let breakDuration = self.calculateBreakDuration()
+          self.elapsedTime = rawElapsedTime - breakDuration
+        }
       }
     }
   }
