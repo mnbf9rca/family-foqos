@@ -23,7 +23,7 @@ enum NotificationResult: Sendable {
   }
 }
 
-final class TimersUtil: @unchecked Sendable {
+final class TimersUtil: @unchecked Sendable {  // SAFETY: Mutable state (backgroundTasks) uses thread-safe UserDefaults
   /// Constants for background task identifiers
   static let backgroundProcessingTaskIdentifier =
     "com.cynexia.family-foqos.backgroundprocessing"

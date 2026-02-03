@@ -289,9 +289,7 @@ actor SessionSyncService {
       operation.savePolicy = policy
       operation.qualityOfService = .userInitiated
 
-      // Use nonisolated(unsafe) to allow mutation across callbacks
-      // This is safe because CloudKit guarantees these callbacks are serialized
-      nonisolated(unsafe) var hasResumed = false
+      nonisolated(unsafe) var hasResumed = false  // SAFETY: CloudKit guarantees callbacks are serialized
 
       operation.perRecordSaveBlock = { _, result in
         guard !hasResumed else { return }
