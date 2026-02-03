@@ -1,5 +1,5 @@
 import AppIntents
-import SwiftData
+@preconcurrency import SwiftData  // ReferenceWritableKeyPath in SortDescriptor lacks Sendable conformance
 
 struct BlockedProfileEntity: AppEntity, Identifiable {
   let id: UUID

@@ -2,7 +2,7 @@ import DeviceActivity
 import FamilyControls
 import Foundation
 import ManagedSettings
-import SwiftData
+@preconcurrency import SwiftData  // ReferenceWritableKeyPath in SortDescriptor lacks Sendable conformance
 
 @Model
 class BlockedProfiles {
