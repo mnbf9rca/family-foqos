@@ -14,6 +14,7 @@ struct ProfileInsightsMetrics {
   let sessionsWithoutBreaks: Int
 }
 
+@MainActor
 class ProfileInsightsUtil: ObservableObject {
   @Published var metrics: ProfileInsightsMetrics
 
