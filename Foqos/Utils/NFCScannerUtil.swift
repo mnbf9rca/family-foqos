@@ -7,10 +7,11 @@ struct NFCResult: Equatable {
   var DateScanned: Date
 }
 
+@MainActor
 class NFCScannerUtil: NSObject {
   // Callback closures for handling results and errors
-  var onTagScanned: ((NFCResult) -> Void)?
-  var onError: ((String) -> Void)?
+  var onTagScanned: (@MainActor (NFCResult) -> Void)?
+  var onError: (@MainActor (String) -> Void)?
 
   private var nfcSession: NFCReaderSession?
   private var urlToWrite: String?
@@ -54,17 +55,18 @@ class NFCScannerUtil: NSObject {
 
 // MARK: - NFCTagReaderSessionDelegate
 extension NFCScannerUtil: NFCTagReaderSessionDelegate {
-  func tagReaderSessionDidBecomeActive(_ session: NFCTagReaderSession) {
+  nonisolated func tagReaderSessionDidBecomeActive(_ session: NFCTagReaderSession) {
     // Session started
   }
 
-  func tagReaderSession(_ session: NFCTagReaderSession, didInvalidateWithError error: Error) {
-    DispatchQueue.main.async {
-      self.onError?(error.localizedDescription)
+  nonisolated func tagReaderSession(_ session: NFCTagReaderSession, didInvalidateWithError error: Error) {
+    let errorMessage = error.localizedDescription
+    Task { @MainActor in
+      self.onError?(errorMessage)
     }
   }
 
-  func tagReaderSession(_ session: NFCTagReaderSession, didDetect tags: [NFCTag]) {
+  nonisolated func tagReaderSession(_ session: NFCTagReaderSession, didDetect tags: [NFCTag]) {
     guard let tag = tags.first else { return }
 
     session.connect(to: tag) { error in
@@ -74,17 +76,21 @@ extension NFCScannerUtil: NFCTagReaderSessionDelegate {
       }
 
       switch tag {
-      case .iso15693(let tag):
-        self.readISO15693Tag(tag, session: session)
-      case .miFare(let tag):
-        self.readMiFareTag(tag, session: session)
+      case .iso15693(let iso15693Tag):
+        Task { @MainActor in
+          self.readISO15693Tag(iso15693Tag, session: session)
+        }
+      case .miFare(let miFareTag):
+        Task { @MainActor in
+          self.readMiFareTag(miFareTag, session: session)
+        }
       default:
         session.invalidate(errorMessage: "Unsupported tag type")
       }
     }
   }
 
-  private func updateWithNDEFMessageURL(_ message: NFCNDEFMessage) -> String? {
+  private nonisolated func updateWithNDEFMessageURL(_ message: NFCNDEFMessage) -> String? {
     let urls: [URLComponents] = message.records.compactMap {
       (payload: NFCNDEFPayload) -> URLComponents? in
       if let url = payload.wellKnownTypeURIPayload() {
@@ -104,78 +110,83 @@ extension NFCScannerUtil: NFCTagReaderSessionDelegate {
   }
 
   private func readMiFareTag(_ tag: NFCMiFareTag, session: NFCTagReaderSession) {
+    let tagIdentifier = tag.identifier.hexEncodedString()
     tag.readNDEF { (message: NFCNDEFMessage?, error: Error?) in
       if error != nil || message == nil {
-        let tagId = tag.identifier.hexEncodedString()
-
         if let error = error {
-          Log.info("⚠️ NDEF read failed (non-critical): \(error.localizedDescription). using tag id: \(tagId)", category: .nfc)
+          Log.info("⚠️ NDEF read failed (non-critical): \(error.localizedDescription). using tag id: \(tagIdentifier)", category: .nfc)
         }
 
         // Still use the identifier - works for all tag types
-        self.handleTagData(
-          id: tagId,
-          url: nil,
-          session: session
-        )
+        Task { @MainActor in
+          self.handleTagData(
+            id: tagIdentifier,
+            url: nil,
+            session: session
+          )
+        }
         return
       }
 
+      // Extract URL before hopping to MainActor (message is not Sendable)
       let url = self.updateWithNDEFMessageURL(message!)
-      self.handleTagData(
-        id: tag.identifier.hexEncodedString(),
-        url: url,
-        session: session
-      )
+      Task { @MainActor in
+        self.handleTagData(
+          id: tagIdentifier,
+          url: url,
+          session: session
+        )
+      }
     }
   }
 
   private func readISO15693Tag(_ tag: NFCISO15693Tag, session: NFCTagReaderSession) {
+    let tagIdentifier = tag.identifier.hexEncodedString()
     tag.readNDEF { (message: NFCNDEFMessage?, error: Error?) in
       if error != nil || message == nil {
-        let tagId = tag.identifier.hexEncodedString()
-
         if let error = error {
-          Log.info("⚠️ ISO15693 NDEF read failed (non-critical): \(error.localizedDescription). using tag id: \(tagId)", category: .nfc)
+          Log.info("⚠️ ISO15693 NDEF read failed (non-critical): \(error.localizedDescription). using tag id: \(tagIdentifier)", category: .nfc)
         }
 
-        self.handleTagData(
-          id: tagId,
-          url: nil,
-          session: session
-        )
+        Task { @MainActor in
+          self.handleTagData(
+            id: tagIdentifier,
+            url: nil,
+            session: session
+          )
+        }
         return
       }
 
+      // Extract URL before hopping to MainActor (message is not Sendable)
       let url = self.updateWithNDEFMessageURL(message!)
-      self.handleTagData(
-        id: tag.identifier.hexEncodedString(),
-        url: url,
-        session: session
-      )
+      Task { @MainActor in
+        self.handleTagData(
+          id: tagIdentifier,
+          url: url,
+          session: session
+        )
+      }
     }
   }
 
   private func handleTagData(id: String, url: String?, session: NFCTagReaderSession) {
     let result = NFCResult(id: id, url: url, DateScanned: Date())
-
-    DispatchQueue.main.async {
-      self.onTagScanned?(result)
-      session.invalidate()
-    }
+    self.onTagScanned?(result)
+    session.invalidate()
   }
 }
 
 // New NDEF Writing Support
 extension NFCScannerUtil: NFCNDEFReaderSessionDelegate {
-  func readerSession(
+  nonisolated func readerSession(
     _ session: NFCNDEFReaderSession,
     didDetectNDEFs messages: [NFCNDEFMessage]
   ) {
     // Not used for writing
   }
 
-  func readerSession(
+  nonisolated func readerSession(
     _ session: NFCNDEFReaderSession, didDetect tags: [NFCNDEFTag]
   ) {
     guard let tag = tags.first else {
@@ -204,7 +215,9 @@ extension NFCScannerUtil: NFCNDEFReaderSessionDelegate {
         case .readOnly:
           session.invalidate(errorMessage: "Tag is read-only")
         case .readWrite:
-          self.handleReadWrite(session, tag: tag)
+          Task { @MainActor in
+            self.handleReadWrite(session, tag: tag)
+          }
         @unknown default:
           session.invalidate(errorMessage: "Unknown tag status")
         }
@@ -212,15 +225,16 @@ extension NFCScannerUtil: NFCNDEFReaderSessionDelegate {
     }
   }
 
-  func readerSessionDidBecomeActive(_ session: NFCNDEFReaderSession) {
+  nonisolated func readerSessionDidBecomeActive(_ session: NFCNDEFReaderSession) {
     // Session became active
   }
 
-  func readerSession(
+  nonisolated func readerSession(
     _ session: NFCNDEFReaderSession, didInvalidateWithError error: Error
   ) {
-    DispatchQueue.main.async {
-      if let readerError = error as? NFCReaderError {
+    let readerError = error as? NFCReaderError
+    Task { @MainActor in
+      if let readerError = readerError {
         switch readerError.code {
         case .readerSessionInvalidationErrorFirstNDEFTagRead,
           .readerSessionInvalidationErrorUserCanceled:
