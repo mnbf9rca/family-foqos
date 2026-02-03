@@ -18,11 +18,13 @@ struct WidgetProfileEntity: AppEntity {
     self.name = name
   }
 
-  static var typeDisplayRepresentation = TypeDisplayRepresentation(
+  // SAFETY: AppIntents framework requires static var for protocol conformance; values are immutable after init
+  nonisolated(unsafe) static var typeDisplayRepresentation = TypeDisplayRepresentation(
     name: "Profile"
   )
 
-  static var defaultQuery = WidgetProfileQuery()
+  // SAFETY: AppIntents framework requires static var for protocol conformance; values are immutable after init
+  nonisolated(unsafe) static var defaultQuery = WidgetProfileQuery()
 
   var displayRepresentation: DisplayRepresentation {
     DisplayRepresentation(title: "\(name)")
@@ -53,8 +55,10 @@ struct WidgetProfileQuery: EntityQuery {
 
 // MARK: - Widget Configuration Intent
 struct ProfileSelectionIntent: WidgetConfigurationIntent {
-  static var title: LocalizedStringResource = "Select Profile"
-  static var description = IntentDescription("Choose which profile to display in the widget")
+  // SAFETY: AppIntents framework requires static var for protocol conformance; values are immutable after init
+  nonisolated(unsafe) static var title: LocalizedStringResource = "Select Profile"
+  // SAFETY: AppIntents framework requires static var for protocol conformance; values are immutable after init
+  nonisolated(unsafe) static var description = IntentDescription("Choose which profile to display in the widget")
 
   @Parameter(title: "Profile", description: "The profile to monitor in the widget")
   var profile: WidgetProfileEntity?

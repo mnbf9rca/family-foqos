@@ -12,7 +12,8 @@ struct StopProfileIntent: AppIntent {
 
   @Parameter(title: "Profile") var profile: BlockedProfileEntity
 
-  static var title: LocalizedStringResource = "Stop Family Foqos Profile"
+  // SAFETY: AppIntents framework requires static var for protocol conformance; values are immutable after init
+  nonisolated(unsafe) static var title: LocalizedStringResource = "Stop Family Foqos Profile"
 
   @MainActor
   func perform() async throws -> some IntentResult {

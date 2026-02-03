@@ -14,9 +14,11 @@ struct StartProfileIntent: AppIntent {
 
   @Parameter(title: "Duration minutes (Optional)") var durationInMinutes: Int?
 
-  static var title: LocalizedStringResource = "Start Family Foqos Profile"
+  // SAFETY: AppIntents framework requires static var for protocol conformance; values are immutable after init
+  nonisolated(unsafe) static var title: LocalizedStringResource = "Start Family Foqos Profile"
 
-  static var description = IntentDescription(
+  // SAFETY: AppIntents framework requires static var for protocol conformance; values are immutable after init
+  nonisolated(unsafe) static var description = IntentDescription(
     "Start a Family Foqos blocking profile. Optionally specify a timer duration in minutes (15-1440)."
   )
 

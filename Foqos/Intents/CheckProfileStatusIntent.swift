@@ -12,8 +12,10 @@ struct CheckProfileStatusIntent: AppIntent {
 
   @Parameter(title: "Profile") var profile: BlockedProfileEntity
 
-  static var title: LocalizedStringResource = "Family Foqos Profile Status"
-  static var description = IntentDescription(
+  // SAFETY: AppIntents framework requires static var for protocol conformance; values are immutable after init
+  nonisolated(unsafe) static var title: LocalizedStringResource = "Family Foqos Profile Status"
+  // SAFETY: AppIntents framework requires static var for protocol conformance; values are immutable after init
+  nonisolated(unsafe) static var description = IntentDescription(
     "Check if a Family Foqos profile is currently active and return the status as a boolean value.")
 
   @MainActor

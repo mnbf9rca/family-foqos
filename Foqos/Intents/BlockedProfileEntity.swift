@@ -15,11 +15,13 @@ struct BlockedProfileEntity: AppEntity, Identifiable {
     self.name = profile.name
   }
 
-  static var typeDisplayRepresentation = TypeDisplayRepresentation(
+  // SAFETY: AppIntents framework requires static var for protocol conformance; values are immutable after init
+  nonisolated(unsafe) static var typeDisplayRepresentation = TypeDisplayRepresentation(
     name: "Profile"
   )
 
-  static var defaultQuery = BlockedProfilesQuery()
+  // SAFETY: AppIntents framework requires static var for protocol conformance; values are immutable after init
+  nonisolated(unsafe) static var defaultQuery = BlockedProfilesQuery()
 
   var displayRepresentation: DisplayRepresentation {
     DisplayRepresentation(title: "\(name)")
