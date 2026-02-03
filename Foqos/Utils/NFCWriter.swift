@@ -1,4 +1,4 @@
-import CoreNFC
+@preconcurrency import CoreNFC  // NFCTagReaderSession, NFCMiFareTag, NFCISO15693Tag lack Sendable
 import SwiftUI
 
 /// Writes NDEF-formatted URLs to NFC tags
@@ -13,6 +13,7 @@ import SwiftUI
 /// - Hotel key cards (proprietary lock system data)
 /// - Read-only/locked tags
 /// - Non-NDEF formatted tags
+@MainActor
 class NFCWriter: NSObject, ObservableObject {
   var scannedNFCTag: NFCResult?
   var isScanning: Bool = false
@@ -52,18 +53,88 @@ class NFCWriter: NSObject, ObservableObject {
   }
 }
 
+// MARK: - Sendable Wrappers for CoreNFC Types
+// CoreNFC types are not Sendable but are thread-safe when used with their session's queue.
+// These wrappers allow passing them through @Sendable closures in callback chains.
+
+private struct NFCSessionBox: @unchecked Sendable {  // SAFETY: NFCTagReaderSession is only used on CoreNFC's internal queue
+  private let session: NFCTagReaderSession
+
+  init(session: NFCTagReaderSession) {
+    self.session = session
+  }
+
+  func connect(to tag: NFCTag, completionHandler: @escaping @Sendable (Error?) -> Void) {
+    session.connect(to: tag, completionHandler: completionHandler)
+  }
+
+  func invalidate(errorMessage: String) {
+    session.invalidate(errorMessage: errorMessage)
+  }
+
+  func invalidate() {
+    session.invalidate()
+  }
+
+  var alertMessage: String {
+    get { session.alertMessage }
+    nonmutating set { session.alertMessage = newValue }
+  }
+}
+
+private struct NFCTagBox: @unchecked Sendable {  // SAFETY: NFCTag is only used on CoreNFC's internal queue after connection
+  let tag: NFCTag
+}
+
+private struct NFCMiFareTagBox: @unchecked Sendable {  // SAFETY: NFCMiFareTag is only used on CoreNFC's internal queue
+  let tag: NFCMiFareTag
+
+  func queryNDEFStatus(completionHandler: @escaping @Sendable (NFCNDEFStatus, Int, (any Error)?) -> Void) {
+    tag.queryNDEFStatus(completionHandler: completionHandler)
+  }
+}
+
+private struct NFCISO15693TagBox: @unchecked Sendable {  // SAFETY: NFCISO15693Tag is only used on CoreNFC's internal queue
+  let tag: NFCISO15693Tag
+
+  func queryNDEFStatus(completionHandler: @escaping @Sendable (NFCNDEFStatus, Int, (any Error)?) -> Void) {
+    tag.queryNDEFStatus(completionHandler: completionHandler)
+  }
+}
+
+private struct NFCNDEFTagBox: @unchecked Sendable {  // SAFETY: NFCNDEFTag is only used on CoreNFC's internal queue
+  let tag: NFCNDEFTag
+
+  func writeNDEF(_ ndefMessage: NFCNDEFMessage, completionHandler: @escaping @Sendable ((any Error)?) -> Void) {
+    tag.writeNDEF(ndefMessage, completionHandler: completionHandler)
+  }
+}
+
+private struct NFCNDEFMessageBox: @unchecked Sendable {  // SAFETY: NFCNDEFMessage is immutable after creation
+  let message: NFCNDEFMessage
+
+  var length: Int { message.length }
+}
+
 // MARK: - NFCTagReaderSessionDelegate
 extension NFCWriter: NFCTagReaderSessionDelegate {
-  func tagReaderSessionDidBecomeActive(_ session: NFCTagReaderSession) {
+  nonisolated func tagReaderSessionDidBecomeActive(_ session: NFCTagReaderSession) {
     // Session became active
   }
 
-  func tagReaderSession(_ session: NFCTagReaderSession, didInvalidateWithError error: Error) {
-    DispatchQueue.main.async {
+  nonisolated func tagReaderSession(
+    _ session: NFCTagReaderSession, didInvalidateWithError error: Error
+  ) {
+    // Capture values before MainActor hop
+    let readerError = error as? NFCReaderError
+    let errorCode = readerError?.code
+    let localizedDescription = error.localizedDescription
+
+    Task { @MainActor in
       self.isScanning = false
 
-      if let readerError = error as? NFCReaderError {
-        switch readerError.code {
+      if let errorCode = errorCode {
+        switch errorCode {
         case .readerSessionInvalidationErrorUserCanceled:
           // User canceled - not an error
           break
@@ -73,129 +144,142 @@ extension NFCWriter: NFCTagReaderSessionDelegate {
           self.errorMessage = "Tag moved away. Please hold it steady."
         default:
           // Log the actual error for debugging
-          Log.info("⚠️ NFC Writer error: \(readerError.code.rawValue) - \(error.localizedDescription)", category: .nfc)
-          self.errorMessage = error.localizedDescription
+          Log.info(
+            "⚠️ NFC Writer error: \(errorCode.rawValue) - \(localizedDescription)", category: .nfc)
+          self.errorMessage = localizedDescription
         }
       }
     }
   }
 
-  func tagReaderSession(_ session: NFCTagReaderSession, didDetect tags: [NFCTag]) {
+  nonisolated func tagReaderSession(_ session: NFCTagReaderSession, didDetect tags: [NFCTag]) {
     guard let tag = tags.first else {
       session.invalidate(errorMessage: "No tag found")
       return
     }
 
-    session.connect(to: tag) { error in
+    // Fetch URL from MainActor FIRST, then proceed with all NFC work
+    let sessionBox = NFCSessionBox(session: session)
+    let tagBox = NFCTagBox(tag: tag)
+
+    Task { @MainActor in
+      guard let urlString = self.urlToWrite,
+        let url = URL(string: urlString),
+        let urlPayload = NFCNDEFPayload.wellKnownTypeURIPayload(url: url)
+      else {
+        sessionBox.invalidate(errorMessage: "Invalid URL format")
+        return
+      }
+
+      let message = NFCNDEFMessage(records: [urlPayload])
+      let messageBox = NFCNDEFMessageBox(message: message)
+
+      // Now proceed with NFC operations - pass all needed data through closures
+      self.connectAndWrite(sessionBox: sessionBox, tagBox: tagBox, messageBox: messageBox)
+    }
+  }
+
+  // MARK: - NFC Operations (nonisolated - all work happens on CoreNFC's queue)
+
+  nonisolated private func connectAndWrite(
+    sessionBox: NFCSessionBox, tagBox: NFCTagBox, messageBox: NFCNDEFMessageBox
+  ) {
+    sessionBox.connect(to: tagBox.tag) { error in
       if error != nil {
-        session.invalidate(
+        sessionBox.invalidate(
           errorMessage: "Connection error. Please hold tag steady and try again.")
         return
       }
 
       // Handle different tag types
-      switch tag {
+      switch tagBox.tag {
       case .miFare(let miFareTag):
-        self.handleMiFareTagWrite(miFareTag, session: session)
+        self.handleMiFareTagWrite(
+          NFCMiFareTagBox(tag: miFareTag), sessionBox: sessionBox, messageBox: messageBox)
       case .iso15693(let iso15693Tag):
-        self.handleISO15693TagWrite(iso15693Tag, session: session)
+        self.handleISO15693TagWrite(
+          NFCISO15693TagBox(tag: iso15693Tag), sessionBox: sessionBox, messageBox: messageBox)
       case .iso7816:
-        // ISO7816 tags (smart cards, payment cards) cannot be written to
-        session.invalidate(
-          errorMessage: "This type of card cannot be written to.")
+        sessionBox.invalidate(errorMessage: "This type of card cannot be written to.")
       case .feliCa:
-        // FeliCa tags (Sony) cannot be written to with NDEF
-        session.invalidate(
-          errorMessage: "This type of card cannot be written to.")
+        sessionBox.invalidate(errorMessage: "This type of card cannot be written to.")
       @unknown default:
-        session.invalidate(errorMessage: "Unsupported tag type")
+        sessionBox.invalidate(errorMessage: "Unsupported tag type")
       }
     }
   }
 
-  // MARK: - MiFare Tag Writing
-  private func handleMiFareTagWrite(_ tag: NFCMiFareTag, session: NFCTagReaderSession) {
-    // Check if this MiFare tag supports NDEF
-    tag.queryNDEFStatus { status, capacity, error in
+  nonisolated private func handleMiFareTagWrite(
+    _ tagBox: NFCMiFareTagBox, sessionBox: NFCSessionBox, messageBox: NFCNDEFMessageBox
+  ) {
+    tagBox.queryNDEFStatus { status, capacity, error in
       if error != nil {
-        // Tag doesn't support NDEF queries (Amiibos, hotel cards, etc.)
-        session.invalidate(
+        sessionBox.invalidate(
           errorMessage: "This tag cannot be written to. Use a blank NFC tag instead.")
         return
       }
 
       switch status {
       case .notSupported:
-        // Tag detected but doesn't support NDEF (proprietary format)
-        session.invalidate(
+        sessionBox.invalidate(
           errorMessage: "This tag uses a proprietary format. Use a blank NFC tag instead.")
       case .readOnly:
-        session.invalidate(
-          errorMessage: "This tag is locked and cannot be modified.")
+        sessionBox.invalidate(errorMessage: "This tag is locked and cannot be modified.")
       case .readWrite:
-        self.writeNDEFToTag(tag, session: session, capacity: capacity)
+        self.writeNDEFMessage(
+          NFCNDEFTagBox(tag: tagBox.tag), sessionBox: sessionBox, messageBox: messageBox,
+          capacity: capacity)
       @unknown default:
-        session.invalidate(errorMessage: "Unknown tag status")
+        sessionBox.invalidate(errorMessage: "Unknown tag status")
       }
     }
   }
 
-  // MARK: - ISO15693 Tag Writing
-  private func handleISO15693TagWrite(_ tag: NFCISO15693Tag, session: NFCTagReaderSession) {
-    // Check if this ISO15693 tag supports NDEF
-    tag.queryNDEFStatus { status, capacity, error in
+  nonisolated private func handleISO15693TagWrite(
+    _ tagBox: NFCISO15693TagBox, sessionBox: NFCSessionBox, messageBox: NFCNDEFMessageBox
+  ) {
+    tagBox.queryNDEFStatus { status, capacity, error in
       if error != nil {
-        session.invalidate(
+        sessionBox.invalidate(
           errorMessage: "This tag cannot be written to. Use a blank NFC tag instead.")
         return
       }
 
       switch status {
       case .notSupported:
-        session.invalidate(
+        sessionBox.invalidate(
           errorMessage: "This tag uses a proprietary format. Use a blank NFC tag instead.")
       case .readOnly:
-        session.invalidate(
-          errorMessage: "This tag is locked and cannot be modified.")
+        sessionBox.invalidate(errorMessage: "This tag is locked and cannot be modified.")
       case .readWrite:
-        self.writeNDEFToTag(tag, session: session, capacity: capacity)
+        self.writeNDEFMessage(
+          NFCNDEFTagBox(tag: tagBox.tag), sessionBox: sessionBox, messageBox: messageBox,
+          capacity: capacity)
       @unknown default:
-        session.invalidate(errorMessage: "Unknown tag status")
+        sessionBox.invalidate(errorMessage: "Unknown tag status")
       }
     }
   }
 
-  // MARK: - Write NDEF to Tag
-  private func writeNDEFToTag(_ tag: NFCNDEFTag, session: NFCTagReaderSession, capacity: Int) {
-    guard let urlString = self.urlToWrite,
-      let url = URL(string: urlString),
-      let urlPayload = NFCNDEFPayload.wellKnownTypeURIPayload(url: url)
-    else {
-      session.invalidate(errorMessage: "Invalid URL format")
-      return
-    }
-
-    let message = NFCNDEFMessage(records: [urlPayload])
-
-    // Check if the message fits on the tag
-    let messageSize = message.length
+  nonisolated private func writeNDEFMessage(
+    _ tagBox: NFCNDEFTagBox, sessionBox: NFCSessionBox, messageBox: NFCNDEFMessageBox, capacity: Int
+  ) {
+    let messageSize = messageBox.length
     if messageSize > capacity {
-      session.invalidate(
+      sessionBox.invalidate(
         errorMessage: "URL too long for this tag (\(messageSize) > \(capacity) bytes)")
       return
     }
 
-    // Write the NDEF message to the tag
-    tag.writeNDEF(message) { error in
+    tagBox.writeNDEF(messageBox.message) { error in
       if error != nil {
-        session.invalidate(
-          errorMessage: "Write failed. Please try again.")
+        sessionBox.invalidate(errorMessage: "Write failed. Please try again.")
       } else {
-        session.alertMessage = "✓ Successfully wrote profile to tag"
-        DispatchQueue.main.async {
+        sessionBox.alertMessage = "✓ Successfully wrote profile to tag"
+        Task { @MainActor in
           self.isScanning = false
         }
-        session.invalidate()
+        sessionBox.invalidate()
       }
     }
   }

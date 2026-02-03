@@ -2,6 +2,7 @@ import ActivityKit
 import Foundation
 import SwiftUI
 
+@MainActor
 class LiveActivityManager: ObservableObject {
   // Published property for live activity reference
   @Published var currentActivity: Activity<FoqosWidgetAttributes>?

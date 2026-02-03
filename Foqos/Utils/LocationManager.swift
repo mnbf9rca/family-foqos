@@ -4,6 +4,7 @@ import SwiftData
 
 /// Manages location services for geofence-based override restrictions.
 /// Uses "When In Use" permission - only checks location on-demand when stopping a session.
+@MainActor
 class LocationManager: NSObject, ObservableObject {
   static let shared = LocationManager()
 
@@ -182,28 +183,31 @@ class LocationManager: NSObject, ObservableObject {
 // MARK: - CLLocationManagerDelegate
 
 extension LocationManager: CLLocationManagerDelegate {
-  func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-    if let location = locations.last {
-      locationContinuation?.resume(returning: location)
-      locationContinuation = nil
+  nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+    let location = locations.last
+    Task { @MainActor in
+      if let location = location {
+        self.locationContinuation?.resume(returning: location)
+        self.locationContinuation = nil
+      }
     }
   }
 
-  func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-    locationContinuation?.resume(throwing: LocationError.locationUnavailable)
-    locationContinuation = nil
+  nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+    Task { @MainActor in
+      self.locationContinuation?.resume(throwing: LocationError.locationUnavailable)
+      self.locationContinuation = nil
+    }
   }
 
-  func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+  nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
     let status = manager.authorizationStatus
-
-    // Resume any pending authorization continuation
-    if let continuation = authorizationContinuation {
-      authorizationContinuation = nil
-      continuation.resume(returning: status)
-    }
-
-    DispatchQueue.main.async {
+    Task { @MainActor in
+      // Resume any pending authorization continuation
+      if let continuation = self.authorizationContinuation {
+        self.authorizationContinuation = nil
+        continuation.resume(returning: status)
+      }
       self.authorizationStatus = status
     }
   }
