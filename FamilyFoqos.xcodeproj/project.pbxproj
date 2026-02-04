@@ -17,22 +17,6 @@
 		80FF388E2D80DB540032BC5E /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 80C6CAFA2D4301B3008680F4 /* WidgetKit.framework */; };
 		80FF388F2D80DB540032BC5E /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 80C6CAFC2D4301B3008680F4 /* SwiftUI.framework */; };
 		80FF389C2D80DB560032BC5E /* FoqosWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 80FF388D2D80DB540032BC5E /* FoqosWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		D472EED02F33C85500AA3453 /* BlockedProfilesMigrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D472EEC62F33C85500AA3453 /* BlockedProfilesMigrationTests.swift */; };
-		D472EED12F33C85500AA3453 /* ProfileScheduleTimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D472EEC82F33C85500AA3453 /* ProfileScheduleTimeTests.swift */; };
-		D472EED22F33C85500AA3453 /* ProfileStartTriggersTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D472EEC92F33C85500AA3453 /* ProfileStartTriggersTests.swift */; };
-		D472EED32F33C85500AA3453 /* ProfileStopConditionsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D472EECA2F33C85500AA3453 /* ProfileStopConditionsTests.swift */; };
-		D472EED42F33C85500AA3453 /* TriggerMigrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D472EECE2F33C85500AA3453 /* TriggerMigrationTests.swift */; };
-		D472EED52F33C85500AA3453 /* BlockedProfilesTriggersTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D472EEC72F33C85500AA3453 /* BlockedProfilesTriggersTests.swift */; };
-		D472EED62F33C85500AA3453 /* StrategyManagerStartTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D472EECB2F33C85500AA3453 /* StrategyManagerStartTests.swift */; };
-		D472EED72F33C85500AA3453 /* StrategyManagerStopTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D472EECC2F33C85500AA3453 /* StrategyManagerStopTests.swift */; };
-		D472EED82F33C85500AA3453 /* TriggerConfigurationModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D472EECD2F33C85500AA3453 /* TriggerConfigurationModelTests.swift */; };
-		D472EED92F33C85500AA3453 /* TriggerValidatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D472EECF2F33C85500AA3453 /* TriggerValidatorTests.swift */; };
-		D4EECE192F3135FB0075C93E /* MockSessionSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4EECE122F3135FB0075C93E /* MockSessionSyncService.swift */; };
-		D4EECE1A2F3135FB0075C93E /* ConcurrentSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4EECE142F3135FB0075C93E /* ConcurrentSessionTests.swift */; };
-		D4EECE1B2F3135FB0075C93E /* ProfileSessionRecordTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4EECE172F3135FB0075C93E /* ProfileSessionRecordTests.swift */; };
-		D4EECE1C2F3135FB0075C93E /* OneMoreMinuteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4EECE162F3135FB0075C93E /* OneMoreMinuteTests.swift */; };
-		D4EECE1D2F3135FB0075C93E /* LogTailTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4EECE152F3135FB0075C93E /* LogTailTests.swift */; };
-		D4EED3F52F3165EE0075C93E /* PreActivationReminderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4EED3F42F3165EE0075C93E /* PreActivationReminderTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -102,22 +86,6 @@
 		80C6CAFC2D4301B3008680F4 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		80DBF6132CB776D100EEA8A6 /* DeviceActivity.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = DeviceActivity.framework; path = System/Library/Frameworks/DeviceActivity.framework; sourceTree = SDKROOT; };
 		80FF388D2D80DB540032BC5E /* FoqosWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = FoqosWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
-		D472EEC62F33C85500AA3453 /* BlockedProfilesMigrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlockedProfilesMigrationTests.swift; sourceTree = "<group>"; };
-		D472EEC72F33C85500AA3453 /* BlockedProfilesTriggersTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlockedProfilesTriggersTests.swift; sourceTree = "<group>"; };
-		D472EEC82F33C85500AA3453 /* ProfileScheduleTimeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileScheduleTimeTests.swift; sourceTree = "<group>"; };
-		D472EEC92F33C85500AA3453 /* ProfileStartTriggersTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileStartTriggersTests.swift; sourceTree = "<group>"; };
-		D472EECA2F33C85500AA3453 /* ProfileStopConditionsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileStopConditionsTests.swift; sourceTree = "<group>"; };
-		D472EECB2F33C85500AA3453 /* StrategyManagerStartTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StrategyManagerStartTests.swift; sourceTree = "<group>"; };
-		D472EECC2F33C85500AA3453 /* StrategyManagerStopTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StrategyManagerStopTests.swift; sourceTree = "<group>"; };
-		D472EECD2F33C85500AA3453 /* TriggerConfigurationModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TriggerConfigurationModelTests.swift; sourceTree = "<group>"; };
-		D472EECE2F33C85500AA3453 /* TriggerMigrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TriggerMigrationTests.swift; sourceTree = "<group>"; };
-		D472EECF2F33C85500AA3453 /* TriggerValidatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TriggerValidatorTests.swift; sourceTree = "<group>"; };
-		D4EECE122F3135FB0075C93E /* MockSessionSyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockSessionSyncService.swift; sourceTree = "<group>"; };
-		D4EECE142F3135FB0075C93E /* ConcurrentSessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConcurrentSessionTests.swift; sourceTree = "<group>"; };
-		D4EECE152F3135FB0075C93E /* LogTailTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogTailTests.swift; sourceTree = "<group>"; };
-		D4EECE162F3135FB0075C93E /* OneMoreMinuteTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OneMoreMinuteTests.swift; sourceTree = "<group>"; };
-		D4EECE172F3135FB0075C93E /* ProfileSessionRecordTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileSessionRecordTests.swift; sourceTree = "<group>"; };
-		D4EED3F42F3165EE0075C93E /* PreActivationReminderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreActivationReminderTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -235,6 +203,11 @@
 			path = FoqosWidget;
 			sourceTree = "<group>";
 		};
+		D43B87B42F34088D00E06354 /* FoqosTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = FoqosTests;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -293,7 +266,7 @@
 		801B208C2CB363A10073E9E2 = {
 			isa = PBXGroup;
 			children = (
-				D4EECE182F3135FB0075C93E /* FoqosTests */,
+				D43B87B42F34088D00E06354 /* FoqosTests */,
 				801B20972CB363A10073E9E2 /* Foqos */,
 				80FF38902D80DB540032BC5E /* FoqosWidget */,
 				8017130C2DE6C78C00B77FE1 /* FoqosDeviceMonitor */,
@@ -327,37 +300,6 @@
 				808A3C4D2E4ACD18002A7812 /* ManagedSettingsUI.framework */,
 			);
 			name = Frameworks;
-			sourceTree = "<group>";
-		};
-		D4EECE132F3135FB0075C93E /* Mocks */ = {
-			isa = PBXGroup;
-			children = (
-				D4EECE122F3135FB0075C93E /* MockSessionSyncService.swift */,
-			);
-			path = Mocks;
-			sourceTree = "<group>";
-		};
-		D4EECE182F3135FB0075C93E /* FoqosTests */ = {
-			isa = PBXGroup;
-			children = (
-				D472EEC62F33C85500AA3453 /* BlockedProfilesMigrationTests.swift */,
-				D472EEC72F33C85500AA3453 /* BlockedProfilesTriggersTests.swift */,
-				D472EEC82F33C85500AA3453 /* ProfileScheduleTimeTests.swift */,
-				D472EEC92F33C85500AA3453 /* ProfileStartTriggersTests.swift */,
-				D472EECA2F33C85500AA3453 /* ProfileStopConditionsTests.swift */,
-				D472EECB2F33C85500AA3453 /* StrategyManagerStartTests.swift */,
-				D472EECC2F33C85500AA3453 /* StrategyManagerStopTests.swift */,
-				D472EECD2F33C85500AA3453 /* TriggerConfigurationModelTests.swift */,
-				D472EECE2F33C85500AA3453 /* TriggerMigrationTests.swift */,
-				D472EECF2F33C85500AA3453 /* TriggerValidatorTests.swift */,
-				D4EECE142F3135FB0075C93E /* ConcurrentSessionTests.swift */,
-				D4EECE152F3135FB0075C93E /* LogTailTests.swift */,
-				D4EECE132F3135FB0075C93E /* Mocks */,
-				D4EECE162F3135FB0075C93E /* OneMoreMinuteTests.swift */,
-				D4EED3F42F3165EE0075C93E /* PreActivationReminderTests.swift */,
-				D4EECE172F3135FB0075C93E /* ProfileSessionRecordTests.swift */,
-			);
-			path = FoqosTests;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -425,6 +367,9 @@
 			);
 			dependencies = (
 				801B20A82CB363A20073E9E2 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				D43B87B42F34088D00E06354 /* FoqosTests */,
 			);
 			name = FoqosTests;
 			packageProductDependencies = (
@@ -643,22 +588,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				D4EED3F52F3165EE0075C93E /* PreActivationReminderTests.swift in Sources */,
-				D4EECE192F3135FB0075C93E /* MockSessionSyncService.swift in Sources */,
-				D4EECE1A2F3135FB0075C93E /* ConcurrentSessionTests.swift in Sources */,
-				D472EED02F33C85500AA3453 /* BlockedProfilesMigrationTests.swift in Sources */,
-				D472EED12F33C85500AA3453 /* ProfileScheduleTimeTests.swift in Sources */,
-				D472EED22F33C85500AA3453 /* ProfileStartTriggersTests.swift in Sources */,
-				D472EED32F33C85500AA3453 /* ProfileStopConditionsTests.swift in Sources */,
-				D472EED42F33C85500AA3453 /* TriggerMigrationTests.swift in Sources */,
-				D472EED52F33C85500AA3453 /* BlockedProfilesTriggersTests.swift in Sources */,
-				D472EED62F33C85500AA3453 /* StrategyManagerStartTests.swift in Sources */,
-				D472EED72F33C85500AA3453 /* StrategyManagerStopTests.swift in Sources */,
-				D472EED82F33C85500AA3453 /* TriggerConfigurationModelTests.swift in Sources */,
-				D472EED92F33C85500AA3453 /* TriggerValidatorTests.swift in Sources */,
-				D4EECE1B2F3135FB0075C93E /* ProfileSessionRecordTests.swift in Sources */,
-				D4EECE1C2F3135FB0075C93E /* OneMoreMinuteTests.swift in Sources */,
-				D4EECE1D2F3135FB0075C93E /* LogTailTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
