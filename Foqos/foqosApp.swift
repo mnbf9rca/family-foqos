@@ -160,6 +160,8 @@ struct foqosApp: App {
                     syncCoordinator.setModelContext(container.mainContext)
                     // Set up remote session observers
                     strategyManager.setupRemoteSessionObservers()
+                    // Migrate profiles to V2 trigger system if needed
+                    migrateProfilesIfNeeded(context: container.mainContext)
                     // Initialize sync if enabled
                     if profileSyncManager.isEnabled {
                         Task {
@@ -180,6 +182,26 @@ struct foqosApp: App {
         // Parent dashboard is accessible from settings (parent mode)
         // Child parental controls info is accessible from settings (child mode)
         HomeView()
+    }
+
+    /// Migrates profiles from legacy blockingStrategyId to new trigger system (Schema V2)
+    private func migrateProfilesIfNeeded(context: ModelContext) {
+        do {
+            let profiles = try BlockedProfiles.fetchProfiles(in: context)
+            var migratedCount = 0
+            for profile in profiles {
+                if profile.needsMigration {
+                    profile.migrateToV2IfNeeded()
+                    migratedCount += 1
+                }
+            }
+            if migratedCount > 0 {
+                try context.save()
+                Log.info("Migrated \(migratedCount) profiles to schema V2", category: .app)
+            }
+        } catch {
+            Log.error("Failed to migrate profiles: \(error.localizedDescription)", category: .app)
+        }
     }
 
     private func handleURL(_ url: URL) {

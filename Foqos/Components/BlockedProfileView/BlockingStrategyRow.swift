@@ -1,5 +1,9 @@
 import SwiftUI
 
+// MARK: - DEPRECATED
+// This component is deprecated as of schema V2. Use StartTriggerSelector and
+// StopConditionSelector for profile configuration.
+
 struct StrategyRow: View {
   @EnvironmentObject var themeManager: ThemeManager
 

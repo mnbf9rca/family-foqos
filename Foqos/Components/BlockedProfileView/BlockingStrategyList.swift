@@ -1,5 +1,11 @@
 import SwiftUI
 
+// MARK: - DEPRECATED
+// This component is deprecated as of schema V2. Profile start/stop behavior is now
+// configured via ProfileStartTriggers and ProfileStopConditions using the
+// StartTriggerSelector and StopConditionSelector components.
+// Keeping for backwards compatibility during migration period.
+
 struct BlockingStrategyList: View {
   let strategies: [BlockingStrategy]
   @Binding var selectedStrategy: BlockingStrategy?

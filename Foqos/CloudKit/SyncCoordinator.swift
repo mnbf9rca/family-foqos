@@ -150,8 +150,15 @@ class SyncCoordinator: ObservableObject {
           byID: syncedProfile.profileId,
           in: context
         ) {
-          // Update existing profile if remote version is newer
-          if syncedProfile.version > existingProfile.syncVersion {
+          // Check schema version - ignore changes from older schema versions
+          if syncedProfile.profileSchemaVersion < existingProfile.profileSchemaVersion {
+            Log.warning(
+              "Ignoring sync from older schema version for profile: \(existingProfile.name)",
+              category: .sync
+            )
+            SyncConflictManager.shared.addConflict(profileId: existingProfile.id)
+          } else if syncedProfile.version > existingProfile.syncVersion {
+            // Update existing profile if remote version is newer and schema is same or newer
             updateLocalProfile(existingProfile, from: syncedProfile, in: context)
           }
         } else {

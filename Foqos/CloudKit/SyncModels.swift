@@ -60,6 +60,9 @@ struct SyncedProfile: Codable, Equatable {
     var originDeviceId: String
     var version: Int
 
+    // Schema version (for trigger system migration)
+    var profileSchemaVersion: Int
+
     // MARK: - CloudKit Record Type
 
     static let recordType = "SyncedProfile"
@@ -96,6 +99,7 @@ struct SyncedProfile: Codable, Equatable {
         case lastModified
         case originDeviceId
         case version
+        case profileSchemaVersion
     }
 
     // MARK: - CloudKit Conversion
@@ -138,6 +142,7 @@ struct SyncedProfile: Codable, Equatable {
         record[FieldKey.lastModified.rawValue] = lastModified
         record[FieldKey.originDeviceId.rawValue] = originDeviceId
         record[FieldKey.version.rawValue] = version
+        record[FieldKey.profileSchemaVersion.rawValue] = profileSchemaVersion
     }
 
     init?(from record: CKRecord) {
@@ -193,6 +198,8 @@ struct SyncedProfile: Codable, Equatable {
         self.lastModified = lastModified
         self.originDeviceId = originDeviceId
         self.version = version
+        // Default to schema version 1 (legacy) if not present - older devices don't send this field
+        profileSchemaVersion = record[FieldKey.profileSchemaVersion.rawValue] as? Int ?? 1
     }
 
     // MARK: - Initialization from BlockedProfiles
@@ -228,6 +235,7 @@ struct SyncedProfile: Codable, Equatable {
         lastModified = Date()
         self.originDeviceId = originDeviceId
         version = profile.syncVersion
+        profileSchemaVersion = profile.profileSchemaVersion
 
         // Encode schedule and geofence rule
         if let schedule = profile.schedule {

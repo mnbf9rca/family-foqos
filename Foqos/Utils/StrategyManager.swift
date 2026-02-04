@@ -123,6 +123,24 @@ class StrategyManager: ObservableObject {
         return
       }
 
+      // Validate manual stop for V2 profiles
+      if let session = activeSession,
+        !session.blockedProfile.needsMigration
+      {
+        let validation = Self.canStop(
+          with: .manual,
+          conditions: session.blockedProfile.stopConditions,
+          sessionTag: session.tag,
+          stopNFCTagId: session.blockedProfile.stopNFCTagId,
+          stopQRCodeId: session.blockedProfile.stopQRCodeId
+        )
+        if !validation.allowed {
+          Log.info("Manual stop blocked: \(validation.errorMessage ?? "Not allowed")", category: .strategy)
+          errorMessage = validation.errorMessage
+          return
+        }
+      }
+
       // Check geofence rule if one exists
       if let session = activeSession,
         let geofenceRule = session.blockedProfile.geofenceRule,
@@ -1285,4 +1303,163 @@ class StrategyManager: ObservableObject {
 extension Notification.Name {
   static let remoteSessionStartRequested = Notification.Name("remoteSessionStartRequested")
   static let remoteSessionStopRequested = Notification.Name("remoteSessionStopRequested")
+}
+
+// MARK: - Start Action Determination
+
+/// Action to take when user taps Start button
+enum StartAction: Equatable, Hashable {
+  case startImmediately
+  case scanNFC
+  case scanQR
+  case waitForSchedule
+  case showPicker(options: [StartAction])
+}
+
+extension StrategyManager {
+  /// Determines what action to take based on enabled start triggers
+  static func determineStartAction(for triggers: ProfileStartTriggers) -> StartAction {
+    var manualOptions: [StartAction] = []
+
+    if triggers.manual {
+      manualOptions.append(.startImmediately)
+    }
+    if triggers.hasNFC {
+      manualOptions.append(.scanNFC)
+    }
+    if triggers.hasQR {
+      manualOptions.append(.scanQR)
+    }
+
+    // If no manual options but has schedule/deeplink only
+    if manualOptions.isEmpty {
+      if triggers.schedule {
+        return .waitForSchedule
+      }
+      if triggers.deepLink {
+        return .waitForSchedule  // Can't manually trigger deep link
+      }
+      return .startImmediately  // Fallback
+    }
+
+    // Single option - do it directly
+    if manualOptions.count == 1 {
+      return manualOptions[0]
+    }
+
+    // Multiple options - show picker
+    return .showPicker(options: manualOptions)
+  }
+}
+
+// MARK: - Stop Validation
+
+/// How a stop was triggered
+enum StopMethod {
+  case manual
+  case timer
+  case nfc(tag: String)
+  case qr(code: String)
+  case schedule
+  case deepLink
+}
+
+/// Result of stop validation
+struct StopValidationResult {
+  let allowed: Bool
+  let errorMessage: String?
+
+  static func allowed() -> StopValidationResult {
+    StopValidationResult(allowed: true, errorMessage: nil)
+  }
+
+  static func denied(_ message: String) -> StopValidationResult {
+    StopValidationResult(allowed: false, errorMessage: message)
+  }
+}
+
+extension StrategyManager {
+  /// Validates whether a stop method is allowed given profile configuration
+  static func canStop(
+    with method: StopMethod,
+    conditions: ProfileStopConditions,
+    sessionTag: String?,
+    stopNFCTagId: String?,
+    stopQRCodeId: String?
+  ) -> StopValidationResult {
+
+    switch method {
+    case .manual:
+      if conditions.manual {
+        return .allowed()
+      }
+      return .denied("Manual stop is not enabled for this profile")
+
+    case .timer:
+      if conditions.timer {
+        return .allowed()
+      }
+      return .denied("Timer stop is not enabled for this profile")
+
+    case .nfc(let scannedTag):
+      // Check specific NFC first (highest priority)
+      if conditions.specificNFC {
+        if let requiredTag = stopNFCTagId, scannedTag == requiredTag {
+          return .allowed()
+        }
+        return .denied("Scan the correct NFC tag to stop")
+      }
+
+      // Check same NFC (match session tag)
+      if conditions.sameNFC {
+        if let sessionStartTag = sessionTag, scannedTag == sessionStartTag {
+          return .allowed()
+        }
+        return .denied("Scan the same NFC tag you used to start")
+      }
+
+      // Check any NFC
+      if conditions.anyNFC {
+        return .allowed()
+      }
+
+      return .denied("NFC stop is not enabled for this profile")
+
+    case .qr(let scannedCode):
+      // Check specific QR first
+      if conditions.specificQR {
+        if let requiredCode = stopQRCodeId, scannedCode == requiredCode {
+          return .allowed()
+        }
+        return .denied("Scan the correct QR code to stop")
+      }
+
+      // Check same QR
+      if conditions.sameQR {
+        if let sessionStartCode = sessionTag, scannedCode == sessionStartCode {
+          return .allowed()
+        }
+        return .denied("Scan the same QR code you used to start")
+      }
+
+      // Check any QR
+      if conditions.anyQR {
+        return .allowed()
+      }
+
+      return .denied("QR code stop is not enabled for this profile")
+
+    case .schedule:
+      if conditions.schedule {
+        return .allowed()
+      }
+      return .denied("Scheduled stop is not enabled for this profile")
+
+    case .deepLink:
+      if conditions.deepLink {
+        return .allowed()
+      }
+      return .denied("Deep link stop is not enabled for this profile")
+    }
+  }
 }

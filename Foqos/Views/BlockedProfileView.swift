@@ -99,6 +99,8 @@ struct BlockedProfileView: View {
     @State private var selectedActivity = FamilyActivitySelection()
     @State private var selectedStrategy: BlockingStrategy? = nil
 
+    @StateObject private var triggerConfig = TriggerConfigurationModel()
+
     private let physicalReader: PhysicalReader = .init()
 
     private var isEditing: Bool {
@@ -310,19 +312,16 @@ struct BlockedProfileView: View {
                     )
                 }
 
-                BlockingStrategyList(
-                    strategies: StrategyManager.availableStrategies.filter { !$0.hidden },
-                    selectedStrategy: $selectedStrategy,
-                    disabled: isBlocking
+                StartTriggerSelector(
+                    triggers: $triggerConfig.startTriggers,
+                    startNFCTagId: $triggerConfig.startNFCTagId,
+                    startQRCodeId: $triggerConfig.startQRCodeId,
+                    startSchedule: $triggerConfig.startSchedule,
+                    disabled: isBlocking || (isManagedProfile && !isUnlockedForEditing),
+                    onTriggerChange: {
+                        triggerConfig.startTriggersDidChange()
+                    }
                 )
-
-                Section("Schedule") {
-                    BlockedProfileScheduleSelector(
-                        schedule: schedule,
-                        buttonAction: { showingSchedulePicker = true },
-                        disabled: isBlocking
-                    )
-                }
 
                 Section {
                     BlockedProfileGeofenceSelector(
@@ -336,6 +335,15 @@ struct BlockedProfileView: View {
                 } footer: {
                     Text("Require being at or away from specific locations to stop this profile.")
                 }
+
+                StopConditionSelector(
+                    conditions: $triggerConfig.stopConditions,
+                    stopNFCTagId: $triggerConfig.stopNFCTagId,
+                    stopQRCodeId: $triggerConfig.stopQRCodeId,
+                    stopSchedule: $triggerConfig.stopSchedule,
+                    startTriggers: triggerConfig.startTriggers,
+                    disabled: isBlocking || (isManagedProfile && !isUnlockedForEditing)
+                )
 
                 Section("Breaks") {
                     CustomToggle(
@@ -392,24 +400,6 @@ struct BlockedProfileView: View {
                             Text("This profile will require your lock code to modify. The child will not be able to see the code.")
                         }
                     }
-                }
-
-                Section("Strict Unlocks") {
-                    BlockedProfilePhysicalUnblockSelector(
-                        nfcTagId: physicalUnblockNFCTagId,
-                        qrCodeId: physicalUnblockQRCodeId,
-                        disabled: isBlocking,
-                        onSetNFC: {
-                            physicalReader.readNFCTag(
-                                onSuccess: { physicalUnblockNFCTagId = $0 }
-                            )
-                        },
-                        onSetQRCode: {
-                            showingPhysicalUnblockView = true
-                        },
-                        onUnsetNFC: { physicalUnblockNFCTagId = nil },
-                        onUnsetQRCode: { physicalUnblockQRCodeId = nil }
-                    )
                 }
 
                 Section("Notifications") {
@@ -518,6 +508,11 @@ struct BlockedProfileView: View {
                 selectedActivity = FamilyActivitySelection(
                     includeEntireCategory: newValue
                 )
+            }
+            .onAppear {
+                if let existingProfile = profile {
+                    triggerConfig.loadFromProfile(existingProfile)
+                }
             }
             .navigationTitle(isEditing ? "Profile Details" : "New Profile")
             .toolbar {
@@ -816,6 +811,12 @@ struct BlockedProfileView: View {
                     needsAppSelection: false // Clear needsAppSelection since user is saving with app selection
                 )
 
+                // Save trigger configuration to profile
+                triggerConfig.saveToProfile(updatedProfile)
+
+                // Update legacy strategy ID for backwards compatibility with older devices
+                updatedProfile.updateCompatibilityStrategyId()
+
                 // Schedule restrictions
                 DeviceActivityCenterUtil.scheduleTimerActivity(for: updatedProfile)
 
@@ -848,6 +849,12 @@ struct BlockedProfileView: View {
                     isManaged: isManaged,
                     managedByChildId: managedChildId
                 )
+
+                // Save trigger configuration to profile
+                triggerConfig.saveToProfile(newProfile)
+
+                // Update legacy strategy ID for backwards compatibility with older devices
+                newProfile.updateCompatibilityStrategyId()
 
                 // Schedule restrictions
                 DeviceActivityCenterUtil.scheduleTimerActivity(for: newProfile)

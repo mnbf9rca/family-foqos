@@ -1,5 +1,10 @@
 import SwiftUI
 
+// MARK: - DEPRECATED
+// This component is deprecated as of schema V2. Physical unlock options are now
+// part of the ProfileStopConditions (specificNFC, specificQR) and configured
+// via StopConditionSelector.
+
 struct BlockedProfilePhysicalUnblockSelector: View {
   let nfcTagId: String?
   let qrCodeId: String?

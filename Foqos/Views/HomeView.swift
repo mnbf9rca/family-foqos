@@ -69,8 +69,16 @@ struct HomeView: View {
   @ObservedObject private var appModeManager = AppModeManager.shared
   @State private var showModeSelection = false
 
+  // Sync conflict manager
+  @ObservedObject private var syncConflictManager = SyncConflictManager.shared
+
   // UI States
   @State private var opacityValue = 1.0
+
+  // Start picker state
+  @State private var showStartPicker = false
+  @State private var startOptions: [StartAction] = []
+  @State private var pendingStartProfile: BlockedProfiles?
 
   var isBlocking: Bool {
     return strategyManager.isBlocking
@@ -146,6 +154,14 @@ struct HomeView: View {
             sessions: recentCompletedSessions
           )
           .padding(.horizontal, 16)
+
+          if syncConflictManager.showConflictBanner {
+            SyncConflictBanner(
+              message: syncConflictManager.conflictMessage,
+              onDismiss: { syncConflictManager.dismissBanner() }
+            )
+            .padding(.vertical, 8)
+          }
 
           BlockedProfileCarousel(
             profiles: profiles,
@@ -319,6 +335,33 @@ struct HomeView: View {
     } message: {
       Text(strategyManager.geofenceWarningMessage)
     }
+    .confirmationDialog("Start by...", isPresented: $showStartPicker, titleVisibility: .visible) {
+      ForEach(startOptions, id: \.self) { option in
+        Button(displayName(for: option)) {
+          if let profile = pendingStartProfile {
+            executeStartAction(option, profile: profile)
+          }
+        }
+      }
+      Button("Cancel", role: .cancel) {
+        pendingStartProfile = nil
+      }
+    }
+  }
+
+  private func displayName(for action: StartAction) -> String {
+    switch action {
+    case .startImmediately:
+      return "Start Now"
+    case .scanNFC:
+      return "Scan NFC Tag"
+    case .scanQR:
+      return "Scan QR Code"
+    case .waitForSchedule:
+      return "Wait for Schedule"
+    case .showPicker:
+      return "Choose Method"
+    }
   }
 
   private func toggleSessionFromDeeplink(_ profileId: String, link: URL) {
@@ -327,10 +370,59 @@ struct HomeView: View {
   }
 
   private func strategyButtonPress(_ profile: BlockedProfiles) {
-    strategyManager
-      .toggleBlocking(context: context, activeProfile: profile)
+    // For stops, use existing logic
+    if strategyManager.isBlocking {
+      strategyManager.toggleBlocking(context: context, activeProfile: profile)
+      ratingManager.incrementLaunchCount()
+      return
+    }
 
+    // For starts, use trigger-based logic
+    handleStartTap(profile)
     ratingManager.incrementLaunchCount()
+  }
+
+  private func handleStartTap(_ profile: BlockedProfiles) {
+    let action = StrategyManager.determineStartAction(for: profile.startTriggers)
+
+    switch action {
+    case .startImmediately:
+      strategyManager.toggleBlocking(context: context, activeProfile: profile)
+
+    case .scanNFC:
+      // TODO: Show NFC scanner - for now fall back to toggle
+      strategyManager.toggleBlocking(context: context, activeProfile: profile)
+
+    case .scanQR:
+      // TODO: Show QR scanner - for now fall back to toggle
+      strategyManager.toggleBlocking(context: context, activeProfile: profile)
+
+    case .waitForSchedule:
+      strategyManager.errorMessage = "This profile starts on schedule"
+
+    case .showPicker(let options):
+      startOptions = options
+      pendingStartProfile = profile
+      showStartPicker = true
+    }
+  }
+
+  private func executeStartAction(_ action: StartAction, profile: BlockedProfiles) {
+    switch action {
+    case .startImmediately:
+      strategyManager.toggleBlocking(context: context, activeProfile: profile)
+
+    case .scanNFC:
+      // TODO: Show NFC scanner - for now fall back to toggle
+      strategyManager.toggleBlocking(context: context, activeProfile: profile)
+
+    case .scanQR:
+      // TODO: Show QR scanner - for now fall back to toggle
+      strategyManager.toggleBlocking(context: context, activeProfile: profile)
+
+    case .waitForSchedule, .showPicker:
+      break  // Should not be called with these
+    }
   }
 
   private func loadApp() {

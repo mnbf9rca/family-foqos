@@ -651,4 +651,38 @@ extension BlockedProfiles {
         // Step 4: Mark as migrated
         profileSchemaVersion = 2
     }
+
+    /// Best-match strategy ID for backwards compatibility with older app versions.
+    /// Maps new triggers to closest legacy strategy.
+    var compatibilityStrategyId: String {
+        let start = startTriggers
+        let stop = stopConditions
+
+        if start.anyNFC && stop.sameNFC {
+            return "NFCBlockingStrategy"
+        }
+        if start.manual && stop.anyNFC && stop.timer {
+            return "NFCTimerBlockingStrategy"
+        }
+        if start.manual && stop.anyNFC {
+            return "NFCManualBlockingStrategy"
+        }
+        if start.anyQR && stop.sameQR {
+            return "QRCodeBlockingStrategy"
+        }
+        if start.manual && stop.anyQR && stop.timer {
+            return "QRTimerBlockingStrategy"
+        }
+        if start.manual && stop.anyQR {
+            return "QRManualBlockingStrategy"
+        }
+
+        // Default to manual
+        return "ManualBlockingStrategy"
+    }
+
+    /// Updates blockingStrategyId for backwards compatibility with older app versions
+    func updateCompatibilityStrategyId() {
+        blockingStrategyId = compatibilityStrategyId
+    }
 }
