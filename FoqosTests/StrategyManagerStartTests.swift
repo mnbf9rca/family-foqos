@@ -3,6 +3,7 @@ import XCTest
 
 @testable import FamilyFoqos
 
+@MainActor
 final class StrategyManagerStartTests: XCTestCase {
 
   func testDetermineStartActionForManualOnly() {

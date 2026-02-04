@@ -31,9 +31,23 @@ final class TriggerConfigurationModel: ObservableObject {
     validate()
   }
 
+  /// Call when stop conditions change to re-run validation
+  func stopConditionsDidChange() {
+    validate()
+  }
+
   /// Run validation and update error list
   func validate() {
     validationErrors = validator.validate(start: startTriggers, stop: stopConditions)
+    if !validationErrors.isEmpty {
+      Log.debug(
+        "Trigger validation errors: \(validationErrors.joined(separator: ", ")). "
+          + "Start: manual=\(startTriggers.manual), NFC=\(startTriggers.hasNFC), QR=\(startTriggers.hasQR), schedule=\(startTriggers.schedule), deepLink=\(startTriggers.deepLink). "
+          + "Stop: manual=\(stopConditions.manual), timer=\(stopConditions.timer), NFC=\(stopConditions.anyNFC || stopConditions.specificNFC || stopConditions.sameNFC), "
+          + "QR=\(stopConditions.anyQR || stopConditions.specificQR || stopConditions.sameQR), schedule=\(stopConditions.schedule), deepLink=\(stopConditions.deepLink)",
+        category: .ui
+      )
+    }
   }
 
   /// Check if a stop option is enabled given current start triggers

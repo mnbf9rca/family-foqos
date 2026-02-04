@@ -45,4 +45,44 @@ final class TriggerConfigurationModelTests: XCTestCase {
     XCTAssertNotNil(model.reasonStopDisabled(.sameNFC))
     XCTAssertNil(model.reasonStopDisabled(.manual))
   }
+
+  func testValidationErrorsClearWhenStopConditionAdded() {
+    let model = TriggerConfigurationModel()
+    model.startTriggers.manual = true
+    model.startTriggersDidChange()
+
+    // At this point we have a start trigger but no stop condition
+    XCTAssertTrue(
+      model.validationErrors.contains { $0.contains("stop condition") },
+      "Should have stop condition error before adding stop"
+    )
+
+    // Add a stop condition - validation errors should auto-clear
+    model.stopConditions.manual = true
+    model.stopConditionsDidChange()
+
+    XCTAssertTrue(
+      model.validationErrors.isEmpty,
+      "Validation errors should clear after adding valid stop condition"
+    )
+  }
+
+  func testValidationErrorsAppearWhenStopConditionRemoved() {
+    let model = TriggerConfigurationModel()
+    model.startTriggers.manual = true
+    model.stopConditions.manual = true
+    model.startTriggersDidChange()
+
+    // Valid state - no errors
+    XCTAssertTrue(model.validationErrors.isEmpty, "Should have no errors when valid")
+
+    // Remove stop condition - should trigger validation error
+    model.stopConditions.manual = false
+    model.stopConditionsDidChange()
+
+    XCTAssertTrue(
+      model.validationErrors.contains { $0.contains("stop condition") },
+      "Should have stop condition error after removing stop"
+    )
+  }
 }

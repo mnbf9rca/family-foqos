@@ -9,6 +9,7 @@ struct StopConditionSelector: View {
   @Binding var stopSchedule: ProfileScheduleTime?
   let startTriggers: ProfileStartTriggers
   let disabled: Bool
+  let onConditionChange: () -> Void
 
   @EnvironmentObject var themeManager: ThemeManager
   @State private var showNFCScanner = false
@@ -20,20 +21,20 @@ struct StopConditionSelector: View {
   var body: some View {
     Section {
       // Manual
-      Toggle("Tap to stop", isOn: $conditions.manual)
+      Toggle("Tap to stop", isOn: binding(\.manual))
         .disabled(disabled)
 
       // Timer
-      Toggle("Timer", isOn: $conditions.timer)
+      Toggle("Timer", isOn: binding(\.timer))
         .disabled(disabled)
 
       // NFC options
       Group {
-        Toggle("Any NFC tag", isOn: $conditions.anyNFC)
+        Toggle("Any NFC tag", isOn: binding(\.anyNFC))
           .disabled(disabled)
 
         HStack {
-          Toggle("Specific NFC tag", isOn: $conditions.specificNFC)
+          Toggle("Specific NFC tag", isOn: binding(\.specificNFC))
             .disabled(disabled)
           if conditions.specificNFC {
             Spacer()
@@ -53,18 +54,18 @@ struct StopConditionSelector: View {
         // Same NFC - may be disabled
         optionRow(
           title: "Same NFC tag",
-          isOn: $conditions.sameNFC,
+          isOn: binding(\.sameNFC),
           option: .sameNFC
         )
       }
 
       // QR options
       Group {
-        Toggle("Any QR code", isOn: $conditions.anyQR)
+        Toggle("Any QR code", isOn: binding(\.anyQR))
           .disabled(disabled)
 
         HStack {
-          Toggle("Specific QR code", isOn: $conditions.specificQR)
+          Toggle("Specific QR code", isOn: binding(\.specificQR))
             .disabled(disabled)
           if conditions.specificQR {
             Spacer()
@@ -84,14 +85,14 @@ struct StopConditionSelector: View {
         // Same QR - may be disabled
         optionRow(
           title: "Same QR code",
-          isOn: $conditions.sameQR,
+          isOn: binding(\.sameQR),
           option: .sameQR
         )
       }
 
       // Schedule
       HStack {
-        Toggle("Schedule", isOn: $conditions.schedule)
+        Toggle("Schedule", isOn: binding(\.schedule))
           .disabled(disabled)
         if conditions.schedule {
           Spacer()
@@ -109,7 +110,7 @@ struct StopConditionSelector: View {
       }
 
       // Deep Link
-      Toggle("Deep link / URL", isOn: $conditions.deepLink)
+      Toggle("Deep link / URL", isOn: binding(\.deepLink))
         .disabled(disabled)
 
     } header: {
@@ -163,6 +164,16 @@ struct StopConditionSelector: View {
     let dayNames = schedule.days.map { $0.shortLabel }.joined(separator: " ")
     let time = String(format: "%d:%02d", schedule.hour, schedule.minute)
     return "\(dayNames) at \(time)"
+  }
+
+  private func binding(_ keyPath: WritableKeyPath<ProfileStopConditions, Bool>) -> Binding<Bool> {
+    Binding(
+      get: { conditions[keyPath: keyPath] },
+      set: { newValue in
+        conditions[keyPath: keyPath] = newValue
+        onConditionChange()
+      }
+    )
   }
 }
 

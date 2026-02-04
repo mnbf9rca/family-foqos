@@ -342,7 +342,10 @@ struct BlockedProfileView: View {
                     stopQRCodeId: $triggerConfig.stopQRCodeId,
                     stopSchedule: $triggerConfig.stopSchedule,
                     startTriggers: triggerConfig.startTriggers,
-                    disabled: isBlocking || (isManagedProfile && !isUnlockedForEditing)
+                    disabled: isBlocking || (isManagedProfile && !isUnlockedForEditing),
+                    onConditionChange: {
+                        triggerConfig.stopConditionsDidChange()
+                    }
                 )
 
                 Section("Breaks") {
