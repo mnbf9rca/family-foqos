@@ -42,6 +42,10 @@ enum TriggerMigration {
       stop.anyQR = true
       stop.timer = true
 
+    case "ShortcutTimerBlockingStrategy":
+      start.manual = true
+      stop.timer = true
+
     default:
       // Unknown strategy defaults to manual
       start.manual = true

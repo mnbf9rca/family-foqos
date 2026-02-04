@@ -133,7 +133,7 @@ struct StopConditionSelector: View {
       }
     }
     .sheet(isPresented: $showSchedulePicker) {
-      StopScheduleTimePickerSheet(schedule: $stopSchedule)
+      ScheduleTimePicker(schedule: $stopSchedule, title: "Stop Schedule")
     }
   }
 
@@ -184,18 +184,3 @@ private struct StopQRScannerSheet: View {
   }
 }
 
-private struct StopScheduleTimePickerSheet: View {
-  @Binding var schedule: ProfileScheduleTime?
-  @Environment(\.dismiss) var dismiss
-
-  var body: some View {
-    NavigationStack {
-      Text("Stop Schedule Picker")
-        .toolbar {
-          ToolbarItem(placement: .confirmationAction) {
-            Button("Done") { dismiss() }
-          }
-        }
-    }
-  }
-}

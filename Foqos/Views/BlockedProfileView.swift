@@ -811,6 +811,15 @@ struct BlockedProfileView: View {
                     needsAppSelection: false // Clear needsAppSelection since user is saving with app selection
                 )
 
+                // Validate trigger configuration before save
+                if !triggerConfig.validationErrors.isEmpty {
+                    alertIdentifier = AlertIdentifier(
+                        id: .error,
+                        errorMessage: triggerConfig.validationErrors.joined(separator: ", ")
+                    )
+                    return
+                }
+
                 // Save trigger configuration to profile
                 triggerConfig.saveToProfile(updatedProfile)
 
@@ -849,6 +858,15 @@ struct BlockedProfileView: View {
                     isManaged: isManaged,
                     managedByChildId: managedChildId
                 )
+
+                // Validate trigger configuration before save
+                if !triggerConfig.validationErrors.isEmpty {
+                    alertIdentifier = AlertIdentifier(
+                        id: .error,
+                        errorMessage: triggerConfig.validationErrors.joined(separator: ", ")
+                    )
+                    return
+                }
 
                 // Save trigger configuration to profile
                 triggerConfig.saveToProfile(newProfile)

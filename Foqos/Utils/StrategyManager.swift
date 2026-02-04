@@ -1313,7 +1313,7 @@ enum StartAction: Equatable, Hashable {
   case scanNFC
   case scanQR
   case waitForSchedule
-  case showPicker(options: [StartAction])
+  indirect case showPicker(options: [StartAction])
 }
 
 extension StrategyManager {
@@ -1339,6 +1339,10 @@ extension StrategyManager {
       if triggers.deepLink {
         return .waitForSchedule  // Can't manually trigger deep link
       }
+      Log.warning(
+        "No start triggers configured, falling back to startImmediately",
+        category: .strategy
+      )
       return .startImmediately  // Fallback
     }
 

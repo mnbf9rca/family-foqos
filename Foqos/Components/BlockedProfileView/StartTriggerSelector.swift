@@ -113,7 +113,7 @@ struct StartTriggerSelector: View {
       }
     }
     .sheet(isPresented: $showSchedulePicker) {
-      ScheduleTimePickerSheet(schedule: $startSchedule)
+      ScheduleTimePicker(schedule: $startSchedule, title: "Start Schedule")
     }
   }
 
@@ -157,19 +157,3 @@ private struct QRScannerSheet: View {
   }
 }
 
-private struct ScheduleTimePickerSheet: View {
-  @Binding var schedule: ProfileScheduleTime?
-  @Environment(\.dismiss) var dismiss
-
-  var body: some View {
-    NavigationStack {
-      // Will create proper schedule picker
-      Text("Schedule Picker")
-        .toolbar {
-          ToolbarItem(placement: .confirmationAction) {
-            Button("Done") { dismiss() }
-          }
-        }
-    }
-  }
-}
