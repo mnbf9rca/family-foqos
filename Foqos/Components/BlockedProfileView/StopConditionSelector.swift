@@ -1,4 +1,5 @@
 // Foqos/Components/BlockedProfileView/StopConditionSelector.swift
+import CodeScanner
 import SwiftUI
 
 /// Selector for profile stop conditions
@@ -181,17 +182,111 @@ struct StopConditionSelector: View {
 
 private struct StopNFCScannerSheet: View {
   let onScan: (String) -> Void
+  @Environment(\.dismiss) private var dismiss
+
+  @State private var nfcScanner = NFCScannerUtil()
+  @State private var errorMessage: String?
+  @State private var isScanning = false
 
   var body: some View {
-    Text("NFC Scanner for Stop")
+    NavigationStack {
+      VStack(spacing: 24) {
+        Image(systemName: "wave.3.right")
+          .font(.system(size: 60))
+          .foregroundStyle(.blue)
+
+        Text("Scan NFC Tag")
+          .font(.title2)
+          .bold()
+
+        Text("Hold your iPhone near an NFC tag to bind it to this profile's stop condition.")
+          .multilineTextAlignment(.center)
+          .foregroundStyle(.secondary)
+          .padding(.horizontal)
+
+        if isScanning {
+          ProgressView("Scanning...")
+        }
+
+        if let error = errorMessage {
+          Text(error)
+            .foregroundStyle(.red)
+            .font(.caption)
+        }
+
+        Button {
+          startScanning()
+        } label: {
+          Label("Start Scanning", systemImage: "wave.3.right")
+        }
+        .buttonStyle(.borderedProminent)
+        .disabled(isScanning)
+
+        Spacer()
+      }
+      .padding()
+      .navigationTitle("NFC Scanner")
+      .navigationBarTitleDisplayMode(.inline)
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) {
+          Button("Cancel") {
+            dismiss()
+          }
+        }
+      }
+    }
+    .onAppear {
+      setupCallbacks()
+      startScanning()
+    }
+  }
+
+  private func setupCallbacks() {
+    nfcScanner.onTagScanned = { result in
+      isScanning = false
+      onScan(result.id)
+    }
+    nfcScanner.onError = { error in
+      isScanning = false
+      errorMessage = error
+    }
+  }
+
+  private func startScanning() {
+    errorMessage = nil
+    isScanning = true
+    nfcScanner.scan(profileName: "profile")
   }
 }
 
 private struct StopQRScannerSheet: View {
   let onScan: (String) -> Void
+  @Environment(\.dismiss) private var dismiss
 
   var body: some View {
-    Text("QR Scanner for Stop")
+    NavigationStack {
+      LabeledCodeScannerView(
+        heading: "Scan QR Code",
+        subtitle: "Point your camera at a QR code to bind it to this profile's stop condition."
+      ) { result in
+        switch result {
+        case .success(let scanResult):
+          onScan(scanResult.string)
+        case .failure:
+          // Error handled by LabeledCodeScannerView
+          break
+        }
+      }
+      .navigationTitle("QR Scanner")
+      .navigationBarTitleDisplayMode(.inline)
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) {
+          Button("Cancel") {
+            dismiss()
+          }
+        }
+      }
+    }
   }
 }
 
