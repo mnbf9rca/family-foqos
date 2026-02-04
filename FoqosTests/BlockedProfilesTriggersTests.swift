@@ -1,5 +1,4 @@
 // FoqosTests/BlockedProfilesTriggersTests.swift
-import SwiftData
 import XCTest
 
 @testable import FamilyFoqos
@@ -7,15 +6,7 @@ import XCTest
 final class BlockedProfilesTriggersTests: XCTestCase {
 
   func testNewProfileHasSchemaVersion2() throws {
-    let config = ModelConfiguration(isStoredInMemoryOnly: true)
-    let container = try ModelContainer(
-      for: BlockedProfiles.self,
-      configurations: config
-    )
-    let context = ModelContext(container)
-
     let profile = BlockedProfiles(name: "Test")
-    context.insert(profile)
 
     XCTAssertEqual(profile.profileSchemaVersion, 2)
   }

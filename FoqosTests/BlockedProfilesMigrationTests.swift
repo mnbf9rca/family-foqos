@@ -7,17 +7,9 @@ import XCTest
 final class BlockedProfilesMigrationTests: XCTestCase {
 
   func testMigrateV1ToV2SetsSchemaVersion() throws {
-    let config = ModelConfiguration(isStoredInMemoryOnly: true)
-    let container = try ModelContainer(
-      for: BlockedProfiles.self,
-      configurations: config
-    )
-    let context = ModelContext(container)
-
     let profile = BlockedProfiles(name: "Test")
     profile.profileSchemaVersion = 1
     profile.blockingStrategyId = "ManualBlockingStrategy"
-    context.insert(profile)
 
     profile.migrateToV2IfNeeded()
 
