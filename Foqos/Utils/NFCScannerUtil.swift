@@ -175,6 +175,8 @@ extension NFCScannerUtil: NFCTagReaderSessionDelegate {
   nonisolated private func updateWithNDEFMessageURL(_ message: NFCNDEFMessage) -> String? {
     let urls: [URLComponents] = message.records.compactMap {
       (payload: NFCNDEFPayload) -> URLComponents? in
+      // Only attempt URI parsing on well-known type records to avoid CoreNFC exceptions
+      guard payload.typeNameFormat == .nfcWellKnown else { return nil }
       if let url = payload.wellKnownTypeURIPayload() {
         let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
         if components?.host == "family-foqos.app" && components?.scheme == "https" {
