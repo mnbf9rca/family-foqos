@@ -74,6 +74,10 @@ struct BlockedProfileView: View {
     /// Sheet for physical unblock
     @State private var showingPhysicalUnblockView = false
 
+    // Trigger scanner state (NFC uses system scanner directly via PhysicalReader.readNFCTag)
+    @State private var showStartQRScanner = false
+    @State private var showStopQRScanner = false
+
     // Alert for cloning
     @State private var showingClonePrompt = false
     @State private var cloneName: String = ""
@@ -320,6 +324,14 @@ struct BlockedProfileView: View {
                     disabled: isBlocking || (isManagedProfile && !isUnlockedForEditing),
                     onTriggerChange: {
                         triggerConfig.startTriggersDidChange()
+                    },
+                    onScanNFCTag: {
+                        physicalReader.readNFCTag { tagId in
+                            triggerConfig.startNFCTagId = tagId
+                        }
+                    },
+                    onScanQRCode: {
+                        showStartQRScanner = true
                     }
                 )
 
@@ -345,6 +357,14 @@ struct BlockedProfileView: View {
                     disabled: isBlocking || (isManagedProfile && !isUnlockedForEditing),
                     onConditionChange: {
                         triggerConfig.stopConditionsDidChange()
+                    },
+                    onScanNFCTag: {
+                        physicalReader.readNFCTag { tagId in
+                            triggerConfig.stopNFCTagId = tagId
+                        }
+                    },
+                    onScanQRCode: {
+                        showStopQRScanner = true
                     }
                 )
 
@@ -691,6 +711,32 @@ struct BlockedProfileView: View {
                             showError(
                                 message: "Failed to read QR code, please try again or use a different QR code."
                             )
+                        }
+                    )
+                )
+            }
+            .sheet(isPresented: $showStartQRScanner) {
+                BlockingStrategyActionView(
+                    customView: physicalReader.readQRCode(
+                        onSuccess: { codeId in
+                            showStartQRScanner = false
+                            triggerConfig.startQRCodeId = codeId
+                        },
+                        onFailure: { _ in
+                            showStartQRScanner = false
+                        }
+                    )
+                )
+            }
+            .sheet(isPresented: $showStopQRScanner) {
+                BlockingStrategyActionView(
+                    customView: physicalReader.readQRCode(
+                        onSuccess: { codeId in
+                            showStopQRScanner = false
+                            triggerConfig.stopQRCodeId = codeId
+                        },
+                        onFailure: { _ in
+                            showStopQRScanner = false
                         }
                     )
                 )
