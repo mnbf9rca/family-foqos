@@ -8,7 +8,7 @@ struct NFCResult: Equatable {
 }
 
 @MainActor
-class NFCScannerUtil: NSObject {
+class NFCScannerUtil: NSObject, ObservableObject {
   // Callback closures for handling results and errors
   var onTagScanned: ((NFCResult) -> Void)?
   var onError: ((String) -> Void)?

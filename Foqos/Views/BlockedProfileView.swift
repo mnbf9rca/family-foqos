@@ -104,6 +104,7 @@ struct BlockedProfileView: View {
     @State private var selectedStrategy: BlockingStrategy? = nil
 
     @StateObject private var triggerConfig = TriggerConfigurationModel()
+    @StateObject private var nfcScanner = NFCScannerUtil()
 
     private let physicalReader: PhysicalReader = .init()
 
@@ -326,9 +327,10 @@ struct BlockedProfileView: View {
                         triggerConfig.startTriggersDidChange()
                     },
                     onScanNFCTag: {
-                        physicalReader.readNFCTag { tagId in
-                            triggerConfig.startNFCTagId = tagId
+                        nfcScanner.onTagScanned = { tag in
+                            triggerConfig.startNFCTagId = tag.url ?? tag.id
                         }
+                        nfcScanner.scan(profileName: "start trigger")
                     },
                     onScanQRCode: {
                         showStartQRScanner = true
@@ -359,9 +361,10 @@ struct BlockedProfileView: View {
                         triggerConfig.stopConditionsDidChange()
                     },
                     onScanNFCTag: {
-                        physicalReader.readNFCTag { tagId in
-                            triggerConfig.stopNFCTagId = tagId
+                        nfcScanner.onTagScanned = { tag in
+                            triggerConfig.stopNFCTagId = tag.url ?? tag.id
                         }
+                        nfcScanner.scan(profileName: "stop trigger")
                     },
                     onScanQRCode: {
                         showStopQRScanner = true

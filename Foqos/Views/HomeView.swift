@@ -80,6 +80,11 @@ struct HomeView: View {
   @State private var startOptions: [StartAction] = []
   @State private var pendingStartProfile: BlockedProfiles?
 
+  // Scanner state for trigger-based starts
+  @State private var showStartQRScanner = false
+  @State private var scannerProfile: BlockedProfiles?
+  @StateObject private var nfcScanner = NFCScannerUtil()
+
   var isBlocking: Bool {
     return strategyManager.isBlocking
   }
@@ -347,6 +352,27 @@ struct HomeView: View {
         pendingStartProfile = nil
       }
     }
+    .sheet(isPresented: $showStartQRScanner) {
+      if let profile = scannerProfile {
+        BlockingStrategyActionView(
+          customView: LabeledCodeScannerView(
+            heading: "Scan to Start",
+            subtitle: "Scan a QR code to start \(profile.name)"
+          ) { result in
+            switch result {
+            case .success(let scanResult):
+              showStartQRScanner = false
+              strategyManager.startWithQRCode(
+                context: context, profile: profile, codeValue: scanResult.string)
+              scannerProfile = nil
+            case .failure:
+              showStartQRScanner = false
+              scannerProfile = nil
+            }
+          }
+        )
+      }
+    }
   }
 
   private func displayName(for action: StartAction) -> String {
@@ -389,8 +415,13 @@ struct HomeView: View {
     case .startImmediately:
       strategyManager.toggleBlocking(context: context, activeProfile: profile)
 
-    case .scanNFC, .scanQR:
-      strategyManager.toggleBlocking(context: context, activeProfile: profile)
+    case .scanNFC:
+      scannerProfile = profile
+      startNFCScan(for: profile)
+
+    case .scanQR:
+      scannerProfile = profile
+      showStartQRScanner = true
 
     case .waitForSchedule:
       strategyManager.errorMessage = "This profile starts on schedule"
@@ -407,12 +438,30 @@ struct HomeView: View {
     case .startImmediately:
       strategyManager.toggleBlocking(context: context, activeProfile: profile)
 
-    case .scanNFC, .scanQR:
-      strategyManager.toggleBlocking(context: context, activeProfile: profile)
+    case .scanNFC:
+      scannerProfile = profile
+      startNFCScan(for: profile)
+
+    case .scanQR:
+      scannerProfile = profile
+      showStartQRScanner = true
 
     case .waitForSchedule, .showPicker:
       break  // Should not be called with these
     }
+  }
+
+  private func startNFCScan(for profile: BlockedProfiles) {
+    nfcScanner.onTagScanned = { tag in
+      let tagId = tag.url ?? tag.id
+      strategyManager.startWithNFCTag(context: context, profile: profile, tagId: tagId)
+      scannerProfile = nil
+    }
+    nfcScanner.onError = { error in
+      strategyManager.errorMessage = error
+      scannerProfile = nil
+    }
+    nfcScanner.scan(profileName: profile.name)
   }
 
   private func loadApp() {
