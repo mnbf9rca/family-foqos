@@ -532,6 +532,19 @@ class StrategyManager: ObservableObject {
           return
         }
 
+        let stopResult = StrategyManager.canStop(
+          with: .deepLink,
+          conditions: localActiveSession.blockedProfile.stopConditions,
+          sessionTag: localActiveSession.tag,
+          stopNFCTagId: localActiveSession.blockedProfile.stopNFCTagId,
+          stopQRCodeId: localActiveSession.blockedProfile.stopQRCodeId
+        )
+        guard stopResult.allowed else {
+          self.errorMessage = stopResult.errorMessage
+            ?? "This profile cannot be stopped via written NFC / printed QR"
+          return
+        }
+
         _ =
           manualStrategy
           .stopBlocking(
@@ -542,17 +555,29 @@ class StrategyManager: ObservableObject {
         if localActiveSession.blockedProfile.id != profile.id {
           Log.info("User is switching sessions from deep link", category: .strategy)
 
+          guard profile.startTriggers.deepLink else {
+            self.errorMessage =
+              "This profile is not configured to start via written NFC / printed QR"
+            return
+          }
+
           _ = manualStrategy.startBlocking(
             context: context,
             profile: profile,
-            forceStart: true
+            forceStart: false
           )
         }
       } else {
+        guard profile.startTriggers.deepLink else {
+          self.errorMessage =
+            "This profile is not configured to start via written NFC / printed QR"
+          return
+        }
+
         _ = manualStrategy.startBlocking(
           context: context,
           profile: profile,
-          forceStart: true
+          forceStart: false
         )
       }
     } catch {
