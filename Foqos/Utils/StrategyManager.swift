@@ -532,6 +532,18 @@ class StrategyManager: ObservableObject {
           return
         }
 
+        // When switching profiles, validate the new profile's start trigger
+        // BEFORE stopping the current session to avoid leaving the user with
+        // no active session if the new profile isn't configured for deep links
+        let isSwitching = localActiveSession.blockedProfile.id != profile.id
+        if isSwitching {
+          guard profile.startTriggers.deepLink else {
+            self.errorMessage =
+              "This profile is not configured to start via written NFC / printed QR"
+            return
+          }
+        }
+
         let stopResult = StrategyManager.canStop(
           with: .deepLink,
           conditions: localActiveSession.blockedProfile.stopConditions,
@@ -552,14 +564,8 @@ class StrategyManager: ObservableObject {
             session: localActiveSession
           )
 
-        if localActiveSession.blockedProfile.id != profile.id {
+        if isSwitching {
           Log.info("User is switching sessions from deep link", category: .strategy)
-
-          guard profile.startTriggers.deepLink else {
-            self.errorMessage =
-              "This profile is not configured to start via written NFC / printed QR"
-            return
-          }
 
           _ = manualStrategy.startBlocking(
             context: context,
