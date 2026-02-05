@@ -66,11 +66,19 @@ class BlockedProfiles {
     var startTriggers: ProfileStartTriggers {
         get {
             guard let data = startTriggersData else { return ProfileStartTriggers() }
-            return (try? JSONDecoder().decode(ProfileStartTriggers.self, from: data))
-                ?? ProfileStartTriggers()
+            do {
+                return try JSONDecoder().decode(ProfileStartTriggers.self, from: data)
+            } catch {
+                Log.error("Failed to decode startTriggers: \(error.localizedDescription)", category: .sync)
+                return ProfileStartTriggers()
+            }
         }
         set {
-            startTriggersData = try? JSONEncoder().encode(newValue)
+            do {
+                startTriggersData = try JSONEncoder().encode(newValue)
+            } catch {
+                Log.error("Failed to encode startTriggers: \(error.localizedDescription)", category: .sync)
+            }
         }
     }
 
@@ -78,11 +86,19 @@ class BlockedProfiles {
     var stopConditions: ProfileStopConditions {
         get {
             guard let data = stopConditionsData else { return ProfileStopConditions() }
-            return (try? JSONDecoder().decode(ProfileStopConditions.self, from: data))
-                ?? ProfileStopConditions()
+            do {
+                return try JSONDecoder().decode(ProfileStopConditions.self, from: data)
+            } catch {
+                Log.error("Failed to decode stopConditions: \(error.localizedDescription)", category: .sync)
+                return ProfileStopConditions()
+            }
         }
         set {
-            stopConditionsData = try? JSONEncoder().encode(newValue)
+            do {
+                stopConditionsData = try JSONEncoder().encode(newValue)
+            } catch {
+                Log.error("Failed to encode stopConditions: \(error.localizedDescription)", category: .sync)
+            }
         }
     }
 
@@ -108,10 +124,23 @@ class BlockedProfiles {
     var startSchedule: ProfileScheduleTime? {
         get {
             guard let data = startScheduleData else { return nil }
-            return try? JSONDecoder().decode(ProfileScheduleTime.self, from: data)
+            do {
+                return try JSONDecoder().decode(ProfileScheduleTime.self, from: data)
+            } catch {
+                Log.error("Failed to decode startSchedule: \(error.localizedDescription)", category: .sync)
+                return nil
+            }
         }
         set {
-            startScheduleData = newValue.flatMap { try? JSONEncoder().encode($0) }
+            guard let value = newValue else {
+                startScheduleData = nil
+                return
+            }
+            do {
+                startScheduleData = try JSONEncoder().encode(value)
+            } catch {
+                Log.error("Failed to encode startSchedule: \(error.localizedDescription)", category: .sync)
+            }
         }
     }
 
@@ -119,10 +148,23 @@ class BlockedProfiles {
     var stopSchedule: ProfileScheduleTime? {
         get {
             guard let data = stopScheduleData else { return nil }
-            return try? JSONDecoder().decode(ProfileScheduleTime.self, from: data)
+            do {
+                return try JSONDecoder().decode(ProfileScheduleTime.self, from: data)
+            } catch {
+                Log.error("Failed to decode stopSchedule: \(error.localizedDescription)", category: .sync)
+                return nil
+            }
         }
         set {
-            stopScheduleData = newValue.flatMap { try? JSONEncoder().encode($0) }
+            guard let value = newValue else {
+                stopScheduleData = nil
+                return
+            }
+            do {
+                stopScheduleData = try JSONEncoder().encode(value)
+            } catch {
+                Log.error("Failed to encode stopSchedule: \(error.localizedDescription)", category: .sync)
+            }
         }
     }
 
@@ -675,6 +717,9 @@ extension BlockedProfiles {
         }
         if start.manual && stop.anyQR {
             return "QRManualBlockingStrategy"
+        }
+        if start.manual && stop.timer && !stop.anyNFC && !stop.anyQR {
+            return "ShortcutTimerBlockingStrategy"
         }
 
         // Default to manual

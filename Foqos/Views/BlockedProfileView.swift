@@ -818,7 +818,9 @@ struct BlockedProfileView: View {
                 if !triggerConfig.validationErrors.isEmpty {
                     alertIdentifier = AlertIdentifier(
                         id: .error,
-                        errorMessage: triggerConfig.validationErrors.joined(separator: ", ")
+                        errorMessage: triggerConfig.validationErrors
+                            .map { "• " + $0 }
+                            .joined(separator: "\n")
                     )
                     return
                 }
@@ -866,7 +868,9 @@ struct BlockedProfileView: View {
                 if !triggerConfig.validationErrors.isEmpty {
                     alertIdentifier = AlertIdentifier(
                         id: .error,
-                        errorMessage: triggerConfig.validationErrors.joined(separator: ", ")
+                        errorMessage: triggerConfig.validationErrors
+                            .map { "• " + $0 }
+                            .joined(separator: "\n")
                     )
                     return
                 }

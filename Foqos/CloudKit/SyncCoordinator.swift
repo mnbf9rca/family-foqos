@@ -160,6 +160,8 @@ class SyncCoordinator: ObservableObject {
           } else if syncedProfile.version > existingProfile.syncVersion {
             // Update existing profile if remote version is newer and schema is same or newer
             updateLocalProfile(existingProfile, from: syncedProfile, in: context)
+            // Clear any existing sync conflict now that the profile has been updated
+            SyncConflictManager.shared.clearConflict(profileId: existingProfile.id)
           }
         } else {
           // Create new profile from synced data

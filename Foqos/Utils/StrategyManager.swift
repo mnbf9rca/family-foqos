@@ -1113,6 +1113,73 @@ class StrategyManager: ObservableObject {
     }
   }
 
+  /// Start blocking with a pre-scanned NFC tag (for trigger-based start)
+  func startWithNFCTag(context: ModelContext, profile: BlockedProfiles, tagId: String) {
+    let prefixedTag = "nfc:\(tagId)"
+    startWithTag(context: context, profile: profile, tag: prefixedTag)
+  }
+
+  /// Start blocking with a pre-scanned QR code (for trigger-based start)
+  func startWithQRCode(context: ModelContext, profile: BlockedProfiles, codeValue: String) {
+    let prefixedTag = "qr:\(codeValue)"
+    startWithTag(context: context, profile: profile, tag: prefixedTag)
+  }
+
+  /// Start blocking with a pre-scanned tag (internal helper)
+  private func startWithTag(context: ModelContext, profile: BlockedProfiles, tag: String) {
+    AppBlockerUtil().activateRestrictions(for: BlockedProfiles.getSnapshot(for: profile))
+
+    let session = BlockedProfileSession.createSession(
+      in: context,
+      withTag: tag,
+      withProfile: profile,
+      forceStart: false
+    )
+
+    // Update the snapshot of the profile in case some settings were changed
+    BlockedProfiles.updateSnapshot(for: session.blockedProfile)
+
+    errorMessage = nil
+    activeSession = session
+    startTimer()
+    liveActivityManager.startSessionActivity(session: session)
+
+    // Refresh widgets when session starts
+    WidgetCenter.shared.reloadTimelines(ofKind: "ProfileControlWidget")
+
+    // Sync session start using CAS (if global sync is enabled)
+    if shouldSyncSessionChange {
+      Task {
+        let result = await SessionSyncService.shared.startSession(
+          profileId: session.blockedProfile.id,
+          startTime: session.startTime
+        )
+
+        switch result {
+        case .started(let seq):
+          Log.info("Session synced with seq=\(seq)", category: .strategy)
+        case .alreadyActive(let existing):
+          Log.info(
+            "Joined existing session from \(existing.sessionOriginDevice ?? "unknown")",
+            category: .strategy
+          )
+          // Reconcile local startTime to match authoritative remote startTime
+          if let remoteStartTime = existing.startTime,
+            let currentSession = self.activeSession,
+            currentSession.startTime != remoteStartTime
+          {
+            currentSession.startTime = remoteStartTime
+            Log.info("Reconciled local startTime to \(remoteStartTime)", category: .strategy)
+          }
+        case .error(let error):
+          Log.info("Failed to sync session start - \(error)", category: .strategy)
+        }
+      }
+    }
+
+    Log.info("Started session for profile '\(profile.name)' with tag", category: .strategy)
+  }
+
   private func stopBlocking(context: ModelContext) {
     guard let session = activeSession else {
       Log.info("No active session found, calling stop blocking with no session", category: .strategy)
@@ -1414,9 +1481,12 @@ extension StrategyManager {
         return .denied("Scan the correct NFC tag to stop")
       }
 
-      // Check same NFC (match session tag)
+      // Check same NFC (match session tag - must be NFC type)
       if conditions.sameNFC {
-        if let sessionStartTag = sessionTag, scannedTag == sessionStartTag {
+        if let sessionStartTag = sessionTag,
+          sessionStartTag.hasPrefix("nfc:"),
+          scannedTag == String(sessionStartTag.dropFirst(4))
+        {
           return .allowed()
         }
         return .denied("Scan the same NFC tag you used to start")
@@ -1438,9 +1508,12 @@ extension StrategyManager {
         return .denied("Scan the correct QR code to stop")
       }
 
-      // Check same QR
+      // Check same QR (match session tag - must be QR type)
       if conditions.sameQR {
-        if let sessionStartCode = sessionTag, scannedCode == sessionStartCode {
+        if let sessionStartCode = sessionTag,
+          sessionStartCode.hasPrefix("qr:"),
+          scannedCode == String(sessionStartCode.dropFirst(3))
+        {
           return .allowed()
         }
         return .denied("Scan the same QR code you used to start")

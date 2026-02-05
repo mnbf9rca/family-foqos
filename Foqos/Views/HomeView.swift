@@ -355,9 +355,9 @@ struct HomeView: View {
     .sheet(isPresented: $showStartNFCScanner) {
       StartNFCScannerSheet(
         profileName: scannerProfile?.name ?? "Profile",
-        onTagScanned: { _ in
+        onTagScanned: { tagId in
           if let profile = scannerProfile {
-            strategyManager.toggleBlocking(context: context, activeProfile: profile)
+            strategyManager.startWithNFCTag(context: context, profile: profile, tagId: tagId)
           }
           showStartNFCScanner = false
           scannerProfile = nil
@@ -371,9 +371,9 @@ struct HomeView: View {
     .sheet(isPresented: $showStartQRScanner) {
       StartQRScannerSheet(
         profileName: scannerProfile?.name ?? "Profile",
-        onCodeScanned: { _ in
+        onCodeScanned: { codeValue in
           if let profile = scannerProfile {
-            strategyManager.toggleBlocking(context: context, activeProfile: profile)
+            strategyManager.startWithQRCode(context: context, profile: profile, codeValue: codeValue)
           }
           showStartQRScanner = false
           scannerProfile = nil
