@@ -80,11 +80,6 @@ struct HomeView: View {
   @State private var startOptions: [StartAction] = []
   @State private var pendingStartProfile: BlockedProfiles?
 
-  // Scanner sheet state for trigger-based starts
-  @State private var showStartNFCScanner = false
-  @State private var showStartQRScanner = false
-  @State private var scannerProfile: BlockedProfiles?
-
   var isBlocking: Bool {
     return strategyManager.isBlocking
   }
@@ -352,38 +347,6 @@ struct HomeView: View {
         pendingStartProfile = nil
       }
     }
-    .sheet(isPresented: $showStartNFCScanner) {
-      StartNFCScannerSheet(
-        profileName: scannerProfile?.name ?? "Profile",
-        onTagScanned: { tagId in
-          if let profile = scannerProfile {
-            strategyManager.startWithNFCTag(context: context, profile: profile, tagId: tagId)
-          }
-          showStartNFCScanner = false
-          scannerProfile = nil
-        },
-        onCancel: {
-          showStartNFCScanner = false
-          scannerProfile = nil
-        }
-      )
-    }
-    .sheet(isPresented: $showStartQRScanner) {
-      StartQRScannerSheet(
-        profileName: scannerProfile?.name ?? "Profile",
-        onCodeScanned: { codeValue in
-          if let profile = scannerProfile {
-            strategyManager.startWithQRCode(context: context, profile: profile, codeValue: codeValue)
-          }
-          showStartQRScanner = false
-          scannerProfile = nil
-        },
-        onCancel: {
-          showStartQRScanner = false
-          scannerProfile = nil
-        }
-      )
-    }
   }
 
   private func displayName(for action: StartAction) -> String {
@@ -426,13 +389,8 @@ struct HomeView: View {
     case .startImmediately:
       strategyManager.toggleBlocking(context: context, activeProfile: profile)
 
-    case .scanNFC:
-      scannerProfile = profile
-      showStartNFCScanner = true
-
-    case .scanQR:
-      scannerProfile = profile
-      showStartQRScanner = true
+    case .scanNFC, .scanQR:
+      strategyManager.toggleBlocking(context: context, activeProfile: profile)
 
     case .waitForSchedule:
       strategyManager.errorMessage = "This profile starts on schedule"
@@ -449,13 +407,8 @@ struct HomeView: View {
     case .startImmediately:
       strategyManager.toggleBlocking(context: context, activeProfile: profile)
 
-    case .scanNFC:
-      scannerProfile = profile
-      showStartNFCScanner = true
-
-    case .scanQR:
-      scannerProfile = profile
-      showStartQRScanner = true
+    case .scanNFC, .scanQR:
+      strategyManager.toggleBlocking(context: context, activeProfile: profile)
 
     case .waitForSchedule, .showPicker:
       break  // Should not be called with these
