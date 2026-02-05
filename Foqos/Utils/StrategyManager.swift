@@ -506,7 +506,7 @@ class StrategyManager: ObservableObject {
     context: ModelContext
   ) {
     guard let profileUUID = UUID(uuidString: profileId) else {
-      self.errorMessage = "failed to parse profile in tag"
+      self.errorMessage = "This tag doesn't contain a valid profile link"
       return
     }
 
@@ -518,7 +518,7 @@ class StrategyManager: ObservableObject {
         )
       else {
         self.errorMessage =
-          "Failed to find a profile stored locally that matches the tag"
+          "No matching profile found on this device. The profile may have been deleted or this tag belongs to a different device."
         return
       }
 
@@ -539,7 +539,7 @@ class StrategyManager: ObservableObject {
         if isSwitching {
           guard profile.startTriggers.deepLink else {
             self.errorMessage =
-              "This profile is not configured to start via written NFC / printed QR"
+              "\(profile.name) is not configured to start via written NFC or printed QR"
             return
           }
         }
@@ -553,7 +553,7 @@ class StrategyManager: ObservableObject {
         )
         guard stopResult.allowed else {
           self.errorMessage = stopResult.errorMessage
-            ?? "This profile cannot be stopped via written NFC / printed QR"
+            ?? "\(localActiveSession.blockedProfile.name) cannot be stopped via written NFC or printed QR"
           return
         }
 
@@ -576,7 +576,7 @@ class StrategyManager: ObservableObject {
       } else {
         guard profile.startTriggers.deepLink else {
           self.errorMessage =
-            "This profile is not configured to start via written NFC / printed QR"
+            "\(profile.name) is not configured to start via written NFC or printed QR"
           return
         }
 
@@ -587,7 +587,7 @@ class StrategyManager: ObservableObject {
         )
       }
     } catch {
-      self.errorMessage = "Something went wrong fetching profile"
+      self.errorMessage = "Something went wrong. Please try again."
     }
   }
 
