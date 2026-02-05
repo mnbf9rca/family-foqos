@@ -12,9 +12,9 @@ struct StopConditionSelector: View {
   let onConditionChange: () -> Void
   let onScanNFCTag: () -> Void
   let onScanQRCode: () -> Void
+  let onConfigureSchedule: () -> Void
 
   @EnvironmentObject var themeManager: ThemeManager
-  @State private var showSchedulePicker = false
 
   private let validator = TriggerValidator()
 
@@ -97,7 +97,7 @@ struct StopConditionSelector: View {
         if conditions.schedule {
           Spacer()
           Button("Configure") {
-            showSchedulePicker = true
+            onConfigureSchedule()
           }
           .buttonStyle(.bordered)
           .disabled(disabled)
@@ -116,13 +116,16 @@ struct StopConditionSelector: View {
     } header: {
       Text("Continue until...")
     } footer: {
-      if !conditions.isValid {
-        Text("Select at least one stop condition")
-          .foregroundStyle(.red)
+      VStack(alignment: .leading, spacing: 4) {
+        if !conditions.isValid {
+          Text("Select at least one stop condition")
+            .foregroundStyle(.red)
+        }
+        if conditions.requiresPhysicalItemOnly {
+          Text("All selected stop conditions require a specific physical item (NFC tag or QR code). If you lose access to it, Emergency Unblock (limited to 3 per 4 weeks) will be your only way to stop this profile.")
+            .foregroundStyle(.orange)
+        }
       }
-    }
-    .sheet(isPresented: $showSchedulePicker) {
-      ScheduleTimePicker(schedule: $stopSchedule, title: "Stop Schedule")
     }
   }
 

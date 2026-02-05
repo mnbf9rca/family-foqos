@@ -20,4 +20,14 @@ struct ProfileStopConditions: Codable, Equatable {
     manual || timer || anyNFC || specificNFC || sameNFC
       || anyQR || specificQR || sameQR || schedule || deepLink
   }
+
+  /// True if every enabled stop condition requires a specific physical item.
+  /// When this is true the user risks being unable to stop the profile if they
+  /// lose access to the required item. Emergency Unblock (limited to 3 per 4 weeks)
+  /// would be the only escape.
+  var requiresPhysicalItemOnly: Bool {
+    guard isValid else { return false }
+    let hasAlwaysAvailable = manual || timer || anyNFC || anyQR || schedule
+    return !hasAlwaysAvailable
+  }
 }

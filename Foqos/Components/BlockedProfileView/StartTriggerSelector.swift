@@ -11,9 +11,9 @@ struct StartTriggerSelector: View {
   let onTriggerChange: () -> Void
   let onScanNFCTag: () -> Void
   let onScanQRCode: () -> Void
+  let onConfigureSchedule: () -> Void
 
   @EnvironmentObject var themeManager: ThemeManager
-  @State private var showSchedulePicker = false
 
   var body: some View {
     Section {
@@ -76,7 +76,7 @@ struct StartTriggerSelector: View {
         if triggers.schedule {
           Spacer()
           Button("Configure") {
-            showSchedulePicker = true
+            onConfigureSchedule()
           }
           .buttonStyle(.bordered)
           .disabled(disabled)
@@ -99,9 +99,6 @@ struct StartTriggerSelector: View {
         Text("Select at least one start trigger")
           .foregroundStyle(.red)
       }
-    }
-    .sheet(isPresented: $showSchedulePicker) {
-      ScheduleTimePicker(schedule: $startSchedule, title: "Start Schedule")
     }
   }
 

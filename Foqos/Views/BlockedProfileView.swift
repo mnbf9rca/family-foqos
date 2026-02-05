@@ -78,6 +78,10 @@ struct BlockedProfileView: View {
     @State private var showStartQRScanner = false
     @State private var showStopQRScanner = false
 
+    // Trigger schedule picker state (owned by parent to survive child re-renders)
+    @State private var showStartSchedulePicker = false
+    @State private var showStopSchedulePicker = false
+
     // Alert for cloning
     @State private var showingClonePrompt = false
     @State private var cloneName: String = ""
@@ -334,6 +338,9 @@ struct BlockedProfileView: View {
                     },
                     onScanQRCode: {
                         showStartQRScanner = true
+                    },
+                    onConfigureSchedule: {
+                        showStartSchedulePicker = true
                     }
                 )
 
@@ -368,6 +375,9 @@ struct BlockedProfileView: View {
                     },
                     onScanQRCode: {
                         showStopQRScanner = true
+                    },
+                    onConfigureSchedule: {
+                        showStopSchedulePicker = true
                     }
                 )
 
@@ -743,6 +753,12 @@ struct BlockedProfileView: View {
                         }
                     )
                 )
+            }
+            .sheet(isPresented: $showStartSchedulePicker) {
+                ScheduleTimePicker(schedule: $triggerConfig.startSchedule, title: "Start Schedule")
+            }
+            .sheet(isPresented: $showStopSchedulePicker) {
+                ScheduleTimePicker(schedule: $triggerConfig.stopSchedule, title: "Stop Schedule")
             }
             .alert(item: $alertIdentifier) { alert in
                 switch alert.id {
