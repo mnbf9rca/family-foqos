@@ -86,10 +86,11 @@ final class StrategyManagerStopTests: XCTestCase {
     var stop = ProfileStopConditions()
     stop.sameNFC = true
 
+    // Session tags are stored with "nfc:" prefix in production (via startWithNFCTag)
     let result = StrategyManager.canStop(
       with: .nfc(tag: "session-tag"),
       conditions: stop,
-      sessionTag: "session-tag",
+      sessionTag: "nfc:session-tag",
       stopNFCTagId: nil,
       stopQRCodeId: nil
     )
@@ -104,7 +105,7 @@ final class StrategyManagerStopTests: XCTestCase {
     let result = StrategyManager.canStop(
       with: .nfc(tag: "different-tag"),
       conditions: stop,
-      sessionTag: "original-tag",
+      sessionTag: "nfc:original-tag",
       stopNFCTagId: nil,
       stopQRCodeId: nil
     )

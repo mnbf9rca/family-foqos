@@ -328,7 +328,7 @@ struct BlockedProfileView: View {
                     },
                     onScanNFCTag: {
                         nfcScanner.onTagScanned = { tag in
-                            triggerConfig.startNFCTagId = tag.url ?? tag.id
+                            triggerConfig.startNFCTagId = tag.id
                         }
                         nfcScanner.scan(profileName: "start trigger")
                     },
@@ -362,7 +362,7 @@ struct BlockedProfileView: View {
                     },
                     onScanNFCTag: {
                         nfcScanner.onTagScanned = { tag in
-                            triggerConfig.stopNFCTagId = tag.url ?? tag.id
+                            triggerConfig.stopNFCTagId = tag.id
                         }
                         nfcScanner.scan(profileName: "stop trigger")
                     },

@@ -453,7 +453,7 @@ struct HomeView: View {
 
   private func startNFCScan(for profile: BlockedProfiles) {
     nfcScanner.onTagScanned = { tag in
-      let tagId = tag.url ?? tag.id
+      let tagId = tag.id
       strategyManager.startWithNFCTag(context: context, profile: profile, tagId: tagId)
       scannerProfile = nil
     }

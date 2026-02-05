@@ -88,8 +88,8 @@ struct StartTriggerSelector: View {
           .foregroundStyle(.secondary)
       }
 
-      // Deep Link
-      Toggle("Deep link / URL", isOn: binding(\.deepLink))
+      // Deep Link (written NFC tag or printed QR code containing a profile URL)
+      Toggle("Written NFC / printed QR", isOn: binding(\.deepLink))
         .disabled(disabled)
 
     } header: {

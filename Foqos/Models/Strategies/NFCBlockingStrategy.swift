@@ -30,7 +30,7 @@ class NFCBlockingStrategy: BlockingStrategy {
     nfcScanner.onTagScanned = { tag in
       self.appBlocker.activateRestrictions(for: BlockedProfiles.getSnapshot(for: profile))
 
-      let tagId = tag.url ?? tag.id
+      let tagId = tag.id
       let prefixedTag = "nfc:\(tagId)"
       let activeSession =
         BlockedProfileSession
@@ -53,7 +53,7 @@ class NFCBlockingStrategy: BlockingStrategy {
     session: BlockedProfileSession
   ) -> (any View)? {
     nfcScanner.onTagScanned = { tag in
-      let tagId = tag.url ?? tag.id
+      let tagId = tag.id
       let prefixedTag = "nfc:\(tagId)"
 
       if let physicalUnblockNFCTagId = session.blockedProfile.physicalUnblockNFCTagId {
