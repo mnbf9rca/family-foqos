@@ -1425,6 +1425,15 @@ enum StartAction: Equatable, Hashable {
   indirect case showPicker(options: [StartAction])
 }
 
+/// Action to take when user taps Stop button
+enum StopAction: Equatable, Hashable {
+  case stopImmediately
+  case scanNFC
+  case scanQR
+  case cannotStop(reason: String)
+  indirect case showPicker(options: [StopAction])
+}
+
 extension StrategyManager {
   /// Determines what action to take based on enabled start triggers.
   /// - Parameters:
@@ -1471,6 +1480,32 @@ extension StrategyManager {
 
     // Multiple options - show picker
     return .showPicker(options: manualOptions)
+  }
+
+  /// Determines the appropriate stop action based on the profile's stop conditions.
+  /// Priority: manual (immediate) > single scan method > picker for multiple scan methods.
+  static func determineStopAction(
+    for conditions: ProfileStopConditions
+  ) -> StopAction {
+    if conditions.manual {
+      return .stopImmediately
+    }
+
+    var scanOptions: [StopAction] = []
+    if conditions.hasNFC {
+      scanOptions.append(.scanNFC)
+    }
+    if conditions.hasQR {
+      scanOptions.append(.scanQR)
+    }
+
+    if scanOptions.isEmpty {
+      return .cannotStop(reason: "This profile can only be stopped when the time runs out")
+    }
+    if scanOptions.count == 1 {
+      return scanOptions[0]
+    }
+    return .showPicker(options: scanOptions)
   }
 }
 
