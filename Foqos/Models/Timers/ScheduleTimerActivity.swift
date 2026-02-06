@@ -94,28 +94,4 @@ class ScheduleTimerActivity: TimerActivity {
     SharedData.endActiveSharedSession()
   }
 
-  func getScheduleInterval(from schedule: BlockedProfileSchedule) -> (
-    intervalStart: DateComponents, intervalEnd: DateComponents
-  ) {
-    let intervalStart = DateComponents(hour: schedule.startHour, minute: schedule.startMinute)
-    let intervalEnd = DateComponents(hour: schedule.endHour, minute: schedule.endMinute)
-    return (intervalStart: intervalStart, intervalEnd: intervalEnd)
-  }
-
-  func getScheduleInterval(
-    startSchedule: ProfileScheduleTime,
-    stopSchedule: ProfileScheduleTime?
-  ) -> (intervalStart: DateComponents, intervalEnd: DateComponents) {
-    let intervalStart = DateComponents(hour: startSchedule.hour, minute: startSchedule.minute)
-    let intervalEnd: DateComponents
-    if let stop = stopSchedule {
-      intervalEnd = DateComponents(hour: stop.hour, minute: stop.minute)
-    } else {
-      // No stop schedule — set end to just before start
-      let endHour = (startSchedule.hour + 23) % 24
-      let endMinute = startSchedule.minute > 0 ? startSchedule.minute - 1 : 59
-      intervalEnd = DateComponents(hour: endHour, minute: endMinute)
-    }
-    return (intervalStart: intervalStart, intervalEnd: intervalEnd)
-  }
 }
