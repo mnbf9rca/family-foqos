@@ -5,101 +5,81 @@ import XCTest
 
 final class BlockedProfilesCompatibilityTests: XCTestCase {
 
-  func testCompatibilityStrategyIdForNFCBlockingStrategy() {
+  private func makeProfile(
+    configuringStart: (inout ProfileStartTriggers) -> Void = { _ in },
+    configuringStop: (inout ProfileStopConditions) -> Void = { _ in }
+  ) -> BlockedProfiles {
     let profile = BlockedProfiles(name: "Test")
     var start = profile.startTriggers
     var stop = profile.stopConditions
-    start.anyNFC = true
-    stop.sameNFC = true
+    configuringStart(&start)
+    configuringStop(&stop)
     profile.startTriggers = start
     profile.stopConditions = stop
+    return profile
+  }
 
+  func testCompatibilityStrategyIdForNFCBlockingStrategy() {
+    let profile = makeProfile(
+      configuringStart: { $0.anyNFC = true },
+      configuringStop: { $0.sameNFC = true }
+    )
     XCTAssertEqual(profile.compatibilityStrategyId, "NFCBlockingStrategy")
   }
 
   func testCompatibilityStrategyIdForNFCTimerBlockingStrategy() {
-    let profile = BlockedProfiles(name: "Test")
-    var start = profile.startTriggers
-    var stop = profile.stopConditions
-    start.manual = true
-    stop.anyNFC = true
-    stop.timer = true
-    profile.startTriggers = start
-    profile.stopConditions = stop
-
+    let profile = makeProfile(
+      configuringStart: { $0.manual = true },
+      configuringStop: { $0.anyNFC = true; $0.timer = true }
+    )
     XCTAssertEqual(profile.compatibilityStrategyId, "NFCTimerBlockingStrategy")
   }
 
   func testCompatibilityStrategyIdForNFCManualBlockingStrategy() {
-    let profile = BlockedProfiles(name: "Test")
-    var start = profile.startTriggers
-    var stop = profile.stopConditions
-    start.manual = true
-    stop.anyNFC = true
-    profile.startTriggers = start
-    profile.stopConditions = stop
-
+    let profile = makeProfile(
+      configuringStart: { $0.manual = true },
+      configuringStop: { $0.anyNFC = true }
+    )
     XCTAssertEqual(profile.compatibilityStrategyId, "NFCManualBlockingStrategy")
   }
 
   func testCompatibilityStrategyIdForQRCodeBlockingStrategy() {
-    let profile = BlockedProfiles(name: "Test")
-    var start = profile.startTriggers
-    var stop = profile.stopConditions
-    start.anyQR = true
-    stop.sameQR = true
-    profile.startTriggers = start
-    profile.stopConditions = stop
-
+    let profile = makeProfile(
+      configuringStart: { $0.anyQR = true },
+      configuringStop: { $0.sameQR = true }
+    )
     XCTAssertEqual(profile.compatibilityStrategyId, "QRCodeBlockingStrategy")
   }
 
   func testCompatibilityStrategyIdForQRTimerBlockingStrategy() {
-    let profile = BlockedProfiles(name: "Test")
-    var start = profile.startTriggers
-    var stop = profile.stopConditions
-    start.manual = true
-    stop.anyQR = true
-    stop.timer = true
-    profile.startTriggers = start
-    profile.stopConditions = stop
-
+    let profile = makeProfile(
+      configuringStart: { $0.manual = true },
+      configuringStop: { $0.anyQR = true; $0.timer = true }
+    )
     XCTAssertEqual(profile.compatibilityStrategyId, "QRTimerBlockingStrategy")
   }
 
   func testCompatibilityStrategyIdForQRManualBlockingStrategy() {
-    let profile = BlockedProfiles(name: "Test")
-    var start = profile.startTriggers
-    var stop = profile.stopConditions
-    start.manual = true
-    stop.anyQR = true
-    profile.startTriggers = start
-    profile.stopConditions = stop
-
+    let profile = makeProfile(
+      configuringStart: { $0.manual = true },
+      configuringStop: { $0.anyQR = true }
+    )
     XCTAssertEqual(profile.compatibilityStrategyId, "QRManualBlockingStrategy")
   }
 
   func testCompatibilityStrategyIdForShortcutTimerBlockingStrategy() {
-    let profile = BlockedProfiles(name: "Test")
-    var start = profile.startTriggers
-    var stop = profile.stopConditions
-    start.manual = true
-    stop.timer = true
-    profile.startTriggers = start
-    profile.stopConditions = stop
-
+    let profile = makeProfile(
+      configuringStart: { $0.manual = true },
+      configuringStop: { $0.timer = true }
+    )
     XCTAssertEqual(profile.compatibilityStrategyId, "ShortcutTimerBlockingStrategy")
   }
 
   func testCompatibilityStrategyIdForManualBlockingStrategy() {
-    let profile = BlockedProfiles(name: "Test")
-    var start = profile.startTriggers
-    var stop = profile.stopConditions
-    start.manual = true
-    stop.manual = true
-    profile.startTriggers = start
-    profile.stopConditions = stop
-
+    let profile = makeProfile(
+      configuringStart: { $0.manual = true },
+      configuringStop: { $0.manual = true }
+    )
     XCTAssertEqual(profile.compatibilityStrategyId, "ManualBlockingStrategy")
   }
 
@@ -110,45 +90,29 @@ final class BlockedProfilesCompatibilityTests: XCTestCase {
   }
 
   func testUpdateCompatibilityStrategyIdSetsBlockingStrategyId() {
-    let profile = BlockedProfiles(name: "Test")
-    var start = profile.startTriggers
-    var stop = profile.stopConditions
-    start.anyNFC = true
-    stop.sameNFC = true
-    profile.startTriggers = start
-    profile.stopConditions = stop
-
+    let profile = makeProfile(
+      configuringStart: { $0.anyNFC = true },
+      configuringStop: { $0.sameNFC = true }
+    )
     profile.updateCompatibilityStrategyId()
-
     XCTAssertEqual(profile.blockingStrategyId, "NFCBlockingStrategy")
   }
 
   func testNFCTimerTakesPrecedenceOverNFCManual() {
     // When both timer and anyNFC are true, NFCTimerBlockingStrategy should win
-    let profile = BlockedProfiles(name: "Test")
-    var start = profile.startTriggers
-    var stop = profile.stopConditions
-    start.manual = true
-    stop.anyNFC = true
-    stop.timer = true
-    stop.manual = true // Also has manual, but timer+NFC takes precedence
-    profile.startTriggers = start
-    profile.stopConditions = stop
-
+    let profile = makeProfile(
+      configuringStart: { $0.manual = true },
+      configuringStop: { $0.anyNFC = true; $0.timer = true; $0.manual = true }
+    )
     XCTAssertEqual(profile.compatibilityStrategyId, "NFCTimerBlockingStrategy")
   }
 
   func testShortcutTimerExcludesNFCAndQR() {
     // ShortcutTimerBlockingStrategy only applies when NFC and QR are NOT enabled
-    let profile = BlockedProfiles(name: "Test")
-    var start = profile.startTriggers
-    var stop = profile.stopConditions
-    start.manual = true
-    stop.timer = true
-    stop.anyNFC = true // Has NFC, so should NOT be ShortcutTimer
-    profile.startTriggers = start
-    profile.stopConditions = stop
-
+    let profile = makeProfile(
+      configuringStart: { $0.manual = true },
+      configuringStop: { $0.timer = true; $0.anyNFC = true }
+    )
     XCTAssertNotEqual(profile.compatibilityStrategyId, "ShortcutTimerBlockingStrategy")
     XCTAssertEqual(profile.compatibilityStrategyId, "NFCTimerBlockingStrategy")
   }
