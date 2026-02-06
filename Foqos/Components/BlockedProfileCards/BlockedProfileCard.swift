@@ -106,6 +106,16 @@ struct BlockedProfileCard: View {
           }
         }
 
+        if profile.isNewerSchemaVersion {
+          // Read-only indicator for profiles from newer app version
+          HStack(spacing: 4) {
+            Image(systemName: "exclamationmark.triangle.fill")
+              .foregroundColor(.orange)
+            Text("Update app to edit")
+              .font(.caption2)
+              .foregroundStyle(.secondary)
+          }
+        } else {
         // Middle section - Strategy and apps info
         VStack(alignment: .leading, spacing: 16) {
           // Strategy and schedule side-by-side with divider
@@ -125,9 +135,10 @@ struct BlockedProfileCard: View {
             domainsCount: profile.domains?.count ?? 0
           )
         }
+        }
 
-        // Show app selection banner if needed
-        if profile.needsAppSelection {
+        // Show app selection banner if needed (not for newer schema profiles)
+        if profile.needsAppSelection && !profile.isNewerSchemaVersion {
           Button(action: {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
             onAppSelectionTapped()

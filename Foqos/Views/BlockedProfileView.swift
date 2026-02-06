@@ -213,6 +213,39 @@ struct BlockedProfileView: View {
 
     var body: some View {
         NavigationStack {
+          if let profile = profile, profile.isNewerSchemaVersion {
+            VStack(spacing: 16) {
+              Spacer()
+
+              Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 48))
+                .foregroundStyle(.orange)
+
+              Text(profile.name)
+                .font(.title2)
+                .bold()
+
+              Text(
+                "This profile was configured on a newer version of Foqos. Update the app to view or edit this profile."
+              )
+              .multilineTextAlignment(.center)
+              .foregroundStyle(.secondary)
+              .padding(.horizontal)
+
+              Spacer()
+            }
+            .padding()
+            .navigationTitle("Profile")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+              ToolbarItem(placement: .topBarLeading) {
+                Button(action: { dismiss() }) {
+                  Image(systemName: "xmark")
+                }
+                .accessibilityLabel("Cancel")
+              }
+            }
+          } else {
             Form {
                 // Show lock status when profile is active
                 if isBlocking {
@@ -794,6 +827,7 @@ struct BlockedProfileView: View {
                     lockCodeManager.revokeUnlock()
                 }
             }
+          } // else (non-newer-schema profile)
         }
     }
 
