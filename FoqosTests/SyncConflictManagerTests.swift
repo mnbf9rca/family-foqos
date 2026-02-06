@@ -6,15 +6,18 @@ import XCTest
 @MainActor
 final class SyncConflictManagerTests: XCTestCase {
 
-  func testInitialStateHasNoConflicts() {
+  override func setUp() {
+    super.setUp()
     SyncConflictManager.shared.clearAll()
+  }
+
+  func testInitialStateHasNoConflicts() {
     let manager = SyncConflictManager.shared
     XCTAssertTrue(manager.conflictedProfiles.isEmpty)
     XCTAssertFalse(manager.showConflictBanner)
   }
 
   func testAddConflictAddsIdAndShowsBanner() {
-    SyncConflictManager.shared.clearAll()
     let manager = SyncConflictManager.shared
     let profileId = UUID()
 
@@ -25,7 +28,6 @@ final class SyncConflictManagerTests: XCTestCase {
   }
 
   func testAddMultipleConflicts() {
-    SyncConflictManager.shared.clearAll()
     let manager = SyncConflictManager.shared
     let id1 = UUID()
     let id2 = UUID()
@@ -40,7 +42,6 @@ final class SyncConflictManagerTests: XCTestCase {
   }
 
   func testAddSameConflictTwiceDoesNotDuplicate() {
-    SyncConflictManager.shared.clearAll()
     let manager = SyncConflictManager.shared
     let profileId = UUID()
 
@@ -51,7 +52,6 @@ final class SyncConflictManagerTests: XCTestCase {
   }
 
   func testDismissBannerHidesBannerButKeepsConflicts() {
-    SyncConflictManager.shared.clearAll()
     let manager = SyncConflictManager.shared
     let profileId = UUID()
 
@@ -63,7 +63,6 @@ final class SyncConflictManagerTests: XCTestCase {
   }
 
   func testClearConflictRemovesSpecificId() {
-    SyncConflictManager.shared.clearAll()
     let manager = SyncConflictManager.shared
     let id1 = UUID()
     let id2 = UUID()
@@ -78,7 +77,6 @@ final class SyncConflictManagerTests: XCTestCase {
   }
 
   func testClearLastConflictHidesBanner() {
-    SyncConflictManager.shared.clearAll()
     let manager = SyncConflictManager.shared
     let profileId = UUID()
 
@@ -90,7 +88,6 @@ final class SyncConflictManagerTests: XCTestCase {
   }
 
   func testClearAllRemovesAllConflictsAndHidesBanner() {
-    SyncConflictManager.shared.clearAll()
     let manager = SyncConflictManager.shared
     let id1 = UUID()
     let id2 = UUID()
@@ -104,7 +101,6 @@ final class SyncConflictManagerTests: XCTestCase {
   }
 
   func testConflictMessageSingularIncludesProfileName() {
-    SyncConflictManager.shared.clearAll()
     let manager = SyncConflictManager.shared
     manager.addConflict(profileId: UUID(), profileName: "Work Focus")
 
@@ -115,7 +111,6 @@ final class SyncConflictManagerTests: XCTestCase {
   }
 
   func testConflictMessagePlural() {
-    SyncConflictManager.shared.clearAll()
     let manager = SyncConflictManager.shared
     manager.addConflict(profileId: UUID(), profileName: "Work Focus")
     manager.addConflict(profileId: UUID(), profileName: "Study Mode")
