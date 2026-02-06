@@ -1114,16 +1114,28 @@ class StrategyManager: ObservableObject {
     SharedData.flushCompletedSessionsForSchedular()
   }
 
+  /// Start blocking for the given profile.
+  /// - Parameter bypassStrategy: When true, uses ManualBlockingStrategy to create the session
+  ///   directly. Use this when the V2 trigger system has already routed the start action
+  ///   (e.g., NFC tag was already scanned) to avoid redundant scanning by legacy strategies.
   private func startBlocking(
     context: ModelContext,
-    activeProfile: BlockedProfiles?
+    activeProfile: BlockedProfiles?,
+    bypassStrategy: Bool = false
   ) {
     guard let definedProfile = activeProfile else {
       Log.info("No active profile found, calling stop blocking with no session", category: .strategy)
       return
     }
 
-    if let strategyId = definedProfile.blockingStrategyId {
+    // When bypassStrategy is true, the V2 trigger system has already routed
+    // the start action. Use ManualBlockingStrategy to create the session
+    // directly, avoiding redundant NFC/QR scans from legacy strategies.
+    let strategyId = bypassStrategy
+      ? ManualBlockingStrategy.id
+      : definedProfile.blockingStrategyId
+
+    if let strategyId {
       let strategy = getStrategy(id: strategyId)
       let view = strategy.startBlocking(
         context: context,
