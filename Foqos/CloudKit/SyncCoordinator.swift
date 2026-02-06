@@ -191,10 +191,10 @@ class SyncCoordinator: ObservableObject {
     from synced: SyncedProfile,
     in context: ModelContext
   ) {
-    // Don't overwrite V2+ profiles with V1 data
-    if profile.isNewerSchemaVersion && synced.profileSchemaVersion <= 1 {
+    // Don't overwrite profiles with data from an older schema version
+    if synced.profileSchemaVersion < profile.profileSchemaVersion {
       Log.info(
-        "Skipping sync update for V2+ profile '\(profile.name)' from V1 device",
+        "Skipping sync update for profile '\(profile.name)' from older schema version \(synced.profileSchemaVersion)",
         category: .sync
       )
       return

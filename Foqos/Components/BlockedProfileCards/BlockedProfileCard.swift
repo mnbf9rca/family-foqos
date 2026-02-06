@@ -131,8 +131,8 @@ struct BlockedProfileCard: View {
         }
         }
 
-        // Show app selection banner if needed
-        if profile.needsAppSelection {
+        // Show app selection banner if needed (not for V2+ read-only profiles)
+        if profile.needsAppSelection && !profile.isNewerSchemaVersion {
           Button(action: {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
             onAppSelectionTapped()
