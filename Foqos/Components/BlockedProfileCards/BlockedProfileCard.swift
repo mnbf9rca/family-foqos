@@ -102,6 +102,15 @@ struct BlockedProfileCard: View {
         }
 
         // Middle section - Strategy and apps info
+        if profile.isNewerSchemaVersion {
+          HStack(spacing: 4) {
+            Image(systemName: "exclamationmark.triangle.fill")
+              .foregroundColor(.orange)
+            Text("Update app to edit")
+              .font(.caption2)
+              .foregroundStyle(.secondary)
+          }
+        } else {
         VStack(alignment: .leading, spacing: 16) {
           // Strategy and schedule side-by-side with divider
           HStack(spacing: 16) {
@@ -119,6 +128,7 @@ struct BlockedProfileCard: View {
             sessionCount: profile.sessions.count,
             domainsCount: profile.domains?.count ?? 0
           )
+        }
         }
 
         // Show app selection banner if needed
