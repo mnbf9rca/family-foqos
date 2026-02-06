@@ -129,6 +129,24 @@ final class BlockedProfilesMigrationTests: XCTestCase {
     XCTAssertEqual(profile.stopSchedule?.hour, 17)
   }
 
+  func testIsNewerSchemaVersionFalseForCurrentVersion() {
+    let profile = BlockedProfiles(name: "Current")
+    profile.profileSchemaVersion = 2
+    XCTAssertFalse(profile.isNewerSchemaVersion)
+  }
+
+  func testIsNewerSchemaVersionFalseForOlderVersion() {
+    let profile = BlockedProfiles(name: "Old")
+    profile.profileSchemaVersion = 1
+    XCTAssertFalse(profile.isNewerSchemaVersion)
+  }
+
+  func testIsNewerSchemaVersionTrueForFutureVersion() {
+    let profile = BlockedProfiles(name: "Future")
+    profile.profileSchemaVersion = 3
+    XCTAssertTrue(profile.isNewerSchemaVersion)
+  }
+
   func testMigrateRunsWhenNoActiveSession() {
     let profile = BlockedProfiles(name: "Inactive")
     profile.profileSchemaVersion = 1

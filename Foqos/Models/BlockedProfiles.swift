@@ -653,6 +653,12 @@ extension BlockedProfiles {
         profileSchemaVersion < Self.currentSchemaVersion
     }
 
+    /// Whether this profile uses a newer schema version than this app supports.
+    /// V3+ profiles should be read-only on this app version.
+    var isNewerSchemaVersion: Bool {
+        profileSchemaVersion > Self.currentSchemaVersion
+    }
+
     /// Migrates to V2 if eligible (not already V2, no active session).
     /// Returns true if migration was performed.
     @discardableResult

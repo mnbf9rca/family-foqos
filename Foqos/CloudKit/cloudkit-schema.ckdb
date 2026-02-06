@@ -149,6 +149,7 @@ DEFINE SCHEMA
         lastModified            TIMESTAMP QUERYABLE SORTABLE,
         originDeviceId          STRING QUERYABLE,
         version                 INT64 QUERYABLE SORTABLE,
+        profileSchemaVersion    INT64,
         GRANT WRITE TO "_creator",
         GRANT CREATE TO "_icloud",
         GRANT READ TO "_creator"
