@@ -47,6 +47,12 @@ enum SharedData {
 
         var schedule: BlockedProfileSchedule?
 
+        // V2 trigger system
+        var startSchedule: ProfileScheduleTime?
+        var stopSchedule: ProfileScheduleTime?
+        var startTriggersSchedule: Bool?
+        var stopConditionsSchedule: Bool?
+
         var geofenceRule: ProfileGeofenceRule?
 
         var disableBackgroundStops: Bool?

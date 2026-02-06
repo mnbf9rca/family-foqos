@@ -11,22 +11,52 @@ class DeviceActivityCenterUtil {
         // Always cancel any existing pre-activation reminder first
         timersUtil.cancelNotification(identifier: notificationId)
 
-        // Only schedule if the schedule is active
-        guard let schedule = profile.schedule else { return }
-
         let center = DeviceActivityCenter()
         let scheduleTimerActivity = ScheduleTimerActivity()
         let deviceActivityName = scheduleTimerActivity.getDeviceActivityName(
             from: profile.id.uuidString
         )
 
-        // If the schedule is not active, remove any existing schedule
-        if !schedule.isActive {
+        // Determine if we have a V2 start schedule
+        let hasV2StartSchedule = profile.startTriggers.schedule
+            && profile.startSchedule?.isActive == true
+
+        // Legacy fallback: use profile.schedule if V2 start schedule not configured
+        let hasLegacySchedule = profile.schedule?.isActive == true
+
+        guard hasV2StartSchedule || hasLegacySchedule else {
+            // No start schedule — remove any existing schedule activity
             stopActivities(for: [deviceActivityName], with: center)
+            // Still check for stop-only schedule
+            scheduleStopActivity(for: profile)
             return
         }
 
-        let (intervalStart, intervalEnd) = scheduleTimerActivity.getScheduleInterval(from: schedule)
+        // Build interval from V2 or legacy
+        let intervalStart: DateComponents
+        let intervalEnd: DateComponents
+
+        if hasV2StartSchedule {
+            let startSched = profile.startSchedule!
+            intervalStart = DateComponents(hour: startSched.hour, minute: startSched.minute)
+
+            // For interval end: use V2 stop schedule if available, otherwise use start time + 23:59
+            if profile.stopConditions.schedule,
+               let stopSched = profile.stopSchedule, stopSched.isActive {
+                intervalEnd = DateComponents(hour: stopSched.hour, minute: stopSched.minute)
+            } else {
+                // No scheduled stop — set end to just before start (full day window)
+                let endHour = (startSched.hour + 23) % 24
+                let endMinute = startSched.minute > 0 ? startSched.minute - 1 : 59
+                intervalEnd = DateComponents(hour: endHour, minute: endMinute)
+            }
+        } else {
+            // Legacy path
+            let schedule = profile.schedule!
+            intervalStart = DateComponents(hour: schedule.startHour, minute: schedule.startMinute)
+            intervalEnd = DateComponents(hour: schedule.endHour, minute: schedule.endMinute)
+        }
+
         let deviceActivitySchedule = DeviceActivitySchedule(
             intervalStart: intervalStart,
             intervalEnd: intervalEnd,
@@ -40,10 +70,17 @@ class DeviceActivityCenterUtil {
             Log.info("Scheduled restrictions from \(intervalStart) to \(intervalEnd) daily", category: .timer)
 
             // Schedule pre-activation reminder if enabled
-            schedulePreActivationReminder(for: profile, schedule: schedule)
+            if hasV2StartSchedule, let startSchedule = profile.startSchedule {
+                schedulePreActivationReminderV2(for: profile, startSchedule: startSchedule)
+            } else if let schedule = profile.schedule {
+                schedulePreActivationReminder(for: profile, schedule: schedule)
+            }
         } catch {
             Log.info("Failed to start monitoring: \(error.localizedDescription)", category: .timer)
         }
+
+        // Also register stop-only activity if stop schedule is independent
+        scheduleStopActivity(for: profile)
     }
 
     /// Schedule a notification before the profile's scheduled activation time
@@ -95,6 +132,102 @@ class DeviceActivityCenterUtil {
         )
 
         Log.info("Scheduled pre-activation reminder for \(profile.name) in \(Int(secondsUntilReminder)) seconds", category: .timer)
+    }
+
+    /// Register a stop-only DeviceActivity for profiles with scheduled stop but no scheduled start.
+    /// Uses StopScheduleTimerActivity which fires intervalDidEnd at the stop time.
+    static func scheduleStopActivity(for profile: BlockedProfiles) {
+        let stopTimerActivity = StopScheduleTimerActivity()
+        let deviceActivityName = stopTimerActivity.getDeviceActivityName(
+            from: profile.id.uuidString
+        )
+        let center = DeviceActivityCenter()
+
+        // Only register if stop schedule is active AND start is NOT scheduled
+        // (if both are scheduled, ScheduleTimerActivity handles the end via intervalDidEnd)
+        let hasScheduledStart = profile.startTriggers.schedule
+            && profile.startSchedule?.isActive == true
+        let hasScheduledStop = profile.stopConditions.schedule
+            && profile.stopSchedule?.isActive == true
+
+        guard hasScheduledStop && !hasScheduledStart else {
+            stopActivities(for: [deviceActivityName], with: center)
+            return
+        }
+
+        let stopSchedule = profile.stopSchedule!
+        let intervalStart = DateComponents(hour: 0, minute: 0)
+        let intervalEnd = DateComponents(hour: stopSchedule.hour, minute: stopSchedule.minute)
+
+        let deviceActivitySchedule = DeviceActivitySchedule(
+            intervalStart: intervalStart,
+            intervalEnd: intervalEnd,
+            repeats: true
+        )
+
+        do {
+            stopActivities(for: [deviceActivityName], with: center)
+            try center.startMonitoring(deviceActivityName, during: deviceActivitySchedule)
+            Log.info(
+                "Scheduled stop-only activity at \(stopSchedule.hour):\(String(format: "%02d", stopSchedule.minute))",
+                category: .timer
+            )
+        } catch {
+            Log.error(
+                "Failed to schedule stop activity: \(error.localizedDescription)",
+                category: .timer
+            )
+        }
+    }
+
+    static func removeStopScheduleActivity(for profile: BlockedProfiles) {
+        let stopTimerActivity = StopScheduleTimerActivity()
+        let deviceActivityName = stopTimerActivity.getDeviceActivityName(
+            from: profile.id.uuidString
+        )
+        stopActivities(for: [deviceActivityName])
+    }
+
+    private static func schedulePreActivationReminderV2(
+        for profile: BlockedProfiles,
+        startSchedule: ProfileScheduleTime
+    ) {
+        guard profile.preActivationReminderEnabled else { return }
+        guard startSchedule.isTodayScheduled() else { return }
+
+        let timersUtil = TimersUtil()
+        let notificationId = TimersUtil.preActivationReminderIdentifier(for: profile.id)
+
+        let calendar = Calendar.current
+        let now = Date()
+
+        guard let scheduledStart = calendar.date(
+            bySettingHour: startSchedule.hour,
+            minute: startSchedule.minute,
+            second: 0,
+            of: now
+        ) else { return }
+
+        let reminderMinutes = Int(profile.preActivationReminderMinutes)
+        guard let reminderTime = calendar.date(
+            byAdding: .minute, value: -reminderMinutes, to: scheduledStart
+        ) else { return }
+
+        let secondsUntilReminder = reminderTime.timeIntervalSince(now)
+        guard secondsUntilReminder > 0 else { return }
+
+        let title = "\(profile.name) starts in \(reminderMinutes) minute\(reminderMinutes == 1 ? "" : "s")"
+        let message = "Your scheduled focus session is about to begin."
+
+        timersUtil.scheduleNotification(
+            title: title, message: message,
+            seconds: secondsUntilReminder, identifier: notificationId
+        )
+
+        Log.info(
+            "Scheduled pre-activation reminder for \(profile.name) in \(Int(secondsUntilReminder)) seconds",
+            category: .timer
+        )
     }
 
     static func startBreakTimerActivity(for profile: BlockedProfiles) {

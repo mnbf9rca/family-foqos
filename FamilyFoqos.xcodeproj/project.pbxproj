@@ -81,7 +81,7 @@
 		803989B22CCC06D600E87F57 /* StoreKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = StoreKit.framework; path = System/Library/Frameworks/StoreKit.framework; sourceTree = SDKROOT; };
 		808A3C4A2E4ACD18002A7812 /* FoqosShieldConfig.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = FoqosShieldConfig.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		808A3C4B2E4ACD18002A7812 /* ManagedSettings.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ManagedSettings.framework; path = System/Library/Frameworks/ManagedSettings.framework; sourceTree = SDKROOT; };
-		808A3C4D2E4ACD18002A7812 /* ManagedSettingsUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ManagedSettingsUI.framework; path = Library/Frameworks/ManagedSettingsUI.framework; sourceTree = DEVELOPER_DIR; };
+		808A3C4D2E4ACD18002A7812 /* ManagedSettingsUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ManagedSettingsUI.framework; path = System/Library/Frameworks/ManagedSettingsUI.framework; sourceTree = SDKROOT; };
 		80C6CAFA2D4301B3008680F4 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		80C6CAFC2D4301B3008680F4 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		80DBF6132CB776D100EEA8A6 /* DeviceActivity.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = DeviceActivity.framework; path = System/Library/Frameworks/DeviceActivity.framework; sourceTree = SDKROOT; };
@@ -114,6 +114,7 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Models/GeofenceRule.swift,
+				Models/ProfileScheduleTime.swift,
 				Models/Schedule.swift,
 				Models/Shared.swift,
 				Utils/AppBlockerUtil.swift,
@@ -131,10 +132,12 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Models/GeofenceRule.swift,
+				Models/ProfileScheduleTime.swift,
 				Models/Schedule.swift,
 				Models/Shared.swift,
 				Models/Timers/BreakTimerActivity.swift,
 				Models/Timers/ScheduleTimerActivity.swift,
+				Models/Timers/StopScheduleTimerActivity.swift,
 				Models/Timers/StrategyTimerActivity.swift,
 				Models/Timers/TimerActivity.swift,
 				Models/Timers/TimerActivityUtil.swift,
