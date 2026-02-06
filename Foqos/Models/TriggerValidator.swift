@@ -17,7 +17,6 @@ enum StopOption: String, CaseIterable {
 
 /// A validation rule with context-aware checking
 struct TriggerRule: Sendable {
-  let id: String
   let check: @Sendable (ProfileStartTriggers, ProfileStopConditions) -> Bool
   let message: String
   let autoFix: (@Sendable (ProfileStartTriggers, inout ProfileStopConditions) -> Void)?
@@ -27,7 +26,6 @@ struct TriggerRule: Sendable {
 enum TriggerRules {
   /// "Same NFC" requires an NFC start trigger
   static let sameNFCRequiresNFCStart = TriggerRule(
-    id: "same-nfc-requires-nfc-start",
     check: { start, stop in !stop.sameNFC || start.hasNFC },
     message: "\"Same NFC\" requires an NFC start trigger (Any or Specific)",
     autoFix: { start, stop in
@@ -37,7 +35,6 @@ enum TriggerRules {
 
   /// "Same QR" requires a QR start trigger
   static let sameQRRequiresQRStart = TriggerRule(
-    id: "same-qr-requires-qr-start",
     check: { start, stop in !stop.sameQR || start.hasQR },
     message: "\"Same QR\" requires a QR start trigger (Any or Specific)",
     autoFix: { start, stop in
@@ -47,7 +44,6 @@ enum TriggerRules {
 
   /// At least one start trigger required
   static let requiresStartTrigger = TriggerRule(
-    id: "requires-start-trigger",
     check: { start, _ in start.isValid },
     message: "At least one start trigger is required",
     autoFix: nil
@@ -55,7 +51,6 @@ enum TriggerRules {
 
   /// At least one stop condition required
   static let requiresStopCondition = TriggerRule(
-    id: "requires-stop-condition",
     check: { _, stop in stop.isValid },
     message: "At least one stop condition is required",
     autoFix: nil
