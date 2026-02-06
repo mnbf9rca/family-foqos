@@ -105,7 +105,8 @@ class SyncCoordinator: ObservableObject {
 
       // Create sync objects on main queue (accesses SwiftData properties)
       let deviceId = SharedData.deviceSyncId.uuidString
-      let syncedProfiles = profiles.map { SyncedProfile(from: $0, originDeviceId: deviceId) }
+      let syncedProfiles = profiles.filter { !$0.isNewerSchemaVersion }
+        .map { SyncedProfile(from: $0, originDeviceId: deviceId) }
       let syncedLocations = locations.map { SyncedLocation(from: $0) }
 
       Log.info("Pushing \(syncedProfiles.count) profiles and \(syncedLocations.count) locations to CloudKit", category: .sync)
@@ -495,7 +496,7 @@ class SyncCoordinator: ObservableObject {
     do {
       // Re-push all profiles
       let profiles = try BlockedProfiles.fetchProfiles(in: context)
-      for profile in profiles {
+      for profile in profiles where !profile.isNewerSchemaVersion {
         try? await ProfileSyncManager.shared.pushProfile(profile)
         Log.info("Re-pushed profile '\(profile.name)' after reset", category: .sync)
       }
@@ -516,6 +517,10 @@ class SyncCoordinator: ObservableObject {
   /// Push a profile to CloudKit when global sync is enabled
   func pushProfile(_ profile: BlockedProfiles) {
     guard ProfileSyncManager.shared.isEnabled else { return }
+    guard !profile.isNewerSchemaVersion else {
+      Log.info("Skipping push for newer schema profile '\(profile.name)'", category: .sync)
+      return
+    }
     guard let context = modelContext else {
       Log.info("No model context available for push", category: .sync)
       return

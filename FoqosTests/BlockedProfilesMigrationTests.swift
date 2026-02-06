@@ -147,6 +147,16 @@ final class BlockedProfilesMigrationTests: XCTestCase {
     XCTAssertTrue(profile.isNewerSchemaVersion)
   }
 
+  func testIsNewerSchemaVersionUsesConstant() {
+    // Verify the threshold is based on currentSchemaVersion, not a hardcoded value
+    let profile = BlockedProfiles(name: "Test")
+    profile.profileSchemaVersion = BlockedProfiles.currentSchemaVersion
+    XCTAssertFalse(profile.isNewerSchemaVersion, "Current version should not be 'newer'")
+
+    profile.profileSchemaVersion = BlockedProfiles.currentSchemaVersion + 1
+    XCTAssertTrue(profile.isNewerSchemaVersion, "Version above current should be 'newer'")
+  }
+
   func testMigrateRunsWhenNoActiveSession() {
     let profile = BlockedProfiles(name: "Inactive")
     profile.profileSchemaVersion = 1
