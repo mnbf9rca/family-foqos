@@ -48,6 +48,16 @@ struct SyncedProfile: Codable, Equatable {
     var scheduleData: Data?
     var geofenceRuleData: Data?
 
+    // V2 trigger system
+    var startTriggersData: Data?
+    var stopConditionsData: Data?
+    var startScheduleData: Data?
+    var stopScheduleData: Data?
+    var startNFCTagId: String?
+    var startQRCodeId: String?
+    var stopNFCTagId: String?
+    var stopQRCodeId: String?
+
     /// Other settings
     var disableBackgroundStops: Bool
 
@@ -93,6 +103,14 @@ struct SyncedProfile: Codable, Equatable {
         case domains
         case scheduleData
         case geofenceRuleData
+        case startTriggersData
+        case stopConditionsData
+        case startScheduleData
+        case stopScheduleData
+        case startNFCTagId
+        case startQRCodeId
+        case stopNFCTagId
+        case stopQRCodeId
         case disableBackgroundStops
         case isManaged
         case managedByChildId
@@ -136,6 +154,14 @@ struct SyncedProfile: Codable, Equatable {
         record[FieldKey.domains.rawValue] = domains
         record[FieldKey.scheduleData.rawValue] = scheduleData
         record[FieldKey.geofenceRuleData.rawValue] = geofenceRuleData
+        record[FieldKey.startTriggersData.rawValue] = startTriggersData
+        record[FieldKey.stopConditionsData.rawValue] = stopConditionsData
+        record[FieldKey.startScheduleData.rawValue] = startScheduleData
+        record[FieldKey.stopScheduleData.rawValue] = stopScheduleData
+        record[FieldKey.startNFCTagId.rawValue] = startNFCTagId
+        record[FieldKey.startQRCodeId.rawValue] = startQRCodeId
+        record[FieldKey.stopNFCTagId.rawValue] = stopNFCTagId
+        record[FieldKey.stopQRCodeId.rawValue] = stopQRCodeId
         record[FieldKey.disableBackgroundStops.rawValue] = disableBackgroundStops
         record[FieldKey.isManaged.rawValue] = isManaged
         record[FieldKey.managedByChildId.rawValue] = managedByChildId
@@ -192,6 +218,14 @@ struct SyncedProfile: Codable, Equatable {
         domains = record[FieldKey.domains.rawValue] as? [String]
         scheduleData = record[FieldKey.scheduleData.rawValue] as? Data
         geofenceRuleData = record[FieldKey.geofenceRuleData.rawValue] as? Data
+        startTriggersData = record[FieldKey.startTriggersData.rawValue] as? Data
+        stopConditionsData = record[FieldKey.stopConditionsData.rawValue] as? Data
+        startScheduleData = record[FieldKey.startScheduleData.rawValue] as? Data
+        stopScheduleData = record[FieldKey.stopScheduleData.rawValue] as? Data
+        startNFCTagId = record[FieldKey.startNFCTagId.rawValue] as? String
+        startQRCodeId = record[FieldKey.startQRCodeId.rawValue] as? String
+        stopNFCTagId = record[FieldKey.stopNFCTagId.rawValue] as? String
+        stopQRCodeId = record[FieldKey.stopQRCodeId.rawValue] as? String
         disableBackgroundStops = record[FieldKey.disableBackgroundStops.rawValue] as? Bool ?? false
         isManaged = record[FieldKey.isManaged.rawValue] as? Bool ?? false
         managedByChildId = record[FieldKey.managedByChildId.rawValue] as? String
@@ -237,7 +271,7 @@ struct SyncedProfile: Codable, Equatable {
         version = profile.syncVersion
         profileSchemaVersion = profile.profileSchemaVersion
 
-        // Encode schedule and geofence rule
+        // Encode schedule and geofence rule (legacy scheduleData still written for backwards compat)
         if let schedule = profile.schedule {
             scheduleData = try? JSONEncoder().encode(schedule)
         } else {
@@ -249,6 +283,16 @@ struct SyncedProfile: Codable, Equatable {
         } else {
             geofenceRuleData = nil
         }
+
+        // V2 trigger fields
+        startTriggersData = try? JSONEncoder().encode(profile.startTriggers)
+        stopConditionsData = try? JSONEncoder().encode(profile.stopConditions)
+        startScheduleData = try? JSONEncoder().encode(profile.startSchedule)
+        stopScheduleData = try? JSONEncoder().encode(profile.stopSchedule)
+        startNFCTagId = profile.startNFCTagId
+        startQRCodeId = profile.startQRCodeId
+        stopNFCTagId = profile.stopNFCTagId
+        stopQRCodeId = profile.stopQRCodeId
     }
 
     // MARK: - Decode Schedule and Geofence
@@ -261,6 +305,26 @@ struct SyncedProfile: Codable, Equatable {
     var geofenceRule: ProfileGeofenceRule? {
         guard let data = geofenceRuleData else { return nil }
         return try? JSONDecoder().decode(ProfileGeofenceRule.self, from: data)
+    }
+
+    var startTriggers: ProfileStartTriggers? {
+        guard let data = startTriggersData else { return nil }
+        return try? JSONDecoder().decode(ProfileStartTriggers.self, from: data)
+    }
+
+    var stopConditions: ProfileStopConditions? {
+        guard let data = stopConditionsData else { return nil }
+        return try? JSONDecoder().decode(ProfileStopConditions.self, from: data)
+    }
+
+    var startSchedule: ProfileScheduleTime? {
+        guard let data = startScheduleData else { return nil }
+        return try? JSONDecoder().decode(ProfileScheduleTime.self, from: data)
+    }
+
+    var stopSchedule: ProfileScheduleTime? {
+        guard let data = stopScheduleData else { return nil }
+        return try? JSONDecoder().decode(ProfileScheduleTime.self, from: data)
     }
 }
 

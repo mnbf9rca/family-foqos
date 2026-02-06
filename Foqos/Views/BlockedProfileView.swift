@@ -526,6 +526,20 @@ struct BlockedProfileView: View {
                         }
                     }
                 }
+
+                if let profile = profile {
+                    Section {
+                        HStack {
+                            Text("Profile ID")
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Text(profile.id.uuidString.prefix(8))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                        }
+                    }
+                }
             }
             .onChange(of: enableAllowMode) {
                 _,

@@ -153,7 +153,7 @@ class SyncCoordinator: ObservableObject {
           // Check schema version - ignore changes from older schema versions
           if syncedProfile.profileSchemaVersion < existingProfile.profileSchemaVersion {
             Log.warning(
-              "Ignoring sync from older schema version for profile: \(existingProfile.name)",
+              "Ignoring sync from older schema version for profile: \(existingProfile.name) (\(existingProfile.id.uuidString))",
               category: .sync
             )
             SyncConflictManager.shared.addConflict(profileId: existingProfile.id)
@@ -223,6 +223,25 @@ class SyncCoordinator: ObservableObject {
     profile.syncVersion = synced.version
     profile.updatedAt = synced.updatedAt
 
+    // V2 trigger fields — only apply if synced profile has V2 data
+    if let startTriggers = synced.startTriggers {
+      profile.startTriggers = startTriggers
+    }
+    if let stopConditions = synced.stopConditions {
+      profile.stopConditions = stopConditions
+    }
+    if synced.startScheduleData != nil {
+      profile.startSchedule = synced.startSchedule
+    }
+    if synced.stopScheduleData != nil {
+      profile.stopSchedule = synced.stopSchedule
+    }
+    profile.startNFCTagId = synced.startNFCTagId
+    profile.startQRCodeId = synced.startQRCodeId
+    profile.stopNFCTagId = synced.stopNFCTagId
+    profile.stopQRCodeId = synced.stopQRCodeId
+    profile.profileSchemaVersion = max(profile.profileSchemaVersion, synced.profileSchemaVersion)
+
     // Update snapshot for extensions
     BlockedProfiles.updateSnapshot(for: profile)
 
@@ -258,6 +277,21 @@ class SyncCoordinator: ObservableObject {
       syncVersion: synced.version,
       needsAppSelection: true  // New profile from another device needs app selection
     )
+
+    // Apply V2 trigger fields
+    if let startTriggers = synced.startTriggers {
+      profile.startTriggers = startTriggers
+    }
+    if let stopConditions = synced.stopConditions {
+      profile.stopConditions = stopConditions
+    }
+    profile.startSchedule = synced.startSchedule
+    profile.stopSchedule = synced.stopSchedule
+    profile.startNFCTagId = synced.startNFCTagId
+    profile.startQRCodeId = synced.startQRCodeId
+    profile.stopNFCTagId = synced.stopNFCTagId
+    profile.stopQRCodeId = synced.stopQRCodeId
+    profile.profileSchemaVersion = synced.profileSchemaVersion
 
     context.insert(profile)
     BlockedProfiles.updateSnapshot(for: profile)
