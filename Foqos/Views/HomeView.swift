@@ -48,9 +48,6 @@ struct HomeView: View {
   // Parent dashboard (accessible in parent mode)
   @State private var showParentDashboard = false
 
-  // Activity sessions
-  @Query(sort: \BlockedProfileSession.startTime, order: .reverse) private
-    var sessions: [BlockedProfileSession]
   @Query(
     filter: #Predicate<BlockedProfileSession> { $0.endTime != nil },
     sort: \BlockedProfileSession.endTime,
