@@ -189,15 +189,21 @@ struct foqosApp: App {
         do {
             let profiles = try BlockedProfiles.fetchProfiles(in: context)
             var migratedCount = 0
+            var migratedProfiles: [BlockedProfiles] = []
             for profile in profiles {
                 if profile.needsMigration {
                     profile.migrateToV2IfNeeded()
+                    migratedProfiles.append(profile)
                     migratedCount += 1
                 }
             }
             if migratedCount > 0 {
                 try context.save()
                 Log.info("Migrated \(migratedCount) profiles to schema V2", category: .app)
+                // Register schedules with DeviceActivityCenter for migrated profiles
+                for profile in migratedProfiles {
+                    DeviceActivityCenterUtil.scheduleTimerActivity(for: profile)
+                }
             }
         } catch {
             Log.error("Failed to migrate profiles: \(error.localizedDescription)", category: .app)
