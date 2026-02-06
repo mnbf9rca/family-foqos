@@ -21,6 +21,12 @@ struct ProfileStopConditions: Codable, Equatable {
       || anyQR || specificQR || sameQR || schedule || deepLink
   }
 
+  /// True if any NFC stop condition is enabled
+  var hasNFC: Bool { anyNFC || sameNFC || specificNFC }
+
+  /// True if any QR stop condition is enabled
+  var hasQR: Bool { anyQR || sameQR || specificQR }
+
   /// True if every enabled stop condition requires a specific physical item.
   /// When this is true the user risks being unable to stop the profile if they
   /// lose access to the required item. Emergency Unblock (limited to 3 per 4 weeks)
