@@ -14,6 +14,7 @@ class NFCScannerUtil: NSObject, ObservableObject {
 
   private var nfcSession: NFCReaderSession?
   private var urlToWrite: String?
+  private var scanCompleted = false
 
   func scan(profileName: String) {
     guard NFCReaderSession.readingAvailable else {
@@ -21,6 +22,7 @@ class NFCScannerUtil: NSObject, ObservableObject {
       return
     }
 
+    scanCompleted = false
     nfcSession = NFCTagReaderSession(
       pollingOption: [.iso14443, .iso15693],
       delegate: self,
@@ -142,10 +144,14 @@ extension NFCScannerUtil: NFCTagReaderSessionDelegate {
   nonisolated func tagReaderSession(_ session: NFCTagReaderSession, didInvalidateWithError error: Error) {
     let readerError = error as? NFCReaderError
     Task { @MainActor in
+      // After a successful tag read, any invalidation error is expected and benign
+      // (e.g., systemIsBusy during teardown, userCanceled from programmatic invalidate)
+      guard !self.scanCompleted else { return }
+
       if let readerError = readerError {
         switch readerError.code {
         case .readerSessionInvalidationErrorUserCanceled:
-          break  // Normal invalidation after successful scan or user cancel
+          break  // User dismissed the NFC sheet without scanning
         default:
           self.onError?(readerError.localizedDescription)
         }
@@ -216,6 +222,7 @@ extension NFCScannerUtil: NFCTagReaderSessionDelegate {
   nonisolated private func completeTagScan(id: String, sessionBox: ScannerSessionBox) {
     let result = NFCResult(id: id, DateScanned: Date())
     Task { @MainActor in
+      self.scanCompleted = true
       self.onTagScanned?(result)
     }
     sessionBox.invalidate()

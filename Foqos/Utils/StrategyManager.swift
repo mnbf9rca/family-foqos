@@ -1182,7 +1182,7 @@ class StrategyManager: ObservableObject {
     )
 
     if validation.allowed {
-      stopBlocking(context: context)
+      stopBlocking(context: context, bypassStrategy: true)
     } else {
       errorMessage = validation.errorMessage
     }
@@ -1204,7 +1204,7 @@ class StrategyManager: ObservableObject {
     )
 
     if validation.allowed {
-      stopBlocking(context: context)
+      stopBlocking(context: context, bypassStrategy: true)
     } else {
       errorMessage = validation.errorMessage
     }
@@ -1269,13 +1269,24 @@ class StrategyManager: ObservableObject {
     Log.info("Started session for profile '\(profile.name)' with tag", category: .strategy)
   }
 
-  private func stopBlocking(context: ModelContext) {
+  /// Stop the active blocking session.
+  /// - Parameter bypassStrategy: When true, uses ManualBlockingStrategy to end the session
+  ///   directly. Use this when the V2 trigger system has already validated stop conditions
+  ///   (e.g., NFC tag was already scanned) to avoid redundant scanning by legacy strategies.
+  private func stopBlocking(context: ModelContext, bypassStrategy: Bool = false) {
     guard let session = activeSession else {
       Log.info("No active session found, calling stop blocking with no session", category: .strategy)
       return
     }
 
-    if let strategyId = session.blockedProfile.blockingStrategyId {
+    // When bypassStrategy is true, the caller has already handled any required
+    // NFC/QR scanning and validation. Use ManualBlockingStrategy to end the
+    // session directly, avoiding a redundant second scan from legacy strategies.
+    let strategyId = bypassStrategy
+      ? ManualBlockingStrategy.id
+      : session.blockedProfile.blockingStrategyId
+
+    if let strategyId {
       let strategy = getStrategy(id: strategyId)
       let view = strategy.stopBlocking(context: context, session: session)
 
