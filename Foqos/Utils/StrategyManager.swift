@@ -126,24 +126,6 @@ class StrategyManager: ObservableObject {
         return
       }
 
-      // Validate manual stop for V2 profiles
-      if let session = activeSession,
-        !session.blockedProfile.needsMigration
-      {
-        let validation = Self.canStop(
-          with: .manual,
-          conditions: session.blockedProfile.stopConditions,
-          sessionTag: session.tag,
-          stopNFCTagId: session.blockedProfile.stopNFCTagId,
-          stopQRCodeId: session.blockedProfile.stopQRCodeId
-        )
-        if !validation.allowed {
-          Log.info("Manual stop blocked: \(validation.errorMessage ?? "Not allowed")", category: .strategy)
-          errorMessage = validation.errorMessage
-          return
-        }
-      }
-
       // Check geofence rule if one exists
       if let session = activeSession,
         let geofenceRule = session.blockedProfile.geofenceRule,
@@ -1166,6 +1148,50 @@ class StrategyManager: ObservableObject {
   func startWithQRCode(context: ModelContext, profile: BlockedProfiles, codeValue: String) {
     let prefixedTag = "qr:\(codeValue)"
     startWithTag(context: context, profile: profile, tag: prefixedTag)
+  }
+
+  /// Stop blocking with a scanned NFC tag (for stop-condition-based stop)
+  func stopWithNFCTag(context: ModelContext, tagId: String) {
+    guard let session = activeSession else {
+      errorMessage = "No active session to stop"
+      return
+    }
+
+    let validation = Self.canStop(
+      with: .nfc(tag: tagId),
+      conditions: session.blockedProfile.stopConditions,
+      sessionTag: session.tag,
+      stopNFCTagId: session.blockedProfile.stopNFCTagId,
+      stopQRCodeId: session.blockedProfile.stopQRCodeId
+    )
+
+    if validation.allowed {
+      stopBlocking(context: context)
+    } else {
+      errorMessage = validation.errorMessage
+    }
+  }
+
+  /// Stop blocking with a scanned QR code (for stop-condition-based stop)
+  func stopWithQRCode(context: ModelContext, codeValue: String) {
+    guard let session = activeSession else {
+      errorMessage = "No active session to stop"
+      return
+    }
+
+    let validation = Self.canStop(
+      with: .qr(code: codeValue),
+      conditions: session.blockedProfile.stopConditions,
+      sessionTag: session.tag,
+      stopNFCTagId: session.blockedProfile.stopNFCTagId,
+      stopQRCodeId: session.blockedProfile.stopQRCodeId
+    )
+
+    if validation.allowed {
+      stopBlocking(context: context)
+    } else {
+      errorMessage = validation.errorMessage
+    }
   }
 
   /// Start blocking with a pre-scanned tag (internal helper)
