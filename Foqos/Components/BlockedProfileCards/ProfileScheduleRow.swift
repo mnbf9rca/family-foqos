@@ -17,8 +17,7 @@ struct ProfileScheduleRow: View {
   private var hasSchedule: Bool { hasLegacySchedule || hasV2Schedule }
 
   private var isTimerStrategy: Bool {
-    profile.blockingStrategyId == NFCTimerBlockingStrategy.id
-      || profile.blockingStrategyId == QRTimerBlockingStrategy.id
+    profile.stopConditions.timer
   }
 
   private var timerDuration: Int? {
@@ -107,6 +106,9 @@ struct ProfileScheduleRow: View {
         } else if hasSchedule && isTimerStrategy {
           Text("Unstable Profile with Schedule")
             .font(.caption2)
+            .lineLimit(2)
+            .minimumScaleFactor(0.8)
+            .fixedSize(horizontal: false, vertical: true)
         } else if !hasSchedule {
           Text("No Schedule Set")
             .font(.caption)
