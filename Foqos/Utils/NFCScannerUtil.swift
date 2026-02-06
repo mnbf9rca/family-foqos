@@ -140,9 +140,18 @@ extension NFCScannerUtil: NFCTagReaderSessionDelegate {
   }
 
   nonisolated func tagReaderSession(_ session: NFCTagReaderSession, didInvalidateWithError error: Error) {
-    let errorMessage = error.localizedDescription
+    let readerError = error as? NFCReaderError
     Task { @MainActor in
-      self.onError?(errorMessage)
+      if let readerError = readerError {
+        switch readerError.code {
+        case .readerSessionInvalidationErrorUserCanceled:
+          break  // Normal invalidation after successful scan or user cancel
+        default:
+          self.onError?(readerError.localizedDescription)
+        }
+      } else {
+        self.onError?(error.localizedDescription)
+      }
     }
   }
 
