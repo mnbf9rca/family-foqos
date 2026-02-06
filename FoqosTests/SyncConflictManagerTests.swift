@@ -9,7 +9,7 @@ final class SyncConflictManagerTests: XCTestCase {
   func testInitialStateHasNoConflicts() {
     SyncConflictManager.shared.clearAll()
     let manager = SyncConflictManager.shared
-    XCTAssertTrue(manager.conflictedProfileIds.isEmpty)
+    XCTAssertTrue(manager.conflictedProfiles.isEmpty)
     XCTAssertFalse(manager.showConflictBanner)
   }
 
@@ -18,9 +18,9 @@ final class SyncConflictManagerTests: XCTestCase {
     let manager = SyncConflictManager.shared
     let profileId = UUID()
 
-    manager.addConflict(profileId: profileId)
+    manager.addConflict(profileId: profileId, profileName: "Test")
 
-    XCTAssertTrue(manager.conflictedProfileIds.contains(profileId))
+    XCTAssertNotNil(manager.conflictedProfiles[profileId])
     XCTAssertTrue(manager.showConflictBanner)
   }
 
@@ -30,12 +30,12 @@ final class SyncConflictManagerTests: XCTestCase {
     let id1 = UUID()
     let id2 = UUID()
 
-    manager.addConflict(profileId: id1)
-    manager.addConflict(profileId: id2)
+    manager.addConflict(profileId: id1, profileName: "Profile 1")
+    manager.addConflict(profileId: id2, profileName: "Profile 2")
 
-    XCTAssertEqual(manager.conflictedProfileIds.count, 2)
-    XCTAssertTrue(manager.conflictedProfileIds.contains(id1))
-    XCTAssertTrue(manager.conflictedProfileIds.contains(id2))
+    XCTAssertEqual(manager.conflictedProfiles.count, 2)
+    XCTAssertNotNil(manager.conflictedProfiles[id1])
+    XCTAssertNotNil(manager.conflictedProfiles[id2])
     XCTAssertTrue(manager.showConflictBanner)
   }
 
@@ -44,10 +44,10 @@ final class SyncConflictManagerTests: XCTestCase {
     let manager = SyncConflictManager.shared
     let profileId = UUID()
 
-    manager.addConflict(profileId: profileId)
-    manager.addConflict(profileId: profileId)
+    manager.addConflict(profileId: profileId, profileName: "Test")
+    manager.addConflict(profileId: profileId, profileName: "Test")
 
-    XCTAssertEqual(manager.conflictedProfileIds.count, 1)
+    XCTAssertEqual(manager.conflictedProfiles.count, 1)
   }
 
   func testDismissBannerHidesBannerButKeepsConflicts() {
@@ -55,11 +55,11 @@ final class SyncConflictManagerTests: XCTestCase {
     let manager = SyncConflictManager.shared
     let profileId = UUID()
 
-    manager.addConflict(profileId: profileId)
+    manager.addConflict(profileId: profileId, profileName: "Test")
     manager.dismissBanner()
 
     XCTAssertFalse(manager.showConflictBanner)
-    XCTAssertTrue(manager.conflictedProfileIds.contains(profileId))
+    XCTAssertNotNil(manager.conflictedProfiles[profileId])
   }
 
   func testClearConflictRemovesSpecificId() {
@@ -68,12 +68,12 @@ final class SyncConflictManagerTests: XCTestCase {
     let id1 = UUID()
     let id2 = UUID()
 
-    manager.addConflict(profileId: id1)
-    manager.addConflict(profileId: id2)
+    manager.addConflict(profileId: id1, profileName: "Profile 1")
+    manager.addConflict(profileId: id2, profileName: "Profile 2")
     manager.clearConflict(profileId: id1)
 
-    XCTAssertFalse(manager.conflictedProfileIds.contains(id1))
-    XCTAssertTrue(manager.conflictedProfileIds.contains(id2))
+    XCTAssertNil(manager.conflictedProfiles[id1])
+    XCTAssertNotNil(manager.conflictedProfiles[id2])
     XCTAssertTrue(manager.showConflictBanner)
   }
 
@@ -82,10 +82,10 @@ final class SyncConflictManagerTests: XCTestCase {
     let manager = SyncConflictManager.shared
     let profileId = UUID()
 
-    manager.addConflict(profileId: profileId)
+    manager.addConflict(profileId: profileId, profileName: "Test")
     manager.clearConflict(profileId: profileId)
 
-    XCTAssertTrue(manager.conflictedProfileIds.isEmpty)
+    XCTAssertTrue(manager.conflictedProfiles.isEmpty)
     XCTAssertFalse(manager.showConflictBanner)
   }
 
@@ -95,28 +95,34 @@ final class SyncConflictManagerTests: XCTestCase {
     let id1 = UUID()
     let id2 = UUID()
 
-    manager.addConflict(profileId: id1)
-    manager.addConflict(profileId: id2)
+    manager.addConflict(profileId: id1, profileName: "Profile 1")
+    manager.addConflict(profileId: id2, profileName: "Profile 2")
     manager.clearAll()
 
-    XCTAssertTrue(manager.conflictedProfileIds.isEmpty)
+    XCTAssertTrue(manager.conflictedProfiles.isEmpty)
     XCTAssertFalse(manager.showConflictBanner)
   }
 
-  func testConflictMessageSingular() {
+  func testConflictMessageSingularIncludesProfileName() {
     SyncConflictManager.shared.clearAll()
     let manager = SyncConflictManager.shared
-    manager.addConflict(profileId: UUID())
+    manager.addConflict(profileId: UUID(), profileName: "Work Focus")
 
-    XCTAssertEqual(manager.conflictMessage, "A profile was edited on an older app version.")
+    XCTAssertEqual(
+      manager.conflictMessage,
+      "\"Work Focus\" was edited on an older app version. Update Foqos on all devices to sync."
+    )
   }
 
   func testConflictMessagePlural() {
     SyncConflictManager.shared.clearAll()
     let manager = SyncConflictManager.shared
-    manager.addConflict(profileId: UUID())
-    manager.addConflict(profileId: UUID())
+    manager.addConflict(profileId: UUID(), profileName: "Work Focus")
+    manager.addConflict(profileId: UUID(), profileName: "Study Mode")
 
-    XCTAssertEqual(manager.conflictMessage, "Several profiles were edited on an older app version.")
+    XCTAssertEqual(
+      manager.conflictMessage,
+      "Several profiles were edited on an older app version. Update Foqos on all devices to sync."
+    )
   }
 }

@@ -7,13 +7,13 @@ import SwiftUI
 final class SyncConflictManager: ObservableObject {
   static let shared = SyncConflictManager()
 
-  @Published var conflictedProfileIds: Set<UUID> = []
+  @Published var conflictedProfiles: [UUID: String] = [:]  // ID → name
   @Published var showConflictBanner: Bool = false
 
   private init() {}
 
-  func addConflict(profileId: UUID) {
-    conflictedProfileIds.insert(profileId)
+  func addConflict(profileId: UUID, profileName: String) {
+    conflictedProfiles[profileId] = profileName
     showConflictBanner = true
   }
 
@@ -22,22 +22,22 @@ final class SyncConflictManager: ObservableObject {
   }
 
   func clearConflict(profileId: UUID) {
-    conflictedProfileIds.remove(profileId)
-    if conflictedProfileIds.isEmpty {
+    conflictedProfiles.removeValue(forKey: profileId)
+    if conflictedProfiles.isEmpty {
       showConflictBanner = false
     }
   }
 
   func clearAll() {
-    conflictedProfileIds.removeAll()
+    conflictedProfiles.removeAll()
     showConflictBanner = false
   }
 
   var conflictMessage: String {
-    if conflictedProfileIds.count == 1 {
-      return "A profile was edited on an older app version."
+    if conflictedProfiles.count == 1, let name = conflictedProfiles.values.first {
+      return "\"\(name)\" was edited on an older app version. Update Foqos on all devices to sync."
     } else {
-      return "Several profiles were edited on an older app version."
+      return "Several profiles were edited on an older app version. Update Foqos on all devices to sync."
     }
   }
 }

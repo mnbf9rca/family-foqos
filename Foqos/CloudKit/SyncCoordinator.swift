@@ -156,7 +156,17 @@ class SyncCoordinator: ObservableObject {
               "Ignoring sync from older schema version for profile: \(existingProfile.name) (\(existingProfile.id.uuidString))",
               category: .sync
             )
-            SyncConflictManager.shared.addConflict(profileId: existingProfile.id)
+            SyncConflictManager.shared.addConflict(
+              profileId: existingProfile.id,
+              profileName: existingProfile.name
+            )
+
+            // Auto-heal: push V2 data back to CloudKit so stale V1 data doesn't persist
+            pushProfile(existingProfile)
+            Log.info(
+              "Auto-healed: pushed V2 data back to CloudKit for '\(existingProfile.name)'",
+              category: .sync
+            )
           } else if syncedProfile.version > existingProfile.syncVersion {
             // Update existing profile if remote version is newer and schema is same or newer
             updateLocalProfile(existingProfile, from: syncedProfile, in: context)
