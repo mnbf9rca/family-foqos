@@ -175,7 +175,9 @@ class BlockedProfiles {
     }
 
     var scheduleIsOutOfSync: Bool {
-        return schedule?.isActive == true
+        let hasSchedule = (schedule?.isActive == true)
+            || (startTriggers.schedule && startSchedule?.isActive == true)
+        return hasSchedule
             && DeviceActivityCenterUtil.getActiveScheduleTimerActivity(for: self) == nil
     }
 

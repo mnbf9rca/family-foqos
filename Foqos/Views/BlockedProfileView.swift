@@ -49,8 +49,6 @@ struct BlockedProfileView: View {
     @State private var physicalUnblockNFCTagId: String?
     @State private var physicalUnblockQRCodeId: String?
 
-    @State private var schedule: BlockedProfileSchedule
-
     @State private var geofenceRule: ProfileGeofenceRule?
 
     /// Sheet for geofence picker
@@ -64,9 +62,6 @@ struct BlockedProfileView: View {
 
     /// Sheet for domain picker
     @State private var showingDomainPicker = false
-
-    /// Sheet for schedule picker
-    @State private var showingSchedulePicker = false
 
     /// Alert management
     @State private var alertIdentifier: AlertIdentifier?
@@ -114,6 +109,11 @@ struct BlockedProfileView: View {
 
     private var isEditing: Bool {
         profile != nil
+    }
+
+    private var hasScheduledStart: Bool {
+        triggerConfig.startTriggers.schedule
+            && triggerConfig.startSchedule?.isActive == true
     }
 
     private var isBlocking: Bool {
@@ -196,17 +196,6 @@ struct BlockedProfileView: View {
         )
         _physicalUnblockQRCodeId = State(
             initialValue: profile?.physicalUnblockQRCodeId ?? nil
-        )
-        _schedule = State(
-            initialValue: profile?.schedule
-                ?? BlockedProfileSchedule(
-                    days: [],
-                    startHour: 9,
-                    startMinute: 0,
-                    endHour: 17,
-                    endMinute: 0,
-                    updatedAt: Date()
-                )
         )
         _isManaged = State(initialValue: profile?.isManaged ?? false)
         _geofenceRule = State(initialValue: profile?.geofenceRule)
@@ -495,14 +484,14 @@ struct BlockedProfileView: View {
 
                     CustomToggle(
                         title: "Pre-Activation Reminder",
-                        description: schedule.isActive
+                        description: hasScheduledStart
                             ? "Get notified before this profile's scheduled start time."
                             : "Add a schedule to enable pre-activation reminders.",
                         isOn: $preActivationReminderEnabled,
-                        isDisabled: isBlocking || !schedule.isActive
+                        isDisabled: isBlocking || !hasScheduledStart
                     )
 
-                    if preActivationReminderEnabled && schedule.isActive {
+                    if preActivationReminderEnabled && hasScheduledStart {
                         VStack(alignment: .leading, spacing: 8) {
                             HStack {
                                 Text("Remind me")
@@ -640,12 +629,6 @@ struct BlockedProfileView: View {
                     domains: $domains,
                     isPresented: $showingDomainPicker,
                     allowMode: enableAllowModeDomain
-                )
-            }
-            .sheet(isPresented: $showingSchedulePicker) {
-                SchedulePicker(
-                    schedule: $schedule,
-                    isPresented: $showingSchedulePicker
                 )
             }
             .sheet(isPresented: $showingGeofencePicker) {
@@ -837,9 +820,6 @@ struct BlockedProfileView: View {
 
     private func saveProfile() {
         do {
-            // Update schedule date
-            schedule.updatedAt = Date()
-
             // Calculate reminder time in seconds or nil if disabled
             let reminderTimeSeconds: UInt32? =
                 enableReminder ? UInt32(reminderTimeInMinutes * 60) : nil
@@ -869,7 +849,7 @@ struct BlockedProfileView: View {
                     domains: domains,
                     physicalUnblockNFCTagId: physicalUnblockNFCTagId,
                     physicalUnblockQRCodeId: physicalUnblockQRCodeId,
-                    schedule: schedule,
+                    schedule: nil,
                     geofenceRule: geofenceRule,
                     disableBackgroundStops: disableBackgroundStops,
                     preActivationReminderEnabled: preActivationReminderEnabled,
@@ -920,7 +900,7 @@ struct BlockedProfileView: View {
                     domains: domains,
                     physicalUnblockNFCTagId: physicalUnblockNFCTagId,
                     physicalUnblockQRCodeId: physicalUnblockQRCodeId,
-                    schedule: schedule,
+                    schedule: nil,
                     geofenceRule: geofenceRule,
                     disableBackgroundStops: disableBackgroundStops,
                     preActivationReminderEnabled: preActivationReminderEnabled,

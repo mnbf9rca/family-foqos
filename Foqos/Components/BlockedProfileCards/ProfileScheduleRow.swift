@@ -4,7 +4,17 @@ struct ProfileScheduleRow: View {
   let profile: BlockedProfiles
   let isActive: Bool
 
-  private var hasSchedule: Bool { profile.schedule?.isActive == true }
+  private var hasLegacySchedule: Bool { profile.schedule?.isActive == true }
+
+  private var hasV2Schedule: Bool {
+    let hasStart = profile.startTriggers.schedule
+      && profile.startSchedule?.isActive == true
+    let hasStop = profile.stopConditions.schedule
+      && profile.stopSchedule?.isActive == true
+    return hasStart || hasStop
+  }
+
+  private var hasSchedule: Bool { hasLegacySchedule || hasV2Schedule }
 
   private var isTimerStrategy: Bool {
     profile.blockingStrategyId == NFCTimerBlockingStrategy.id
@@ -18,9 +28,19 @@ struct ProfileScheduleRow: View {
   }
 
   private var daysLine: String {
-    guard let schedule = profile.schedule, schedule.isActive else {
-      return ""
+    if hasV2Schedule {
+      var allDays = Set<Weekday>()
+      if let start = profile.startSchedule, profile.startTriggers.schedule {
+        allDays.formUnion(start.days)
+      }
+      if let stop = profile.stopSchedule, profile.stopConditions.schedule {
+        allDays.formUnion(stop.days)
+      }
+      return allDays.sorted { $0.rawValue < $1.rawValue }
+        .map { $0.shortLabel }
+        .joined(separator: " ")
     }
+    guard let schedule = profile.schedule, schedule.isActive else { return "" }
     return schedule.days
       .sorted { $0.rawValue < $1.rawValue }
       .map { $0.shortLabel }
@@ -28,6 +48,20 @@ struct ProfileScheduleRow: View {
   }
 
   private var timeLine: String? {
+    if hasV2Schedule {
+      let startText = profile.startTriggers.schedule
+        ? profile.startSchedule?.formattedTime : nil
+      let stopText = profile.stopConditions.schedule
+        ? profile.stopSchedule?.formattedTime : nil
+      if let s = startText, let e = stopText {
+        return "\(s) - \(e)"
+      } else if let s = startText {
+        return "Start: \(s)"
+      } else if let e = stopText {
+        return "Stop: \(e)"
+      }
+      return nil
+    }
     guard let schedule = profile.schedule, schedule.isActive else { return nil }
     let start = formattedTimeString(hour24: schedule.startHour, minute: schedule.startMinute)
     let end = formattedTimeString(hour24: schedule.endHour, minute: schedule.endMinute)
