@@ -25,12 +25,7 @@ struct BlockedProfileSessionsView: View {
   @State private var alertIdentifier: SessionAlertIdentifier?
   @State private var showDeleteAllConfirmation = false
 
-  @Query(sort: \BlockedProfileSession.startTime, order: .reverse)
-  private var allSessions: [BlockedProfileSession]
-
-  private var sessions: [BlockedProfileSession] {
-    allSessions.filter { $0.blockedProfile.id == profile.id }
-  }
+  @Query private var sessions: [BlockedProfileSession]
 
   private var activeSession: BlockedProfileSession? {
     sessions.first { $0.isActive }
@@ -38,6 +33,18 @@ struct BlockedProfileSessionsView: View {
 
   private var inactiveSessions: [BlockedProfileSession] {
     sessions.filter { !$0.isActive }
+  }
+
+  init(profile: BlockedProfiles) {
+    self.profile = profile
+    let profileId = profile.id
+    _sessions = Query(
+      filter: #Predicate<BlockedProfileSession> {
+        $0.blockedProfile.id == profileId
+      },
+      sort: \BlockedProfileSession.startTime,
+      order: .reverse
+    )
   }
 
   var body: some View {
