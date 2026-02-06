@@ -460,6 +460,7 @@ class StrategyManager: ObservableObject {
   }
 
   func startTimer() {
+    stopTimer()
     timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
       Task { @MainActor in
         guard let self else { return }
