@@ -107,6 +107,116 @@ final class PreActivationReminderTests: XCTestCase {
         XCTAssertFalse(schedule.isActive)
     }
 
+    // MARK: - V2 Schedule Tests
+
+    func testV2ScheduleIsTodayScheduled_returnsTrueForToday() {
+        let calendar = Calendar.current
+        let today = calendar.component(.weekday, from: Date())
+        guard let weekday = Weekday(rawValue: today) else {
+            XCTFail("Could not get today's weekday")
+            return
+        }
+
+        let schedule = ProfileScheduleTime(
+            days: [weekday],
+            hour: 9,
+            minute: 0,
+            updatedAt: Date()
+        )
+
+        XCTAssertTrue(schedule.isTodayScheduled())
+    }
+
+    func testV2ScheduleIsTodayScheduled_returnsFalseForOtherDay() {
+        let calendar = Calendar.current
+        let today = calendar.component(.weekday, from: Date())
+
+        let otherWeekdayRaw = today == 7 ? 1 : today + 1
+        guard let otherWeekday = Weekday(rawValue: otherWeekdayRaw) else {
+            XCTFail("Could not get other weekday")
+            return
+        }
+
+        let schedule = ProfileScheduleTime(
+            days: [otherWeekday],
+            hour: 9,
+            minute: 0,
+            updatedAt: Date()
+        )
+
+        XCTAssertFalse(schedule.isTodayScheduled())
+    }
+
+    func testV2ScheduleIsActive_trueWhenDaysNotEmpty() {
+        let schedule = ProfileScheduleTime(
+            days: [.monday, .tuesday],
+            hour: 9,
+            minute: 0,
+            updatedAt: Date()
+        )
+
+        XCTAssertTrue(schedule.isActive)
+    }
+
+    func testV2ScheduleIsActive_falseWhenDaysEmpty() {
+        let schedule = ProfileScheduleTime(
+            days: [],
+            hour: 9,
+            minute: 0,
+            updatedAt: Date()
+        )
+
+        XCTAssertFalse(schedule.isActive)
+    }
+
+    func testV2ReminderShouldScheduleWithActiveStartSchedule() {
+        let reminderEnabled = true
+        let startTriggerSchedule = true
+        let schedule = ProfileScheduleTime(
+            days: [.monday, .tuesday],
+            hour: 9,
+            minute: 0,
+            updatedAt: Date()
+        )
+
+        let hasActiveSchedule = startTriggerSchedule && schedule.isActive
+        let shouldSchedule = reminderEnabled && hasActiveSchedule
+
+        XCTAssertTrue(shouldSchedule)
+    }
+
+    func testV2ReminderShouldNotScheduleWithInactiveStartSchedule() {
+        let reminderEnabled = true
+        let startTriggerSchedule = true
+        let schedule = ProfileScheduleTime(
+            days: [],
+            hour: 9,
+            minute: 0,
+            updatedAt: Date()
+        )
+
+        let hasActiveSchedule = startTriggerSchedule && schedule.isActive
+        let shouldSchedule = reminderEnabled && hasActiveSchedule
+
+        XCTAssertFalse(shouldSchedule)
+    }
+
+    func testV2ReminderShouldNotScheduleWhenStartTriggerDisabled() {
+        let reminderEnabled = true
+        let startTriggerSchedule = false
+        let schedule = ProfileScheduleTime(
+            days: [.monday],
+            hour: 9,
+            minute: 0,
+            updatedAt: Date()
+        )
+
+        let hasActiveSchedule = startTriggerSchedule && schedule.isActive
+        let shouldSchedule = reminderEnabled && hasActiveSchedule
+
+        XCTAssertFalse(shouldSchedule)
+    }
+
     // MARK: - Default Values Tests
 
     func testPreActivationReminderMinutesRange() {
