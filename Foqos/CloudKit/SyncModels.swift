@@ -287,8 +287,12 @@ struct SyncedProfile: Codable, Equatable {
         // V2 trigger fields
         startTriggersData = try? JSONEncoder().encode(profile.startTriggers)
         stopConditionsData = try? JSONEncoder().encode(profile.stopConditions)
-        startScheduleData = try? JSONEncoder().encode(profile.startSchedule)
-        stopScheduleData = try? JSONEncoder().encode(profile.stopSchedule)
+        if let startSchedule = profile.startSchedule {
+            startScheduleData = try? JSONEncoder().encode(startSchedule)
+        }
+        if let stopSchedule = profile.stopSchedule {
+            stopScheduleData = try? JSONEncoder().encode(stopSchedule)
+        }
         startNFCTagId = profile.startNFCTagId
         startQRCodeId = profile.startQRCodeId
         stopNFCTagId = profile.stopNFCTagId
