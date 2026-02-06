@@ -613,6 +613,17 @@ class BlockedProfiles {
         )
 
         context.insert(cloned)
+
+        // Copy V2 trigger data
+        cloned.startTriggers = source.startTriggers
+        cloned.stopConditions = source.stopConditions
+        cloned.startNFCTagId = source.startNFCTagId
+        cloned.startQRCodeId = source.startQRCodeId
+        cloned.stopNFCTagId = source.stopNFCTagId
+        cloned.stopQRCodeId = source.stopQRCodeId
+        cloned.startSchedule = source.startSchedule
+        cloned.stopSchedule = source.stopSchedule
+
         try context.save()
         return cloned
     }

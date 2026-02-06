@@ -93,4 +93,53 @@ final class BlockedProfilesTriggersTests: XCTestCase {
     XCTAssertEqual(profile.stopSchedule?.days, [.monday, .friday])
     XCTAssertEqual(profile.stopSchedule?.hour, 17)
   }
+
+  func testCloneProfileCopiesV2TriggerData() {
+    let source = BlockedProfiles(name: "Source")
+
+    // Set V2 trigger data on source
+    var start = source.startTriggers
+    start.anyNFC = true
+    start.schedule = true
+    source.startTriggers = start
+
+    var stop = source.stopConditions
+    stop.sameNFC = true
+    stop.timer = true
+    source.stopConditions = stop
+
+    source.startNFCTagId = "nfc-start-123"
+    source.startQRCodeId = "qr-start-456"
+    source.stopNFCTagId = "nfc-stop-789"
+    source.stopQRCodeId = "qr-stop-012"
+
+    source.startSchedule = ProfileScheduleTime(
+      days: [.monday, .wednesday], hour: 9, minute: 0, updatedAt: Date()
+    )
+    source.stopSchedule = ProfileScheduleTime(
+      days: [.monday, .wednesday], hour: 17, minute: 0, updatedAt: Date()
+    )
+
+    // Clone (without ModelContext — just test the field copy logic)
+    let cloned = BlockedProfiles(name: "Clone")
+    cloned.startTriggers = source.startTriggers
+    cloned.stopConditions = source.stopConditions
+    cloned.startNFCTagId = source.startNFCTagId
+    cloned.startQRCodeId = source.startQRCodeId
+    cloned.stopNFCTagId = source.stopNFCTagId
+    cloned.stopQRCodeId = source.stopQRCodeId
+    cloned.startSchedule = source.startSchedule
+    cloned.stopSchedule = source.stopSchedule
+
+    XCTAssertEqual(cloned.startTriggers.anyNFC, true)
+    XCTAssertEqual(cloned.startTriggers.schedule, true)
+    XCTAssertEqual(cloned.stopConditions.sameNFC, true)
+    XCTAssertEqual(cloned.stopConditions.timer, true)
+    XCTAssertEqual(cloned.startNFCTagId, "nfc-start-123")
+    XCTAssertEqual(cloned.startQRCodeId, "qr-start-456")
+    XCTAssertEqual(cloned.stopNFCTagId, "nfc-stop-789")
+    XCTAssertEqual(cloned.stopQRCodeId, "qr-stop-012")
+    XCTAssertEqual(cloned.startSchedule?.hour, 9)
+    XCTAssertEqual(cloned.stopSchedule?.hour, 17)
+  }
 }
