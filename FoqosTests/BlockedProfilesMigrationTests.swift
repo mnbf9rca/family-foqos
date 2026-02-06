@@ -110,6 +110,25 @@ final class BlockedProfilesMigrationTests: XCTestCase {
     XCTAssertTrue(profile.stopConditions.sameNFC)
   }
 
+  func testMigrateV1ScheduleSetsTrigerFlags() {
+    let profile = BlockedProfiles(name: "Scheduled")
+    profile.profileSchemaVersion = 1
+    profile.blockingStrategyId = "ManualBlockingStrategy"
+    profile.schedule = BlockedProfileSchedule(
+      days: [.monday, .friday],
+      startHour: 9, startMinute: 0,
+      endHour: 17, endMinute: 0,
+      updatedAt: Date()
+    )
+
+    profile.migrateToV2IfNeeded()
+
+    XCTAssertTrue(profile.startTriggers.schedule, "Start triggers should have schedule enabled")
+    XCTAssertTrue(profile.stopConditions.schedule, "Stop conditions should have schedule enabled")
+    XCTAssertEqual(profile.startSchedule?.hour, 9)
+    XCTAssertEqual(profile.stopSchedule?.hour, 17)
+  }
+
   func testMigrateRunsWhenNoActiveSession() {
     let profile = BlockedProfiles(name: "Inactive")
     profile.profileSchemaVersion = 1

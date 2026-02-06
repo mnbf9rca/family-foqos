@@ -89,6 +89,21 @@ final class TriggerMigrationTests: XCTestCase {
     XCTAssertTrue(stop.timer)
   }
 
+  // MARK: - ShortcutTimerBlockingStrategy
+
+  func testMigrateShortcutTimerStrategy() {
+    let (start, stop) = TriggerMigration.migrateFromStrategy("ShortcutTimerBlockingStrategy")
+
+    XCTAssertTrue(start.manual)
+    XCTAssertFalse(start.anyNFC)
+    XCTAssertFalse(start.anyQR)
+
+    XCTAssertTrue(stop.timer)
+    XCTAssertFalse(stop.manual)
+    XCTAssertFalse(stop.anyNFC)
+    XCTAssertFalse(stop.anyQR)
+  }
+
   // MARK: - Unknown Strategy
 
   func testMigrateUnknownStrategyDefaultsToManual() {
