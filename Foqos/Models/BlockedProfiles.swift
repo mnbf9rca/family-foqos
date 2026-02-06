@@ -709,7 +709,17 @@ extension BlockedProfiles {
             stopConditions = conditions
         }
 
-        // Step 4: Mark as migrated
+        // Step 4: Verify encoding succeeded before marking as migrated
+        // If any Data field is nil after setting, encoding failed silently
+        guard startTriggersData != nil, stopConditionsData != nil else {
+            Log.error(
+                "Migration encoding failed for '\(name)' — staying at V1",
+                category: .app
+            )
+            return
+        }
+
+        // Step 5: Mark as migrated (only if all data encoded successfully)
         profileSchemaVersion = 2
     }
 

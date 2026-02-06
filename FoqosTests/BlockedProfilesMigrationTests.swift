@@ -96,6 +96,20 @@ final class BlockedProfilesMigrationTests: XCTestCase {
     XCTAssertEqual(profile.profileSchemaVersion, 1)  // Still V1
   }
 
+  func testMigrationSetsSchemaVersionLast() {
+    // Verify that migrateToV2IfNeeded sets all fields before schema version
+    let profile = BlockedProfiles(name: "Test")
+    profile.profileSchemaVersion = 1
+    profile.blockingStrategyId = "NFCBlockingStrategy"
+
+    profile.migrateToV2IfNeeded()
+
+    // If migration succeeded, all V2 fields should be populated
+    XCTAssertEqual(profile.profileSchemaVersion, 2)
+    XCTAssertTrue(profile.startTriggers.anyNFC)
+    XCTAssertTrue(profile.stopConditions.sameNFC)
+  }
+
   func testMigrateRunsWhenNoActiveSession() {
     let profile = BlockedProfiles(name: "Inactive")
     profile.profileSchemaVersion = 1
