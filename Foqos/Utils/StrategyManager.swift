@@ -103,6 +103,9 @@ class StrategyManager: ObservableObject {
       // live activities can only be started when the app is in the foreground
       if let session = activeSession {
         liveActivityManager.startSessionActivity(session: session)
+
+        // Re-register stop schedule on app launch
+        DeviceActivityCenterUtil.scheduleStopActivity(for: session.blockedProfile)
       }
     } else {
       // Close live activity if no session is active and a scheduled session might have ended
@@ -1142,6 +1145,8 @@ class StrategyManager: ObservableObject {
         customStrategyView = customView
       }
     }
+
+    DeviceActivityCenterUtil.scheduleStopActivity(for: definedProfile)
   }
 
   /// Start blocking with a pre-scanned NFC tag (for trigger-based start)
@@ -1174,6 +1179,9 @@ class StrategyManager: ObservableObject {
     activeSession = session
     startTimer()
     liveActivityManager.startSessionActivity(session: session)
+
+    // Register stop schedule if configured
+    DeviceActivityCenterUtil.scheduleStopActivity(for: profile)
 
     // Refresh widgets when session starts
     WidgetCenter.shared.reloadTimelines(ofKind: "ProfileControlWidget")
@@ -1226,6 +1234,8 @@ class StrategyManager: ObservableObject {
         customStrategyView = customView
       }
     }
+
+    DeviceActivityCenterUtil.removeStopScheduleActivity(for: session.blockedProfile)
   }
 
   private func scheduleReminder(profile: BlockedProfiles) {
@@ -1275,11 +1285,14 @@ class StrategyManager: ObservableObject {
 
       do {
         if let profile = try BlockedProfiles.findProfile(byID: profileId, in: context) {
-          if profile.schedule == nil {
+          let hasScheduledStart = profile.startTriggers.schedule
+            && profile.startSchedule?.isActive == true
+          let hasLegacySchedule = profile.schedule?.isActive == true
+          if !hasScheduledStart && !hasLegacySchedule {
             Log.info("Profile '\(profile.name)' has no schedule but has device activity registered. Removing ghost schedule...", category: .strategy)
             DeviceActivityCenterUtil.removeScheduleTimerActivities(for: profile)
           } else {
-            Log.info("Profile '\(profile.name)' has schedule - activity is valid ✅", category: .strategy)
+            Log.info("Profile '\(profile.name)' has schedule - activity is valid", category: .strategy)
           }
         } else {
           // Profile truly doesn't exist in database
