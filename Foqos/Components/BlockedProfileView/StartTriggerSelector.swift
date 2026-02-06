@@ -13,8 +13,6 @@ struct StartTriggerSelector: View {
   let onScanQRCode: () -> Void
   let onConfigureSchedule: () -> Void
 
-  @EnvironmentObject var themeManager: ThemeManager
-
   var body: some View {
     Section {
       // Manual
@@ -83,7 +81,7 @@ struct StartTriggerSelector: View {
         }
       }
       if triggers.schedule, let schedule = startSchedule {
-        Text(scheduleDescription(schedule))
+        Text(schedule.scheduleDescription)
           .font(.caption)
           .foregroundStyle(.secondary)
       }
@@ -112,9 +110,4 @@ struct StartTriggerSelector: View {
     )
   }
 
-  private func scheduleDescription(_ schedule: ProfileScheduleTime) -> String {
-    let dayNames = schedule.days.map { $0.shortLabel }.joined(separator: " ")
-    let time = String(format: "%d:%02d", schedule.hour, schedule.minute)
-    return "\(dayNames) at \(time)"
-  }
 }

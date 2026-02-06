@@ -34,4 +34,10 @@ struct ProfileScheduleTime: Codable, Equatable {
       .map { $0.shortLabel }
       .joined(separator: " ")
   }
+
+  var scheduleDescription: String {
+    let dayNames = days.map { $0.shortLabel }.joined(separator: " ")
+    let time = String(format: "%d:%02d", hour, minute)
+    return "\(dayNames) at \(time)"
+  }
 }

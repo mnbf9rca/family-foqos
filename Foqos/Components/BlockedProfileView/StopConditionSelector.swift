@@ -14,8 +14,6 @@ struct StopConditionSelector: View {
   let onScanQRCode: () -> Void
   let onConfigureSchedule: () -> Void
 
-  @EnvironmentObject var themeManager: ThemeManager
-
   private let validator = TriggerValidator()
 
   var body: some View {
@@ -104,7 +102,7 @@ struct StopConditionSelector: View {
         }
       }
       if conditions.schedule, let schedule = stopSchedule {
-        Text(scheduleDescription(schedule))
+        Text(schedule.scheduleDescription)
           .font(.caption)
           .foregroundStyle(.secondary)
       }
@@ -149,12 +147,6 @@ struct StopConditionSelector: View {
           .foregroundStyle(.secondary)
       }
     }
-  }
-
-  private func scheduleDescription(_ schedule: ProfileScheduleTime) -> String {
-    let dayNames = schedule.days.map { $0.shortLabel }.joined(separator: " ")
-    let time = String(format: "%d:%02d", schedule.hour, schedule.minute)
-    return "\(dayNames) at \(time)"
   }
 
   private func binding(_ keyPath: WritableKeyPath<ProfileStopConditions, Bool>) -> Binding<Bool> {
