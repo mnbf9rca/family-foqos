@@ -836,6 +836,26 @@ struct BlockedProfileView: View {
         }
     }
 
+    /// Validate triggers, save config, update compatibility, schedule, and push to sync.
+    /// Returns false if validation fails (alert is shown).
+    private func finalizeSave(_ profile: BlockedProfiles) -> Bool {
+        if !triggerConfig.validationErrors.isEmpty {
+            alertIdentifier = AlertIdentifier(
+                id: .error,
+                errorMessage: triggerConfig.validationErrors
+                    .map { "• " + $0 }
+                    .joined(separator: "\n")
+            )
+            return false
+        }
+
+        triggerConfig.saveToProfile(profile)
+        profile.updateCompatibilityStrategyId()
+        DeviceActivityCenterUtil.scheduleTimerActivity(for: profile)
+        SyncCoordinator.shared.pushProfile(profile)
+        return true
+    }
+
     private func saveProfile() {
         do {
             // Calculate reminder time in seconds or nil if disabled
@@ -877,28 +897,7 @@ struct BlockedProfileView: View {
                     needsAppSelection: false // Clear needsAppSelection since user is saving with app selection
                 )
 
-                // Validate trigger configuration before save
-                if !triggerConfig.validationErrors.isEmpty {
-                    alertIdentifier = AlertIdentifier(
-                        id: .error,
-                        errorMessage: triggerConfig.validationErrors
-                            .map { "• " + $0 }
-                            .joined(separator: "\n")
-                    )
-                    return
-                }
-
-                // Save trigger configuration to profile
-                triggerConfig.saveToProfile(updatedProfile)
-
-                // Update legacy strategy ID for backwards compatibility with older devices
-                updatedProfile.updateCompatibilityStrategyId()
-
-                // Schedule restrictions
-                DeviceActivityCenterUtil.scheduleTimerActivity(for: updatedProfile)
-
-                // Push to sync (if global sync is enabled)
-                SyncCoordinator.shared.pushProfile(updatedProfile)
+                guard finalizeSave(updatedProfile) else { return }
             } else {
                 let newProfile = try BlockedProfiles.createProfile(
                     in: modelContext,
@@ -926,28 +925,7 @@ struct BlockedProfileView: View {
                     managedByChildId: managedChildId
                 )
 
-                // Validate trigger configuration before save
-                if !triggerConfig.validationErrors.isEmpty {
-                    alertIdentifier = AlertIdentifier(
-                        id: .error,
-                        errorMessage: triggerConfig.validationErrors
-                            .map { "• " + $0 }
-                            .joined(separator: "\n")
-                    )
-                    return
-                }
-
-                // Save trigger configuration to profile
-                triggerConfig.saveToProfile(newProfile)
-
-                // Update legacy strategy ID for backwards compatibility with older devices
-                newProfile.updateCompatibilityStrategyId()
-
-                // Schedule restrictions
-                DeviceActivityCenterUtil.scheduleTimerActivity(for: newProfile)
-
-                // Push to sync (if global sync is enabled)
-                SyncCoordinator.shared.pushProfile(newProfile)
+                guard finalizeSave(newProfile) else { return }
             }
 
             dismiss()
