@@ -21,9 +21,7 @@ final class TriggerConfigurationModel: ObservableObject {
   @Published var startSchedule: ProfileScheduleTime?
   @Published var stopSchedule: ProfileScheduleTime?
 
-  init() {
-    validate()
-  }
+  init() {}
 
   /// Call when start triggers change to auto-fix invalid stop conditions
   func startTriggersDidChange() {

@@ -19,7 +19,8 @@ final class TriggerConfigurationModelTests: XCTestCase {
 
   func testValidationErrorsUpdateOnChange() {
     let model = TriggerConfigurationModel()
-    // Empty triggers should have errors
+    // Empty triggers should have errors after validation
+    model.validate()
 
     XCTAssertFalse(model.validationErrors.isEmpty)
 
