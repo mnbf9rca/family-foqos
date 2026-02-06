@@ -8,7 +8,9 @@ final class SyncConflictManagerTests: XCTestCase {
 
   override func setUp() {
     super.setUp()
-    SyncConflictManager.shared.clearAll()
+    MainActor.assumeIsolated {
+      SyncConflictManager.shared.clearAll()
+    }
   }
 
   func testInitialStateHasNoConflicts() {
