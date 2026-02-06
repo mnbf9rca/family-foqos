@@ -66,9 +66,6 @@ struct BlockedProfileView: View {
     /// Alert management
     @State private var alertIdentifier: AlertIdentifier?
 
-    /// Sheet for physical unblock
-    @State private var showingPhysicalUnblockView = false
-
     // Trigger scanner state (NFC uses system scanner directly via PhysicalReader.readNFCTag)
     @State private var showStartQRScanner = false
     @State private var showStopQRScanner = false
@@ -100,8 +97,6 @@ struct BlockedProfileView: View {
     }
 
     @State private var selectedActivity = FamilyActivitySelection()
-    @State private var selectedStrategy: BlockingStrategy? = nil
-
     @StateObject private var triggerConfig = TriggerConfigurationModel()
     @StateObject private var nfcScanner = NFCScannerUtil()
 
@@ -200,15 +195,6 @@ struct BlockedProfileView: View {
         _isManaged = State(initialValue: profile?.isManaged ?? false)
         _geofenceRule = State(initialValue: profile?.geofenceRule)
 
-        if let profileStrategyId = profile?.blockingStrategyId {
-            _selectedStrategy = State(
-                initialValue:
-                StrategyManager
-                    .getStrategyFromId(id: profileStrategyId)
-            )
-        } else {
-            _selectedStrategy = State(initialValue: NFCBlockingStrategy())
-        }
     }
 
     var body: some View {
@@ -742,22 +728,6 @@ struct BlockedProfileView: View {
                     }
                 )
             )
-            .sheet(isPresented: $showingPhysicalUnblockView) {
-                BlockingStrategyActionView(
-                    customView: physicalReader.readQRCode(
-                        onSuccess: {
-                            showingPhysicalUnblockView = false
-                            physicalUnblockQRCodeId = $0
-                        },
-                        onFailure: { _ in
-                            showingPhysicalUnblockView = false
-                            showError(
-                                message: "Failed to read QR code, please try again or use a different QR code."
-                            )
-                        }
-                    )
-                )
-            }
             .sheet(isPresented: $showStartQRScanner) {
                 BlockingStrategyActionView(
                     customView: physicalReader.readQRCode(
@@ -884,7 +854,7 @@ struct BlockedProfileView: View {
                     in: modelContext,
                     name: name,
                     selection: selectedActivity,
-                    blockingStrategyId: selectedStrategy?.getIdentifier(),
+                    blockingStrategyId: nil,
                     enableLiveActivity: enableLiveActivity,
                     reminderTime: reminderTimeSeconds,
                     customReminderMessage: customReminderMessage,
@@ -934,8 +904,7 @@ struct BlockedProfileView: View {
                     in: modelContext,
                     name: name,
                     selection: selectedActivity,
-                    blockingStrategyId: selectedStrategy?
-                        .getIdentifier() ?? NFCBlockingStrategy.id,
+                    blockingStrategyId: NFCBlockingStrategy.id,
                     enableLiveActivity: enableLiveActivity,
                     reminderTimeInSeconds: reminderTimeSeconds,
                     customReminderMessage: customReminderMessage,
