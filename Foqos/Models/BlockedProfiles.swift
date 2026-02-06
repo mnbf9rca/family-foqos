@@ -663,7 +663,7 @@ extension BlockedProfiles {
             return false
         }
         migrateToV2IfNeeded()
-        return true
+        return !needsMigration
     }
 
     /// Migrates profile from V1 (blockingStrategyId) to V2 (triggers) if needed

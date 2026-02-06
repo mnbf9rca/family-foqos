@@ -110,7 +110,7 @@ final class BlockedProfilesMigrationTests: XCTestCase {
     XCTAssertTrue(profile.stopConditions.sameNFC)
   }
 
-  func testMigrateV1ScheduleSetsTrigerFlags() {
+  func testMigrateV1ScheduleSetsTriggerFlags() {
     let profile = BlockedProfiles(name: "Scheduled")
     profile.profileSchemaVersion = 1
     profile.blockingStrategyId = "ManualBlockingStrategy"

@@ -938,7 +938,7 @@ class StrategyManager: ObservableObject {
         // Migrate deferred profile now that session has ended
         if endedProfile.needsMigration {
           endedProfile.migrateToV2IfNeeded()
-          if let context = endedProfile.modelContext {
+          if !endedProfile.needsMigration, let context = endedProfile.modelContext {
             try? context.save()
             Log.info("Migrated deferred profile '\(endedProfile.name)' on session end", category: .app)
             DeviceActivityCenterUtil.scheduleTimerActivity(for: endedProfile)
