@@ -84,4 +84,26 @@ final class BlockedProfilesMigrationTests: XCTestCase {
     profile.profileSchemaVersion = 2
     XCTAssertFalse(profile.needsMigration)
   }
+
+  func testMigrateSkipsProfileWithActiveSession() {
+    let profile = BlockedProfiles(name: "Active")
+    profile.profileSchemaVersion = 1
+    profile.blockingStrategyId = "ManualBlockingStrategy"
+
+    let migrated = profile.migrateToV2IfEligible(hasActiveSession: true)
+
+    XCTAssertFalse(migrated)
+    XCTAssertEqual(profile.profileSchemaVersion, 1)  // Still V1
+  }
+
+  func testMigrateRunsWhenNoActiveSession() {
+    let profile = BlockedProfiles(name: "Inactive")
+    profile.profileSchemaVersion = 1
+    profile.blockingStrategyId = "ManualBlockingStrategy"
+
+    let migrated = profile.migrateToV2IfEligible(hasActiveSession: false)
+
+    XCTAssertTrue(migrated)
+    XCTAssertEqual(profile.profileSchemaVersion, 2)  // Now V2
+  }
 }

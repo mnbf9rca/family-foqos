@@ -935,6 +935,16 @@ class StrategyManager: ObservableObject {
         // Remove all strategy timer activities
         DeviceActivityCenterUtil.removeAllStrategyTimerActivities()
 
+        // Migrate deferred profile now that session has ended
+        if endedProfile.needsMigration {
+          endedProfile.migrateToV2IfNeeded()
+          if let context = endedProfile.modelContext {
+            try? context.save()
+            Log.info("Migrated deferred profile '\(endedProfile.name)' on session end", category: .app)
+            DeviceActivityCenterUtil.scheduleTimerActivity(for: endedProfile)
+          }
+        }
+
         // Sync session stop using CAS (if global sync is enabled)
         if self.shouldSyncSessionChange {
           Task {

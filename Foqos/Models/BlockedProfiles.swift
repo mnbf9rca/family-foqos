@@ -653,6 +653,19 @@ extension BlockedProfiles {
         profileSchemaVersion < Self.currentSchemaVersion
     }
 
+    /// Migrates to V2 if eligible (not already V2, no active session).
+    /// Returns true if migration was performed.
+    @discardableResult
+    func migrateToV2IfEligible(hasActiveSession: Bool) -> Bool {
+        guard needsMigration else { return false }
+        guard !hasActiveSession else {
+            Log.info("Deferring migration for '\(name)' — active session", category: .app)
+            return false
+        }
+        migrateToV2IfNeeded()
+        return true
+    }
+
     /// Migrates profile from V1 (blockingStrategyId) to V2 (triggers) if needed
     func migrateToV2IfNeeded() {
         guard profileSchemaVersion < 2 else { return }
