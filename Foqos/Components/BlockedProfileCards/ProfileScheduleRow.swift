@@ -88,8 +88,11 @@ struct ProfileScheduleRow: View {
 
       VStack(alignment: .leading, spacing: 2) {
         if profile.scheduleIsOutOfSync {
-          Text("Schedule is Out of Sync")
+          Text("Schedule Out of Sync")
             .font(.caption2)
+            .lineLimit(2)
+            .minimumScaleFactor(0.8)
+            .fixedSize(horizontal: false, vertical: true)
         } else if !hasSchedule && isActive && isTimerStrategy {
           Text("Duration")
             .font(.caption)
