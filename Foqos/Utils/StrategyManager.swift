@@ -1420,12 +1420,26 @@ enum StartAction: Equatable, Hashable {
   case scanNFC
   case scanQR
   case waitForSchedule
+  case cannotStart(reason: String)
   indirect case showPicker(options: [StartAction])
 }
 
 extension StrategyManager {
-  /// Determines what action to take based on enabled start triggers
-  static func determineStartAction(for triggers: ProfileStartTriggers) -> StartAction {
+  /// Determines what action to take based on enabled start triggers.
+  /// - Parameters:
+  ///   - triggers: The profile's start triggers.
+  ///   - stopConditions: The profile's stop conditions. Pass `nil` to skip
+  ///     stop-condition validation (e.g., in tests). An empty `ProfileStopConditions()`
+  ///     with no conditions enabled will return `.cannotStart`.
+  static func determineStartAction(
+    for triggers: ProfileStartTriggers,
+    stopConditions: ProfileStopConditions? = nil
+  ) -> StartAction {
+    // Guard: don't allow starting if stop conditions are missing
+    if let stop = stopConditions, !stop.isValid {
+      return .cannotStart(reason: "No stop conditions configured. Edit the profile to add one.")
+    }
+
     var manualOptions: [StartAction] = []
 
     if triggers.manual {
@@ -1446,11 +1460,7 @@ extension StrategyManager {
       if triggers.deepLink {
         return .waitForSchedule  // Can't manually trigger deep link
       }
-      Log.warning(
-        "No start triggers configured, falling back to startImmediately",
-        category: .strategy
-      )
-      return .startImmediately  // Fallback
+      return .cannotStart(reason: "No start triggers configured. Edit the profile to add one.")
     }
 
     // Single option - do it directly

@@ -54,7 +54,7 @@ class BlockedProfiles {
     /// Schema version for migration and sync conflict detection
     /// Version 1: Legacy blockingStrategyId system
     /// Version 2: New start/stop trigger system
-    var profileSchemaVersion: Int = 2
+    var profileSchemaVersion: Int = 1
 
     /// Start triggers - serialized as JSON in SwiftData
     private var startTriggersData: Data?
@@ -244,6 +244,7 @@ class BlockedProfiles {
         self.managedByChildId = managedByChildId
         self.syncVersion = syncVersion
         self.needsAppSelection = needsAppSelection
+        self.profileSchemaVersion = Self.currentSchemaVersion
     }
 
     static func fetchProfiles(in context: ModelContext) throws

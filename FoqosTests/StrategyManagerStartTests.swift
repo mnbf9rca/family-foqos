@@ -72,4 +72,41 @@ final class StrategyManagerStartTests: XCTestCase {
 
     XCTAssertEqual(action, .showPicker(options: [.startImmediately, .scanNFC, .scanQR]))
   }
+
+  func testDetermineStartActionForNoTriggers() {
+    let start = ProfileStartTriggers()
+
+    let action = StrategyManager.determineStartAction(for: start)
+
+    if case .cannotStart = action {
+      // expected
+    } else {
+      XCTFail("Expected .cannotStart, got \(action)")
+    }
+  }
+
+  func testDetermineStartActionBlockedByInvalidStopConditions() {
+    var start = ProfileStartTriggers()
+    start.manual = true
+    let stop = ProfileStopConditions()  // all false — invalid
+
+    let action = StrategyManager.determineStartAction(for: start, stopConditions: stop)
+
+    if case .cannotStart = action {
+      // expected
+    } else {
+      XCTFail("Expected .cannotStart, got \(action)")
+    }
+  }
+
+  func testDetermineStartActionAllowedWithValidStopConditions() {
+    var start = ProfileStartTriggers()
+    start.manual = true
+    var stop = ProfileStopConditions()
+    stop.manual = true
+
+    let action = StrategyManager.determineStartAction(for: start, stopConditions: stop)
+
+    XCTAssertEqual(action, .startImmediately)
+  }
 }

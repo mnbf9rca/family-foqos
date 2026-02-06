@@ -385,6 +385,8 @@ struct HomeView: View {
       return "Scan QR Code"
     case .waitForSchedule:
       return "Wait for Schedule"
+    case .cannotStart:
+      return "Cannot Start"
     case .showPicker:
       return "Choose Method"
     }
@@ -409,7 +411,10 @@ struct HomeView: View {
   }
 
   private func handleStartTap(_ profile: BlockedProfiles) {
-    let action = StrategyManager.determineStartAction(for: profile.startTriggers)
+    let action = StrategyManager.determineStartAction(
+      for: profile.startTriggers,
+      stopConditions: profile.stopConditions
+    )
 
     switch action {
     case .startImmediately:
@@ -425,6 +430,9 @@ struct HomeView: View {
 
     case .waitForSchedule:
       strategyManager.errorMessage = "This profile starts on schedule"
+
+    case .cannotStart(let reason):
+      strategyManager.errorMessage = reason
 
     case .showPicker(let options):
       startOptions = options
@@ -446,7 +454,7 @@ struct HomeView: View {
       scannerProfile = profile
       showStartQRScanner = true
 
-    case .waitForSchedule, .showPicker:
+    case .waitForSchedule, .showPicker, .cannotStart:
       break  // Should not be called with these
     }
   }
