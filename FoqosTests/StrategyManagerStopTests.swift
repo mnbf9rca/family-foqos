@@ -113,4 +113,131 @@ final class StrategyManagerStopTests: XCTestCase {
     XCTAssertFalse(result.allowed)
     XCTAssertNotNil(result.errorMessage)
   }
+
+  // MARK: - determineStopAction Tests
+
+  func testDetermineStopActionManualReturnsStopImmediately() {
+    var conditions = ProfileStopConditions()
+    conditions.manual = true
+    conditions.anyNFC = true  // Even with NFC, manual wins
+
+    let action = StrategyManager.determineStopAction(for: conditions)
+
+    XCTAssertEqual(action, .stopImmediately)
+  }
+
+  func testDetermineStopActionOnlyAnyNFCReturnsScanNFC() {
+    var conditions = ProfileStopConditions()
+    conditions.anyNFC = true
+
+    let action = StrategyManager.determineStopAction(for: conditions)
+
+    XCTAssertEqual(action, .scanNFC)
+  }
+
+  func testDetermineStopActionOnlySameNFCReturnsScanNFC() {
+    var conditions = ProfileStopConditions()
+    conditions.sameNFC = true
+
+    let action = StrategyManager.determineStopAction(for: conditions)
+
+    XCTAssertEqual(action, .scanNFC)
+  }
+
+  func testDetermineStopActionOnlySpecificNFCReturnsScanNFC() {
+    var conditions = ProfileStopConditions()
+    conditions.specificNFC = true
+
+    let action = StrategyManager.determineStopAction(for: conditions)
+
+    XCTAssertEqual(action, .scanNFC)
+  }
+
+  func testDetermineStopActionOnlyAnyQRReturnsScanQR() {
+    var conditions = ProfileStopConditions()
+    conditions.anyQR = true
+
+    let action = StrategyManager.determineStopAction(for: conditions)
+
+    XCTAssertEqual(action, .scanQR)
+  }
+
+  func testDetermineStopActionOnlySameQRReturnsScanQR() {
+    var conditions = ProfileStopConditions()
+    conditions.sameQR = true
+
+    let action = StrategyManager.determineStopAction(for: conditions)
+
+    XCTAssertEqual(action, .scanQR)
+  }
+
+  func testDetermineStopActionOnlySpecificQRReturnsScanQR() {
+    var conditions = ProfileStopConditions()
+    conditions.specificQR = true
+
+    let action = StrategyManager.determineStopAction(for: conditions)
+
+    XCTAssertEqual(action, .scanQR)
+  }
+
+  func testDetermineStopActionBothNFCAndQRReturnsShowPicker() {
+    var conditions = ProfileStopConditions()
+    conditions.anyNFC = true
+    conditions.anyQR = true
+
+    let action = StrategyManager.determineStopAction(for: conditions)
+
+    XCTAssertEqual(action, .showPicker(options: [.scanNFC, .scanQR]))
+  }
+
+  func testDetermineStopActionOnlyTimerReturnsCannotStop() {
+    var conditions = ProfileStopConditions()
+    conditions.timer = true
+
+    let action = StrategyManager.determineStopAction(for: conditions)
+
+    if case .cannotStop = action {
+      // pass
+    } else {
+      XCTFail("Expected .cannotStop, got \(action)")
+    }
+  }
+
+  func testDetermineStopActionOnlyScheduleReturnsCannotStop() {
+    var conditions = ProfileStopConditions()
+    conditions.schedule = true
+
+    let action = StrategyManager.determineStopAction(for: conditions)
+
+    if case .cannotStop = action {
+      // pass
+    } else {
+      XCTFail("Expected .cannotStop, got \(action)")
+    }
+  }
+
+  func testDetermineStopActionEmptyConditionsReturnsCannotStop() {
+    let conditions = ProfileStopConditions()
+
+    let action = StrategyManager.determineStopAction(for: conditions)
+
+    if case .cannotStop = action {
+      // pass
+    } else {
+      XCTFail("Expected .cannotStop, got \(action)")
+    }
+  }
+
+  func testDetermineStopActionManualOverridesEverything() {
+    var conditions = ProfileStopConditions()
+    conditions.manual = true
+    conditions.anyNFC = true
+    conditions.anyQR = true
+    conditions.timer = true
+    conditions.schedule = true
+
+    let action = StrategyManager.determineStopAction(for: conditions)
+
+    XCTAssertEqual(action, .stopImmediately)
+  }
 }
