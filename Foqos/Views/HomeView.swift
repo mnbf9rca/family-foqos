@@ -423,6 +423,8 @@ struct HomeView: View {
       return "Scan QR Code"
     case .waitForSchedule:
       return "Wait for Schedule"
+    case .deepLinkOnly:
+      return "Deep Link Only"
     case .cannotStart:
       return "Cannot Start"
     case .showPicker:
@@ -479,6 +481,10 @@ struct HomeView: View {
 
     case .waitForSchedule:
       strategyManager.errorMessage = "This profile starts on schedule"
+
+    case .deepLinkOnly:
+      strategyManager.errorMessage =
+        "This profile can only be started with a programmed NFC tag or custom QR code"
 
     case .cannotStart(let reason):
       strategyManager.errorMessage = reason
@@ -541,7 +547,7 @@ struct HomeView: View {
       scannerProfile = profile
       showStartQRScanner = true
 
-    case .waitForSchedule, .showPicker, .cannotStart:
+    case .waitForSchedule, .deepLinkOnly, .showPicker, .cannotStart:
       break  // Should not be called with these
     }
   }

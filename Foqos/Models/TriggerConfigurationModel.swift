@@ -36,7 +36,29 @@ final class TriggerConfigurationModel: ObservableObject {
 
   /// Run validation and update error list
   func validate() {
-    validationErrors = validator.validate(start: startTriggers, stop: stopConditions)
+    var errors = validator.validate(start: startTriggers, stop: stopConditions)
+
+    // Check for missing data when specific toggles are enabled
+    if startTriggers.specificNFC && (startNFCTagId == nil || startNFCTagId?.isEmpty == true) {
+      errors.append("Scan an NFC tag to use as the start trigger")
+    }
+    if startTriggers.specificQR && (startQRCodeId == nil || startQRCodeId?.isEmpty == true) {
+      errors.append("Scan a QR code to use as the start trigger")
+    }
+    if stopConditions.specificNFC && (stopNFCTagId == nil || stopNFCTagId?.isEmpty == true) {
+      errors.append("Scan an NFC tag to use as the stop condition")
+    }
+    if stopConditions.specificQR && (stopQRCodeId == nil || stopQRCodeId?.isEmpty == true) {
+      errors.append("Scan a QR code to use as the stop condition")
+    }
+    if startTriggers.schedule && startSchedule == nil {
+      errors.append("Configure a start schedule")
+    }
+    if stopConditions.schedule && stopSchedule == nil {
+      errors.append("Configure a stop schedule")
+    }
+
+    validationErrors = errors
     if !validationErrors.isEmpty {
       Log.debug(
         "Trigger validation errors: \(validationErrors.joined(separator: ", ")). "

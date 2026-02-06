@@ -42,6 +42,15 @@ final class StrategyManagerStartTests: XCTestCase {
     XCTAssertEqual(action, .waitForSchedule)
   }
 
+  func testDetermineStartActionForDeepLinkOnly() {
+    var start = ProfileStartTriggers()
+    start.deepLink = true
+
+    let action = StrategyManager.determineStartAction(for: start)
+
+    XCTAssertEqual(action, .deepLinkOnly)
+  }
+
   func testDetermineStartActionForManualPlusNFC() {
     var start = ProfileStartTriggers()
     start.manual = true

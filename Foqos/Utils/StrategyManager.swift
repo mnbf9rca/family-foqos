@@ -894,6 +894,7 @@ class StrategyManager: ObservableObject {
                 currentSession.startTime != remoteStartTime
               {
                 currentSession.startTime = remoteStartTime
+                try? currentSession.modelContext?.save()
                 Log.info("Reconciled local startTime to \(remoteStartTime)", category: .strategy)
               }
             case .error(let error):
@@ -1071,6 +1072,7 @@ class StrategyManager: ObservableObject {
               currentSession.startTime != remoteStartTime
             {
               currentSession.startTime = remoteStartTime
+              try? context.save()
               Log.info("Reconciled scheduled session startTime to \(remoteStartTime)", category: .strategy)
             }
           case .error(let error):
@@ -1140,12 +1142,26 @@ class StrategyManager: ObservableObject {
 
   /// Start blocking with a pre-scanned NFC tag (for trigger-based start)
   func startWithNFCTag(context: ModelContext, profile: BlockedProfiles, tagId: String) {
+    // Validate specific NFC tag if required
+    if profile.startTriggers.specificNFC {
+      guard let requiredTag = profile.startNFCTagId, tagId == requiredTag else {
+        errorMessage = "This NFC tag doesn't match the one configured for this profile"
+        return
+      }
+    }
     let prefixedTag = "nfc:\(tagId)"
     startWithTag(context: context, profile: profile, tag: prefixedTag)
   }
 
   /// Start blocking with a pre-scanned QR code (for trigger-based start)
   func startWithQRCode(context: ModelContext, profile: BlockedProfiles, codeValue: String) {
+    // Validate specific QR code if required
+    if profile.startTriggers.specificQR {
+      guard let requiredCode = profile.startQRCodeId, codeValue == requiredCode else {
+        errorMessage = "This QR code doesn't match the one configured for this profile"
+        return
+      }
+    }
     let prefixedTag = "qr:\(codeValue)"
     startWithTag(context: context, profile: profile, tag: prefixedTag)
   }
@@ -1241,6 +1257,7 @@ class StrategyManager: ObservableObject {
             currentSession.startTime != remoteStartTime
           {
             currentSession.startTime = remoteStartTime
+            try? context.save()
             Log.info("Reconciled local startTime to \(remoteStartTime)", category: .strategy)
           }
         case .error(let error):
@@ -1447,6 +1464,7 @@ enum StartAction: Equatable, Hashable {
   case scanNFC
   case scanQR
   case waitForSchedule
+  case deepLinkOnly
   case cannotStart(reason: String)
   indirect case showPicker(options: [StartAction])
 }
@@ -1494,7 +1512,7 @@ extension StrategyManager {
         return .waitForSchedule
       }
       if triggers.deepLink {
-        return .waitForSchedule  // Can't manually trigger deep link
+        return .deepLinkOnly
       }
       return .cannotStart(reason: "No start triggers configured. Edit the profile to add one.")
     }
@@ -1526,7 +1544,16 @@ extension StrategyManager {
     }
 
     if scanOptions.isEmpty {
-      return .cannotStop(reason: "This profile can only be stopped when the time runs out")
+      if conditions.timer && conditions.schedule {
+        return .cannotStop(reason: "This profile stops on a timer or at its scheduled time")
+      } else if conditions.timer {
+        return .cannotStop(reason: "This profile can only be stopped when the timer runs out")
+      } else if conditions.schedule {
+        return .cannotStop(reason: "This profile stops at its scheduled time")
+      } else if conditions.deepLink {
+        return .cannotStop(reason: "This profile can only be stopped via a programmed NFC tag or QR code")
+      }
+      return .cannotStop(reason: "This profile has no manual stop method configured")
     }
     if scanOptions.count == 1 {
       return scanOptions[0]

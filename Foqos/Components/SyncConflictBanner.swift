@@ -16,9 +16,6 @@ struct SyncConflictBanner: View {
         Text(message)
           .font(.caption)
           .foregroundStyle(.secondary)
-        Text("Update Family Foqos on all devices to sync.")
-          .font(.caption)
-          .foregroundStyle(.secondary)
       }
 
       Spacer()
@@ -29,6 +26,7 @@ struct SyncConflictBanner: View {
         Image(systemName: "xmark")
           .foregroundStyle(.secondary)
       }
+      .accessibilityLabel("Dismiss sync conflict")
     }
     .padding()
     .background(.yellow.opacity(0.1))

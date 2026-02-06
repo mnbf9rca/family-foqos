@@ -45,10 +45,12 @@ class DeviceActivityCenterUtil {
                let stopSched = profile.stopSchedule, stopSched.isActive {
                 intervalEnd = DateComponents(hour: stopSched.hour, minute: stopSched.minute)
             } else {
-                // No scheduled stop — set end to just before start (full day window)
-                let endHour = (startSched.hour + 23) % 24
-                let endMinute = startSched.minute > 0 ? startSched.minute - 1 : 59
-                intervalEnd = DateComponents(hour: endHour, minute: endMinute)
+                // No scheduled stop — set end to exactly 1 minute before start (full day window)
+                if startSched.minute > 0 {
+                    intervalEnd = DateComponents(hour: startSched.hour, minute: startSched.minute - 1)
+                } else {
+                    intervalEnd = DateComponents(hour: (startSched.hour + 23) % 24, minute: 59)
+                }
             }
         } else {
             // Legacy path
@@ -330,6 +332,16 @@ class DeviceActivityCenterUtil {
 
         return activities.first(where: {
             $0 == scheduleTimerActivity.getDeviceActivityName(from: profile.id.uuidString)
+        })
+    }
+
+    static func getActiveStopScheduleTimerActivity(for profile: BlockedProfiles) -> DeviceActivityName? {
+        let center = DeviceActivityCenter()
+        let stopTimerActivity = StopScheduleTimerActivity()
+        let activities = center.activities
+
+        return activities.first(where: {
+            $0 == stopTimerActivity.getDeviceActivityName(from: profile.id.uuidString)
         })
     }
 

@@ -175,10 +175,17 @@ class BlockedProfiles {
     }
 
     var scheduleIsOutOfSync: Bool {
-        let hasSchedule = (schedule?.isActive == true)
+        let hasStartSchedule = (schedule?.isActive == true)
             || (startTriggers.schedule && startSchedule?.isActive == true)
-        return hasSchedule
+        let startOutOfSync = hasStartSchedule
             && DeviceActivityCenterUtil.getActiveScheduleTimerActivity(for: self) == nil
+
+        let hasStopSchedule = stopConditions.schedule && stopSchedule?.isActive == true
+        let stopNeedsOwnActivity = hasStopSchedule && !hasStartSchedule
+        let stopOutOfSync = stopNeedsOwnActivity
+            && DeviceActivityCenterUtil.getActiveStopScheduleTimerActivity(for: self) == nil
+
+        return startOutOfSync || stopOutOfSync
     }
 
     init(
@@ -733,6 +740,9 @@ extension BlockedProfiles {
 
         // Step 5: Mark as migrated (only if all data encoded successfully)
         profileSchemaVersion = 2
+
+        // Step 6: Update legacy strategy ID for backwards compatibility
+        updateCompatibilityStrategyId()
     }
 
     /// Best-match strategy ID for backwards compatibility with older app versions.
@@ -741,25 +751,38 @@ extension BlockedProfiles {
         let start = startTriggers
         let stop = stopConditions
 
-        if start.anyNFC && stop.sameNFC {
+        // NFC auto-start with same/specific tag stop
+        if start.hasNFC && (stop.sameNFC || stop.specificNFC) {
             return "NFCBlockingStrategy"
         }
-        if start.manual && stop.anyNFC && stop.timer {
+        // Manual start + NFC stop + timer
+        if start.manual && stop.hasNFC && stop.timer {
             return "NFCTimerBlockingStrategy"
         }
-        if start.manual && stop.anyNFC {
+        // Manual start + NFC stop
+        if start.manual && stop.hasNFC {
             return "NFCManualBlockingStrategy"
         }
-        if start.anyQR && stop.sameQR {
+        // QR auto-start with same/specific code stop
+        if start.hasQR && (stop.sameQR || stop.specificQR) {
             return "QRCodeBlockingStrategy"
         }
-        if start.manual && stop.anyQR && stop.timer {
+        // Manual start + QR stop + timer
+        if start.manual && stop.hasQR && stop.timer {
             return "QRTimerBlockingStrategy"
         }
-        if start.manual && stop.anyQR {
+        // Manual start + QR stop
+        if start.manual && stop.hasQR {
             return "QRManualBlockingStrategy"
         }
-        if start.manual && stop.timer && !stop.anyNFC && !stop.anyQR {
+        // NFC/QR auto-start only (no manual) with NFC/QR stop
+        if start.hasNFC && stop.hasNFC {
+            return "NFCManualBlockingStrategy"
+        }
+        if start.hasQR && stop.hasQR {
+            return "QRManualBlockingStrategy"
+        }
+        if start.manual && stop.timer && !stop.hasNFC && !stop.hasQR {
             return "ShortcutTimerBlockingStrategy"
         }
 
