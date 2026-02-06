@@ -4,12 +4,7 @@ import XCTest
 @testable import FamilyFoqos
 
 final class TriggerValidatorTests: XCTestCase {
-  var validator: TriggerValidator!
-
-  override func setUp() {
-    super.setUp()
-    validator = TriggerValidator()
-  }
+  let validator = TriggerValidator()
 
   // MARK: - Stop Availability
 

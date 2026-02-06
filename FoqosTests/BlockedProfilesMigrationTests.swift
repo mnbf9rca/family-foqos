@@ -6,7 +6,7 @@ import XCTest
 
 final class BlockedProfilesMigrationTests: XCTestCase {
 
-  func testMigrateV1ToV2SetsSchemaVersion() throws {
+  func testMigrateV1ToV2SetsSchemaVersion() {
     let profile = BlockedProfiles(name: "Test")
     profile.profileSchemaVersion = 1
     profile.blockingStrategyId = "ManualBlockingStrategy"
@@ -16,7 +16,7 @@ final class BlockedProfilesMigrationTests: XCTestCase {
     XCTAssertEqual(profile.profileSchemaVersion, 2)
   }
 
-  func testMigrateV1ToV2SetsTriggers() throws {
+  func testMigrateV1ToV2SetsTriggers() {
     let profile = BlockedProfiles(name: "Test")
     profile.profileSchemaVersion = 1
     profile.blockingStrategyId = "NFCBlockingStrategy"
@@ -27,7 +27,7 @@ final class BlockedProfilesMigrationTests: XCTestCase {
     XCTAssertTrue(profile.stopConditions.sameNFC)
   }
 
-  func testMigrateV1ToV2MigratesPhysicalUnlock() throws {
+  func testMigrateV1ToV2MigratesPhysicalUnlock() {
     let profile = BlockedProfiles(name: "Test")
     profile.profileSchemaVersion = 1
     profile.blockingStrategyId = "NFCManualBlockingStrategy"
@@ -40,7 +40,7 @@ final class BlockedProfilesMigrationTests: XCTestCase {
     XCTAssertEqual(profile.stopNFCTagId, "tag-123")
   }
 
-  func testMigrateV1ToV2MigratesSchedule() throws {
+  func testMigrateV1ToV2MigratesSchedule() {
     let profile = BlockedProfiles(name: "Test")
     profile.profileSchemaVersion = 1
     profile.blockingStrategyId = "ManualBlockingStrategy"
@@ -59,7 +59,7 @@ final class BlockedProfilesMigrationTests: XCTestCase {
     XCTAssertEqual(profile.stopSchedule?.hour, 17)
   }
 
-  func testMigrateV2DoesNothing() throws {
+  func testMigrateV2DoesNothing() {
     let profile = BlockedProfiles(name: "Test")
     profile.profileSchemaVersion = 2
     var triggers = profile.startTriggers
@@ -94,20 +94,6 @@ final class BlockedProfilesMigrationTests: XCTestCase {
 
     XCTAssertFalse(migrated)
     XCTAssertEqual(profile.profileSchemaVersion, 1)  // Still V1
-  }
-
-  func testMigrationSetsSchemaVersionLast() {
-    // Verify that migrateToV2IfNeeded sets all fields before schema version
-    let profile = BlockedProfiles(name: "Test")
-    profile.profileSchemaVersion = 1
-    profile.blockingStrategyId = "NFCBlockingStrategy"
-
-    profile.migrateToV2IfNeeded()
-
-    // If migration succeeded, all V2 fields should be populated
-    XCTAssertEqual(profile.profileSchemaVersion, 2)
-    XCTAssertTrue(profile.startTriggers.anyNFC)
-    XCTAssertTrue(profile.stopConditions.sameNFC)
   }
 
   func testMigrateV1ScheduleSetsTriggerFlags() {
