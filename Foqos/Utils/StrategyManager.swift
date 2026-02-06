@@ -135,7 +135,7 @@ class StrategyManager: ObservableObject {
         return
       }
 
-      stopBlocking(context: context)
+      stopBlocking(context: context, bypassStrategy: true)
     } else {
       checkGeofenceAndStart(context: context, activeProfile: activeProfile)
     }
@@ -179,7 +179,7 @@ class StrategyManager: ObservableObject {
       self.isCheckingGeofence = false
 
       if result.isSatisfied {
-        self.stopBlocking(context: context)
+        self.stopBlocking(context: context, bypassStrategy: true)
       } else {
         self.errorMessage = result.failureMessage ?? "Location restriction not met."
       }
@@ -189,25 +189,25 @@ class StrategyManager: ObservableObject {
   /// Check geofence rule before starting and show warning if user is not at location
   private func checkGeofenceAndStart(context: ModelContext, activeProfile: BlockedProfiles?) {
     guard let profile = activeProfile else {
-      startBlocking(context: context, activeProfile: activeProfile)
+      startBlocking(context: context, activeProfile: activeProfile, bypassStrategy: true)
       return
     }
 
     // Fast path: if setting is off, skip check
     guard warnWhenActivatingAwayFromLocation else {
-      startBlocking(context: context, activeProfile: profile)
+      startBlocking(context: context, activeProfile: profile, bypassStrategy: true)
       return
     }
 
     // Fast path: if profile has no geofence rule, skip check
     guard let geofenceRule = profile.geofenceRule, geofenceRule.hasLocations else {
-      startBlocking(context: context, activeProfile: profile)
+      startBlocking(context: context, activeProfile: profile, bypassStrategy: true)
       return
     }
 
     // If location permission not granted, proceed without warning (don't block activation)
     if locationManager.isNotDetermined || locationManager.isDenied {
-      startBlocking(context: context, activeProfile: profile)
+      startBlocking(context: context, activeProfile: profile, bypassStrategy: true)
       return
     }
 
@@ -234,7 +234,7 @@ class StrategyManager: ObservableObject {
 
       if result.isSatisfied {
         // User is at location, proceed without warning
-        self.startBlocking(context: context, activeProfile: profile)
+        self.startBlocking(context: context, activeProfile: profile, bypassStrategy: true)
       } else {
         // User is NOT at location, show warning
         self.pendingStartProfile = profile
@@ -277,7 +277,7 @@ class StrategyManager: ObservableObject {
       return
     }
 
-    startBlocking(context: context, activeProfile: profile)
+    startBlocking(context: context, activeProfile: profile, bypassStrategy: true)
     cancelGeofenceStart()
   }
 
