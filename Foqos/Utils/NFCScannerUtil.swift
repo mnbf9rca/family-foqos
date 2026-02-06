@@ -3,7 +3,6 @@ import SwiftUI
 
 struct NFCResult: Equatable {
   var id: String
-  var url: String?
   var DateScanned: Date
 }
 
@@ -172,27 +171,6 @@ extension NFCScannerUtil: NFCTagReaderSessionDelegate {
 
   // MARK: - NFC Read Operations (nonisolated - all work happens on CoreNFC's queue)
 
-  nonisolated private func updateWithNDEFMessageURL(_ message: NFCNDEFMessage) -> String? {
-    let urls: [URLComponents] = message.records.compactMap {
-      (payload: NFCNDEFPayload) -> URLComponents? in
-      // Only attempt URI parsing on well-known type records to avoid CoreNFC exceptions
-      guard payload.typeNameFormat == .nfcWellKnown else { return nil }
-      if let url = payload.wellKnownTypeURIPayload() {
-        let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
-        if components?.host == "family-foqos.app" && components?.scheme == "https" {
-          return components
-        }
-      }
-      return nil
-    }
-
-    guard urls.count == 1, let item = urls.first?.string else {
-      return nil
-    }
-
-    return item
-  }
-
   nonisolated private func readMiFareTag(_ tagBox: ScannerMiFareTagBox, sessionBox: ScannerSessionBox) {
     let tagIdentifier = tagBox.identifier.hexEncodedString()
     tagBox.readNDEF { (message: NFCNDEFMessage?, error: Error?) in
@@ -202,13 +180,11 @@ extension NFCScannerUtil: NFCTagReaderSessionDelegate {
         }
 
         // Still use the identifier - works for all tag types
-        self.completeTagScan(id: tagIdentifier, url: nil, sessionBox: sessionBox)
+        self.completeTagScan(id: tagIdentifier, sessionBox: sessionBox)
         return
       }
 
-      // Extract URL before hopping to MainActor (message is not Sendable)
-      let url = self.updateWithNDEFMessageURL(message!)
-      self.completeTagScan(id: tagIdentifier, url: url, sessionBox: sessionBox)
+      self.completeTagScan(id: tagIdentifier, sessionBox: sessionBox)
     }
   }
 
@@ -220,18 +196,16 @@ extension NFCScannerUtil: NFCTagReaderSessionDelegate {
           Log.info("⚠️ ISO15693 NDEF read failed (non-critical): \(error.localizedDescription). using tag id: \(tagIdentifier)", category: .nfc)
         }
 
-        self.completeTagScan(id: tagIdentifier, url: nil, sessionBox: sessionBox)
+        self.completeTagScan(id: tagIdentifier, sessionBox: sessionBox)
         return
       }
 
-      // Extract URL before hopping to MainActor (message is not Sendable)
-      let url = self.updateWithNDEFMessageURL(message!)
-      self.completeTagScan(id: tagIdentifier, url: url, sessionBox: sessionBox)
+      self.completeTagScan(id: tagIdentifier, sessionBox: sessionBox)
     }
   }
 
-  nonisolated private func completeTagScan(id: String, url: String?, sessionBox: ScannerSessionBox) {
-    let result = NFCResult(id: id, url: url, DateScanned: Date())
+  nonisolated private func completeTagScan(id: String, sessionBox: ScannerSessionBox) {
+    let result = NFCResult(id: id, DateScanned: Date())
     Task { @MainActor in
       self.onTagScanned?(result)
     }
