@@ -687,11 +687,9 @@ extension BlockedProfiles {
         guard profileSchemaVersion < 2 else { return }
 
         // Step 1: Migrate strategy to triggers
-        let (migratedStart, migratedStop) = TriggerMigration.migrateFromStrategy(
+        var (start, stop) = TriggerMigration.migrateFromStrategy(
             blockingStrategyId
         )
-        startTriggers = migratedStart
-        var stop = migratedStop
 
         // Step 2: Migrate physical unlock
         if physicalUnblockNFCTagId != nil || physicalUnblockQRCodeId != nil {
@@ -707,23 +705,20 @@ extension BlockedProfiles {
                 stopQRCodeId = tagId
             }
         }
-        stopConditions = stop
 
         // Step 3: Migrate schedule
-        let (start, stopSched) = TriggerMigration.migrateSchedule(schedule)
-        startSchedule = start
+        let (startSched, stopSched) = TriggerMigration.migrateSchedule(schedule)
+        startSchedule = startSched
         stopSchedule = stopSched
 
         // Enable schedule trigger if schedule was active
         if schedule?.isActive == true {
-            var triggers = startTriggers
-            triggers.schedule = true
-            startTriggers = triggers
-
-            var conditions = stopConditions
-            conditions.schedule = true
-            stopConditions = conditions
+            start.schedule = true
+            stop.schedule = true
         }
+
+        startTriggers = start
+        stopConditions = stop
 
         // Step 4: Verify encoding succeeded before marking as migrated
         // If any Data field is nil after setting, encoding failed silently
