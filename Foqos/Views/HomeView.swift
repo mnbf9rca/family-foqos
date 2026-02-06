@@ -66,6 +66,9 @@ struct HomeView: View {
   @ObservedObject private var appModeManager = AppModeManager.shared
   @State private var showModeSelection = false
 
+  // Lock code manager (for stop flow lock check)
+  private let lockCodeManager = LockCodeManager.shared
+
   // Sync conflict manager
   @ObservedObject private var syncConflictManager = SyncConflictManager.shared
 
@@ -75,12 +78,17 @@ struct HomeView: View {
   // Start picker state
   @State private var showStartPicker = false
   @State private var startOptions: [StartAction] = []
-  @State private var pendingStartProfile: BlockedProfiles?
+  @State private var pendingPickerProfile: BlockedProfiles?
 
   // Scanner state for trigger-based starts
   @State private var showStartQRScanner = false
   @State private var scannerProfile: BlockedProfiles?
   @StateObject private var nfcScanner = NFCScannerUtil()
+
+  // Stop picker state
+  @State private var showStopQRScanner = false
+  @State private var showStopPicker = false
+  @State private var stopOptions: [StopAction] = []
 
   var isBlocking: Bool {
     return strategyManager.isBlocking
@@ -340,13 +348,25 @@ struct HomeView: View {
     .confirmationDialog("Start by...", isPresented: $showStartPicker, titleVisibility: .visible) {
       ForEach(startOptions, id: \.self) { option in
         Button(displayName(for: option)) {
-          if let profile = pendingStartProfile {
+          if let profile = pendingPickerProfile {
             executeStartAction(option, profile: profile)
           }
         }
       }
       Button("Cancel", role: .cancel) {
-        pendingStartProfile = nil
+        pendingPickerProfile = nil
+      }
+    }
+    .confirmationDialog("Stop by...", isPresented: $showStopPicker, titleVisibility: .visible) {
+      ForEach(stopOptions, id: \.self) { option in
+        Button(displayName(for: option)) {
+          if let profile = pendingPickerProfile {
+            executeStopAction(option, profile: profile)
+          }
+        }
+      }
+      Button("Cancel", role: .cancel) {
+        pendingPickerProfile = nil
       }
     }
     .sheet(isPresented: $showStartQRScanner) {
@@ -364,6 +384,27 @@ struct HomeView: View {
               scannerProfile = nil
             case .failure:
               showStartQRScanner = false
+              scannerProfile = nil
+            }
+          }
+        )
+      }
+    }
+    .sheet(isPresented: $showStopQRScanner) {
+      if let profile = scannerProfile {
+        BlockingStrategyActionView(
+          customView: LabeledCodeScannerView(
+            heading: "Scan to Stop",
+            subtitle: "Scan a QR code to stop \(profile.name)"
+          ) { result in
+            switch result {
+            case .success(let scanResult):
+              showStopQRScanner = false
+              strategyManager.stopWithQRCode(
+                context: context, codeValue: scanResult.string)
+              scannerProfile = nil
+            case .failure:
+              showStopQRScanner = false
               scannerProfile = nil
             }
           }
@@ -389,21 +430,32 @@ struct HomeView: View {
     }
   }
 
+  private func displayName(for action: StopAction) -> String {
+    switch action {
+    case .stopImmediately:
+      return "Stop Now"
+    case .scanNFC:
+      return "Scan NFC Tag"
+    case .scanQR:
+      return "Scan QR Code"
+    case .cannotStop:
+      return "Cannot Stop"
+    case .showPicker:
+      return "Choose Method"
+    }
+  }
+
   private func toggleSessionFromDeeplink(_ profileId: String, link: URL) {
     strategyManager
       .toggleSessionFromDeeplink(profileId, url: link, context: context)
   }
 
   private func strategyButtonPress(_ profile: BlockedProfiles) {
-    // For stops, use existing logic
     if strategyManager.isBlocking {
-      strategyManager.toggleBlocking(context: context, activeProfile: profile)
-      ratingManager.incrementLaunchCount()
-      return
+      handleStopTap(profile)
+    } else {
+      handleStartTap(profile)
     }
-
-    // For starts, use trigger-based logic
-    handleStartTap(profile)
     ratingManager.incrementLaunchCount()
   }
 
@@ -433,8 +485,46 @@ struct HomeView: View {
 
     case .showPicker(let options):
       startOptions = options
-      pendingStartProfile = profile
+      pendingPickerProfile = profile
       showStartPicker = true
+    }
+  }
+
+  private func handleStopTap(_ profile: BlockedProfiles) {
+    // Check if managed profile requires unlock (moved from toggleBlocking)
+    if let session = strategyManager.activeSession,
+      session.blockedProfile.isManaged,
+      appModeManager.currentMode == .child,
+      !lockCodeManager.isUnlocked(session.blockedProfile.id)
+    {
+      strategyManager.errorMessage =
+        "This profile is parent-controlled. Enter the lock code to stop blocking."
+      return
+    }
+
+    let action = StrategyManager.determineStopAction(
+      for: profile.stopConditions
+    )
+
+    switch action {
+    case .stopImmediately:
+      strategyManager.toggleBlocking(context: context, activeProfile: profile)
+
+    case .scanNFC:
+      scannerProfile = profile
+      stopNFCScan(for: profile)
+
+    case .scanQR:
+      scannerProfile = profile
+      showStopQRScanner = true
+
+    case .cannotStop(let reason):
+      strategyManager.errorMessage = reason
+
+    case .showPicker(let options):
+      stopOptions = options
+      pendingPickerProfile = profile
+      showStopPicker = true
     }
   }
 
@@ -456,10 +546,41 @@ struct HomeView: View {
     }
   }
 
+  private func executeStopAction(_ action: StopAction, profile: BlockedProfiles) {
+    switch action {
+    case .stopImmediately:
+      strategyManager.toggleBlocking(context: context, activeProfile: profile)
+
+    case .scanNFC:
+      scannerProfile = profile
+      stopNFCScan(for: profile)
+
+    case .scanQR:
+      scannerProfile = profile
+      showStopQRScanner = true
+
+    case .showPicker, .cannotStop:
+      break  // Should not be called with these
+    }
+  }
+
   private func startNFCScan(for profile: BlockedProfiles) {
     nfcScanner.onTagScanned = { tag in
       let tagId = tag.id
       strategyManager.startWithNFCTag(context: context, profile: profile, tagId: tagId)
+      scannerProfile = nil
+    }
+    nfcScanner.onError = { error in
+      strategyManager.errorMessage = error
+      scannerProfile = nil
+    }
+    nfcScanner.scan(profileName: profile.name)
+  }
+
+  private func stopNFCScan(for profile: BlockedProfiles) {
+    nfcScanner.onTagScanned = { tag in
+      let tagId = tag.id
+      strategyManager.stopWithNFCTag(context: context, tagId: tagId)
       scannerProfile = nil
     }
     nfcScanner.onError = { error in
