@@ -191,6 +191,15 @@ class SyncCoordinator: ObservableObject {
     from synced: SyncedProfile,
     in context: ModelContext
   ) {
+    // Don't overwrite V2+ profiles with V1 data
+    if profile.isNewerSchemaVersion && synced.profileSchemaVersion <= 1 {
+      Log.info(
+        "Skipping sync update for V2+ profile '\(profile.name)' from V1 device",
+        category: .sync
+      )
+      return
+    }
+
     profile.name = synced.name
     profile.blockingStrategyId = synced.blockingStrategyId
     profile.strategyData = synced.strategyData
@@ -213,6 +222,7 @@ class SyncCoordinator: ObservableObject {
     profile.isManaged = synced.isManaged
     profile.managedByChildId = synced.managedByChildId
     profile.syncVersion = synced.version
+    profile.profileSchemaVersion = max(profile.profileSchemaVersion, synced.profileSchemaVersion)
     profile.updatedAt = synced.updatedAt
 
     // Update snapshot for extensions
@@ -250,6 +260,8 @@ class SyncCoordinator: ObservableObject {
       syncVersion: synced.version,
       needsAppSelection: true  // New profile from another device needs app selection
     )
+
+    profile.profileSchemaVersion = synced.profileSchemaVersion
 
     context.insert(profile)
     BlockedProfiles.updateSnapshot(for: profile)
