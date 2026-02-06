@@ -1129,10 +1129,6 @@ class StrategyManager: ObservableObject {
     SharedData.flushCompletedSessionsForSchedular()
   }
 
-  private func resultFromURL(_ url: String) -> NFCResult {
-    return NFCResult(id: url, url: url, DateScanned: Date())
-  }
-
   private func startBlocking(
     context: ModelContext,
     activeProfile: BlockedProfiles?
@@ -1340,16 +1336,6 @@ class StrategyManager: ObservableObject {
   }
 
   // MARK: - Remote Session Sync
-
-  /// Set up observers for remote session changes from other devices.
-  /// Note: Session sync is now handled directly by SyncCoordinator which calls
-  /// startRemoteSession/stopRemoteSession methods. This method is kept for future
-  /// extensibility but no longer observes .syncedSessionsReceived.
-  func setupRemoteSessionObservers() {
-    // SyncCoordinator now handles session sync directly by calling
-    // startRemoteSession() and stopRemoteSession() methods.
-    // No notification observers needed here.
-  }
 
   /// Start a session triggered by remote device
   func startRemoteSession(
