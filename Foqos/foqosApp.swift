@@ -158,8 +158,6 @@ struct foqosApp: App {
                 .onAppear {
                     // Set up sync coordinator with model context
                     syncCoordinator.setModelContext(container.mainContext)
-                    // Set up remote session observers
-                    strategyManager.setupRemoteSessionObservers()
                     // Migrate profiles to V2 trigger system if needed
                     migrateProfilesIfNeeded(context: container.mainContext)
                     // Initialize sync if enabled
