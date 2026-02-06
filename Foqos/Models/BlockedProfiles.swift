@@ -37,6 +37,10 @@ class BlockedProfiles {
 
   var customReminderMessage: String?
 
+  /// Schema version for migration and sync conflict detection.
+  /// Version 1: Current schema. Version 2+: Future schema (read-only on this app version).
+  var profileSchemaVersion: Int = 1
+
   // Managed profile fields (parent-controlled)
   var isManaged: Bool = false  // If true, requires lock code to edit/delete
   var managedByChildId: String? = nil  // Which child this managed profile is for (for per-child code lookup)
@@ -54,6 +58,12 @@ class BlockedProfiles {
   var scheduleIsOutOfSync: Bool {
     return self.schedule?.isActive == true
       && DeviceActivityCenterUtil.getActiveScheduleTimerActivity(for: self) == nil
+  }
+
+  /// Whether this profile uses a newer schema version than this app supports.
+  /// V2+ profiles should be read-only on this app version.
+  var isNewerSchemaVersion: Bool {
+    profileSchemaVersion > 1
   }
 
   init(

@@ -53,6 +53,9 @@ struct SyncedProfile: Codable, Equatable {
   var isManaged: Bool
   var managedByChildId: String?
 
+  // Schema version
+  var profileSchemaVersion: Int = 1
+
   // Sync metadata
   var lastModified: Date
   var originDeviceId: String
@@ -89,6 +92,7 @@ struct SyncedProfile: Codable, Equatable {
     case disableBackgroundStops
     case isManaged
     case managedByChildId
+    case profileSchemaVersion
     case lastModified
     case originDeviceId
     case version
@@ -129,6 +133,7 @@ struct SyncedProfile: Codable, Equatable {
     record[FieldKey.disableBackgroundStops.rawValue] = disableBackgroundStops
     record[FieldKey.isManaged.rawValue] = isManaged
     record[FieldKey.managedByChildId.rawValue] = managedByChildId
+    record[FieldKey.profileSchemaVersion.rawValue] = profileSchemaVersion
     record[FieldKey.lastModified.rawValue] = lastModified
     record[FieldKey.originDeviceId.rawValue] = originDeviceId
     record[FieldKey.version.rawValue] = version
@@ -176,6 +181,7 @@ struct SyncedProfile: Codable, Equatable {
     self.disableBackgroundStops = record[FieldKey.disableBackgroundStops.rawValue] as? Bool ?? false
     self.isManaged = record[FieldKey.isManaged.rawValue] as? Bool ?? false
     self.managedByChildId = record[FieldKey.managedByChildId.rawValue] as? String
+    self.profileSchemaVersion = record[FieldKey.profileSchemaVersion.rawValue] as? Int ?? 1
     self.lastModified = lastModified
     self.originDeviceId = originDeviceId
     self.version = version
@@ -209,6 +215,7 @@ struct SyncedProfile: Codable, Equatable {
     self.disableBackgroundStops = profile.disableBackgroundStops
     self.isManaged = profile.isManaged
     self.managedByChildId = profile.managedByChildId
+    self.profileSchemaVersion = profile.profileSchemaVersion
     self.lastModified = Date()
     self.originDeviceId = originDeviceId
     self.version = profile.syncVersion
