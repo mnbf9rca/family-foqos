@@ -11,6 +11,10 @@ struct BlockedProfileListView: View {
     SortDescriptor(\BlockedProfiles.createdAt, order: .reverse),
   ]) private var profiles: [BlockedProfiles]
 
+  private var validProfiles: [BlockedProfiles] {
+    profiles.valid
+  }
+
   @State private var showingCreateProfile = false
   @State private var showingDataExport = false
 
@@ -21,7 +25,7 @@ struct BlockedProfileListView: View {
   var body: some View {
     NavigationStack {
       Group {
-        if profiles.isEmpty {
+        if validProfiles.isEmpty {
           EmptyView(
             iconName: "person.crop.circle.badge.plus",
             headingText:
@@ -29,7 +33,7 @@ struct BlockedProfileListView: View {
           )
         } else {
           List {
-            ForEach(profiles) { profile in
+            ForEach(validProfiles) { profile in
               ProfileRow(profile: profile)
                 .contentShape(Rectangle())
                 .onTapGesture {
@@ -58,7 +62,7 @@ struct BlockedProfileListView: View {
               Image(systemName: "checkmark.circle")
             }
           }
-          if !profiles.isEmpty {
+          if !validProfiles.isEmpty {
             Menu {
               Button {
                 editMode = .active
@@ -105,10 +109,11 @@ struct BlockedProfileListView: View {
   private func deleteProfiles(at offsets: IndexSet) {
     let activeSession = BlockedProfileSession.mostRecentActiveSession(
       in: context)
+    let profilesToDelete = validProfiles
 
     // Check if any of the profiles to delete are active
     for index in offsets {
-      let profile = profiles[index]
+      let profile = profilesToDelete[index]
       if profile.id == activeSession?.blockedProfile.id {
         showErrorAlert = true
         return
@@ -118,7 +123,7 @@ struct BlockedProfileListView: View {
     // Delete the profiles and reorder
     do {
       for index in offsets {
-        let profile = profiles[index]
+        let profile = profilesToDelete[index]
         try BlockedProfiles.deleteProfile(profile, in: context)
       }
 
@@ -131,7 +136,7 @@ struct BlockedProfileListView: View {
   }
 
   private func moveProfiles(from source: IndexSet, to destination: Int) {
-    var reorderedProfiles = Array(profiles)
+    var reorderedProfiles = Array(validProfiles)
     reorderedProfiles.move(fromOffsets: source, toOffset: destination)
 
     do {
