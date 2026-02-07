@@ -15,16 +15,11 @@ import SwiftUI
 /// - Non-NDEF formatted tags
 @MainActor
 class NFCWriter: NSObject, ObservableObject {
-  var scannedNFCTag: NFCResult?
   var isScanning: Bool = false
   var errorMessage: String?
 
   private var tagSession: NFCTagReaderSession?
   private var urlToWrite: String?
-
-  func resultFromURL(_ url: String) -> NFCResult {
-    return NFCResult(id: url, url: url, DateScanned: Date())
-  }
 
   func writeURL(_ url: String) {
     guard NFCReaderSession.readingAvailable else {

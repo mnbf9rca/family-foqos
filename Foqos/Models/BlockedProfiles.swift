@@ -49,6 +49,125 @@ class BlockedProfiles {
     var syncVersion: Int = 0 // Version counter for conflict resolution (last-write-wins)
     var needsAppSelection: Bool = false // True if synced from another device but no local apps selected
 
+    // MARK: - Trigger System (Schema Version 2)
+
+    /// Schema version for migration and sync conflict detection
+    /// Version 1: Legacy blockingStrategyId system
+    /// Version 2: New start/stop trigger system
+    var profileSchemaVersion: Int = 1
+
+    /// Start triggers - serialized as JSON in SwiftData
+    private var startTriggersData: Data?
+
+    /// Stop conditions - serialized as JSON in SwiftData
+    private var stopConditionsData: Data?
+
+    /// Computed property for start triggers with JSON serialization
+    var startTriggers: ProfileStartTriggers {
+        get {
+            guard let data = startTriggersData else { return ProfileStartTriggers() }
+            do {
+                return try JSONDecoder().decode(ProfileStartTriggers.self, from: data)
+            } catch {
+                Log.error("Failed to decode startTriggers: \(error.localizedDescription)", category: .sync)
+                return ProfileStartTriggers()
+            }
+        }
+        set {
+            do {
+                startTriggersData = try JSONEncoder().encode(newValue)
+            } catch {
+                Log.error("Failed to encode startTriggers: \(error.localizedDescription)", category: .sync)
+            }
+        }
+    }
+
+    /// Computed property for stop conditions with JSON serialization
+    var stopConditions: ProfileStopConditions {
+        get {
+            guard let data = stopConditionsData else { return ProfileStopConditions() }
+            do {
+                return try JSONDecoder().decode(ProfileStopConditions.self, from: data)
+            } catch {
+                Log.error("Failed to decode stopConditions: \(error.localizedDescription)", category: .sync)
+                return ProfileStopConditions()
+            }
+        }
+        set {
+            do {
+                stopConditionsData = try JSONEncoder().encode(newValue)
+            } catch {
+                Log.error("Failed to encode stopConditions: \(error.localizedDescription)", category: .sync)
+            }
+        }
+    }
+
+    /// NFC tag ID required to start (when startTriggers.specificNFC = true)
+    var startNFCTagId: String?
+
+    /// QR code ID required to start (when startTriggers.specificQR = true)
+    var startQRCodeId: String?
+
+    /// NFC tag ID required to stop (when stopConditions.specificNFC = true)
+    var stopNFCTagId: String?
+
+    /// QR code ID required to stop (when stopConditions.specificQR = true)
+    var stopQRCodeId: String?
+
+    /// Start schedule - serialized as JSON in SwiftData
+    private var startScheduleData: Data?
+
+    /// Stop schedule - serialized as JSON in SwiftData
+    private var stopScheduleData: Data?
+
+    /// Computed property for start schedule with JSON serialization
+    var startSchedule: ProfileScheduleTime? {
+        get {
+            guard let data = startScheduleData else { return nil }
+            do {
+                return try JSONDecoder().decode(ProfileScheduleTime.self, from: data)
+            } catch {
+                Log.error("Failed to decode startSchedule: \(error.localizedDescription)", category: .sync)
+                return nil
+            }
+        }
+        set {
+            guard let value = newValue else {
+                startScheduleData = nil
+                return
+            }
+            do {
+                startScheduleData = try JSONEncoder().encode(value)
+            } catch {
+                Log.error("Failed to encode startSchedule: \(error.localizedDescription)", category: .sync)
+            }
+        }
+    }
+
+    /// Computed property for stop schedule with JSON serialization
+    var stopSchedule: ProfileScheduleTime? {
+        get {
+            guard let data = stopScheduleData else { return nil }
+            do {
+                return try JSONDecoder().decode(ProfileScheduleTime.self, from: data)
+            } catch {
+                Log.error("Failed to decode stopSchedule: \(error.localizedDescription)", category: .sync)
+                return nil
+            }
+        }
+        set {
+            guard let value = newValue else {
+                stopScheduleData = nil
+                return
+            }
+            do {
+                stopScheduleData = try JSONEncoder().encode(value)
+            } catch {
+                Log.error("Failed to encode stopSchedule: \(error.localizedDescription)", category: .sync)
+            }
+        }
+    }
+
     @Relationship var sessions: [BlockedProfileSession] = []
 
     var activeScheduleTimerActivity: DeviceActivityName? {
@@ -56,8 +175,17 @@ class BlockedProfiles {
     }
 
     var scheduleIsOutOfSync: Bool {
-        return schedule?.isActive == true
+        let hasStartSchedule = (schedule?.isActive == true)
+            || (startTriggers.schedule && startSchedule?.isActive == true)
+        let startOutOfSync = hasStartSchedule
             && DeviceActivityCenterUtil.getActiveScheduleTimerActivity(for: self) == nil
+
+        let hasStopSchedule = stopConditions.schedule && stopSchedule?.isActive == true
+        let stopNeedsOwnActivity = hasStopSchedule && !hasStartSchedule
+        let stopOutOfSync = stopNeedsOwnActivity
+            && DeviceActivityCenterUtil.getActiveStopScheduleTimerActivity(for: self) == nil
+
+        return startOutOfSync || stopOutOfSync
     }
 
     init(
@@ -103,7 +231,6 @@ class BlockedProfiles {
         self.enableLiveActivity = enableLiveActivity
         self.reminderTimeInSeconds = reminderTimeInSeconds
         self.customReminderMessage = customReminderMessage
-        self.enableLiveActivity = enableLiveActivity
         self.enableBreaks = enableBreaks
         self.breakTimeInMinutes = breakTimeInMinutes
         self.enableStrictMode = enableStrictMode
@@ -124,6 +251,7 @@ class BlockedProfiles {
         self.managedByChildId = managedByChildId
         self.syncVersion = syncVersion
         self.needsAppSelection = needsAppSelection
+        self.profileSchemaVersion = Self.currentSchemaVersion
     }
 
     static func fetchProfiles(in context: ModelContext) throws
@@ -343,6 +471,10 @@ class BlockedProfiles {
             physicalUnblockNFCTagId: profile.physicalUnblockNFCTagId,
             physicalUnblockQRCodeId: profile.physicalUnblockQRCodeId,
             schedule: profile.schedule,
+            startSchedule: profile.startSchedule,
+            stopSchedule: profile.stopSchedule,
+            startTriggersSchedule: profile.startTriggers.schedule,
+            stopConditionsSchedule: profile.stopConditions.schedule,
             geofenceRule: profile.geofenceRule,
             disableBackgroundStops: profile.disableBackgroundStops,
             isManaged: profile.isManaged,
@@ -488,6 +620,17 @@ class BlockedProfiles {
         )
 
         context.insert(cloned)
+
+        // Copy V2 trigger data
+        cloned.startTriggers = source.startTriggers
+        cloned.stopConditions = source.stopConditions
+        cloned.startNFCTagId = source.startNFCTagId
+        cloned.startQRCodeId = source.startQRCodeId
+        cloned.stopNFCTagId = source.stopNFCTagId
+        cloned.stopQRCodeId = source.stopQRCodeId
+        cloned.startSchedule = source.startSchedule
+        cloned.stopSchedule = source.stopSchedule
+
         try context.save()
         return cloned
     }
@@ -514,5 +657,141 @@ class BlockedProfiles {
 
         let newDomains = domains.filter { $0 != domain }
         _ = try updateProfile(profile, in: context, domains: newDomains)
+    }
+}
+
+// MARK: - Migration
+
+extension BlockedProfiles {
+    /// Current schema version
+    static let currentSchemaVersion = 2
+
+    /// Whether this profile needs migration
+    var needsMigration: Bool {
+        profileSchemaVersion < Self.currentSchemaVersion
+    }
+
+    /// Whether this profile uses a newer schema version than this app supports.
+    /// V3+ profiles should be read-only on this app version.
+    var isNewerSchemaVersion: Bool {
+        profileSchemaVersion > Self.currentSchemaVersion
+    }
+
+    /// Migrates to V2 if eligible (not already V2, no active session).
+    /// Returns true if migration was performed.
+    @discardableResult
+    func migrateToV2IfEligible(hasActiveSession: Bool) -> Bool {
+        guard needsMigration else { return false }
+        guard !hasActiveSession else {
+            Log.info("Deferring migration for '\(name)' — active session", category: .app)
+            return false
+        }
+        migrateToV2IfNeeded()
+        return !needsMigration
+    }
+
+    /// Migrates profile from V1 (blockingStrategyId) to V2 (triggers) if needed
+    func migrateToV2IfNeeded() {
+        guard profileSchemaVersion < 2 else { return }
+
+        // Step 1: Migrate strategy to triggers
+        var (start, stop) = TriggerMigration.migrateFromStrategy(
+            blockingStrategyId
+        )
+
+        // Step 2: Migrate physical unlock
+        if physicalUnblockNFCTagId != nil || physicalUnblockQRCodeId != nil {
+            let (updatedStop, tagId) = TriggerMigration.migratePhysicalUnlock(
+                stopConditions: stop,
+                physicalUnblockNFCTagId: physicalUnblockNFCTagId,
+                physicalUnblockQRCodeId: physicalUnblockQRCodeId
+            )
+            stop = updatedStop
+            if physicalUnblockNFCTagId != nil {
+                stopNFCTagId = tagId
+            } else {
+                stopQRCodeId = tagId
+            }
+        }
+
+        // Step 3: Migrate schedule
+        let (startSched, stopSched) = TriggerMigration.migrateSchedule(schedule)
+        startSchedule = startSched
+        stopSchedule = stopSched
+
+        // Enable schedule trigger if schedule was active
+        if schedule?.isActive == true {
+            start.schedule = true
+            stop.schedule = true
+        }
+
+        startTriggers = start
+        stopConditions = stop
+
+        // Step 4: Verify encoding succeeded before marking as migrated
+        // If any Data field is nil after setting, encoding failed silently
+        guard startTriggersData != nil, stopConditionsData != nil else {
+            Log.error(
+                "Migration encoding failed for '\(name)' — staying at V1",
+                category: .app
+            )
+            return
+        }
+
+        // Step 5: Mark as migrated (only if all data encoded successfully)
+        profileSchemaVersion = 2
+
+        // Step 6: Update legacy strategy ID for backwards compatibility
+        updateCompatibilityStrategyId()
+    }
+
+    /// Best-match strategy ID for backwards compatibility with older app versions.
+    /// Maps new triggers to closest legacy strategy.
+    var compatibilityStrategyId: String {
+        let start = startTriggers
+        let stop = stopConditions
+
+        // NFC auto-start with same/specific tag stop
+        if start.hasNFC && (stop.sameNFC || stop.specificNFC) {
+            return "NFCBlockingStrategy"
+        }
+        // Manual start + NFC stop + timer
+        if start.manual && stop.hasNFC && stop.timer {
+            return "NFCTimerBlockingStrategy"
+        }
+        // Manual start + NFC stop
+        if start.manual && stop.hasNFC {
+            return "NFCManualBlockingStrategy"
+        }
+        // QR auto-start with same/specific code stop
+        if start.hasQR && (stop.sameQR || stop.specificQR) {
+            return "QRCodeBlockingStrategy"
+        }
+        // Manual start + QR stop + timer
+        if start.manual && stop.hasQR && stop.timer {
+            return "QRTimerBlockingStrategy"
+        }
+        // Manual start + QR stop
+        if start.manual && stop.hasQR {
+            return "QRManualBlockingStrategy"
+        }
+        // NFC/QR auto-start only (no manual) with NFC/QR stop
+        if start.hasNFC && stop.hasNFC {
+            return "NFCManualBlockingStrategy"
+        }
+        if start.hasQR && stop.hasQR {
+            return "QRManualBlockingStrategy"
+        }
+        if start.manual && stop.timer && !stop.hasNFC && !stop.hasQR {
+            return "ShortcutTimerBlockingStrategy"
+        }
+
+        // Default to manual
+        return "ManualBlockingStrategy"
+    }
+
+    /// Updates blockingStrategyId for backwards compatibility with older app versions
+    func updateCompatibilityStrategyId() {
+        blockingStrategyId = compatibilityStrategyId
     }
 }

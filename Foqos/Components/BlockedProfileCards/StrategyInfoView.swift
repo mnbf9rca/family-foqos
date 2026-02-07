@@ -45,6 +45,9 @@ struct StrategyInfoView: View {
           .foregroundColor(.primary)
           .font(.subheadline)
           .fontWeight(.medium)
+          .lineLimit(2)
+          .minimumScaleFactor(0.8)
+          .fixedSize(horizontal: false, vertical: true)
       }
     }
   }

@@ -105,7 +105,8 @@ class SyncCoordinator: ObservableObject {
 
       // Create sync objects on main queue (accesses SwiftData properties)
       let deviceId = SharedData.deviceSyncId.uuidString
-      let syncedProfiles = profiles.map { SyncedProfile(from: $0, originDeviceId: deviceId) }
+      let syncedProfiles = profiles.filter { !$0.isNewerSchemaVersion }
+        .map { SyncedProfile(from: $0, originDeviceId: deviceId) }
       let syncedLocations = locations.map { SyncedLocation(from: $0) }
 
       Log.info("Pushing \(syncedProfiles.count) profiles and \(syncedLocations.count) locations to CloudKit", category: .sync)
@@ -150,9 +151,28 @@ class SyncCoordinator: ObservableObject {
           byID: syncedProfile.profileId,
           in: context
         ) {
-          // Update existing profile if remote version is newer
-          if syncedProfile.version > existingProfile.syncVersion {
+          // Check schema version - ignore changes from older schema versions
+          if syncedProfile.profileSchemaVersion < existingProfile.profileSchemaVersion {
+            Log.warning(
+              "Ignoring sync from older schema version for profile: \(existingProfile.name) (\(existingProfile.id.uuidString))",
+              category: .sync
+            )
+            SyncConflictManager.shared.addConflict(
+              profileId: existingProfile.id,
+              profileName: existingProfile.name
+            )
+
+            // Auto-heal: push V2 data back to CloudKit so stale V1 data doesn't persist
+            pushProfile(existingProfile)
+            Log.info(
+              "Auto-healed: pushed V2 data back to CloudKit for '\(existingProfile.name)'",
+              category: .sync
+            )
+          } else if syncedProfile.version > existingProfile.syncVersion {
+            // Update existing profile if remote version is newer and schema is same or newer
             updateLocalProfile(existingProfile, from: syncedProfile, in: context)
+            // Clear any existing sync conflict now that the profile has been updated
+            SyncConflictManager.shared.clearConflict(profileId: existingProfile.id)
           }
         } else {
           // Create new profile from synced data
@@ -214,6 +234,25 @@ class SyncCoordinator: ObservableObject {
     profile.syncVersion = synced.version
     profile.updatedAt = synced.updatedAt
 
+    // V2 trigger fields — only apply if synced profile has V2 data
+    if let startTriggers = synced.startTriggers {
+      profile.startTriggers = startTriggers
+    }
+    if let stopConditions = synced.stopConditions {
+      profile.stopConditions = stopConditions
+    }
+    if synced.startScheduleData != nil {
+      profile.startSchedule = synced.startSchedule
+    }
+    if synced.stopScheduleData != nil {
+      profile.stopSchedule = synced.stopSchedule
+    }
+    profile.startNFCTagId = synced.startNFCTagId
+    profile.startQRCodeId = synced.startQRCodeId
+    profile.stopNFCTagId = synced.stopNFCTagId
+    profile.stopQRCodeId = synced.stopQRCodeId
+    profile.profileSchemaVersion = max(profile.profileSchemaVersion, synced.profileSchemaVersion)
+
     // Update snapshot for extensions
     BlockedProfiles.updateSnapshot(for: profile)
 
@@ -249,6 +288,21 @@ class SyncCoordinator: ObservableObject {
       syncVersion: synced.version,
       needsAppSelection: true  // New profile from another device needs app selection
     )
+
+    // Apply V2 trigger fields
+    if let startTriggers = synced.startTriggers {
+      profile.startTriggers = startTriggers
+    }
+    if let stopConditions = synced.stopConditions {
+      profile.stopConditions = stopConditions
+    }
+    profile.startSchedule = synced.startSchedule
+    profile.stopSchedule = synced.stopSchedule
+    profile.startNFCTagId = synced.startNFCTagId
+    profile.startQRCodeId = synced.startQRCodeId
+    profile.stopNFCTagId = synced.stopNFCTagId
+    profile.stopQRCodeId = synced.stopQRCodeId
+    profile.profileSchemaVersion = synced.profileSchemaVersion
 
     context.insert(profile)
     BlockedProfiles.updateSnapshot(for: profile)
@@ -442,7 +496,7 @@ class SyncCoordinator: ObservableObject {
     do {
       // Re-push all profiles
       let profiles = try BlockedProfiles.fetchProfiles(in: context)
-      for profile in profiles {
+      for profile in profiles where !profile.isNewerSchemaVersion {
         try? await ProfileSyncManager.shared.pushProfile(profile)
         Log.info("Re-pushed profile '\(profile.name)' after reset", category: .sync)
       }
@@ -463,6 +517,10 @@ class SyncCoordinator: ObservableObject {
   /// Push a profile to CloudKit when global sync is enabled
   func pushProfile(_ profile: BlockedProfiles) {
     guard ProfileSyncManager.shared.isEnabled else { return }
+    guard !profile.isNewerSchemaVersion else {
+      Log.info("Skipping push for newer schema profile '\(profile.name)'", category: .sync)
+      return
+    }
     guard let context = modelContext else {
       Log.info("No model context available for push", category: .sync)
       return

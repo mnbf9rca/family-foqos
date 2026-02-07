@@ -30,43 +30,44 @@ class ScheduleTimerActivity: TimerActivity {
   func start(for profile: SharedData.ProfileSnapshot) {
     let profileId = profile.id.uuidString
 
-    guard let schedule = profile.schedule
-    else {
-      log.info("Start schedule timer activity for \(profileId), no schedule for profile found")
+    // Check start schedule — prefer V2, fall back to legacy
+    let isTodayScheduled: Bool
+    let isOldEnough: Bool
+
+    if let startSchedule = profile.startSchedule, profile.startTriggersSchedule == true {
+      isTodayScheduled = startSchedule.isTodayScheduled()
+      isOldEnough = startSchedule.olderThan15Minutes()
+    } else if let schedule = profile.schedule {
+      isTodayScheduled = schedule.isTodayScheduled()
+      isOldEnough = schedule.olderThan15Minutes()
+    } else {
+      log.info("Start schedule timer activity for \(profileId), no schedule found")
       return
     }
 
-    if !schedule.isTodayScheduled() {
-      log.info(
-        "Start schedule timer activity for \(profileId), schedule is not scheduled for today")
+    if !isTodayScheduled {
+      log.info("Start schedule timer activity for \(profileId), not scheduled for today")
       return
     }
 
-    if !schedule.olderThan15Minutes() {
+    if !isOldEnough {
       log.info("Start schedule timer activity for \(profileId), schedule is too new")
       return
     }
 
-    log.info("Start schedule timer activity for \(profileId), profile: \(profileId)")
+    log.info("Start schedule timer activity for \(profileId)")
 
     if let existingSession = SharedData.getActiveSharedSession() {
       if existingSession.blockedProfileId == profile.id {
-        log.info(
-          "Start schedule timer activity for \(profileId), existing session profile matches device activity profile, continuing active session"
-        )
+        log.info("Start schedule timer for \(profileId), continuing active session")
         return
       } else {
-        log.info(
-          "Start schedule timer activity for \(profileId), existing session profile does not match device activity profile, ending active session"
-        )
+        log.info("Start schedule timer for \(profileId), ending different active session")
         SharedData.endActiveSharedSession()
       }
     }
 
-    // Create a new active scheduled session for the profile
     SharedData.createSessionForSchedular(for: profile.id)
-
-    // Start restrictions
     appBlocker.activateRestrictions(for: profile)
   }
 
@@ -93,11 +94,4 @@ class ScheduleTimerActivity: TimerActivity {
     SharedData.endActiveSharedSession()
   }
 
-  func getScheduleInterval(from schedule: BlockedProfileSchedule) -> (
-    intervalStart: DateComponents, intervalEnd: DateComponents
-  ) {
-    let intervalStart = DateComponents(hour: schedule.startHour, minute: schedule.startMinute)
-    let intervalEnd = DateComponents(hour: schedule.endHour, minute: schedule.endMinute)
-    return (intervalStart: intervalStart, intervalEnd: intervalEnd)
-  }
 }

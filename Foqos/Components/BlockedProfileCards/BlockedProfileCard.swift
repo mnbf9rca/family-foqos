@@ -57,11 +57,13 @@ struct BlockedProfileCard: View {
 
           // Menu button moved to top right
           Menu {
-            Button(action: {
-              UIImpactFeedbackGenerator(style: .light).impactOccurred()
-              onEditTapped()
-            }) {
-              Label("Edit", systemImage: "pencil")
+            if !profile.isNewerSchemaVersion {
+              Button(action: {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                onEditTapped()
+              }) {
+                Label("Edit", systemImage: "pencil")
+              }
             }
             Button(action: {
               UIImpactFeedbackGenerator(style: .light).impactOccurred()
@@ -70,21 +72,23 @@ struct BlockedProfileCard: View {
               Label("Stats for Nerds", systemImage: "eyeglasses")
             }
 
-            Divider()
+            if !profile.isNewerSchemaVersion {
+              Divider()
 
-            if isActive {
-              Button(action: {
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                onStopTapped()
-              }) {
-                Label("Stop", systemImage: "stop.fill")
-              }
-            } else {
-              Button(action: {
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                onStartTapped()
-              }) {
-                Label("Start", systemImage: "play.fill")
+              if isActive {
+                Button(action: {
+                  UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                  onStopTapped()
+                }) {
+                  Label("Stop", systemImage: "stop.fill")
+                }
+              } else {
+                Button(action: {
+                  UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                  onStartTapped()
+                }) {
+                  Label("Start", systemImage: "play.fill")
+                }
               }
             }
           } label: {
@@ -106,28 +110,39 @@ struct BlockedProfileCard: View {
           }
         }
 
-        // Middle section - Strategy and apps info
-        VStack(alignment: .leading, spacing: 16) {
-          // Strategy and schedule side-by-side with divider
-          HStack(spacing: 16) {
-            StrategyInfoView(strategyId: profile.blockingStrategyId)
-
-            Divider()
-              .frame(height: 24)
-
-            ProfileScheduleRow(profile: profile, isActive: isActive)
+        if profile.isNewerSchemaVersion {
+          // Read-only indicator for profiles from newer app version
+          HStack(spacing: 4) {
+            Image(systemName: "exclamationmark.triangle.fill")
+              .foregroundColor(.orange)
+            Text("Update app to edit")
+              .font(.caption2)
+              .foregroundStyle(.secondary)
           }
+        } else {
+          // Middle section - Strategy and apps info
+          VStack(alignment: .leading, spacing: 16) {
+            // Strategy and schedule side-by-side with divider
+            HStack(spacing: 16) {
+              StrategyInfoView(strategyId: profile.blockingStrategyId)
 
-          // Using the new ProfileStatsRow component
-          ProfileStatsRow(
-            selectedActivity: profile.selectedActivity,
-            sessionCount: profile.sessions.count,
-            domainsCount: profile.domains?.count ?? 0
-          )
+              Divider()
+                .frame(height: 24)
+
+              ProfileScheduleRow(profile: profile, isActive: isActive)
+            }
+
+            // Using the new ProfileStatsRow component
+            ProfileStatsRow(
+              selectedActivity: profile.selectedActivity,
+              sessionCount: profile.sessions.count,
+              domainsCount: profile.domains?.count ?? 0
+            )
+          }
         }
 
-        // Show app selection banner if needed
-        if profile.needsAppSelection {
+        // Show app selection banner if needed (not for newer schema profiles)
+        if profile.needsAppSelection && !profile.isNewerSchemaVersion {
           Button(action: {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
             onAppSelectionTapped()
@@ -139,19 +154,21 @@ struct BlockedProfileCard: View {
 
         Spacer(minLength: 4)
 
-        ProfileTimerButton(
-          isActive: isActive,
-          isBreakAvailable: isBreakAvailable,
-          isBreakActive: isBreakActive,
-          elapsedTime: elapsedTime,
-          onStartTapped: onStartTapped,
-          onStopTapped: onStopTapped,
-          onBreakTapped: onBreakTapped,
-          isOneMoreMinuteActive: isOneMoreMinuteActive,
-          isOneMoreMinuteAvailable: isOneMoreMinuteAvailable,
-          oneMoreMinuteTimeRemaining: oneMoreMinuteTimeRemaining,
-          onOneMoreMinuteTapped: onOneMoreMinuteTapped
-        )
+        if !profile.isNewerSchemaVersion {
+          ProfileTimerButton(
+            isActive: isActive,
+            isBreakAvailable: isBreakAvailable,
+            isBreakActive: isBreakActive,
+            elapsedTime: elapsedTime,
+            onStartTapped: onStartTapped,
+            onStopTapped: onStopTapped,
+            onBreakTapped: onBreakTapped,
+            isOneMoreMinuteActive: isOneMoreMinuteActive,
+            isOneMoreMinuteAvailable: isOneMoreMinuteAvailable,
+            oneMoreMinuteTimeRemaining: oneMoreMinuteTimeRemaining,
+            onOneMoreMinuteTapped: onOneMoreMinuteTapped
+          )
+        }
       }
       .padding(16)
     }

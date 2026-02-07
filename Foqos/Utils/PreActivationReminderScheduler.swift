@@ -12,10 +12,10 @@ enum PreActivationReminderScheduler {
             let profiles = try BlockedProfiles.fetchProfiles(in: context)
 
             for profile in profiles {
-                guard profile.preActivationReminderEnabled,
-                      let schedule = profile.schedule,
-                      schedule.isActive
-                else {
+                let hasActiveSchedule =
+                    (profile.startTriggers.schedule && profile.startSchedule?.isActive == true)
+                    || profile.schedule?.isActive == true
+                guard profile.preActivationReminderEnabled, hasActiveSchedule else {
                     continue
                 }
 

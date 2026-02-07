@@ -103,6 +103,9 @@ class StrategyManager: ObservableObject {
       // live activities can only be started when the app is in the foreground
       if let session = activeSession {
         liveActivityManager.startSessionActivity(session: session)
+
+        // Re-register stop schedule on app launch
+        DeviceActivityCenterUtil.scheduleStopActivity(for: session.blockedProfile)
       }
     } else {
       // Close live activity if no session is active and a scheduled session might have ended
@@ -132,7 +135,7 @@ class StrategyManager: ObservableObject {
         return
       }
 
-      stopBlocking(context: context)
+      stopBlocking(context: context, bypassStrategy: true)
     } else {
       checkGeofenceAndStart(context: context, activeProfile: activeProfile)
     }
@@ -176,7 +179,7 @@ class StrategyManager: ObservableObject {
       self.isCheckingGeofence = false
 
       if result.isSatisfied {
-        self.stopBlocking(context: context)
+        self.stopBlocking(context: context, bypassStrategy: true)
       } else {
         self.errorMessage = result.failureMessage ?? "Location restriction not met."
       }
@@ -186,25 +189,25 @@ class StrategyManager: ObservableObject {
   /// Check geofence rule before starting and show warning if user is not at location
   private func checkGeofenceAndStart(context: ModelContext, activeProfile: BlockedProfiles?) {
     guard let profile = activeProfile else {
-      startBlocking(context: context, activeProfile: activeProfile)
+      startBlocking(context: context, activeProfile: activeProfile, bypassStrategy: true)
       return
     }
 
     // Fast path: if setting is off, skip check
     guard warnWhenActivatingAwayFromLocation else {
-      startBlocking(context: context, activeProfile: profile)
+      startBlocking(context: context, activeProfile: profile, bypassStrategy: true)
       return
     }
 
     // Fast path: if profile has no geofence rule, skip check
     guard let geofenceRule = profile.geofenceRule, geofenceRule.hasLocations else {
-      startBlocking(context: context, activeProfile: profile)
+      startBlocking(context: context, activeProfile: profile, bypassStrategy: true)
       return
     }
 
     // If location permission not granted, proceed without warning (don't block activation)
     if locationManager.isNotDetermined || locationManager.isDenied {
-      startBlocking(context: context, activeProfile: profile)
+      startBlocking(context: context, activeProfile: profile, bypassStrategy: true)
       return
     }
 
@@ -231,7 +234,7 @@ class StrategyManager: ObservableObject {
 
       if result.isSatisfied {
         // User is at location, proceed without warning
-        self.startBlocking(context: context, activeProfile: profile)
+        self.startBlocking(context: context, activeProfile: profile, bypassStrategy: true)
       } else {
         // User is NOT at location, show warning
         self.pendingStartProfile = profile
@@ -274,7 +277,7 @@ class StrategyManager: ObservableObject {
       return
     }
 
-    startBlocking(context: context, activeProfile: profile)
+    startBlocking(context: context, activeProfile: profile, bypassStrategy: true)
     cancelGeofenceStart()
   }
 
@@ -439,6 +442,7 @@ class StrategyManager: ObservableObject {
   }
 
   func startTimer() {
+    stopTimer()
     timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
       Task { @MainActor in
         guard let self else { return }
@@ -488,7 +492,7 @@ class StrategyManager: ObservableObject {
     context: ModelContext
   ) {
     guard let profileUUID = UUID(uuidString: profileId) else {
-      self.errorMessage = "failed to parse profile in tag"
+      self.errorMessage = "This tag doesn't contain a valid profile link"
       return
     }
 
@@ -500,7 +504,7 @@ class StrategyManager: ObservableObject {
         )
       else {
         self.errorMessage =
-          "Failed to find a profile stored locally that matches the tag"
+          "No matching profile found on this device. The profile may have been deleted or this tag belongs to a different device."
         return
       }
 
@@ -514,6 +518,31 @@ class StrategyManager: ObservableObject {
           return
         }
 
+        // When switching profiles, validate the new profile's start trigger
+        // BEFORE stopping the current session to avoid leaving the user with
+        // no active session if the new profile isn't configured for deep links
+        let isSwitching = localActiveSession.blockedProfile.id != profile.id
+        if isSwitching {
+          guard profile.startTriggers.deepLink else {
+            self.errorMessage =
+              "\(profile.name) is not configured to start via written NFC or printed QR"
+            return
+          }
+        }
+
+        let stopResult = StrategyManager.canStop(
+          with: .deepLink,
+          conditions: localActiveSession.blockedProfile.stopConditions,
+          sessionTag: localActiveSession.tag,
+          stopNFCTagId: localActiveSession.blockedProfile.stopNFCTagId,
+          stopQRCodeId: localActiveSession.blockedProfile.stopQRCodeId
+        )
+        guard stopResult.allowed else {
+          self.errorMessage = stopResult.errorMessage
+            ?? "\(localActiveSession.blockedProfile.name) cannot be stopped via written NFC or printed QR"
+          return
+        }
+
         _ =
           manualStrategy
           .stopBlocking(
@@ -521,24 +550,30 @@ class StrategyManager: ObservableObject {
             session: localActiveSession
           )
 
-        if localActiveSession.blockedProfile.id != profile.id {
+        if isSwitching {
           Log.info("User is switching sessions from deep link", category: .strategy)
 
           _ = manualStrategy.startBlocking(
             context: context,
             profile: profile,
-            forceStart: true
+            forceStart: false
           )
         }
       } else {
+        guard profile.startTriggers.deepLink else {
+          self.errorMessage =
+            "\(profile.name) is not configured to start via written NFC or printed QR"
+          return
+        }
+
         _ = manualStrategy.startBlocking(
           context: context,
           profile: profile,
-          forceStart: true
+          forceStart: false
         )
       }
     } catch {
-      self.errorMessage = "Something went wrong fetching profile"
+      self.errorMessage = "Something went wrong. Please try again."
     }
   }
 
@@ -859,6 +894,7 @@ class StrategyManager: ObservableObject {
                 currentSession.startTime != remoteStartTime
               {
                 currentSession.startTime = remoteStartTime
+                try? currentSession.modelContext?.save()
                 Log.info("Reconciled local startTime to \(remoteStartTime)", category: .strategy)
               }
             case .error(let error):
@@ -882,6 +918,16 @@ class StrategyManager: ObservableObject {
 
         // Remove all strategy timer activities
         DeviceActivityCenterUtil.removeAllStrategyTimerActivities()
+
+        // Migrate deferred profile now that session has ended
+        if endedProfile.needsMigration {
+          endedProfile.migrateToV2IfNeeded()
+          if !endedProfile.needsMigration, let context = endedProfile.modelContext {
+            try? context.save()
+            Log.info("Migrated deferred profile '\(endedProfile.name)' on session end", category: .app)
+            DeviceActivityCenterUtil.scheduleTimerActivity(for: endedProfile)
+          }
+        }
 
         // Sync session stop using CAS (if global sync is enabled)
         if self.shouldSyncSessionChange {
@@ -1026,6 +1072,7 @@ class StrategyManager: ObservableObject {
               currentSession.startTime != remoteStartTime
             {
               currentSession.startTime = remoteStartTime
+              try? context.save()
               Log.info("Reconciled scheduled session startTime to \(remoteStartTime)", category: .strategy)
             }
           case .error(let error):
@@ -1067,20 +1114,28 @@ class StrategyManager: ObservableObject {
     SharedData.flushCompletedSessionsForSchedular()
   }
 
-  private func resultFromURL(_ url: String) -> NFCResult {
-    return NFCResult(id: url, url: url, DateScanned: Date())
-  }
-
+  /// Start blocking for the given profile.
+  /// - Parameter bypassStrategy: When true, uses ManualBlockingStrategy to create the session
+  ///   directly. Use this when the V2 trigger system has already routed the start action
+  ///   (e.g., NFC tag was already scanned) to avoid redundant scanning by legacy strategies.
   private func startBlocking(
     context: ModelContext,
-    activeProfile: BlockedProfiles?
+    activeProfile: BlockedProfiles?,
+    bypassStrategy: Bool = false
   ) {
     guard let definedProfile = activeProfile else {
       Log.info("No active profile found, calling stop blocking with no session", category: .strategy)
       return
     }
 
-    if let strategyId = definedProfile.blockingStrategyId {
+    // When bypassStrategy is true, the V2 trigger system has already routed
+    // the start action. Use ManualBlockingStrategy to create the session
+    // directly, avoiding redundant NFC/QR scans from legacy strategies.
+    let strategyId = bypassStrategy
+      ? ManualBlockingStrategy.id
+      : definedProfile.blockingStrategyId
+
+    if let strategyId {
       let strategy = getStrategy(id: strategyId)
       let view = strategy.startBlocking(
         context: context,
@@ -1093,15 +1148,157 @@ class StrategyManager: ObservableObject {
         customStrategyView = customView
       }
     }
+
+    DeviceActivityCenterUtil.scheduleStopActivity(for: definedProfile)
   }
 
-  private func stopBlocking(context: ModelContext) {
+  /// Start blocking with a pre-scanned NFC tag (for trigger-based start)
+  func startWithNFCTag(context: ModelContext, profile: BlockedProfiles, tagId: String) {
+    // Validate specific NFC tag if required
+    if profile.startTriggers.specificNFC {
+      guard let requiredTag = profile.startNFCTagId, tagId == requiredTag else {
+        errorMessage = "This NFC tag doesn't match the one configured for this profile"
+        return
+      }
+    }
+    let prefixedTag = "nfc:\(tagId)"
+    startWithTag(context: context, profile: profile, tag: prefixedTag)
+  }
+
+  /// Start blocking with a pre-scanned QR code (for trigger-based start)
+  func startWithQRCode(context: ModelContext, profile: BlockedProfiles, codeValue: String) {
+    // Validate specific QR code if required
+    if profile.startTriggers.specificQR {
+      guard let requiredCode = profile.startQRCodeId, codeValue == requiredCode else {
+        errorMessage = "This QR code doesn't match the one configured for this profile"
+        return
+      }
+    }
+    let prefixedTag = "qr:\(codeValue)"
+    startWithTag(context: context, profile: profile, tag: prefixedTag)
+  }
+
+  /// Stop blocking with a scanned NFC tag (for stop-condition-based stop)
+  func stopWithNFCTag(context: ModelContext, tagId: String) {
+    guard let session = activeSession else {
+      errorMessage = "No active session to stop"
+      return
+    }
+
+    let validation = Self.canStop(
+      with: .nfc(tag: tagId),
+      conditions: session.blockedProfile.stopConditions,
+      sessionTag: session.tag,
+      stopNFCTagId: session.blockedProfile.stopNFCTagId,
+      stopQRCodeId: session.blockedProfile.stopQRCodeId
+    )
+
+    if validation.allowed {
+      stopBlocking(context: context, bypassStrategy: true)
+    } else {
+      errorMessage = validation.errorMessage
+    }
+  }
+
+  /// Stop blocking with a scanned QR code (for stop-condition-based stop)
+  func stopWithQRCode(context: ModelContext, codeValue: String) {
+    guard let session = activeSession else {
+      errorMessage = "No active session to stop"
+      return
+    }
+
+    let validation = Self.canStop(
+      with: .qr(code: codeValue),
+      conditions: session.blockedProfile.stopConditions,
+      sessionTag: session.tag,
+      stopNFCTagId: session.blockedProfile.stopNFCTagId,
+      stopQRCodeId: session.blockedProfile.stopQRCodeId
+    )
+
+    if validation.allowed {
+      stopBlocking(context: context, bypassStrategy: true)
+    } else {
+      errorMessage = validation.errorMessage
+    }
+  }
+
+  /// Start blocking with a pre-scanned tag (internal helper)
+  private func startWithTag(context: ModelContext, profile: BlockedProfiles, tag: String) {
+    AppBlockerUtil().activateRestrictions(for: BlockedProfiles.getSnapshot(for: profile))
+
+    let session = BlockedProfileSession.createSession(
+      in: context,
+      withTag: tag,
+      withProfile: profile,
+      forceStart: false
+    )
+
+    // Update the snapshot of the profile in case some settings were changed
+    BlockedProfiles.updateSnapshot(for: session.blockedProfile)
+
+    errorMessage = nil
+    activeSession = session
+    startTimer()
+    liveActivityManager.startSessionActivity(session: session)
+
+    // Register stop schedule if configured
+    DeviceActivityCenterUtil.scheduleStopActivity(for: profile)
+
+    // Refresh widgets when session starts
+    WidgetCenter.shared.reloadTimelines(ofKind: "ProfileControlWidget")
+
+    // Sync session start using CAS (if global sync is enabled)
+    if shouldSyncSessionChange {
+      Task {
+        let result = await SessionSyncService.shared.startSession(
+          profileId: session.blockedProfile.id,
+          startTime: session.startTime
+        )
+
+        switch result {
+        case .started(let seq):
+          Log.info("Session synced with seq=\(seq)", category: .strategy)
+        case .alreadyActive(let existing):
+          Log.info(
+            "Joined existing session from \(existing.sessionOriginDevice ?? "unknown")",
+            category: .strategy
+          )
+          // Reconcile local startTime to match authoritative remote startTime
+          if let remoteStartTime = existing.startTime,
+            let currentSession = self.activeSession,
+            currentSession.startTime != remoteStartTime
+          {
+            currentSession.startTime = remoteStartTime
+            try? context.save()
+            Log.info("Reconciled local startTime to \(remoteStartTime)", category: .strategy)
+          }
+        case .error(let error):
+          Log.info("Failed to sync session start - \(error)", category: .strategy)
+        }
+      }
+    }
+
+    Log.info("Started session for profile '\(profile.name)' with tag", category: .strategy)
+  }
+
+  /// Stop the active blocking session.
+  /// - Parameter bypassStrategy: When true, uses ManualBlockingStrategy to end the session
+  ///   directly. Use this when the V2 trigger system has already validated stop conditions
+  ///   (e.g., NFC tag was already scanned) to avoid redundant scanning by legacy strategies.
+  private func stopBlocking(context: ModelContext, bypassStrategy: Bool = false) {
     guard let session = activeSession else {
       Log.info("No active session found, calling stop blocking with no session", category: .strategy)
       return
     }
 
-    if let strategyId = session.blockedProfile.blockingStrategyId {
+    // When bypassStrategy is true, the caller has already handled any required
+    // NFC/QR scanning and validation. Use ManualBlockingStrategy to end the
+    // session directly, avoiding a redundant second scan from legacy strategies.
+    let strategyId = bypassStrategy
+      ? ManualBlockingStrategy.id
+      : session.blockedProfile.blockingStrategyId
+
+    if let strategyId {
       let strategy = getStrategy(id: strategyId)
       let view = strategy.stopBlocking(context: context, session: session)
 
@@ -1110,6 +1307,8 @@ class StrategyManager: ObservableObject {
         customStrategyView = customView
       }
     }
+
+    DeviceActivityCenterUtil.removeStopScheduleActivity(for: session.blockedProfile)
   }
 
   private func scheduleReminder(profile: BlockedProfiles) {
@@ -1159,11 +1358,14 @@ class StrategyManager: ObservableObject {
 
       do {
         if let profile = try BlockedProfiles.findProfile(byID: profileId, in: context) {
-          if profile.schedule == nil {
+          let hasScheduledStart = profile.startTriggers.schedule
+            && profile.startSchedule?.isActive == true
+          let hasLegacySchedule = profile.schedule?.isActive == true
+          if !hasScheduledStart && !hasLegacySchedule {
             Log.info("Profile '\(profile.name)' has no schedule but has device activity registered. Removing ghost schedule...", category: .strategy)
             DeviceActivityCenterUtil.removeScheduleTimerActivities(for: profile)
           } else {
-            Log.info("Profile '\(profile.name)' has schedule - activity is valid ✅", category: .strategy)
+            Log.info("Profile '\(profile.name)' has schedule - activity is valid", category: .strategy)
           }
         } else {
           // Profile truly doesn't exist in database
@@ -1201,16 +1403,6 @@ class StrategyManager: ObservableObject {
   }
 
   // MARK: - Remote Session Sync
-
-  /// Set up observers for remote session changes from other devices.
-  /// Note: Session sync is now handled directly by SyncCoordinator which calls
-  /// startRemoteSession/stopRemoteSession methods. This method is kept for future
-  /// extensibility but no longer observes .syncedSessionsReceived.
-  func setupRemoteSessionObservers() {
-    // SyncCoordinator now handles session sync directly by calling
-    // startRemoteSession() and stopRemoteSession() methods.
-    // No notification observers needed here.
-  }
 
   /// Start a session triggered by remote device
   func startRemoteSession(
@@ -1285,4 +1477,228 @@ class StrategyManager: ObservableObject {
 extension Notification.Name {
   static let remoteSessionStartRequested = Notification.Name("remoteSessionStartRequested")
   static let remoteSessionStopRequested = Notification.Name("remoteSessionStopRequested")
+}
+
+// MARK: - Start Action Determination
+
+/// Action to take when user taps Start button
+enum StartAction: Equatable, Hashable {
+  case startImmediately
+  case scanNFC
+  case scanQR
+  case waitForSchedule
+  case deepLinkOnly
+  case cannotStart(reason: String)
+  indirect case showPicker(options: [StartAction])
+}
+
+/// Action to take when user taps Stop button
+enum StopAction: Equatable, Hashable {
+  case stopImmediately
+  case scanNFC
+  case scanQR
+  case cannotStop(reason: String)
+  indirect case showPicker(options: [StopAction])
+}
+
+extension StrategyManager {
+  /// Determines what action to take based on enabled start triggers.
+  /// - Parameters:
+  ///   - triggers: The profile's start triggers.
+  ///   - stopConditions: The profile's stop conditions. Pass `nil` to skip
+  ///     stop-condition validation (e.g., in tests). An empty `ProfileStopConditions()`
+  ///     with no conditions enabled will return `.cannotStart`.
+  static func determineStartAction(
+    for triggers: ProfileStartTriggers,
+    stopConditions: ProfileStopConditions? = nil
+  ) -> StartAction {
+    // Guard: don't allow starting if stop conditions are missing
+    if let stop = stopConditions, !stop.isValid {
+      return .cannotStart(reason: "No stop conditions configured. Edit the profile to add one.")
+    }
+
+    var manualOptions: [StartAction] = []
+
+    if triggers.manual {
+      manualOptions.append(.startImmediately)
+    }
+    if triggers.hasNFC {
+      manualOptions.append(.scanNFC)
+    }
+    if triggers.hasQR {
+      manualOptions.append(.scanQR)
+    }
+
+    // If no manual options but has schedule/deeplink only
+    if manualOptions.isEmpty {
+      if triggers.schedule {
+        return .waitForSchedule
+      }
+      if triggers.deepLink {
+        return .deepLinkOnly
+      }
+      return .cannotStart(reason: "No start triggers configured. Edit the profile to add one.")
+    }
+
+    // Single option - do it directly
+    if manualOptions.count == 1 {
+      return manualOptions[0]
+    }
+
+    // Multiple options - show picker
+    return .showPicker(options: manualOptions)
+  }
+
+  /// Determines the appropriate stop action based on the profile's stop conditions.
+  /// Priority: manual (immediate) > single scan method > picker for multiple scan methods.
+  static func determineStopAction(
+    for conditions: ProfileStopConditions
+  ) -> StopAction {
+    if conditions.manual {
+      return .stopImmediately
+    }
+
+    var scanOptions: [StopAction] = []
+    if conditions.hasNFC {
+      scanOptions.append(.scanNFC)
+    }
+    if conditions.hasQR {
+      scanOptions.append(.scanQR)
+    }
+
+    if scanOptions.isEmpty {
+      if conditions.timer && conditions.schedule {
+        return .cannotStop(reason: "This profile stops on a timer or at its scheduled time")
+      } else if conditions.timer {
+        return .cannotStop(reason: "This profile can only be stopped when the timer runs out")
+      } else if conditions.schedule {
+        return .cannotStop(reason: "This profile stops at its scheduled time")
+      } else if conditions.deepLink {
+        return .cannotStop(reason: "This profile can only be stopped via a programmed NFC tag or QR code")
+      }
+      return .cannotStop(reason: "This profile has no manual stop method configured")
+    }
+    if scanOptions.count == 1 {
+      return scanOptions[0]
+    }
+    return .showPicker(options: scanOptions)
+  }
+}
+
+// MARK: - Stop Validation
+
+/// How a stop was triggered
+enum StopMethod {
+  case manual
+  case timer
+  case nfc(tag: String)
+  case qr(code: String)
+  case schedule
+  case deepLink
+}
+
+/// Result of stop validation
+struct StopValidationResult {
+  let allowed: Bool
+  let errorMessage: String?
+
+  static func allowed() -> StopValidationResult {
+    StopValidationResult(allowed: true, errorMessage: nil)
+  }
+
+  static func denied(_ message: String) -> StopValidationResult {
+    StopValidationResult(allowed: false, errorMessage: message)
+  }
+}
+
+extension StrategyManager {
+  /// Validates whether a stop method is allowed given profile configuration
+  static func canStop(
+    with method: StopMethod,
+    conditions: ProfileStopConditions,
+    sessionTag: String?,
+    stopNFCTagId: String?,
+    stopQRCodeId: String?
+  ) -> StopValidationResult {
+
+    switch method {
+    case .manual:
+      if conditions.manual {
+        return .allowed()
+      }
+      return .denied("Manual stop is not enabled for this profile")
+
+    case .timer:
+      if conditions.timer {
+        return .allowed()
+      }
+      return .denied("Timer stop is not enabled for this profile")
+
+    case .nfc(let scannedTag):
+      // Check specific NFC first (highest priority)
+      if conditions.specificNFC {
+        if let requiredTag = stopNFCTagId, scannedTag == requiredTag {
+          return .allowed()
+        }
+        return .denied("Scan the correct NFC tag to stop")
+      }
+
+      // Check same NFC (match session tag - must be NFC type)
+      if conditions.sameNFC {
+        if let sessionStartTag = sessionTag,
+          sessionStartTag.hasPrefix("nfc:"),
+          scannedTag == String(sessionStartTag.dropFirst(4))
+        {
+          return .allowed()
+        }
+        return .denied("Scan the same NFC tag you used to start")
+      }
+
+      // Check any NFC
+      if conditions.anyNFC {
+        return .allowed()
+      }
+
+      return .denied("NFC stop is not enabled for this profile")
+
+    case .qr(let scannedCode):
+      // Check specific QR first
+      if conditions.specificQR {
+        if let requiredCode = stopQRCodeId, scannedCode == requiredCode {
+          return .allowed()
+        }
+        return .denied("Scan the correct QR code to stop")
+      }
+
+      // Check same QR (match session tag - must be QR type)
+      if conditions.sameQR {
+        if let sessionStartCode = sessionTag,
+          sessionStartCode.hasPrefix("qr:"),
+          scannedCode == String(sessionStartCode.dropFirst(3))
+        {
+          return .allowed()
+        }
+        return .denied("Scan the same QR code you used to start")
+      }
+
+      // Check any QR
+      if conditions.anyQR {
+        return .allowed()
+      }
+
+      return .denied("QR code stop is not enabled for this profile")
+
+    case .schedule:
+      if conditions.schedule {
+        return .allowed()
+      }
+      return .denied("Scheduled stop is not enabled for this profile")
+
+    case .deepLink:
+      if conditions.deepLink {
+        return .allowed()
+      }
+      return .denied("Deep link stop is not enabled for this profile")
+    }
+  }
 }
