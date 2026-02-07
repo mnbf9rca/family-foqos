@@ -351,6 +351,7 @@ struct HomeView: View {
           if let profile = pendingPickerProfile {
             executeStartAction(option, profile: profile)
           }
+          pendingPickerProfile = nil
         }
       }
       Button("Cancel", role: .cancel) {
@@ -363,6 +364,7 @@ struct HomeView: View {
           if let profile = pendingPickerProfile {
             executeStopAction(option, profile: profile)
           }
+          pendingPickerProfile = nil
         }
       }
       Button("Cancel", role: .cancel) {

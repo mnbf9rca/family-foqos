@@ -342,6 +342,9 @@ struct BlockedProfileView: View {
                         nfcScanner.onTagScanned = { tag in
                             triggerConfig.startNFCTagId = tag.id
                         }
+                        nfcScanner.onError = { error in
+                            alertIdentifier = AlertIdentifier(id: .error, errorMessage: error)
+                        }
                         nfcScanner.scan(profileName: "start trigger")
                     },
                     onScanQRCode: {
@@ -378,6 +381,9 @@ struct BlockedProfileView: View {
                     onScanNFCTag: {
                         nfcScanner.onTagScanned = { tag in
                             triggerConfig.stopNFCTagId = tag.id
+                        }
+                        nfcScanner.onError = { error in
+                            alertIdentifier = AlertIdentifier(id: .error, errorMessage: error)
                         }
                         nfcScanner.scan(profileName: "stop trigger")
                     },
@@ -836,9 +842,18 @@ struct BlockedProfileView: View {
         }
     }
 
-    /// Validate triggers, save config, update compatibility, schedule, and push to sync.
-    /// Returns false if validation fails (alert is shown).
-    private func finalizeSave(_ profile: BlockedProfiles) -> Bool {
+    /// Save trigger config to profile, update compatibility, schedule, and push to sync.
+    private func finalizeSave(_ profile: BlockedProfiles) {
+        triggerConfig.saveToProfile(profile)
+        profile.updateCompatibilityStrategyId()
+        try? modelContext.save()
+        DeviceActivityCenterUtil.scheduleTimerActivity(for: profile)
+        SyncCoordinator.shared.pushProfile(profile)
+    }
+
+    private func saveProfile() {
+        // Validate trigger configuration before persisting anything
+        triggerConfig.validate()
         if !triggerConfig.validationErrors.isEmpty {
             alertIdentifier = AlertIdentifier(
                 id: .error,
@@ -846,17 +861,9 @@ struct BlockedProfileView: View {
                     .map { "• " + $0 }
                     .joined(separator: "\n")
             )
-            return false
+            return
         }
 
-        triggerConfig.saveToProfile(profile)
-        profile.updateCompatibilityStrategyId()
-        DeviceActivityCenterUtil.scheduleTimerActivity(for: profile)
-        SyncCoordinator.shared.pushProfile(profile)
-        return true
-    }
-
-    private func saveProfile() {
         do {
             // Calculate reminder time in seconds or nil if disabled
             let reminderTimeSeconds: UInt32? =
@@ -897,7 +904,7 @@ struct BlockedProfileView: View {
                     needsAppSelection: false // Clear needsAppSelection since user is saving with app selection
                 )
 
-                guard finalizeSave(updatedProfile) else { return }
+                finalizeSave(updatedProfile)
             } else {
                 let newProfile = try BlockedProfiles.createProfile(
                     in: modelContext,
@@ -925,7 +932,7 @@ struct BlockedProfileView: View {
                     managedByChildId: managedChildId
                 )
 
-                guard finalizeSave(newProfile) else { return }
+                finalizeSave(newProfile)
             }
 
             dismiss()

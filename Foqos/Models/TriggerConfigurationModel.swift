@@ -51,10 +51,10 @@ final class TriggerConfigurationModel: ObservableObject {
     if stopConditions.specificQR && (stopQRCodeId == nil || stopQRCodeId?.isEmpty == true) {
       errors.append("Scan a QR code to use as the stop condition")
     }
-    if startTriggers.schedule && startSchedule == nil {
+    if startTriggers.schedule && (startSchedule == nil || startSchedule?.isActive != true) {
       errors.append("Configure a start schedule")
     }
-    if stopConditions.schedule && stopSchedule == nil {
+    if stopConditions.schedule && (stopSchedule == nil || stopSchedule?.isActive != true) {
       errors.append("Configure a stop schedule")
     }
 

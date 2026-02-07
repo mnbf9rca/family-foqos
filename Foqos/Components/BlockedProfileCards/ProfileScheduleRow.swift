@@ -17,7 +17,16 @@ struct ProfileScheduleRow: View {
   private var hasSchedule: Bool { hasLegacySchedule || hasV2Schedule }
 
   private var isTimerStrategy: Bool {
-    profile.stopConditions.timer
+    if profile.stopConditions.timer { return true }
+    // Legacy fallback: V1 profiles have nil stopConditionsData, so
+    // stopConditions.timer defaults false even for timer strategies.
+    if profile.profileSchemaVersion < 2 {
+      let id = profile.blockingStrategyId
+      return id == NFCTimerBlockingStrategy.id
+        || id == QRTimerBlockingStrategy.id
+        || id == ShortcutTimerBlockingStrategy.id
+    }
+    return false
   }
 
   private var timerDuration: Int? {
