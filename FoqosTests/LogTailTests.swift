@@ -5,8 +5,7 @@ import XCTest
 final class LogTailTests: XCTestCase {
 
   func testGetLogContentTailReturnsLastNLines() {
-    // Given: Log has content
-    _ = Log.shared.getLogContent()
+    // Given: No specific setup needed — test validates max-line constraint
 
     // When: We request tailed content with 10 lines max
     let tailedContent = Log.shared.getLogContentTail(maxLines: 10)

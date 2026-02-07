@@ -131,31 +131,31 @@ struct BlockedProfileCarousel: View {
             let cardWidth = geometry.size.width - 32  // Padding on sides
 
             HStack(spacing: cardSpacing) {
-              ForEach(validProfiles.indices, id: \.self) { index in
+              ForEach(validProfiles) { profile in
                 BlockedProfileCard(
-                  profile: validProfiles[index],
-                  isActive: validProfiles[index].id
+                  profile: profile,
+                  isActive: profile.id
                     == activeSessionProfileId,
                   isBreakAvailable: isBreakAvailable,
                   isBreakActive: isBreakActive,
                   elapsedTime: elapsedTime,
                   onStartTapped: {
-                    onStartTapped(validProfiles[index])
+                    onStartTapped(profile)
                   },
                   onStopTapped: {
-                    onStopTapped(validProfiles[index])
+                    onStopTapped(profile)
                   },
                   onEditTapped: {
-                    onEditTapped(validProfiles[index])
+                    onEditTapped(profile)
                   },
                   onStatsTapped: {
-                    onStatsTapped(validProfiles[index])
+                    onStatsTapped(profile)
                   },
                   onBreakTapped: {
-                    onBreakTapped(validProfiles[index])
+                    onBreakTapped(profile)
                   },
                   onAppSelectionTapped: {
-                    onAppSelectionTapped(validProfiles[index])
+                    onAppSelectionTapped(profile)
                   }
                 )
                 .frame(width: cardWidth)
