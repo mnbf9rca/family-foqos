@@ -14,7 +14,8 @@ struct StopConditionSelector: View {
   let onScanQRCode: () -> Void
   let onConfigureSchedule: () -> Void
 
-  private let validator = TriggerValidator()
+  @State private var nfcOption: NFCStopOption = .none
+  @State private var qrOption: QRStopOption = .none
 
   var body: some View {
     Section {
@@ -26,65 +27,55 @@ struct StopConditionSelector: View {
       Toggle("Timer", isOn: binding(\.timer))
         .disabled(disabled)
 
-      // NFC options
-      Group {
-        Toggle("Any NFC tag", isOn: binding(\.anyNFC))
-          .disabled(disabled)
-
-        HStack {
-          Toggle("Specific NFC tag", isOn: binding(\.specificNFC))
-            .disabled(disabled)
-          if conditions.specificNFC {
-            Spacer()
-            Button(stopNFCTagId == nil ? "Scan" : "Change") {
-              onScanNFCTag()
-            }
-            .buttonStyle(.bordered)
-            .disabled(disabled)
-          }
+      // NFC picker
+      Picker("NFC", selection: $nfcOption) {
+        ForEach(NFCStopOption.availableOptions(forStart: startTriggers)) { option in
+          Text(option.label).tag(option)
         }
-        if conditions.specificNFC, let tagId = stopNFCTagId {
-          Text("Tag: \(tagId)")
-            .font(.caption)
-            .foregroundStyle(.secondary)
+      }
+      .disabled(disabled)
+      .onChange(of: nfcOption) { _, newValue in
+        newValue.apply(to: &conditions)
+        onConditionChange()
+      }
+      .onChange(of: startTriggers.hasNFC) { _, hasNFC in
+        if !hasNFC && nfcOption == .same {
+          nfcOption = .none
+          NFCStopOption.none.apply(to: &conditions)
+          onConditionChange()
         }
-
-        // Same NFC - may be disabled
-        optionRow(
-          title: "Same NFC tag",
-          isOn: binding(\.sameNFC),
-          option: .sameNFC
+      }
+      if nfcOption == .specific {
+        scanRow(
+          tagId: stopNFCTagId,
+          onScan: onScanNFCTag,
+          label: "Tag"
         )
       }
 
-      // QR options
-      Group {
-        Toggle("Any QR code", isOn: binding(\.anyQR))
-          .disabled(disabled)
-
-        HStack {
-          Toggle("Specific QR code", isOn: binding(\.specificQR))
-            .disabled(disabled)
-          if conditions.specificQR {
-            Spacer()
-            Button(stopQRCodeId == nil ? "Scan" : "Change") {
-              onScanQRCode()
-            }
-            .buttonStyle(.bordered)
-            .disabled(disabled)
-          }
+      // QR picker
+      Picker("QR", selection: $qrOption) {
+        ForEach(QRStopOption.availableOptions(forStart: startTriggers)) { option in
+          Text(option.label).tag(option)
         }
-        if conditions.specificQR, let codeId = stopQRCodeId {
-          Text("Code: \(codeId)")
-            .font(.caption)
-            .foregroundStyle(.secondary)
+      }
+      .disabled(disabled)
+      .onChange(of: qrOption) { _, newValue in
+        newValue.apply(to: &conditions)
+        onConditionChange()
+      }
+      .onChange(of: startTriggers.hasQR) { _, hasQR in
+        if !hasQR && qrOption == .same {
+          qrOption = .none
+          QRStopOption.none.apply(to: &conditions)
+          onConditionChange()
         }
-
-        // Same QR - may be disabled
-        optionRow(
-          title: "Same QR code",
-          isOn: binding(\.sameQR),
-          option: .sameQR
+      }
+      if qrOption == .specific {
+        scanRow(
+          tagId: stopQRCodeId,
+          onScan: onScanQRCode,
+          label: "Code"
         )
       }
 
@@ -107,7 +98,7 @@ struct StopConditionSelector: View {
           .foregroundStyle(.secondary)
       }
 
-      // Deep Link (written NFC tag or printed QR code containing a profile URL)
+      // Deep Link
       Toggle("Written NFC / printed QR", isOn: binding(\.deepLink))
         .disabled(disabled)
 
@@ -120,32 +111,33 @@ struct StopConditionSelector: View {
             .foregroundStyle(.red)
         }
         if conditions.requiresPhysicalItemOnly {
-          Text("All selected stop conditions require a specific physical item (NFC tag or QR code). If you lose access to it, Emergency Unblock (limited to 3 per 4 weeks) will be your only way to stop this profile.")
-            .foregroundStyle(.orange)
+          Text(
+            "All selected stop conditions require a specific physical item (NFC tag or QR code). If you lose access to it, Emergency Unblock (limited to 3 per 4 weeks) will be your only way to stop this profile."
+          )
+          .foregroundStyle(.orange)
         }
       }
+    }
+    .onAppear {
+      nfcOption = NFCStopOption.from(conditions)
+      qrOption = QRStopOption.from(conditions)
     }
   }
 
   @ViewBuilder
-  private func optionRow(
-    title: String,
-    isOn: Binding<Bool>,
-    option: StopOption
-  ) -> some View {
-    let isAvailable = validator.isStopAvailable(option, forStart: startTriggers)
-    let reason = validator.unavailabilityReason(option, forStart: startTriggers)
-
-    VStack(alignment: .leading, spacing: 4) {
-      Toggle(title, isOn: isOn)
-        .disabled(disabled || !isAvailable)
-        .opacity(isAvailable ? 1.0 : 0.5)
-
-      if let reason = reason {
-        Text(reason)
-          .font(.caption2)
+  private func scanRow(tagId: String?, onScan: @escaping () -> Void, label: String) -> some View {
+    HStack {
+      if let tagId {
+        Text("\(label): \(tagId)")
+          .font(.caption)
           .foregroundStyle(.secondary)
       }
+      Spacer()
+      Button(tagId == nil ? "Scan" : "Change") {
+        onScan()
+      }
+      .buttonStyle(.bordered)
+      .disabled(disabled)
     }
   }
 
