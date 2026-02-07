@@ -6,7 +6,7 @@ final class LogTailTests: XCTestCase {
 
   func testGetLogContentTailReturnsLastNLines() {
     // Given: Log has content
-    let content = Log.shared.getLogContent()
+    _ = Log.shared.getLogContent()
 
     // When: We request tailed content with 10 lines max
     let tailedContent = Log.shared.getLogContentTail(maxLines: 10)
