@@ -13,58 +13,51 @@ struct StartTriggerSelector: View {
   let onScanQRCode: () -> Void
   let onConfigureSchedule: () -> Void
 
+  @State private var nfcOption: NFCStartOption = .none
+  @State private var qrOption: QRStartOption = .none
+
   var body: some View {
     Section {
       // Manual
       Toggle("Tap to start", isOn: binding(\.manual))
         .disabled(disabled)
 
-      // NFC options
-      Group {
-        Toggle("Any NFC tag", isOn: binding(\.anyNFC))
-          .disabled(disabled)
-
-        HStack {
-          Toggle("Specific NFC tag", isOn: binding(\.specificNFC))
-            .disabled(disabled)
-          if triggers.specificNFC {
-            Spacer()
-            Button(startNFCTagId == nil ? "Scan" : "Change") {
-              onScanNFCTag()
-            }
-            .buttonStyle(.bordered)
-            .disabled(disabled)
-          }
-        }
-        if triggers.specificNFC, let tagId = startNFCTagId {
-          Text("Tag: \(tagId)")
-            .font(.caption)
-            .foregroundStyle(.secondary)
+      // NFC picker
+      Picker("NFC", selection: $nfcOption) {
+        ForEach(NFCStartOption.allCases) { option in
+          Text(option.label).tag(option)
         }
       }
+      .disabled(disabled)
+      .onChange(of: nfcOption) { _, newValue in
+        newValue.apply(to: &triggers)
+        onTriggerChange()
+      }
+      if nfcOption == .specific {
+        scanRow(
+          tagId: startNFCTagId,
+          onScan: onScanNFCTag,
+          label: "Tag"
+        )
+      }
 
-      // QR options
-      Group {
-        Toggle("Any QR code", isOn: binding(\.anyQR))
-          .disabled(disabled)
-
-        HStack {
-          Toggle("Specific QR code", isOn: binding(\.specificQR))
-            .disabled(disabled)
-          if triggers.specificQR {
-            Spacer()
-            Button(startQRCodeId == nil ? "Scan" : "Change") {
-              onScanQRCode()
-            }
-            .buttonStyle(.bordered)
-            .disabled(disabled)
-          }
+      // QR picker
+      Picker("QR", selection: $qrOption) {
+        ForEach(QRStartOption.allCases) { option in
+          Text(option.label).tag(option)
         }
-        if triggers.specificQR, let codeId = startQRCodeId {
-          Text("Code: \(codeId)")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        }
+      }
+      .disabled(disabled)
+      .onChange(of: qrOption) { _, newValue in
+        newValue.apply(to: &triggers)
+        onTriggerChange()
+      }
+      if qrOption == .specific {
+        scanRow(
+          tagId: startQRCodeId,
+          onScan: onScanQRCode,
+          label: "Code"
+        )
       }
 
       // Schedule
@@ -86,7 +79,7 @@ struct StartTriggerSelector: View {
           .foregroundStyle(.secondary)
       }
 
-      // Deep Link (written NFC tag or printed QR code containing a profile URL)
+      // Deep Link
       Toggle("Written NFC / printed QR", isOn: binding(\.deepLink))
         .disabled(disabled)
 
@@ -97,6 +90,27 @@ struct StartTriggerSelector: View {
         Text("Select at least one start trigger")
           .foregroundStyle(.red)
       }
+    }
+    .onAppear {
+      nfcOption = NFCStartOption.from(triggers)
+      qrOption = QRStartOption.from(triggers)
+    }
+  }
+
+  @ViewBuilder
+  private func scanRow(tagId: String?, onScan: @escaping () -> Void, label: String) -> some View {
+    HStack {
+      if let tagId {
+        Text("\(label): \(tagId)")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+      Spacer()
+      Button(tagId == nil ? "Scan" : "Change") {
+        onScan()
+      }
+      .buttonStyle(.bordered)
+      .disabled(disabled)
     }
   }
 
@@ -109,5 +123,4 @@ struct StartTriggerSelector: View {
       }
     )
   }
-
 }
