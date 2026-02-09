@@ -126,14 +126,14 @@ struct HomeView: View {
         )
         .padding(.horizontal, 16)
 
-        if profiles.isEmpty {
+        if profiles.valid.isEmpty {
           Welcome(onTap: {
             showNewProfileView = true
           })
           .padding(.horizontal, 16)
         }
 
-        if !profiles.isEmpty {
+        if !profiles.valid.isEmpty {
           BlockedSessionsHabitTracker(
             sessions: recentCompletedSessions
           )

@@ -12,6 +12,10 @@ struct BlockedProfileDataExportView: View {
   ]) private
     var profiles: [BlockedProfiles]
 
+  private var validProfiles: [BlockedProfiles] {
+    profiles.valid
+  }
+
   @State private var selectedProfileIDs: Set<UUID> = []
   @State private var sortDirection: DataExportSortDirection = .ascending
   @State private var timeZone: DataExportTimeZone = .utc
@@ -34,11 +38,11 @@ struct BlockedProfileDataExportView: View {
     NavigationStack {
       Form {
         Section(header: Text("Profiles")) {
-          if profiles.isEmpty {
+          if validProfiles.isEmpty {
             Text("No profiles yet")
               .foregroundStyle(.secondary)
           } else {
-            ForEach(profiles) { profile in
+            ForEach(validProfiles) { profile in
               let isSelected = selectedProfileIDs.contains(profile.id)
               HStack {
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
