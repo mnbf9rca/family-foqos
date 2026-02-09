@@ -34,7 +34,8 @@ class CloudKitManager: ObservableObject {
   @Published var shareParticipants: [CKShare.Participant] = []  // For parents: pending/accepted invitations
   @Published var isLoading = false
   @Published var error: CloudKitError?
-  @Published var shareAcceptedMessage: String?  // Set when a share is successfully accepted
+  @Published var shareAcceptedMessage: String?  // Set when a share is accepted or acceptance fails
+  @Published var shareAcceptanceIsError = false  // True when shareAcceptedMessage is an error, not success
   @Published var childAuthorizationFailed = false  // True when share acceptance failed due to missing child auth
   @Published var childAuthorizationErrorMessage: String?  // Detailed error message for UI
 
@@ -710,6 +711,9 @@ class CloudKitManager: ObservableObject {
     do {
       let userRecordID = try await ensureUserRecordID()
       let zones = try await sharedDatabase.allRecordZones()
+      await MainActor.run {
+        self.isConnectedToFamily = !zones.isEmpty
+      }
       guard let zone = zones.first else { return }
 
       let query = CKQuery(

@@ -113,7 +113,10 @@ struct foqosApp: App {
           handleURL(url)
         }
         .alert(
-          AppModeManager.shared.currentMode == .parent ? "Linked as Parent" : "Linked to Parent",
+          cloudKitManager.shareAcceptanceIsError
+            ? "Unable to Join Family"
+            : (AppModeManager.shared.currentMode == .parent
+              ? "Linked as Parent" : "Linked to Parent"),
           isPresented: Binding(
             get: {
               cloudKitManager.shareAcceptedMessage != nil
@@ -124,6 +127,7 @@ struct foqosApp: App {
         ) {
           Button("OK") {
             cloudKitManager.shareAcceptedMessage = nil
+            cloudKitManager.shareAcceptanceIsError = false
           }
         } message: {
           Text(cloudKitManager.shareAcceptedMessage ?? "")
@@ -389,10 +393,17 @@ func acceptCloudKitShare(_ metadata: CKShare.Metadata) {
   Log.info("Container ID = \(metadata.containerIdentifier)", category: .cloudKit)
 
   Task {
+    // Refresh family connection state before checking (cached flag may be stale)
+    let isConnected = await CloudKitManager.shared.checkFamilyConnectionStatus()
+    await MainActor.run {
+      CloudKitManager.shared.isConnectedToFamily = isConnected
+    }
+
     // Guard: if already connected to a family, warn the user
-    if CloudKitManager.shared.isConnectedToFamily {
+    if isConnected {
       Log.warning("Device already connected to a family, rejecting new share", category: .cloudKit)
       await MainActor.run {
+        CloudKitManager.shared.shareAcceptanceIsError = true
         CloudKitManager.shared.shareAcceptedMessage =
           "This device is already connected to a family. Please leave the current family first before joining a new one."
       }
@@ -411,6 +422,7 @@ func acceptCloudKitShare(_ metadata: CKShare.Metadata) {
     case .networkError(let error):
       Log.error("Network error during authorization check: \(error)", category: .authorization)
       await MainActor.run {
+        CloudKitManager.shared.shareAcceptanceIsError = true
         CloudKitManager.shared.shareAcceptedMessage =
           "Unable to verify device. Please check your internet connection and try again."
       }
@@ -421,6 +433,7 @@ func acceptCloudKitShare(_ metadata: CKShare.Metadata) {
         category: .authorization
       )
       await MainActor.run {
+        CloudKitManager.shared.shareAcceptanceIsError = true
         CloudKitManager.shared.shareAcceptedMessage =
           verificationResult.errorMessage ?? "Authorization failed. Please try again."
       }
@@ -458,6 +471,7 @@ func completeShareAcceptance(metadata: CKShare.Metadata, role: FamilyRole) {
           AppModeManager.shared.selectMode(appMode)
         }
 
+        CloudKitManager.shared.shareAcceptanceIsError = false
         if role == .parent {
           CloudKitManager.shared.shareAcceptedMessage =
             "You are now linked as a parent. You can manage lock codes and focus profiles for this family."
@@ -469,6 +483,7 @@ func completeShareAcceptance(metadata: CKShare.Metadata, role: FamilyRole) {
     } catch {
       Log.error("Share acceptance failed: \(error)", category: .cloudKit)
       await MainActor.run {
+        CloudKitManager.shared.shareAcceptanceIsError = true
         CloudKitManager.shared.shareAcceptedMessage =
           "Failed to accept invitation: \(error.localizedDescription)"
       }
