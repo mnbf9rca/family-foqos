@@ -95,6 +95,10 @@ struct StartTriggerSelector: View {
       nfcOption = NFCStartOption.from(triggers)
       qrOption = QRStartOption.from(triggers)
     }
+    .onChange(of: triggers) { _, newTriggers in
+      nfcOption = NFCStartOption.from(newTriggers)
+      qrOption = QRStartOption.from(newTriggers)
+    }
   }
 
   @ViewBuilder

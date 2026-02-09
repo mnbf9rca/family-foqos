@@ -130,11 +130,20 @@ final class TriggerPickerOptionsTests: XCTestCase {
     XCTAssertEqual(NFCStopOption.from(conditions), .specific)
   }
 
-  func testNFCStopOptionAnyWinsOverSame() {
+  func testNFCStopOptionSameWinsOverAny() {
+    // same is more specific than any, matching canStop precedence
     var conditions = ProfileStopConditions()
     conditions.anyNFC = true
     conditions.sameNFC = true
-    XCTAssertEqual(NFCStopOption.from(conditions), .any)
+    XCTAssertEqual(NFCStopOption.from(conditions), .same)
+  }
+
+  func testNFCStopOptionSpecificWinsOverSame() {
+    // specific is highest priority, matching canStop precedence
+    var conditions = ProfileStopConditions()
+    conditions.sameNFC = true
+    conditions.specificNFC = true
+    XCTAssertEqual(NFCStopOption.from(conditions), .specific)
   }
 
   // MARK: - NFCStopOption apply to conditions
@@ -197,11 +206,20 @@ final class TriggerPickerOptionsTests: XCTestCase {
     XCTAssertEqual(QRStopOption.from(conditions), .specific)
   }
 
-  func testQRStopOptionAnyWinsOverSame() {
+  func testQRStopOptionSameWinsOverAny() {
+    // same is more specific than any, matching canStop precedence
     var conditions = ProfileStopConditions()
     conditions.anyQR = true
     conditions.sameQR = true
-    XCTAssertEqual(QRStopOption.from(conditions), .any)
+    XCTAssertEqual(QRStopOption.from(conditions), .same)
+  }
+
+  func testQRStopOptionSpecificWinsOverSame() {
+    // specific is highest priority, matching canStop precedence
+    var conditions = ProfileStopConditions()
+    conditions.sameQR = true
+    conditions.specificQR = true
+    XCTAssertEqual(QRStopOption.from(conditions), .specific)
   }
 
   // MARK: - QRStopOption apply to conditions

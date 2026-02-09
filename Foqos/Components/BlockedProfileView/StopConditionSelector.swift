@@ -122,6 +122,10 @@ struct StopConditionSelector: View {
       nfcOption = NFCStopOption.from(conditions)
       qrOption = QRStopOption.from(conditions)
     }
+    .onChange(of: conditions) { _, newConditions in
+      nfcOption = NFCStopOption.from(newConditions)
+      qrOption = QRStopOption.from(newConditions)
+    }
   }
 
   @ViewBuilder

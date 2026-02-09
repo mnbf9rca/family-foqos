@@ -50,9 +50,9 @@ enum NFCStopOption: String, CaseIterable, Identifiable {
   }
 
   static func from(_ conditions: ProfileStopConditions) -> NFCStopOption {
-    if conditions.anyNFC { return .any }
-    if conditions.sameNFC { return .same }
     if conditions.specificNFC { return .specific }
+    if conditions.sameNFC { return .same }
+    if conditions.anyNFC { return .any }
     return .none
   }
 
@@ -119,9 +119,9 @@ enum QRStopOption: String, CaseIterable, Identifiable {
   }
 
   static func from(_ conditions: ProfileStopConditions) -> QRStopOption {
-    if conditions.anyQR { return .any }
-    if conditions.sameQR { return .same }
     if conditions.specificQR { return .specific }
+    if conditions.sameQR { return .same }
+    if conditions.anyQR { return .any }
     return .none
   }
 

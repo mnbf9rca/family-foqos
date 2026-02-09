@@ -66,13 +66,15 @@ enum TriggerMigration {
     var stopTagId: String?
 
     if let nfcTagId = physicalUnblockNFCTagId {
-      // Replace anyNFC with specificNFC
+      // Replace anyNFC/sameNFC with specificNFC
       stop.anyNFC = false
+      stop.sameNFC = false
       stop.specificNFC = true
       stopTagId = nfcTagId
     } else if let qrCodeId = physicalUnblockQRCodeId {
-      // Replace anyQR with specificQR
+      // Replace anyQR/sameQR with specificQR
       stop.anyQR = false
+      stop.sameQR = false
       stop.specificQR = true
       stopTagId = qrCodeId
     }

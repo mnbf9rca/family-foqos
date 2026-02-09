@@ -130,6 +130,23 @@ final class TriggerMigrationTests: XCTestCase {
     XCTAssertEqual(newStopTagId, "nfc-tag-123")
   }
 
+  func testMigratePhysicalUnlockNFCClearsSameNFC() {
+    // Simulates NFCBlockingStrategy migration path: sameNFC is set,
+    // then physical unlock adds specificNFC — sameNFC must be cleared
+    var stop = ProfileStopConditions()
+    stop.sameNFC = true
+
+    let (newStop, _) = TriggerMigration.migratePhysicalUnlock(
+      stopConditions: stop,
+      physicalUnblockNFCTagId: "nfc-tag-123",
+      physicalUnblockQRCodeId: nil
+    )
+
+    XCTAssertTrue(newStop.specificNFC)
+    XCTAssertFalse(newStop.sameNFC)  // Must be cleared
+    XCTAssertFalse(newStop.anyNFC)
+  }
+
   func testMigratePhysicalUnlockQR() {
     var stop = ProfileStopConditions()
     stop.anyQR = true
@@ -143,6 +160,23 @@ final class TriggerMigrationTests: XCTestCase {
     XCTAssertTrue(newStop.specificQR)
     XCTAssertFalse(newStop.anyQR)  // Replaced by specific
     XCTAssertEqual(newStopCodeId, "qr-code-456")
+  }
+
+  func testMigratePhysicalUnlockQRClearsSameQR() {
+    // Simulates QRCodeBlockingStrategy migration path: sameQR is set,
+    // then physical unlock adds specificQR — sameQR must be cleared
+    var stop = ProfileStopConditions()
+    stop.sameQR = true
+
+    let (newStop, _) = TriggerMigration.migratePhysicalUnlock(
+      stopConditions: stop,
+      physicalUnblockNFCTagId: nil,
+      physicalUnblockQRCodeId: "qr-code-456"
+    )
+
+    XCTAssertTrue(newStop.specificQR)
+    XCTAssertFalse(newStop.sameQR)  // Must be cleared
+    XCTAssertFalse(newStop.anyQR)
   }
 
   // MARK: - Schedule Migration
