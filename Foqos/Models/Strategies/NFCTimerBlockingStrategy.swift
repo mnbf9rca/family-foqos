@@ -57,7 +57,7 @@ class NFCTimerBlockingStrategy: BlockingStrategy {
     session: BlockedProfileSession
   ) -> (any View)? {
     nfcScanner.onTagScanned = { tag in
-      let tag = tag.url ?? tag.id
+      let tag = tag.id
 
       if let physicalUnblockNFCTagId = session.blockedProfile.physicalUnblockNFCTagId,
         physicalUnblockNFCTagId != tag

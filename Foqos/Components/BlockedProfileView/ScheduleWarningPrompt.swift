@@ -15,7 +15,7 @@ struct ScheduleWarningPrompt: View {
             .foregroundColor(.yellow)
 
           Text(
-            "We found an issue where the schedule got destroyed, press apply to setup the schedule again. Alternatively setup a new schedule below."
+            "Your schedule is out of sync with the system. Tap Fix Schedule to re-register it, or update your schedule settings below."
           )
           .font(.subheadline)
           .foregroundColor(.primary)

@@ -752,9 +752,22 @@ class ProfileSyncManager: ObservableObject {
 
   // MARK: - Remote Change Handling
 
+  /// Minimum interval between background syncs to prevent memory accumulation
+  private static let backgroundSyncThrottleInterval: TimeInterval = 300  // 5 minutes
+
   /// Handle remote change notification from CloudKit
   func handleRemoteNotification() async {
     guard isEnabled else { return }
+
+    // Throttle background syncs to prevent memory accumulation from rapid notifications
+    if let lastSync = lastSyncDate,
+      Date().timeIntervalSince(lastSync) < Self.backgroundSyncThrottleInterval
+    {
+      Log.info(
+        "Skipping background sync, last sync was \(Int(Date().timeIntervalSince(lastSync)))s ago",
+        category: .sync)
+      return
+    }
 
     Log.info("Handling remote notification", category: .sync)
     await performFullSync()

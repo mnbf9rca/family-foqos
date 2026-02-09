@@ -49,8 +49,6 @@ struct BlockedProfileView: View {
     @State private var physicalUnblockNFCTagId: String?
     @State private var physicalUnblockQRCodeId: String?
 
-    @State private var schedule: BlockedProfileSchedule
-
     @State private var geofenceRule: ProfileGeofenceRule?
 
     /// Sheet for geofence picker
@@ -65,14 +63,16 @@ struct BlockedProfileView: View {
     /// Sheet for domain picker
     @State private var showingDomainPicker = false
 
-    /// Sheet for schedule picker
-    @State private var showingSchedulePicker = false
-
     /// Alert management
     @State private var alertIdentifier: AlertIdentifier?
 
-    /// Sheet for physical unblock
-    @State private var showingPhysicalUnblockView = false
+    // Trigger scanner state (NFC uses system scanner directly via PhysicalReader.readNFCTag)
+    @State private var showStartQRScanner = false
+    @State private var showStopQRScanner = false
+
+    // Trigger schedule picker state (owned by parent to survive child re-renders)
+    @State private var showStartSchedulePicker = false
+    @State private var showStopSchedulePicker = false
 
     // Alert for cloning
     @State private var showingClonePrompt = false
@@ -97,12 +97,18 @@ struct BlockedProfileView: View {
     }
 
     @State private var selectedActivity = FamilyActivitySelection()
-    @State private var selectedStrategy: BlockingStrategy? = nil
+    @StateObject private var triggerConfig = TriggerConfigurationModel()
+    @StateObject private var nfcScanner = NFCScannerUtil()
 
     private let physicalReader: PhysicalReader = .init()
 
     private var isEditing: Bool {
         profile != nil
+    }
+
+    private var hasScheduledStart: Bool {
+        triggerConfig.startTriggers.schedule
+            && triggerConfig.startSchedule?.isActive == true
     }
 
     private var isBlocking: Bool {
@@ -186,33 +192,46 @@ struct BlockedProfileView: View {
         _physicalUnblockQRCodeId = State(
             initialValue: profile?.physicalUnblockQRCodeId ?? nil
         )
-        _schedule = State(
-            initialValue: profile?.schedule
-                ?? BlockedProfileSchedule(
-                    days: [],
-                    startHour: 9,
-                    startMinute: 0,
-                    endHour: 17,
-                    endMinute: 0,
-                    updatedAt: Date()
-                )
-        )
         _isManaged = State(initialValue: profile?.isManaged ?? false)
         _geofenceRule = State(initialValue: profile?.geofenceRule)
 
-        if let profileStrategyId = profile?.blockingStrategyId {
-            _selectedStrategy = State(
-                initialValue:
-                StrategyManager
-                    .getStrategyFromId(id: profileStrategyId)
-            )
-        } else {
-            _selectedStrategy = State(initialValue: NFCBlockingStrategy())
-        }
     }
 
     var body: some View {
         NavigationStack {
+          if let profile = profile, profile.isNewerSchemaVersion {
+            VStack(spacing: 16) {
+              Spacer()
+
+              Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 48))
+                .foregroundStyle(.orange)
+
+              Text(profile.name)
+                .font(.title2)
+                .bold()
+
+              Text(
+                "This profile was configured on a newer version of Foqos. Update the app to view or edit this profile."
+              )
+              .multilineTextAlignment(.center)
+              .foregroundStyle(.secondary)
+              .padding(.horizontal)
+
+              Spacer()
+            }
+            .padding()
+            .navigationTitle("Profile")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+              ToolbarItem(placement: .topBarLeading) {
+                Button(action: { dismiss() }) {
+                  Image(systemName: "xmark")
+                }
+                .accessibilityLabel("Cancel")
+              }
+            }
+          } else {
             Form {
                 // Show lock status when profile is active
                 if isBlocking {
@@ -310,19 +329,31 @@ struct BlockedProfileView: View {
                     )
                 }
 
-                BlockingStrategyList(
-                    strategies: StrategyManager.availableStrategies.filter { !$0.hidden },
-                    selectedStrategy: $selectedStrategy,
-                    disabled: isBlocking
+                StartTriggerSelector(
+                    triggers: $triggerConfig.startTriggers,
+                    startNFCTagId: $triggerConfig.startNFCTagId,
+                    startQRCodeId: $triggerConfig.startQRCodeId,
+                    startSchedule: $triggerConfig.startSchedule,
+                    disabled: isBlocking || (isManagedProfile && !isUnlockedForEditing),
+                    onTriggerChange: {
+                        triggerConfig.startTriggersDidChange()
+                    },
+                    onScanNFCTag: {
+                        nfcScanner.onTagScanned = { tag in
+                            triggerConfig.startNFCTagId = tag.id
+                        }
+                        nfcScanner.onError = { error in
+                            alertIdentifier = AlertIdentifier(id: .error, errorMessage: error)
+                        }
+                        nfcScanner.scan(profileName: "start trigger")
+                    },
+                    onScanQRCode: {
+                        showStartQRScanner = true
+                    },
+                    onConfigureSchedule: {
+                        showStartSchedulePicker = true
+                    }
                 )
-
-                Section("Schedule") {
-                    BlockedProfileScheduleSelector(
-                        schedule: schedule,
-                        buttonAction: { showingSchedulePicker = true },
-                        disabled: isBlocking
-                    )
-                }
 
                 Section {
                     BlockedProfileGeofenceSelector(
@@ -336,6 +367,33 @@ struct BlockedProfileView: View {
                 } footer: {
                     Text("Require being at or away from specific locations to stop this profile.")
                 }
+
+                StopConditionSelector(
+                    conditions: $triggerConfig.stopConditions,
+                    stopNFCTagId: $triggerConfig.stopNFCTagId,
+                    stopQRCodeId: $triggerConfig.stopQRCodeId,
+                    stopSchedule: $triggerConfig.stopSchedule,
+                    startTriggers: triggerConfig.startTriggers,
+                    disabled: isBlocking || (isManagedProfile && !isUnlockedForEditing),
+                    onConditionChange: {
+                        triggerConfig.stopConditionsDidChange()
+                    },
+                    onScanNFCTag: {
+                        nfcScanner.onTagScanned = { tag in
+                            triggerConfig.stopNFCTagId = tag.id
+                        }
+                        nfcScanner.onError = { error in
+                            alertIdentifier = AlertIdentifier(id: .error, errorMessage: error)
+                        }
+                        nfcScanner.scan(profileName: "stop trigger")
+                    },
+                    onScanQRCode: {
+                        showStopQRScanner = true
+                    },
+                    onConfigureSchedule: {
+                        showStopSchedulePicker = true
+                    }
+                )
 
                 Section("Breaks") {
                     CustomToggle(
@@ -392,24 +450,6 @@ struct BlockedProfileView: View {
                             Text("This profile will require your lock code to modify. The child will not be able to see the code.")
                         }
                     }
-                }
-
-                Section("Strict Unlocks") {
-                    BlockedProfilePhysicalUnblockSelector(
-                        nfcTagId: physicalUnblockNFCTagId,
-                        qrCodeId: physicalUnblockQRCodeId,
-                        disabled: isBlocking,
-                        onSetNFC: {
-                            physicalReader.readNFCTag(
-                                onSuccess: { physicalUnblockNFCTagId = $0 }
-                            )
-                        },
-                        onSetQRCode: {
-                            showingPhysicalUnblockView = true
-                        },
-                        onUnsetNFC: { physicalUnblockNFCTagId = nil },
-                        onUnsetQRCode: { physicalUnblockQRCodeId = nil }
-                    )
                 }
 
                 Section("Notifications") {
@@ -469,14 +509,14 @@ struct BlockedProfileView: View {
 
                     CustomToggle(
                         title: "Pre-Activation Reminder",
-                        description: schedule.isActive
+                        description: hasScheduledStart
                             ? "Get notified before this profile's scheduled start time."
                             : "Add a schedule to enable pre-activation reminders.",
                         isOn: $preActivationReminderEnabled,
-                        isDisabled: isBlocking || !schedule.isActive
+                        isDisabled: isBlocking || !hasScheduledStart
                     )
 
-                    if preActivationReminderEnabled && schedule.isActive {
+                    if preActivationReminderEnabled && hasScheduledStart {
                         VStack(alignment: .leading, spacing: 8) {
                             HStack {
                                 Text("Remind me")
@@ -511,6 +551,20 @@ struct BlockedProfileView: View {
                         }
                     }
                 }
+
+                if let profile = profile {
+                    Section {
+                        HStack {
+                            Text("Profile ID")
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Text(profile.id.uuidString.prefix(8))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                        }
+                    }
+                }
             }
             .onChange(of: enableAllowMode) {
                 _,
@@ -518,6 +572,11 @@ struct BlockedProfileView: View {
                 selectedActivity = FamilyActivitySelection(
                     includeEntireCategory: newValue
                 )
+            }
+            .onAppear {
+                if let existingProfile = profile {
+                    triggerConfig.loadFromProfile(existingProfile)
+                }
             }
             .navigationTitle(isEditing ? "Profile Details" : "New Profile")
             .toolbar {
@@ -611,12 +670,6 @@ struct BlockedProfileView: View {
                     allowMode: enableAllowModeDomain
                 )
             }
-            .sheet(isPresented: $showingSchedulePicker) {
-                SchedulePicker(
-                    schedule: $schedule,
-                    isPresented: $showingSchedulePicker
-                )
-            }
             .sheet(isPresented: $showingGeofencePicker) {
                 GeofencePicker(
                     geofenceRule: $geofenceRule,
@@ -681,21 +734,37 @@ struct BlockedProfileView: View {
                     }
                 )
             )
-            .sheet(isPresented: $showingPhysicalUnblockView) {
+            .sheet(isPresented: $showStartQRScanner) {
                 BlockingStrategyActionView(
                     customView: physicalReader.readQRCode(
-                        onSuccess: {
-                            showingPhysicalUnblockView = false
-                            physicalUnblockQRCodeId = $0
+                        onSuccess: { codeId in
+                            showStartQRScanner = false
+                            triggerConfig.startQRCodeId = codeId
                         },
                         onFailure: { _ in
-                            showingPhysicalUnblockView = false
-                            showError(
-                                message: "Failed to read QR code, please try again or use a different QR code."
-                            )
+                            showStartQRScanner = false
                         }
                     )
                 )
+            }
+            .sheet(isPresented: $showStopQRScanner) {
+                BlockingStrategyActionView(
+                    customView: physicalReader.readQRCode(
+                        onSuccess: { codeId in
+                            showStopQRScanner = false
+                            triggerConfig.stopQRCodeId = codeId
+                        },
+                        onFailure: { _ in
+                            showStopQRScanner = false
+                        }
+                    )
+                )
+            }
+            .sheet(isPresented: $showStartSchedulePicker) {
+                ScheduleTimePicker(schedule: $triggerConfig.startSchedule, title: "Start Schedule")
+            }
+            .sheet(isPresented: $showStopSchedulePicker) {
+                ScheduleTimePicker(schedule: $triggerConfig.stopSchedule, title: "Stop Schedule")
             }
             .alert(item: $alertIdentifier) { alert in
                 switch alert.id {
@@ -734,6 +803,7 @@ struct BlockedProfileView: View {
                     lockCodeManager.revokeUnlock()
                 }
             }
+          } // else (non-newer-schema profile)
         }
     }
 
@@ -772,11 +842,29 @@ struct BlockedProfileView: View {
         }
     }
 
-    private func saveProfile() {
-        do {
-            // Update schedule date
-            schedule.updatedAt = Date()
+    /// Save trigger config to profile, update compatibility, schedule, and push to sync.
+    private func finalizeSave(_ profile: BlockedProfiles) {
+        triggerConfig.saveToProfile(profile)
+        profile.updateCompatibilityStrategyId()
+        try? modelContext.save()
+        DeviceActivityCenterUtil.scheduleTimerActivity(for: profile)
+        SyncCoordinator.shared.pushProfile(profile)
+    }
 
+    private func saveProfile() {
+        // Validate trigger configuration before persisting anything
+        triggerConfig.validate()
+        if !triggerConfig.validationErrors.isEmpty {
+            alertIdentifier = AlertIdentifier(
+                id: .error,
+                errorMessage: triggerConfig.validationErrors
+                    .map { "• " + $0 }
+                    .joined(separator: "\n")
+            )
+            return
+        }
+
+        do {
             // Calculate reminder time in seconds or nil if disabled
             let reminderTimeSeconds: UInt32? =
                 enableReminder ? UInt32(reminderTimeInMinutes * 60) : nil
@@ -793,7 +881,7 @@ struct BlockedProfileView: View {
                     in: modelContext,
                     name: name,
                     selection: selectedActivity,
-                    blockingStrategyId: selectedStrategy?.getIdentifier(),
+                    blockingStrategyId: nil,
                     enableLiveActivity: enableLiveActivity,
                     reminderTime: reminderTimeSeconds,
                     customReminderMessage: customReminderMessage,
@@ -806,7 +894,7 @@ struct BlockedProfileView: View {
                     domains: domains,
                     physicalUnblockNFCTagId: physicalUnblockNFCTagId,
                     physicalUnblockQRCodeId: physicalUnblockQRCodeId,
-                    schedule: schedule,
+                    schedule: nil,
                     geofenceRule: geofenceRule,
                     disableBackgroundStops: disableBackgroundStops,
                     preActivationReminderEnabled: preActivationReminderEnabled,
@@ -816,18 +904,13 @@ struct BlockedProfileView: View {
                     needsAppSelection: false // Clear needsAppSelection since user is saving with app selection
                 )
 
-                // Schedule restrictions
-                DeviceActivityCenterUtil.scheduleTimerActivity(for: updatedProfile)
-
-                // Push to sync (if global sync is enabled)
-                SyncCoordinator.shared.pushProfile(updatedProfile)
+                finalizeSave(updatedProfile)
             } else {
                 let newProfile = try BlockedProfiles.createProfile(
                     in: modelContext,
                     name: name,
                     selection: selectedActivity,
-                    blockingStrategyId: selectedStrategy?
-                        .getIdentifier() ?? NFCBlockingStrategy.id,
+                    blockingStrategyId: NFCBlockingStrategy.id,
                     enableLiveActivity: enableLiveActivity,
                     reminderTimeInSeconds: reminderTimeSeconds,
                     customReminderMessage: customReminderMessage,
@@ -840,7 +923,7 @@ struct BlockedProfileView: View {
                     domains: domains,
                     physicalUnblockNFCTagId: physicalUnblockNFCTagId,
                     physicalUnblockQRCodeId: physicalUnblockQRCodeId,
-                    schedule: schedule,
+                    schedule: nil,
                     geofenceRule: geofenceRule,
                     disableBackgroundStops: disableBackgroundStops,
                     preActivationReminderEnabled: preActivationReminderEnabled,
@@ -849,11 +932,7 @@ struct BlockedProfileView: View {
                     managedByChildId: managedChildId
                 )
 
-                // Schedule restrictions
-                DeviceActivityCenterUtil.scheduleTimerActivity(for: newProfile)
-
-                // Push to sync (if global sync is enabled)
-                SyncCoordinator.shared.pushProfile(newProfile)
+                finalizeSave(newProfile)
             }
 
             dismiss()

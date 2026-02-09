@@ -32,7 +32,7 @@ class ShortcutTimerBlockingStrategy: BlockingStrategy {
 
     let activeSession = BlockedProfileSession.createSession(
       in: context,
-      withTag: profile.blockingStrategyId ?? "ManualBlockingStrategy",
+      withTag: ShortcutTimerBlockingStrategy.id,
       withProfile: profile,
       forceStart: forceStart ?? true
     )

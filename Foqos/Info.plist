@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NFCReaderUsageDescription</key>
+	<string>Family Foqos uses NFC to trigger or unlock focus profiles when you tap compatible NFC tags.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Family Foqos needs your location if you want to lock profiles by location. Otherwise, feel free to deny. We do not track you or send your location data - it all stays on your device.</string>
 	<key>CKSharingSupported</key>

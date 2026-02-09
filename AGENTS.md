@@ -28,6 +28,8 @@ xcodebuild test -project FamilyFoqos.xcodeproj -scheme FamilyFoqos -destination 
 xcodebuild test -project FamilyFoqos.xcodeproj -scheme FamilyFoqos -destination 'platform=iOS Simulator,name=iPhone 17' -only-testing:FoqosTests/ClassName | xcpretty
 ```
 
+**IMPORTANT:** Tests take 2-3 seconds, but starting a simulator takes 3-4 minutes. When running tests, prestart the simulator and wait for the simulator to be `ready` before executing tests. 
+
 ### Code Formatting
 The project uses swift-format to maintain consistent code style. Run format commands before committing:
 ```bash

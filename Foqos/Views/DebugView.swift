@@ -35,10 +35,14 @@ struct DebugView: View {
             }
 
             // Schedule Section
-            if let schedule = profile.schedule {
-              DebugSection(title: "Schedule") {
-                ScheduleDebugCard(schedule: schedule)
-              }
+            DebugSection(title: "Schedule") {
+              ScheduleDebugCard(
+                schedule: profile.schedule,
+                startSchedule: profile.startSchedule,
+                stopSchedule: profile.stopSchedule,
+                startTriggersSchedule: profile.startTriggers.schedule,
+                stopConditionsSchedule: profile.stopConditions.schedule
+              )
             }
 
             // Strategy Manager Section
@@ -214,23 +218,24 @@ struct DebugView: View {
     markdown += "\n"
 
     // Schedule Section
-    if let schedule = profile.schedule {
-      markdown += "## Schedule\n\n"
+    markdown += "## Schedule\n\n"
 
-      if schedule.days.isEmpty {
-        markdown += "- **Days:** All days\n"
-      } else {
-        let dayNames = schedule.days.sorted(by: { $0.rawValue < $1.rawValue }).map { $0.name }
-          .joined(separator: ", ")
-        markdown += "- **Days:** \(dayNames)\n"
-      }
-
-      markdown +=
-        "- **Start Time:** \(String(format: "%02d:%02d", schedule.startHour, schedule.startMinute))\n"
-      markdown +=
-        "- **End Time:** \(String(format: "%02d:%02d", schedule.endHour, schedule.endMinute))\n"
-      markdown += "- **Updated At:** \(DateFormatters.formatDate(schedule.updatedAt))\n\n"
+    if profile.startTriggers.schedule, let start = profile.startSchedule {
+      markdown += "- **V2 Start Schedule:** \(start.formattedTime) (\(start.daysText))\n"
     }
+    if profile.stopConditions.schedule, let stop = profile.stopSchedule {
+      markdown += "- **V2 Stop Schedule:** \(stop.formattedTime) (\(stop.daysText))\n"
+    }
+
+    if let schedule = profile.schedule, schedule.isActive {
+      markdown += "- **Legacy Days:** \(schedule.days.sorted(by: { $0.rawValue < $1.rawValue }).map { $0.name }.joined(separator: ", "))\n"
+      markdown +=
+        "- **Legacy Start:** \(String(format: "%02d:%02d", schedule.startHour, schedule.startMinute))\n"
+      markdown +=
+        "- **Legacy End:** \(String(format: "%02d:%02d", schedule.endHour, schedule.endMinute))\n"
+    }
+
+    markdown += "\n"
 
     // Strategy Manager Section
     markdown += "## Strategy Manager\n\n"
@@ -278,6 +283,8 @@ struct DebugView: View {
 
     if rawValue.hasPrefix(BreakTimerActivity.id) {
       return "Break Timer"
+    } else if rawValue.hasPrefix(StopScheduleTimerActivity.id) {
+      return "Stop Schedule Timer"
     } else if rawValue.hasPrefix(ScheduleTimerActivity.id) {
       return "Schedule Timer"
     } else {
@@ -295,6 +302,11 @@ struct DebugView: View {
 
     // Check if it's a break timer activity for this profile
     if rawValue.hasPrefix(BreakTimerActivity.id) {
+      return rawValue.hasSuffix(profileIdString)
+    }
+
+    // Check if it's a stop schedule timer activity for this profile
+    if rawValue.hasPrefix(StopScheduleTimerActivity.id) {
       return rawValue.hasSuffix(profileIdString)
     }
 

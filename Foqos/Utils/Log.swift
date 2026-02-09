@@ -100,9 +100,6 @@ final class Log: @unchecked Sendable {  // SAFETY: All mutable state protected b
   /// Minimum log level to record (configurable)
   var minimumLevel: LogLevel = .debug
 
-  /// Whether to also output to console (print)
-  var consoleOutputEnabled: Bool = true
-
   /// Whether to persist logs to file
   var fileLoggingEnabled: Bool = true
 
@@ -210,11 +207,6 @@ final class Log: @unchecked Sendable {  // SAFETY: All mutable state protected b
     entries.append(entry)
     if entries.count > maxEntriesInMemory {
       entries.removeFirst(entries.count - maxEntriesInMemory)
-    }
-
-    // Console output
-    if consoleOutputEnabled {
-      print(entry.formattedString)
     }
 
     // OSLog integration
