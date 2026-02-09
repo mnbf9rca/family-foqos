@@ -64,3 +64,4 @@ fastlane/test_output
 # Claude Code local settings
 .claude/settings.local.json
 docs/plans/
+docs/codebase-analysis/
