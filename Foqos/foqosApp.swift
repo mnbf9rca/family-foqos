@@ -389,6 +389,16 @@ func acceptCloudKitShare(_ metadata: CKShare.Metadata) {
   Log.info("Container ID = \(metadata.containerIdentifier)", category: .cloudKit)
 
   Task {
+    // Guard: if already connected to a family, warn the user
+    if CloudKitManager.shared.isConnectedToFamily {
+      Log.warning("Device already connected to a family, rejecting new share", category: .cloudKit)
+      await MainActor.run {
+        CloudKitManager.shared.shareAcceptedMessage =
+          "This device is already connected to a family. Please leave the current family first before joining a new one."
+      }
+      return
+    }
+
     // Step 1: Determine role by trying child authorization
     let verificationResult = await AuthorizationVerifier.shared.verifyChildAuthorization()
 
@@ -427,19 +437,16 @@ func acceptCloudKitShare(_ metadata: CKShare.Metadata) {
   }
 }
 
-/// Complete share acceptance after user confirms their role
+/// Complete share acceptance after user confirms their role.
+/// Role has already been verified via FamilyControls in acceptCloudKitShare(),
+/// so we use acceptShareAsParent() for both paths (it skips redundant auth checks).
+/// The child path's auth was already validated during role detection.
 func completeShareAcceptance(metadata: CKShare.Metadata, role: FamilyRole) {
   Task {
     do {
-      if role == .child {
-        try await CloudKitManager.shared.acceptShare(metadata: metadata)
-      } else {
-        try await CloudKitManager.shared.acceptShareAsParent(metadata: metadata)
-      }
+      // Both paths use the same CloudKit accept — role was already verified
+      try await CloudKitManager.shared.acceptShareAsParent(metadata: metadata)
       Log.info("Successfully accepted CloudKit share as \(role.displayName)", category: .cloudKit)
-
-      // Fetch shared lock codes immediately
-      _ = try? await CloudKitManager.shared.fetchSharedLockCodes()
 
       // Register self as FamilyMember with correct role
       await CloudKitManager.shared.registerSelfAsFamilyMember(role: role)
