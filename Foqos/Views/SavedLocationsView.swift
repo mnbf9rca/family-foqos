@@ -14,6 +14,11 @@ struct SavedLocationsView: View {
   @Query(sort: \SavedLocation.name) private var locations: [SavedLocation]
   @Query private var profiles: [BlockedProfiles]
 
+  /// Filtered profiles excluding deleted models during CloudKit sync
+  private var validProfiles: [BlockedProfiles] {
+    profiles.valid
+  }
+
   @State private var showingAddLocation = false
   @State private var locationToEdit: SavedLocation?
   @State private var showingLockCodeEntry = false
@@ -23,7 +28,7 @@ struct SavedLocationsView: View {
   /// Location IDs that are in use by profiles with active sessions
   private var locationsInUseByActiveProfiles: [UUID: String] {
     var result: [UUID: String] = [:]
-    for profile in profiles {
+    for profile in validProfiles {
       // Check if profile has an active session
       let hasActiveSession = profile.sessions.contains { $0.isActive }
       guard hasActiveSession else { continue }
