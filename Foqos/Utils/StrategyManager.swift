@@ -1209,7 +1209,14 @@ class StrategyManager: ObservableObject {
     )
 
     if validation.allowed {
-      stopBlocking(context: context, bypassStrategy: true)
+      // Check geofence before allowing the stop
+      if let geofenceRule = session.blockedProfile.geofenceRule,
+        geofenceRule.hasLocations
+      {
+        checkGeofenceAndStop(context: context, profile: session.blockedProfile)
+      } else {
+        stopBlocking(context: context, bypassStrategy: true)
+      }
     } else {
       errorMessage = validation.errorMessage
     }
@@ -1231,7 +1238,14 @@ class StrategyManager: ObservableObject {
     )
 
     if validation.allowed {
-      stopBlocking(context: context, bypassStrategy: true)
+      // Check geofence before allowing the stop
+      if let geofenceRule = session.blockedProfile.geofenceRule,
+        geofenceRule.hasLocations
+      {
+        checkGeofenceAndStop(context: context, profile: session.blockedProfile)
+      } else {
+        stopBlocking(context: context, bypassStrategy: true)
+      }
     } else {
       errorMessage = validation.errorMessage
     }
