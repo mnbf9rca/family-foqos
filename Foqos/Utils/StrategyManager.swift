@@ -261,28 +261,10 @@ class StrategyManager: ObservableObject {
     showGeofenceStartWarning = false
   }
 
-  /// Check if the current blocking session can be stopped
-  /// Note: This is a synchronous check and doesn't verify geofence rules.
-  /// Lock codes no longer gate stopping — they only gate editing/deleting profiles.
-  func canStopBlocking() -> Bool {
-    return true
-  }
-
   /// Check if the profile has geofence restrictions
   func hasGeofenceRestrictions() -> Bool {
     guard let session = activeSession else { return false }
     return session.blockedProfile.geofenceRule?.hasLocations == true
-  }
-
-  /// Get the reason why stopping is blocked
-  func getStopBlockedReason() -> String? {
-    guard let session = activeSession else { return nil }
-
-    if session.blockedProfile.geofenceRule?.hasLocations == true {
-      return "This profile has location restrictions. You must be at the required location to stop."
-    }
-
-    return nil
   }
 
   func toggleBreak(context: ModelContext) {
