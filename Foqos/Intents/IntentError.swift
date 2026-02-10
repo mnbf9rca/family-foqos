@@ -24,7 +24,7 @@ enum IntentError: Error, CustomLocalizedStringResourceConvertible {
     case .geofenceBlocked(let reason):
       "Cannot stop — \(reason)"
     case .unexpected(let message):
-      "Something went wrong: \(message)"
+      "\(message)"
     }
   }
 }

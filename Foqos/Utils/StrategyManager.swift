@@ -660,8 +660,13 @@ class StrategyManager: ObservableObject {
     } catch let error as IntentError {
       throw error
     } catch {
-      self.errorMessage = "Something went wrong fetching profile"
-      throw IntentError.unexpected("Something went wrong fetching profile")
+      Log.error(
+        "Unexpected error in startSessionFromBackground: \(error.localizedDescription)",
+        category: .strategy
+      )
+      let message = "Something went wrong fetching profile"
+      self.errorMessage = message
+      throw IntentError.unexpected(message)
     }
   }
 
@@ -729,8 +734,13 @@ class StrategyManager: ObservableObject {
     } catch let error as IntentError {
       throw error
     } catch {
-      self.errorMessage = "Something went wrong fetching profile"
-      throw IntentError.unexpected("Something went wrong fetching profile")
+      Log.error(
+        "Unexpected error in stopSessionFromBackground: \(error.localizedDescription)",
+        category: .strategy
+      )
+      let message = "Something went wrong fetching profile"
+      self.errorMessage = message
+      throw IntentError.unexpected(message)
     }
   }
 
