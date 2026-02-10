@@ -40,6 +40,24 @@ private let container: ModelContainer = {
     }
 }()
 
+// MARK: - Pending Share Acceptance State
+
+/// Holds state between role detection and user confirmation during share acceptance
+@MainActor
+class PendingShareAcceptance: ObservableObject {
+    static let shared = PendingShareAcceptance()
+
+    @Published var pendingMetadata: CKShare.Metadata?
+    @Published var detectedRole: FamilyRole?
+    @Published var showConfirmation = false
+
+    func reset() {
+        pendingMetadata = nil
+        detectedRole = nil
+        showConfirmation = false
+    }
+}
+
 @main
 struct foqosApp: App {
     @StateObject private var requestAuthorizer = RequestAuthorizer()
@@ -55,6 +73,7 @@ struct foqosApp: App {
     // App mode management for Family Sharing
     @StateObject private var appModeManager = AppModeManager.shared
     @StateObject private var cloudKitManager = CloudKitManager.shared
+    @StateObject private var pendingAcceptance = PendingShareAcceptance.shared
 
     // Device sync for same-user multi-device sync
     @StateObject private var profileSyncManager = ProfileSyncManager.shared
@@ -94,6 +113,8 @@ struct foqosApp: App {
                     if newPhase == .active {
                         // Verify child authorization when app becomes active
                         verifyChildAuthorizationIfNeeded()
+                        // Self-heal FamilyMember record if connected to family
+                        Task { await CloudKitManager.shared.verifySelfFamilyMemberRecord() }
                         // Resume One More Minute timer if it was active before backgrounding
                         StrategyManager.shared.resumeOneMoreMinuteIfNeeded()
                         // Reschedule pre-activation reminders (handles warm returns on new days)
@@ -111,23 +132,42 @@ struct foqosApp: App {
                     }
                     handleURL(url)
                 }
+                // Share acceptance result alert (success or error)
                 .alert(
-                    "Linked to Parent",
+                    cloudKitManager.shareAcceptanceIsError ? "Unable to Join Family" : shareAcceptanceTitle,
                     isPresented: Binding(
-                        get: { cloudKitManager.shareAcceptedMessage != nil && !cloudKitManager.childAuthorizationFailed },
-                        set: { if !$0 { cloudKitManager.shareAcceptedMessage = nil } }
+                        get: { cloudKitManager.shareAcceptedMessage != nil },
+                        set: { if !$0 {
+                            cloudKitManager.shareAcceptedMessage = nil
+                            cloudKitManager.shareAcceptanceIsError = false
+                        }}
                     )
                 ) {
                     Button("OK") {
                         cloudKitManager.shareAcceptedMessage = nil
+                        cloudKitManager.shareAcceptanceIsError = false
                     }
                 } message: {
                     Text(cloudKitManager.shareAcceptedMessage ?? "")
                 }
-                .sheet(isPresented: $cloudKitManager.childAuthorizationFailed) {
-                    ChildAuthorizationRequiredView {
-                        cloudKitManager.clearChildAuthorizationFailure()
+                // Role confirmation alert before accepting share
+                .alert(
+                    confirmationAlertTitle,
+                    isPresented: $pendingAcceptance.showConfirmation
+                ) {
+                    Button("Continue") {
+                        guard let metadata = pendingAcceptance.pendingMetadata,
+                              let role = pendingAcceptance.detectedRole else {
+                            return
+                        }
+                        pendingAcceptance.reset()
+                        completeShareAcceptance(metadata: metadata, role: role)
                     }
+                    Button("Cancel", role: .cancel) {
+                        pendingAcceptance.reset()
+                    }
+                } message: {
+                    Text(confirmationAlertMessage)
                 }
                 .onReceive(profileSyncManager.$shouldShowSyncUpgradeNotice) { shouldShow in
                     if shouldShow {
@@ -180,6 +220,30 @@ struct foqosApp: App {
         // Parent dashboard is accessible from settings (parent mode)
         // Child parental controls info is accessible from settings (child mode)
         HomeView()
+    }
+
+    // MARK: - Share Acceptance Alerts
+
+    /// Title for success alert based on the mode that was set
+    private var shareAcceptanceTitle: String {
+        appModeManager.currentMode == .parent ? "Linked as Parent" : "Linked to Family"
+    }
+
+    /// Title for confirmation alert based on detected role
+    private var confirmationAlertTitle: String {
+        let role = pendingAcceptance.detectedRole ?? .child
+        return "Set up as \(role.displayName)?"
+    }
+
+    /// Message for confirmation alert based on detected role
+    private var confirmationAlertMessage: String {
+        let role = pendingAcceptance.detectedRole ?? .child
+        switch role {
+        case .child:
+            return "This device will be set up as a child. A parent will be able to set lock codes to restrict editing and deleting focus profiles."
+        case .parent:
+            return "This device will be set up as a parent. You'll be able to set lock codes for child devices to restrict editing and deleting focus profiles."
+        }
     }
 
     /// Migrates profiles from legacy blockingStrategyId to new trigger system (Schema V2)
@@ -372,40 +436,92 @@ class SceneDelegate: NSObject, UIWindowSceneDelegate {
 
 // MARK: - Shared CloudKit Share Acceptance
 
+/// Entry point for CloudKit share acceptance — detects role and shows confirmation
 func acceptCloudKitShare(_ metadata: CKShare.Metadata) {
     Log.info("Processing share", category: .cloudKit)
     Log.info("Container ID = \(metadata.containerIdentifier)", category: .cloudKit)
 
-    Task {
-        do {
-            try await CloudKitManager.shared.acceptShare(metadata: metadata)
-            Log.info("Successfully accepted CloudKit share", category: .cloudKit)
+    Task { @MainActor in
+        // 1. Fresh connection check
+        let isConnected = await CloudKitManager.shared.checkFamilyConnectionStatus()
 
-            // Fetch shared lock codes immediately
+        if isConnected {
+            Log.info("Device already connected to a family", category: .cloudKit)
+            CloudKitManager.shared.shareAcceptanceIsError = true
+            CloudKitManager.shared.shareAcceptedMessage =
+                "This device is already connected to a family. Leave the current family before joining a new one."
+            return
+        }
+
+        // 2. Detect role via AuthorizationVerifier
+        let verificationResult = await AuthorizationVerifier.shared.verifyChildAuthorization()
+
+        let detectedRole: FamilyRole
+        switch verificationResult {
+        case .authorized:
+            detectedRole = .child
+        case .notChildDevice:
+            detectedRole = .parent
+        case .networkError(let error):
+            Log.error("Network error during role detection: \(error)", category: .cloudKit)
+            CloudKitManager.shared.shareAcceptanceIsError = true
+            CloudKitManager.shared.shareAcceptedMessage =
+                "Unable to verify device type. Please check your internet connection and try again."
+            return
+        case .unknownError(let error):
+            Log.error("Unknown error during role detection: \(error)", category: .cloudKit)
+            CloudKitManager.shared.shareAcceptanceIsError = true
+            CloudKitManager.shared.shareAcceptedMessage =
+                "Unable to verify device type: \(error.localizedDescription)"
+            return
+        case .notAuthorized:
+            // Not authorized but not a FamilyControls error — treat as parent
+            detectedRole = .parent
+        }
+
+        Log.info("Detected role: \(detectedRole.rawValue)", category: .cloudKit)
+
+        // 3. Store metadata and role, show confirmation
+        PendingShareAcceptance.shared.pendingMetadata = metadata
+        PendingShareAcceptance.shared.detectedRole = detectedRole
+        PendingShareAcceptance.shared.showConfirmation = true
+    }
+}
+
+/// Called from confirmation alert "Continue" — accepts share and sets up role
+func completeShareAcceptance(metadata: CKShare.Metadata, role: FamilyRole) {
+    Task { @MainActor in
+        do {
+            // 1. Accept CloudKit share (no auth gate)
+            try await CloudKitManager.shared.acceptShareDirect(metadata: metadata)
+            Log.info("Share accepted for role: \(role.rawValue)", category: .cloudKit)
+
+            // 2. Ensure user record ID is available, then register self
+            _ = try await CloudKitManager.shared.ensureUserRecordID()
+            await CloudKitManager.shared.registerSelfAsFamilyMember(role: role)
+
+            // 3. Switch app mode
+            let appMode: AppMode = role == .parent ? .parent : .child
+            AppModeManager.shared.selectMode(appMode)
+
+            // 4. Fetch shared lock codes
             _ = try? await CloudKitManager.shared.fetchSharedLockCodes()
 
-            // Switch to child mode and show confirmation
-            await MainActor.run {
-                if AppModeManager.shared.currentMode != .child {
-                    AppModeManager.shared.selectMode(.child)
-                }
+            // 5. Show role-specific success message
+            CloudKitManager.shared.shareAcceptanceIsError = false
+            switch role {
+            case .parent:
                 CloudKitManager.shared.shareAcceptedMessage =
-                    "You are now linked to a parent's device. They can set a lock code to manage your focus profiles."
-            }
-        } catch CloudKitError.childAuthorizationRequired {
-            // Show the authorization required view instead of a generic error
-            Log.warning("Child authorization required", category: .authorization)
-            await MainActor.run {
-                CloudKitManager.shared.setChildAuthorizationFailure(
-                    message: CloudKitError.childAuthorizationRequired.errorDescription ?? "Child authorization required"
-                )
+                    "You are now linked as a parent. You can set lock codes for child devices to restrict editing and deleting focus profiles."
+            case .child:
+                CloudKitManager.shared.shareAcceptedMessage =
+                    "You are now linked to a parent's device. They can set a lock code to restrict editing and deleting your focus profiles."
             }
         } catch {
             Log.error("Share acceptance failed: \(error)", category: .cloudKit)
-            await MainActor.run {
-                CloudKitManager.shared.shareAcceptedMessage =
-                    "Failed to accept invitation: \(error.localizedDescription)"
-            }
+            CloudKitManager.shared.shareAcceptanceIsError = true
+            CloudKitManager.shared.shareAcceptedMessage =
+                "Failed to accept invitation: \(error.localizedDescription)"
         }
     }
 }
@@ -417,6 +533,7 @@ func acceptCloudKitShare(_ metadata: CKShare.Metadata) {
 func verifyChildAuthorizationIfNeeded() {
     Task { @MainActor in
         if let message = await AuthorizationVerifier.shared.verifyIfNeeded() {
+            CloudKitManager.shared.shareAcceptanceIsError = true
             CloudKitManager.shared.shareAcceptedMessage = message
         }
     }

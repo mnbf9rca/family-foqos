@@ -46,6 +46,13 @@ struct ParentDashboardView: View {
                         .disabled(!isPageFunctional)
                         .opacity(isPageFunctional ? 1.0 : 0.5)
 
+                    // Pending members section (accepted share but haven't opened the app yet)
+                    if !cloudKitManager.pendingParticipants.isEmpty {
+                        pendingMembersSection
+                            .disabled(!isPageFunctional)
+                            .opacity(isPageFunctional ? 1.0 : 0.5)
+                    }
+
                     // How to use section
                     howToUseSection
                 }
@@ -260,6 +267,44 @@ struct ParentDashboardView: View {
                         }
                     )
                 }
+            }
+        }
+    }
+
+    private var pendingMembersSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Pending")
+                .font(.headline)
+
+            ForEach(Array(cloudKitManager.pendingParticipants.enumerated()), id: \.offset) { _, participant in
+                let name =
+                    participant.userIdentity.nameComponents?.formatted()
+                    ?? participant.userIdentity.lookupInfo?.emailAddress
+                    ?? "Family Member"
+
+                HStack(spacing: 12) {
+                    Image(systemName: "person.crop.circle.badge.clock")
+                        .font(.title2)
+                        .foregroundColor(.secondary)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(name)
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+
+                        Text("Waiting for setup")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+
+                    Spacer()
+                }
+                .padding()
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color(.tertiarySystemBackground))
+                )
+                .opacity(0.6)
             }
         }
     }
