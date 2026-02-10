@@ -180,19 +180,30 @@ class StrategyManager: ObservableObject {
 
     isCheckingGeofence = true
 
+    // Capture Sendable snapshots before entering the Task to avoid capturing
+    // non-Sendable SwiftData models (profile) across the concurrency boundary
+    guard let geofenceRule = profile.geofenceRule else {
+      isCheckingGeofence = false
+      stopBlocking(context: context, bypassStrategy: true)
+      return
+    }
+    let ruleToCheck = geofenceRule
+    let savedLocationsSnapshot: [SavedLocation]
+    do {
+      savedLocationsSnapshot = try SavedLocation.fetchAll(in: context)
+    } catch {
+      self.isCheckingGeofence = false
+      self.errorMessage = "Unable to load saved locations. Please try again."
+      return
+    }
+
     Task { @MainActor in
-      let result = await self.evaluateGeofenceForStop(
-        profile: profile,
-        context: context
+      let result = await self.locationManager.checkGeofenceRule(
+        rule: ruleToCheck,
+        savedLocations: savedLocationsSnapshot
       )
 
       self.isCheckingGeofence = false
-
-      guard let result else {
-        // No geofence rule — stop is allowed
-        self.stopBlocking(context: context, bypassStrategy: true)
-        return
-      }
 
       if result.isSatisfied {
         self.stopBlocking(context: context, bypassStrategy: true)
@@ -533,7 +544,23 @@ class StrategyManager: ObservableObject {
           return
         }
 
-        // Check geofence rule — in foreground, show error message to user
+        // Check geofence rule — in foreground, handle permissions with user-facing messages
+        if let geofenceRule = localActiveSession.blockedProfile.geofenceRule,
+          geofenceRule.hasLocations
+        {
+          if locationManager.isNotDetermined {
+            locationManager.requestAuthorization()
+            self.errorMessage =
+              "Please allow location access to stop this profile, then try again."
+            return
+          }
+          if locationManager.isDenied {
+            self.errorMessage =
+              "Location access is denied. Enable location services in Settings to use location-based restrictions."
+            return
+          }
+        }
+
         let geofenceResult = await evaluateGeofenceForStop(
           profile: localActiveSession.blockedProfile,
           context: context
@@ -688,7 +715,8 @@ class StrategyManager: ObservableObject {
         Log.info(
           "Geofence blocked background stop for profile: \(profile.name) — \(reason)",
           category: .strategy)
-        postGeofenceBlockedNotification(profileName: profile.name, reason: reason)
+        postGeofenceBlockedNotification(
+          profileId: profile.id, profileName: profile.name, reason: reason)
         return
       }
 
@@ -1372,18 +1400,29 @@ class StrategyManager: ObservableObject {
   }
 
   /// Post a local notification when a background stop is blocked by geofence
-  private func postGeofenceBlockedNotification(profileName: String, reason: String) {
+  private func postGeofenceBlockedNotification(
+    profileId: UUID,
+    profileName: String,
+    reason: String
+  ) {
     let content = UNMutableNotificationContent()
     content.title = "Profile couldn't be stopped"
     content.body = "\(profileName): \(reason)"
     content.sound = .default
 
+    // Stable per-profile identifier so repeated blocked stops replace the previous notification
     let request = UNNotificationRequest(
-      identifier: "geofence-blocked-\(UUID().uuidString)",
+      identifier: "geofence-blocked-\(profileId.uuidString)",
       content: content,
       trigger: nil
     )
-    UNUserNotificationCenter.current().add(request)
+    UNUserNotificationCenter.current().add(request) { error in
+      if let error {
+        Log.warning(
+          "Failed to post geofence blocked notification: \(error.localizedDescription)",
+          category: .location)
+      }
+    }
   }
 
   func cleanUpGhostSchedules(context: ModelContext) {
