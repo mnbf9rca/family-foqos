@@ -6,8 +6,6 @@ import WidgetKit
 class StrategyManager: ObservableObject {
   static let shared = StrategyManager()
 
-  private let appModeManager = AppModeManager.shared
-  private let lockCodeManager = LockCodeManager.shared
   private let locationManager = LocationManager.shared
 
   static let availableStrategies: [BlockingStrategy] = [
@@ -115,17 +113,6 @@ class StrategyManager: ObservableObject {
 
   func toggleBlocking(context: ModelContext, activeProfile: BlockedProfiles?) {
     if isBlocking {
-      // Check if the active profile is managed and requires unlock
-      if let session = activeSession,
-        session.blockedProfile.isManaged,
-        appModeManager.currentMode == .child,
-        !lockCodeManager.isUnlocked(session.blockedProfile.id)
-      {
-        Log.info("Manual stop blocked: Managed profile requires lock code", category: .strategy)
-        errorMessage = "This profile is parent-controlled. Enter the lock code to stop blocking."
-        return
-      }
-
       // Check geofence rule if one exists
       if let session = activeSession,
         let geofenceRule = session.blockedProfile.geofenceRule,
@@ -289,40 +276,10 @@ class StrategyManager: ObservableObject {
     showGeofenceStartWarning = false
   }
 
-  /// Check if the current blocking session can be stopped (for managed profiles)
-  /// Note: This is a synchronous check and doesn't verify geofence rules
-  func canStopBlocking() -> Bool {
-    guard let session = activeSession else { return true }
-
-    // If it's a managed profile on a child device, check if unlocked
-    if session.blockedProfile.isManaged && appModeManager.currentMode == .child {
-      return lockCodeManager.isUnlocked(session.blockedProfile.id)
-    }
-
-    return true
-  }
-
   /// Check if the profile has geofence restrictions
   func hasGeofenceRestrictions() -> Bool {
     guard let session = activeSession else { return false }
     return session.blockedProfile.geofenceRule?.hasLocations == true
-  }
-
-  /// Get the reason why stopping is blocked
-  func getStopBlockedReason() -> String? {
-    guard let session = activeSession else { return nil }
-
-    if session.blockedProfile.isManaged && appModeManager.currentMode == .child
-      && !lockCodeManager.isUnlocked(session.blockedProfile.id)
-    {
-      return "This profile is parent-controlled. Enter the lock code to stop blocking."
-    }
-
-    if session.blockedProfile.geofenceRule?.hasLocations == true {
-      return "This profile has location restrictions. You must be at the required location to stop."
-    }
-
-    return nil
   }
 
   func toggleBreak(context: ModelContext) {
@@ -691,17 +648,6 @@ class StrategyManager: ObservableObject {
 
     // Do not allow emergency unblocks if there is no active session
     guard let activeSession = getActiveSession(context: context) else {
-      return
-    }
-
-    // Check if the active profile is managed and requires unlock
-    if activeSession.blockedProfile.isManaged,
-      appModeManager.currentMode == .child,
-      !lockCodeManager.isUnlocked(activeSession.blockedProfile.id)
-    {
-      Log.info("Emergency unblock blocked: Managed profile requires lock code", category: .strategy)
-      errorMessage =
-        "This profile is parent-controlled. Enter the lock code to use emergency unblock."
       return
     }
 

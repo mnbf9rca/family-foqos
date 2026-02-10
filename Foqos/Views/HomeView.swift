@@ -66,9 +66,6 @@ struct HomeView: View {
   @ObservedObject private var appModeManager = AppModeManager.shared
   @State private var showModeSelection = false
 
-  // Lock code manager (for stop flow lock check)
-  private let lockCodeManager = LockCodeManager.shared
-
   // Sync conflict manager
   @ObservedObject private var syncConflictManager = SyncConflictManager.shared
 
@@ -499,17 +496,6 @@ struct HomeView: View {
   }
 
   private func handleStopTap(_ profile: BlockedProfiles) {
-    // Check if managed profile requires unlock (moved from toggleBlocking)
-    if let session = strategyManager.activeSession,
-      session.blockedProfile.isManaged,
-      appModeManager.currentMode == .child,
-      !lockCodeManager.isUnlocked(session.blockedProfile.id)
-    {
-      strategyManager.errorMessage =
-        "This profile is parent-controlled. Enter the lock code to stop blocking."
-      return
-    }
-
     let action = StrategyManager.determineStopAction(
       for: profile.stopConditions
     )
