@@ -588,7 +588,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = " git config core.hooksPath .githooks\n";
+			shellScript = "cd \"${SRCROOT}\"\nif [ ! -d .git ] && ! git rev-parse --git-dir >/dev/null 2>&1; then\n    exit 0\nfi\nCURRENT=$(git config --get core.hooksPath 2>/dev/null || true)\nif [ -z \"$CURRENT\" ]; then\n    git config core.hooksPath .githooks\nelif [ \"$CURRENT\" != \".githooks\" ]; then\n    echo \"error: core.hooksPath is set to '$CURRENT' — expected '.githooks'. Run: git config core.hooksPath .githooks\"\n    exit 1\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
