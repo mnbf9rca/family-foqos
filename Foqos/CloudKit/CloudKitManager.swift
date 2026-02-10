@@ -740,9 +740,9 @@ class CloudKitManager: ObservableObject {
             for (_, result) in results {
                 if case .success(let existingRecord) = result {
                     // Record exists — update role if different
-                    let existingRole = existingRecord["role"] as? String
+                    let existingRole = existingRecord[FamilyMember.RecordKey.role] as? String
                     if existingRole != role.rawValue {
-                        existingRecord["role"] = role.rawValue
+                        existingRecord[FamilyMember.RecordKey.role] = role.rawValue
                         _ = try await sharedDatabase.save(existingRecord)
                         Log.info("Updated self FamilyMember role to \(role.rawValue)", category: .cloudKit)
                     } else {
@@ -753,7 +753,7 @@ class CloudKitManager: ObservableObject {
             }
 
             // No existing record — create one
-            let displayName = await fetchCurrentUserDisplayName() ?? "Family Member"
+            let displayName = await fetchCurrentUserDisplayName(in: zone.zoneID) ?? "Family Member"
             let member = FamilyMember(
                 userRecordName: userRecordName,
                 displayName: displayName,
@@ -800,9 +800,9 @@ class CloudKitManager: ObservableObject {
 
             for (_, result) in results {
                 if case .success(let record) = result {
-                    let recordRole = record["role"] as? String
+                    let recordRole = record[FamilyMember.RecordKey.role] as? String
                     if recordRole != expectedRole.rawValue {
-                        record["role"] = expectedRole.rawValue
+                        record[FamilyMember.RecordKey.role] = expectedRole.rawValue
                         _ = try await sharedDatabase.save(record)
                         Log.info("Self-healed FamilyMember role to \(expectedRole.rawValue)", category: .cloudKit)
                     }
@@ -819,14 +819,19 @@ class CloudKitManager: ObservableObject {
     }
 
     /// Fetch current user's display name from the share's participant list
-    private func fetchCurrentUserDisplayName() async -> String? {
-        guard let zone = await findSharedZoneByName(),
-              let userRecordID = currentUserRecordID else { return nil }
+    private func fetchCurrentUserDisplayName(in zoneID: CKRecordZone.ID) async -> String? {
+        guard let userRecordID = currentUserRecordID else { return nil }
         do {
-            let rootRecordID = CKRecord.ID(recordName: familyRootRecordName, zoneID: zone.zoneID)
+            let rootRecordID = CKRecord.ID(recordName: familyRootRecordName, zoneID: zoneID)
             let rootRecord = try await sharedDatabase.record(for: rootRecordID)
             guard let shareRef = rootRecord.share else { return nil }
-            let share = try await sharedDatabase.record(for: shareRef.recordID) as! CKShare
+            let shareRecord = try await sharedDatabase.record(for: shareRef.recordID)
+            guard let share = shareRecord as? CKShare else {
+                Log.error(
+                    "Expected CKShare but received \(type(of: shareRecord)) for share reference \(shareRef)",
+                    category: .cloudKit)
+                return nil
+            }
 
             let me = share.participants.first {
                 $0.userIdentity.userRecordID?.recordName == userRecordID.recordName

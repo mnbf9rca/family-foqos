@@ -276,7 +276,7 @@ struct ParentDashboardView: View {
             Text("Pending")
                 .font(.headline)
 
-            ForEach(Array(cloudKitManager.pendingParticipants.enumerated()), id: \.offset) { _, participant in
+            ForEach(cloudKitManager.pendingParticipants, id: \.userIdentity.userRecordID) { participant in
                 let name =
                     participant.userIdentity.nameComponents?.formatted()
                     ?? participant.userIdentity.lookupInfo?.emailAddress

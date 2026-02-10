@@ -68,7 +68,7 @@ struct FamilyMember: Codable, Identifiable, Equatable {
 extension FamilyMember {
     static let recordType = "FamilyMember"
 
-    private enum RecordKey {
+    enum RecordKey {
         static let id = "id"
         static let userRecordName = "userRecordName"
         static let displayName = "displayName"

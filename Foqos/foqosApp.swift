@@ -491,37 +491,42 @@ func acceptCloudKitShare(_ metadata: CKShare.Metadata) {
 /// Called from confirmation alert "Continue" — accepts share and sets up role
 func completeShareAcceptance(metadata: CKShare.Metadata, role: FamilyRole) {
     Task { @MainActor in
+        // 1. Accept CloudKit share (no auth gate)
         do {
-            // 1. Accept CloudKit share (no auth gate)
             try await CloudKitManager.shared.acceptShareDirect(metadata: metadata)
             Log.info("Share accepted for role: \(role.rawValue)", category: .cloudKit)
-
-            // 2. Ensure user record ID is available, then register self
-            _ = try await CloudKitManager.shared.ensureUserRecordID()
-            await CloudKitManager.shared.registerSelfAsFamilyMember(role: role)
-
-            // 3. Switch app mode
-            let appMode: AppMode = role == .parent ? .parent : .child
-            AppModeManager.shared.selectMode(appMode)
-
-            // 4. Fetch shared lock codes
-            _ = try? await CloudKitManager.shared.fetchSharedLockCodes()
-
-            // 5. Show role-specific success message
-            CloudKitManager.shared.shareAcceptanceIsError = false
-            switch role {
-            case .parent:
-                CloudKitManager.shared.shareAcceptedMessage =
-                    "You are now linked as a parent. You can set lock codes for child devices to restrict editing and deleting focus profiles."
-            case .child:
-                CloudKitManager.shared.shareAcceptedMessage =
-                    "You are now linked to a parent's device. They can set a lock code to restrict editing and deleting your focus profiles."
-            }
         } catch {
             Log.error("Share acceptance failed: \(error)", category: .cloudKit)
             CloudKitManager.shared.shareAcceptanceIsError = true
             CloudKitManager.shared.shareAcceptedMessage =
                 "Failed to accept invitation: \(error.localizedDescription)"
+            return
+        }
+
+        // 2. Switch app mode immediately after successful share acceptance
+        let appMode: AppMode = role == .parent ? .parent : .child
+        AppModeManager.shared.selectMode(appMode)
+
+        // 3. Best-effort: register self as family member
+        do {
+            _ = try await CloudKitManager.shared.ensureUserRecordID()
+            await CloudKitManager.shared.registerSelfAsFamilyMember(role: role)
+        } catch {
+            Log.error("Self-registration failed (will retry on next activation): \(error)", category: .cloudKit)
+        }
+
+        // 4. Best-effort: fetch shared lock codes
+        _ = try? await CloudKitManager.shared.fetchSharedLockCodes()
+
+        // 5. Show role-specific success message
+        CloudKitManager.shared.shareAcceptanceIsError = false
+        switch role {
+        case .parent:
+            CloudKitManager.shared.shareAcceptedMessage =
+                "You are now linked as a parent. You can set lock codes for child devices to restrict editing and deleting focus profiles."
+        case .child:
+            CloudKitManager.shared.shareAcceptedMessage =
+                "You are now linked to a parent's device. They can set a lock code to restrict editing and deleting your focus profiles."
         }
     }
 }
