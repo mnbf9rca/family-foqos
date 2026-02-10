@@ -18,7 +18,7 @@ struct StopProfileIntent: AppIntent {
   func perform() async throws -> some IntentResult {
     let strategyManager = StrategyManager.shared
 
-    strategyManager
+    await strategyManager
       .stopSessionFromBackground(
         profile.id,
         context: modelContext

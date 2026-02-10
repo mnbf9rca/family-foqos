@@ -1,5 +1,6 @@
 import SwiftData
 import SwiftUI
+import UserNotifications
 import WidgetKit
 
 @MainActor
@@ -118,7 +119,7 @@ class StrategyManager: ObservableObject {
         let geofenceRule = session.blockedProfile.geofenceRule,
         geofenceRule.hasLocations
       {
-        checkGeofenceAndStop(context: context, rule: geofenceRule)
+        checkGeofenceAndStop(context: context, profile: session.blockedProfile)
         return
       }
 
@@ -128,16 +129,49 @@ class StrategyManager: ObservableObject {
     }
   }
 
-  /// Check geofence rule and stop blocking if satisfied
-  private func checkGeofenceAndStop(context: ModelContext, rule: ProfileGeofenceRule) {
-    // Request permission if not determined
+  /// Evaluate geofence rule for a profile stop.
+  /// Returns `nil` when no geofence exists (stop is allowed),
+  /// or a `GeofenceCheckResult` indicating whether the stop should proceed.
+  /// Returns `.failed` with a message when location can't be determined (fail-closed).
+  private func evaluateGeofenceForStop(
+    profile: BlockedProfiles,
+    context: ModelContext
+  ) async -> GeofenceCheckResult? {
+    guard let geofenceRule = profile.geofenceRule,
+      geofenceRule.hasLocations
+    else {
+      return nil  // No geofence rule — stop is allowed
+    }
+
+    // If location permission is not determined or denied, fail-closed
+    if locationManager.isNotDetermined || locationManager.isDenied {
+      return .failed(
+        message: "Could not verify your location. Open the app to stop this profile."
+      )
+    }
+
+    let savedLocationsSnapshot: [SavedLocation]
+    do {
+      savedLocationsSnapshot = try SavedLocation.fetchAll(in: context)
+    } catch {
+      return .failed(message: "Unable to load saved locations. Please try again.")
+    }
+
+    return await locationManager.checkGeofenceRule(
+      rule: geofenceRule,
+      savedLocations: savedLocationsSnapshot
+    )
+  }
+
+  /// Check geofence rule and stop blocking if satisfied (foreground UI path)
+  private func checkGeofenceAndStop(context: ModelContext, profile: BlockedProfiles) {
+    // Foreground-specific: request permission with user-facing prompt
     if locationManager.isNotDetermined {
       locationManager.requestAuthorization()
       errorMessage = "Please allow location access to stop this profile, then try again."
       return
     }
 
-    // Check if permission is denied
     if locationManager.isDenied {
       errorMessage =
         "Location access is denied. Enable location services in Settings to use location-based restrictions."
@@ -146,8 +180,14 @@ class StrategyManager: ObservableObject {
 
     isCheckingGeofence = true
 
-    // Capture saved locations before entering the Task to avoid Sendable warnings
-    let ruleToCheck = rule
+    // Capture Sendable snapshots before entering the Task to avoid capturing
+    // non-Sendable SwiftData models (profile) across the concurrency boundary
+    guard let geofenceRule = profile.geofenceRule else {
+      isCheckingGeofence = false
+      stopBlocking(context: context, bypassStrategy: true)
+      return
+    }
+    let ruleToCheck = geofenceRule
     let savedLocationsSnapshot: [SavedLocation]
     do {
       savedLocationsSnapshot = try SavedLocation.fetchAll(in: context)
@@ -158,7 +198,7 @@ class StrategyManager: ObservableObject {
     }
 
     Task { @MainActor in
-      let result = await locationManager.checkGeofenceRule(
+      let result = await self.locationManager.checkGeofenceRule(
         rule: ruleToCheck,
         savedLocations: savedLocationsSnapshot
       )
@@ -390,7 +430,8 @@ class StrategyManager: ObservableObject {
       // Time still remaining - restart the timer
       oneMoreMinuteTimeRemaining = remaining
       startOneMoreMinuteTimer()
-      Log.info("Resumed one more minute timer with \(Int(remaining))s remaining", category: .strategy)
+      Log.info(
+        "Resumed one more minute timer with \(Int(remaining))s remaining", category: .strategy)
     } else {
       // Time expired while in background - end it now
       endOneMoreMinute()
@@ -447,7 +488,7 @@ class StrategyManager: ObservableObject {
     _ profileId: String,
     url: URL,
     context: ModelContext
-  ) {
+  ) async {
     guard let profileUUID = UUID(uuidString: profileId) else {
       self.errorMessage = "This tag doesn't contain a valid profile link"
       return
@@ -469,7 +510,9 @@ class StrategyManager: ObservableObject {
 
       if let localActiveSession = getActiveSession(context: context) {
         if localActiveSession.blockedProfile.disableBackgroundStops {
-          Log.info("profile: \(localActiveSession.blockedProfile.name) has disable background stops enabled, not stopping it", category: .strategy)
+          Log.info(
+            "profile: \(localActiveSession.blockedProfile.name) has disable background stops enabled, not stopping it",
+            category: .strategy)
           self.errorMessage =
             "profile: \(localActiveSession.blockedProfile.name) has disable background stops enabled, not stopping it"
           return
@@ -495,8 +538,35 @@ class StrategyManager: ObservableObject {
           stopQRCodeId: localActiveSession.blockedProfile.stopQRCodeId
         )
         guard stopResult.allowed else {
-          self.errorMessage = stopResult.errorMessage
+          self.errorMessage =
+            stopResult.errorMessage
             ?? "\(localActiveSession.blockedProfile.name) cannot be stopped via written NFC or printed QR"
+          return
+        }
+
+        // Check geofence rule — in foreground, handle permissions with user-facing messages
+        if let geofenceRule = localActiveSession.blockedProfile.geofenceRule,
+          geofenceRule.hasLocations
+        {
+          if locationManager.isNotDetermined {
+            locationManager.requestAuthorization()
+            self.errorMessage =
+              "Please allow location access to stop this profile, then try again."
+            return
+          }
+          if locationManager.isDenied {
+            self.errorMessage =
+              "Location access is denied. Enable location services in Settings to use location-based restrictions."
+            return
+          }
+        }
+
+        let geofenceResult = await evaluateGeofenceForStop(
+          profile: localActiveSession.blockedProfile,
+          context: context
+        )
+        if let geofenceResult, !geofenceResult.isSatisfied {
+          self.errorMessage = geofenceResult.failureMessage ?? "Location restriction not met."
           return
         }
 
@@ -552,7 +622,9 @@ class StrategyManager: ObservableObject {
       }
 
       if let localActiveSession = getActiveSession(context: context) {
-        Log.info("session is already active for profile: \(localActiveSession.blockedProfile.name), not starting a new one", category: .strategy)
+        Log.info(
+          "session is already active for profile: \(localActiveSession.blockedProfile.name), not starting a new one",
+          category: .strategy)
         return
       }
 
@@ -593,7 +665,7 @@ class StrategyManager: ObservableObject {
   func stopSessionFromBackground(
     _ profileId: UUID,
     context: ModelContext
-  ) {
+  ) async {
     do {
       guard
         let profile = try BlockedProfiles.findProfile(
@@ -609,21 +681,42 @@ class StrategyManager: ObservableObject {
       let manualStrategy = getStrategy(id: ManualBlockingStrategy.id)
 
       guard let localActiveSession = getActiveSession(context: context) else {
-        Log.info("session is not active for profile: \(profile.name), not stopping it", category: .strategy)
+        Log.info(
+          "session is not active for profile: \(profile.name), not stopping it", category: .strategy
+        )
         return
       }
 
       if localActiveSession.blockedProfile.id != profile.id {
-        Log.info("session is not active for profile: \(profile.name), not stopping it", category: .strategy)
+        Log.info(
+          "session is not active for profile: \(profile.name), not stopping it", category: .strategy
+        )
         self.errorMessage =
           "session is not active for profile: \(profile.name), not stopping it"
         return
       }
 
       if profile.disableBackgroundStops {
-        Log.info("profile: \(profile.name) has disable background stops enabled, not stopping it", category: .strategy)
+        Log.info(
+          "profile: \(profile.name) has disable background stops enabled, not stopping it",
+          category: .strategy)
         self.errorMessage =
           "profile: \(profile.name) has disable background stops enabled, not stopping it"
+        return
+      }
+
+      // Check geofence rule — fail-closed if location can't be determined
+      let geofenceResult = await evaluateGeofenceForStop(
+        profile: profile,
+        context: context
+      )
+      if let geofenceResult, !geofenceResult.isSatisfied {
+        let reason = geofenceResult.failureMessage ?? "Location restriction not met."
+        Log.info(
+          "Geofence blocked background stop for profile: \(profile.name) — \(reason)",
+          category: .strategy)
+        postGeofenceBlockedNotification(
+          profileId: profile.id, profileName: profile.name, reason: reason)
         return
       }
 
@@ -870,7 +963,8 @@ class StrategyManager: ObservableObject {
           endedProfile.migrateToV2IfNeeded()
           if !endedProfile.needsMigration, let context = endedProfile.modelContext {
             try? context.save()
-            Log.info("Migrated deferred profile '\(endedProfile.name)' on session end", category: .app)
+            Log.info(
+              "Migrated deferred profile '\(endedProfile.name)' on session end", category: .app)
             DeviceActivityCenterUtil.scheduleTimerActivity(for: endedProfile)
           }
         }
@@ -1019,7 +1113,8 @@ class StrategyManager: ObservableObject {
             {
               currentSession.startTime = remoteStartTime
               try? context.save()
-              Log.info("Reconciled scheduled session startTime to \(remoteStartTime)", category: .strategy)
+              Log.info(
+                "Reconciled scheduled session startTime to \(remoteStartTime)", category: .strategy)
             }
           case .error(let error):
             Log.info("Failed to sync scheduled session - \(error)", category: .strategy)
@@ -1070,14 +1165,16 @@ class StrategyManager: ObservableObject {
     bypassStrategy: Bool = false
   ) {
     guard let definedProfile = activeProfile else {
-      Log.info("No active profile found, calling stop blocking with no session", category: .strategy)
+      Log.info(
+        "No active profile found, calling stop blocking with no session", category: .strategy)
       return
     }
 
     // When bypassStrategy is true, the V2 trigger system has already routed
     // the start action. Use ManualBlockingStrategy to create the session
     // directly, avoiding redundant NFC/QR scans from legacy strategies.
-    let strategyId = bypassStrategy
+    let strategyId =
+      bypassStrategy
       ? ManualBlockingStrategy.id
       : definedProfile.blockingStrategyId
 
@@ -1140,7 +1237,14 @@ class StrategyManager: ObservableObject {
     )
 
     if validation.allowed {
-      stopBlocking(context: context, bypassStrategy: true)
+      // Check geofence before allowing the stop
+      if let geofenceRule = session.blockedProfile.geofenceRule,
+        geofenceRule.hasLocations
+      {
+        checkGeofenceAndStop(context: context, profile: session.blockedProfile)
+      } else {
+        stopBlocking(context: context, bypassStrategy: true)
+      }
     } else {
       errorMessage = validation.errorMessage
     }
@@ -1162,7 +1266,14 @@ class StrategyManager: ObservableObject {
     )
 
     if validation.allowed {
-      stopBlocking(context: context, bypassStrategy: true)
+      // Check geofence before allowing the stop
+      if let geofenceRule = session.blockedProfile.geofenceRule,
+        geofenceRule.hasLocations
+      {
+        checkGeofenceAndStop(context: context, profile: session.blockedProfile)
+      } else {
+        stopBlocking(context: context, bypassStrategy: true)
+      }
     } else {
       errorMessage = validation.errorMessage
     }
@@ -1233,14 +1344,16 @@ class StrategyManager: ObservableObject {
   ///   (e.g., NFC tag was already scanned) to avoid redundant scanning by legacy strategies.
   private func stopBlocking(context: ModelContext, bypassStrategy: Bool = false) {
     guard let session = activeSession else {
-      Log.info("No active session found, calling stop blocking with no session", category: .strategy)
+      Log.info(
+        "No active session found, calling stop blocking with no session", category: .strategy)
       return
     }
 
     // When bypassStrategy is true, the caller has already handled any required
     // NFC/QR scanning and validation. Use ManualBlockingStrategy to end the
     // session directly, avoiding a redundant second scan from legacy strategies.
-    let strategyId = bypassStrategy
+    let strategyId =
+      bypassStrategy
       ? ManualBlockingStrategy.id
       : session.blockedProfile.blockingStrategyId
 
@@ -1286,41 +1399,79 @@ class StrategyManager: ObservableObject {
     }
   }
 
+  /// Post a local notification when a background stop is blocked by geofence
+  private func postGeofenceBlockedNotification(
+    profileId: UUID,
+    profileName: String,
+    reason: String
+  ) {
+    let content = UNMutableNotificationContent()
+    content.title = "Profile couldn't be stopped"
+    content.body = "\(profileName): \(reason)"
+    content.sound = .default
+
+    // Stable per-profile identifier so repeated blocked stops replace the previous notification
+    let request = UNNotificationRequest(
+      identifier: "geofence-blocked-\(profileId.uuidString)",
+      content: content,
+      trigger: nil
+    )
+    UNUserNotificationCenter.current().add(request) { error in
+      if let error {
+        Log.warning(
+          "Failed to post geofence blocked notification: \(error.localizedDescription)",
+          category: .location)
+      }
+    }
+  }
+
   func cleanUpGhostSchedules(context: ModelContext) {
     let allActivities = DeviceActivityCenterUtil.getDeviceActivities()
     let scheduleTimerActivity = ScheduleTimerActivity()
     let scheduleActivities = scheduleTimerActivity.getAllScheduleTimerActivities(
       from: allActivities)
 
-    Log.info("Found \(scheduleActivities.count) schedule timer activities out of \(allActivities.count) total activities", category: .strategy)
+    Log.info(
+      "Found \(scheduleActivities.count) schedule timer activities out of \(allActivities.count) total activities",
+      category: .strategy)
 
     for activity in scheduleActivities {
       let rawValue = activity.rawValue
       guard let profileId = UUID(uuidString: rawValue) else {
         // This shouldn't happen since we filtered above, but print just in case
-        Log.info("Unexpected: failed to parse profile id from filtered activity: \(rawValue)", category: .strategy)
+        Log.info(
+          "Unexpected: failed to parse profile id from filtered activity: \(rawValue)",
+          category: .strategy)
         continue
       }
 
       do {
         if let profile = try BlockedProfiles.findProfile(byID: profileId, in: context) {
-          let hasScheduledStart = profile.startTriggers.schedule
+          let hasScheduledStart =
+            profile.startTriggers.schedule
             && profile.startSchedule?.isActive == true
           let hasLegacySchedule = profile.schedule?.isActive == true
           if !hasScheduledStart && !hasLegacySchedule {
-            Log.info("Profile '\(profile.name)' has no schedule but has device activity registered. Removing ghost schedule...", category: .strategy)
+            Log.info(
+              "Profile '\(profile.name)' has no schedule but has device activity registered. Removing ghost schedule...",
+              category: .strategy)
             DeviceActivityCenterUtil.removeScheduleTimerActivities(for: profile)
           } else {
-            Log.info("Profile '\(profile.name)' has schedule - activity is valid", category: .strategy)
+            Log.info(
+              "Profile '\(profile.name)' has schedule - activity is valid", category: .strategy)
           }
         } else {
           // Profile truly doesn't exist in database
-          Log.info("No profile found for activity \(rawValue). Removing orphaned schedule...", category: .strategy)
+          Log.info(
+            "No profile found for activity \(rawValue). Removing orphaned schedule...",
+            category: .strategy)
           DeviceActivityCenterUtil.removeScheduleTimerActivities(for: activity)
         }
       } catch {
         // Database error occurred - do NOT delete the schedule since we don't know the true state
-        Log.info("Error fetching profile \(rawValue): \(error.localizedDescription). Skipping cleanup for safety.", category: .strategy)
+        Log.info(
+          "Error fetching profile \(rawValue): \(error.localizedDescription). Skipping cleanup for safety.",
+          category: .strategy)
       }
     }
   }
@@ -1371,7 +1522,8 @@ class StrategyManager: ObservableObject {
       // Check if profile has local app selection
       if profile.needsAppSelection {
         Log.info("Profile needs app selection, cannot start remotely", category: .strategy)
-        errorMessage = "Profile '\(profile.name)' is active on another device but needs app selection on this device."
+        errorMessage =
+          "Profile '\(profile.name)' is active on another device but needs app selection on this device."
         return
       }
 
@@ -1390,7 +1542,9 @@ class StrategyManager: ObservableObject {
       // Set as active session
       self.activeSession = activeSession
 
-      Log.info("Started remote session for profile '\(profile.name)' with synced startTime", category: .strategy)
+      Log.info(
+        "Started remote session for profile '\(profile.name)' with synced startTime",
+        category: .strategy)
     } catch {
       Log.info("Error starting remote session - \(error)", category: .strategy)
     }
@@ -1520,7 +1674,8 @@ extension StrategyManager {
       } else if conditions.schedule {
         return .cannotStop(reason: "This profile stops at its scheduled time")
       } else if conditions.deepLink {
-        return .cannotStop(reason: "This profile can only be stopped via a programmed NFC tag or QR code")
+        return .cannotStop(
+          reason: "This profile can only be stopped via a programmed NFC tag or QR code")
       }
       return .cannotStop(reason: "This profile has no manual stop method configured")
     }
