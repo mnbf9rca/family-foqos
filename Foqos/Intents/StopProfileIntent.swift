@@ -15,15 +15,13 @@ struct StopProfileIntent: AppIntent {
   nonisolated(unsafe) static var title: LocalizedStringResource = "Stop Family Foqos Profile"  // SAFETY: AppIntents requires static var; immutable after init
 
   @MainActor
-  func perform() async throws -> some IntentResult {
-    let strategyManager = StrategyManager.shared
-
-    await strategyManager
+  func perform() async throws -> some IntentResult & ProvidesDialog {
+    try await StrategyManager.shared
       .stopSessionFromBackground(
         profile.id,
         context: modelContext
       )
 
-    return .result()
+    return .result(dialog: "\(profile.name) stopped.")
   }
 }

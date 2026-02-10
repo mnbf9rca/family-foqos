@@ -21,13 +21,17 @@ struct StartProfileIntent: AppIntent {
   )
 
   @MainActor
-  func perform() async throws -> some IntentResult {
-    StrategyManager.shared.startSessionFromBackground(
+  func perform() async throws -> some IntentResult & ProvidesDialog {
+    try StrategyManager.shared.startSessionFromBackground(
       profile.id,
       context: modelContext,
       durationInMinutes: durationInMinutes
     )
 
-    return .result()
+    let message =
+      durationInMinutes != nil
+      ? "\(profile.name) started for \(durationInMinutes!) minutes."
+      : "\(profile.name) started."
+    return .result(dialog: .init(stringLiteral: message))
   }
 }
