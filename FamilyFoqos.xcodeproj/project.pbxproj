@@ -334,6 +334,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 801B20BA2CB363A20073E9E2 /* Build configuration list for PBXNativeTarget "FamilyFoqos" */;
 			buildPhases = (
+				D48425C02F3B333600652DCC /* Configure Git Hooks */,
 				D472D4332F3200DE00AA3453 /* Concurrency Escape Hatch Lint */,
 				801B20912CB363A10073E9E2 /* Sources */,
 				801B20922CB363A10073E9E2 /* Frameworks */,
@@ -569,6 +570,25 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "PATTERNS='@unchecked Sendable|nonisolated\\(unsafe\\)'\nMATCHES=$(grep -rn --include=\"*.swift\" -E \"$PATTERNS\" \"${SRCROOT}/Foqos\" \"${SRCROOT}/FoqosWidget\" \"${SRCROOT}/FoqosDeviceMonitor\" \"${SRCROOT}/FoqosShieldConfig\" | grep -v \"// SAFETY:\" || true)\nif [ -n \"$MATCHES\" ]; then\n    echo \"error: Concurrency escape hatch without SAFETY justification:\"\n    echo \"$MATCHES\"\n    exit 1\nfi\n";
+		};
+		D48425C02F3B333600652DCC /* Configure Git Hooks */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Configure Git Hooks";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = " git config core.hooksPath .githooks\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
