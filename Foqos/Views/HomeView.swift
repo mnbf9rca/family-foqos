@@ -447,8 +447,10 @@ struct HomeView: View {
   }
 
   private func toggleSessionFromDeeplink(_ profileId: String, link: URL) {
-    strategyManager
-      .toggleSessionFromDeeplink(profileId, url: link, context: context)
+    Task { @MainActor in
+      await strategyManager
+        .toggleSessionFromDeeplink(profileId, url: link, context: context)
+    }
   }
 
   private func strategyButtonPress(_ profile: BlockedProfiles) {
