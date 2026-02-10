@@ -36,8 +36,8 @@ class CloudKitManager: ObservableObject {
     @Published var isLoading = false
     @Published var error: CloudKitError?
     @Published var shareAcceptedMessage: String?  // Set when a share is successfully accepted
-    @Published var childAuthorizationFailed = false  // True when share acceptance failed due to missing child auth
-    @Published var childAuthorizationErrorMessage: String?  // Detailed error message for UI
+    @Published var shareAcceptanceIsError = false  // True when shareAcceptedMessage is an error (vs success)
+    @Published var pendingParticipants: [CKShare.Participant] = []  // Accepted participants without FamilyMember records
 
     // Active zone share (for enrolling children)
     private var activeZoneShare: CKShare?
@@ -111,6 +111,18 @@ class CloudKitManager: ObservableObject {
                 // Zone truly doesn't exist and creation failed
                 throw CloudKitError.zoneCreationFailed(error)
             }
+        }
+    }
+
+    /// Find the shared zone matching our policy zone name
+    /// Returns the first zone whose name matches `policyZoneName`, or nil if none found
+    private func findSharedZoneByName() async -> CKRecordZone? {
+        do {
+            let zones = try await sharedDatabase.allRecordZones()
+            return zones.first { $0.zoneID.zoneName == policyZoneName }
+        } catch {
+            Log.error("Failed to fetch shared zones: \(error)", category: .cloudKit)
+            return nil
         }
     }
 
@@ -538,40 +550,38 @@ class CloudKitManager: ObservableObject {
 
     /// Fetch shared lock codes for verification (child operation)
     func fetchSharedLockCodes() async throws -> [FamilyLockCode] {
-        // Fetch from shared database (codes shared via CKShare)
-        let zones = try await sharedDatabase.allRecordZones()
-
-        // Update connection status based on whether we have shared zones
-        self.isConnectedToFamily = !zones.isEmpty
-
-        var allCodes: [FamilyLockCode] = []
-
-        for zone in zones {
-            let query = CKQuery(
-                recordType: FamilyLockCode.recordType,
-                predicate: NSPredicate(value: true)
-            )
-
-            do {
-                let (results, _) = try await sharedDatabase.records(
-                    matching: query,
-                    inZoneWith: zone.zoneID
-                )
-
-                for (_, result) in results {
-                    if case .success(let record) = result,
-                       let code = FamilyLockCode(from: record) {
-                        allCodes.append(code)
-                    }
-                }
-            } catch {
-                Log.error("Failed to fetch lock codes from zone \(zone.zoneID): \(error)", category: .cloudKit)
-            }
+        guard let zone = await findSharedZoneByName() else {
+            self.isConnectedToFamily = false
+            self.sharedLockCodes = []
+            return []
         }
 
-        self.sharedLockCodes = allCodes
+        self.isConnectedToFamily = true
 
-        return allCodes
+        let query = CKQuery(
+            recordType: FamilyLockCode.recordType,
+            predicate: NSPredicate(value: true)
+        )
+
+        var codes: [FamilyLockCode] = []
+        do {
+            let (results, _) = try await sharedDatabase.records(
+                matching: query,
+                inZoneWith: zone.zoneID
+            )
+
+            for (_, result) in results {
+                if case .success(let record) = result,
+                   let code = FamilyLockCode(from: record) {
+                    codes.append(code)
+                }
+            }
+        } catch {
+            Log.error("Failed to fetch lock codes from zone \(zone.zoneID): \(error)", category: .cloudKit)
+        }
+
+        self.sharedLockCodes = codes
+        return codes
     }
 
     // MARK: - Family Sharing (Enroll Child)
@@ -689,32 +699,156 @@ class CloudKitManager: ObservableObject {
 
     // MARK: - Child Operations (Receive shared data)
 
-    /// Accept a CloudKit share invitation (child operation)
-    /// Requires valid .child authorization from Apple Family Sharing
-    func acceptShare(metadata: CKShare.Metadata) async throws {
-        // Verify child authorization before accepting the share
-        // This ensures only devices set up as children in Apple Family Sharing can join
-        let verificationResult = await AuthorizationVerifier.shared.verifyChildAuthorization()
-
-        guard verificationResult.isAuthorized else {
-            Log.warning("Share acceptance rejected - child authorization required", category: .authorization)
-            throw CloudKitError.childAuthorizationRequired
-        }
-
+    /// Accept a CloudKit share invitation (used for both parent and child)
+    /// Role detection happens before this call — no auth gate here.
+    func acceptShareDirect(metadata: CKShare.Metadata) async throws {
         do {
             _ = try await container.accept(metadata)
-            // Fetch shared lock codes after accepting
-            _ = try? await fetchSharedLockCodes()
             Log.info("Accepted share successfully", category: .cloudKit)
         } catch {
             throw CloudKitError.shareAcceptFailed(error)
         }
     }
 
+    /// Register this device as a FamilyMember in the shared zone
+    /// Called after share acceptance — the accepting device writes its own record.
+    func registerSelfAsFamilyMember(role: FamilyRole) async {
+        guard let userRecordID = currentUserRecordID else {
+            Log.error("No user record ID for self-registration", category: .cloudKit)
+            return
+        }
+
+        guard let zone = await findSharedZoneByName() else {
+            Log.error("No shared zone found for self-registration", category: .cloudKit)
+            return
+        }
+
+        let userRecordName = userRecordID.recordName
+
+        // Check if a FamilyMember record already exists for this user
+        let query = CKQuery(
+            recordType: FamilyMember.recordType,
+            predicate: NSPredicate(format: "userRecordName == %@", userRecordName)
+        )
+
+        do {
+            let (results, _) = try await sharedDatabase.records(
+                matching: query,
+                inZoneWith: zone.zoneID
+            )
+
+            for (_, result) in results {
+                if case .success(let existingRecord) = result {
+                    // Record exists — update role if different
+                    let existingRole = existingRecord[FamilyMember.RecordKey.role] as? String
+                    if existingRole != role.rawValue {
+                        existingRecord[FamilyMember.RecordKey.role] = role.rawValue
+                        _ = try await sharedDatabase.save(existingRecord)
+                        Log.info("Updated self FamilyMember role to \(role.rawValue)", category: .cloudKit)
+                    } else {
+                        Log.debug("Self FamilyMember already exists with correct role", category: .cloudKit)
+                    }
+                    return
+                }
+            }
+
+            // No existing record — create one
+            let displayName = await fetchCurrentUserDisplayName(in: zone.zoneID) ?? "Family Member"
+            let member = FamilyMember(
+                userRecordName: userRecordName,
+                displayName: displayName,
+                role: role
+            )
+
+            let record = member.toCKRecord(in: zone.zoneID)
+            _ = try await sharedDatabase.save(record)
+            Log.info("Registered self as \(role.rawValue) FamilyMember", category: .cloudKit)
+        } catch {
+            Log.error("Failed to register self as FamilyMember: \(error)", category: .cloudKit)
+        }
+    }
+
+    /// Self-healing: verify own FamilyMember record matches local app mode
+    /// Called on app activation to correct role mismatches.
+    func verifySelfFamilyMemberRecord() async {
+        guard let zone = await findSharedZoneByName() else {
+            self.isConnectedToFamily = false
+            return
+        }
+
+        self.isConnectedToFamily = true
+
+        guard let userRecordID = currentUserRecordID else { return }
+        let userRecordName = userRecordID.recordName
+        let localMode = AppModeManager.shared.currentMode
+
+        // Only self-heal if in parent or child mode
+        guard localMode == .parent || localMode == .child else { return }
+
+        let expectedRole: FamilyRole = localMode == .parent ? .parent : .child
+
+        let query = CKQuery(
+            recordType: FamilyMember.recordType,
+            predicate: NSPredicate(format: "userRecordName == %@", userRecordName)
+        )
+
+        do {
+            let (results, _) = try await sharedDatabase.records(
+                matching: query,
+                inZoneWith: zone.zoneID
+            )
+
+            for (_, result) in results {
+                if case .success(let record) = result {
+                    let recordRole = record[FamilyMember.RecordKey.role] as? String
+                    if recordRole != expectedRole.rawValue {
+                        record[FamilyMember.RecordKey.role] = expectedRole.rawValue
+                        _ = try await sharedDatabase.save(record)
+                        Log.info("Self-healed FamilyMember role to \(expectedRole.rawValue)", category: .cloudKit)
+                    }
+                    return
+                }
+            }
+
+            // No record found — re-register
+            Log.info("No self FamilyMember record found, re-registering", category: .cloudKit)
+            await registerSelfAsFamilyMember(role: expectedRole)
+        } catch {
+            Log.error("Failed to verify self FamilyMember record: \(error)", category: .cloudKit)
+        }
+    }
+
+    /// Fetch current user's display name from the share's participant list
+    private func fetchCurrentUserDisplayName(in zoneID: CKRecordZone.ID) async -> String? {
+        guard let userRecordID = currentUserRecordID else { return nil }
+        do {
+            let rootRecordID = CKRecord.ID(recordName: familyRootRecordName, zoneID: zoneID)
+            let rootRecord = try await sharedDatabase.record(for: rootRecordID)
+            guard let shareRef = rootRecord.share else { return nil }
+            let shareRecord = try await sharedDatabase.record(for: shareRef.recordID)
+            guard let share = shareRecord as? CKShare else {
+                Log.error(
+                    "Expected CKShare but received \(type(of: shareRecord)) for share reference \(shareRef)",
+                    category: .cloudKit)
+                return nil
+            }
+
+            let me = share.participants.first {
+                $0.userIdentity.userRecordID?.recordName == userRecordID.recordName
+            }
+            return me?.userIdentity.nameComponents?.formatted()
+        } catch {
+            Log.debug("Could not fetch user display name from share: \(error)", category: .cloudKit)
+            return nil
+        }
+    }
+
     // MARK: - Share Participant Sync (Parent Operation)
 
-    /// Sync share participants to FamilyMember records
-    /// Call this from parent dashboard to see children who accepted the share
+    /// Sync share participants to FamilyMember records (V2 behavior)
+    /// - Does NOT create FamilyMember records for unmatched participants (they self-register)
+    /// - Publishes unmatched accepted participants as `pendingParticipants`
+    /// - Still removes stale FamilyMember records when a participant leaves the share
     func syncShareParticipantsToFamilyMembers() async throws {
         // Always fetch fresh share data - clear cache first
         self.activeZoneShare = nil
@@ -725,12 +859,14 @@ class CloudKitManager: ObservableObject {
             let rootRecord = try await privateDatabase.record(for: rootRecordID)
             guard let shareRef = rootRecord.share else {
                 Log.info("CloudKitManager: No share exists yet", category: .cloudKit)
+                self.pendingParticipants = []
                 return
             }
             share = try await privateDatabase.record(for: shareRef.recordID) as! CKShare
             self.activeZoneShare = share
         } catch {
             Log.error("Could not fetch share: \(error)", category: .cloudKit)
+            self.pendingParticipants = []
             return
         }
 
@@ -739,7 +875,7 @@ class CloudKitManager: ObservableObject {
             $0.acceptanceStatus == .accepted && $0.role != .owner
         }
 
-        // Get the userRecordNames of all current participants
+        // Get the userRecordNames of all current accepted participants
         let currentParticipantRecordNames = Set(
             acceptedParticipants.compactMap { $0.userIdentity.userRecordID?.recordName }
         )
@@ -749,43 +885,31 @@ class CloudKitManager: ObservableObject {
         // Fetch current family members
         _ = try await fetchFamilyMembers()
 
-        // Add new participants as FamilyMembers
+        // Build set of matched userRecordNames (participants with FamilyMember records)
+        let matchedRecordNames = Set(familyMembers.map { $0.userRecordName })
+
+        // V2: Do NOT create FamilyMember records for unmatched participants.
+        // Instead, publish them as pending — they will self-register when they open the app.
+        var pending: [CKShare.Participant] = []
         for participant in acceptedParticipants {
             guard let userRecordID = participant.userIdentity.userRecordID else {
+                pending.append(participant)
                 continue
             }
-
-            // Check if this participant already has a FamilyMember record
-            let existingMember = familyMembers.first {
-                $0.userRecordName == userRecordID.recordName
+            if !matchedRecordNames.contains(userRecordID.recordName) {
+                pending.append(participant)
             }
+        }
+        self.pendingParticipants = pending
 
-            if existingMember == nil {
-                // Create FamilyMember for this participant
-                let displayName = participant.userIdentity.nameComponents?.formatted() ??
-                    participant.userIdentity.lookupInfo?.emailAddress ??
-                    "Family Member"
-
-                let newMember = FamilyMember(
-                    userRecordName: userRecordID.recordName,
-                    displayName: displayName,
-                    role: .child  // Participants who accept are children
-                )
-
-                do {
-                    try await saveFamilyMember(newMember)
-                    Log.info("Created FamilyMember for participant: \(displayName)", category: .cloudKit)
-                } catch {
-                    Log.error("Failed to create FamilyMember: \(error)", category: .cloudKit)
-                }
-            }
+        if !pending.isEmpty {
+            Log.info("\(pending.count) accepted participants pending self-registration", category: .cloudKit)
         }
 
         // Remove FamilyMembers who are no longer accepted participants (they left the share)
         for member in familyMembers {
             let userRecordName = member.userRecordName
 
-            // If this member is no longer in the accepted participants, remove their FamilyMember record
             if !currentParticipantRecordNames.contains(userRecordName) {
                 do {
                     let recordID = CKRecord.ID(recordName: member.id.uuidString, zoneID: policyZoneID)
@@ -801,22 +925,18 @@ class CloudKitManager: ObservableObject {
 
     // MARK: - Child Family Connection Status
 
-    /// Check if this device (as child) is connected to a family share
+    /// Check if this device is connected to a family share
+    /// Refreshes `isConnectedToFamily` via live CloudKit zone query
     func checkFamilyConnectionStatus() async -> Bool {
-        do {
-            let zones = try await sharedDatabase.allRecordZones()
-            return !zones.isEmpty
-        } catch {
-            Log.error("Failed to check family connection: \(error)", category: .cloudKit)
-            return false
-        }
+        let zone = await findSharedZoneByName()
+        let connected = zone != nil
+        self.isConnectedToFamily = connected
+        return connected
     }
 
     /// Fetch the CKShare from the shared database (for child to present leave UI)
     func fetchShareFromSharedDatabase() async throws -> CKShare {
-        let zones = try await sharedDatabase.allRecordZones()
-
-        guard let zone = zones.first else {
+        guard let zone = await findSharedZoneByName() else {
             throw CloudKitError.notConnectedToFamily
         }
 
@@ -839,17 +959,6 @@ class CloudKitManager: ObservableObject {
         Log.info("Cleared shared state after leaving family", category: .cloudKit)
     }
 
-    /// Clear child authorization failure state (call when user dismisses error UI)
-    func clearChildAuthorizationFailure() {
-        self.childAuthorizationFailed = false
-        self.childAuthorizationErrorMessage = nil
-    }
-
-    /// Set child authorization failure state with error message
-    func setChildAuthorizationFailure(message: String) {
-        self.childAuthorizationFailed = true
-        self.childAuthorizationErrorMessage = message
-    }
 }
 
 // MARK: - Error Types
@@ -864,7 +973,6 @@ enum CloudKitError: LocalizedError {
     case shareAcceptFailed(Error)
     case notConnectedToFamily
     case shareNotFound
-    case childAuthorizationRequired
 
     var errorDescription: String? {
         switch self {
@@ -886,8 +994,6 @@ enum CloudKitError: LocalizedError {
             return "Could not find the family share."
         case .shareAcceptFailed(let error):
             return "Failed to accept share: \(error.localizedDescription)"
-        case .childAuthorizationRequired:
-            return "This device must be set up as a child in Apple Family Sharing to accept this invitation. Please ask a parent to: (1) Go to Settings > Family, (2) Add this Apple ID as a child, (3) Enable Screen Time for this child."
         }
     }
 }
