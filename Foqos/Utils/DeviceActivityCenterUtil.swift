@@ -350,7 +350,7 @@ class DeviceActivityCenterUtil {
                 category: .timer
             )
         } catch {
-            Log.info(
+            Log.error(
                 "Failed to start one more minute activity: \(error.localizedDescription)",
                 category: .timer
             )

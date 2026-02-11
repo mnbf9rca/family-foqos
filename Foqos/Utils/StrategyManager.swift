@@ -368,19 +368,6 @@ class StrategyManager: ObservableObject {
     Log.info("Started one more minute - restrictions lifted for 60s", category: .strategy)
   }
 
-  private func endOneMoreMinute() {
-    // Cancel the DeviceActivity so the extension doesn't fire after manual stop
-    if let session = activeSession {
-      DeviceActivityCenterUtil.removeOneMoreMinuteActivity(for: session.blockedProfile)
-
-      // RE-ACTIVATE RESTRICTIONS
-      appBlocker.activateRestrictions(for: BlockedProfiles.getSnapshot(for: session.blockedProfile))
-      liveActivityManager.updateOneMoreMinuteState(session: session)
-    }
-
-    WidgetCenter.shared.reloadTimelines(ofKind: "ProfileControlWidget")
-  }
-
   func startTimer() {
     stopTimer()
     timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
