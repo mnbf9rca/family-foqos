@@ -190,21 +190,22 @@ final class OneMoreMinuteTests: XCTestCase {
     let state = FoqosWidgetAttributes.ContentState(startTime: Date())
 
     XCTAssertFalse(state.isOneMoreMinuteActive)
-    XCTAssertEqual(state.oneMoreMinuteTimeRemaining, 0)
+    XCTAssertNil(state.oneMoreMinuteStartTime)
   }
 
   func testContentStateWithOneMoreMinuteActive() {
+    let now = Date()
     let state = FoqosWidgetAttributes.ContentState(
-      startTime: Date(),
+      startTime: now,
       isBreakActive: false,
       breakStartTime: nil,
       breakEndTime: nil,
       isOneMoreMinuteActive: true,
-      oneMoreMinuteTimeRemaining: 45
+      oneMoreMinuteStartTime: now
     )
 
     XCTAssertTrue(state.isOneMoreMinuteActive)
-    XCTAssertEqual(state.oneMoreMinuteTimeRemaining, 45)
+    XCTAssertNotNil(state.oneMoreMinuteStartTime)
   }
 
   // MARK: - SharedData Sync Tests

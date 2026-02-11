@@ -21,7 +21,7 @@ struct BlockedProfileCard: View {
 
   var isOneMoreMinuteActive: Bool = false
   var isOneMoreMinuteAvailable: Bool = false
-  var oneMoreMinuteTimeRemaining: TimeInterval = 0
+  var oneMoreMinuteStartTime: Date? = nil
   var onOneMoreMinuteTapped: () -> Void = {}
 
   // Keep a reference to the CardBackground to access color
@@ -165,7 +165,7 @@ struct BlockedProfileCard: View {
             onBreakTapped: onBreakTapped,
             isOneMoreMinuteActive: isOneMoreMinuteActive,
             isOneMoreMinuteAvailable: isOneMoreMinuteAvailable,
-            oneMoreMinuteTimeRemaining: oneMoreMinuteTimeRemaining,
+            oneMoreMinuteStartTime: oneMoreMinuteStartTime,
             onOneMoreMinuteTapped: onOneMoreMinuteTapped
           )
         }

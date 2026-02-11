@@ -115,8 +115,6 @@ struct foqosApp: App {
                         verifyChildAuthorizationIfNeeded()
                         // Self-heal FamilyMember record if connected to family
                         Task { await CloudKitManager.shared.verifySelfFamilyMemberRecord() }
-                        // Resume One More Minute timer if it was active before backgrounding
-                        StrategyManager.shared.resumeOneMoreMinuteIfNeeded()
                         // Reschedule pre-activation reminders (handles warm returns on new days)
                         PreActivationReminderScheduler.rescheduleAllReminders(context: container.mainContext)
                     }

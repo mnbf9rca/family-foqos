@@ -21,7 +21,7 @@ struct BlockedProfileCarousel: View {
 
   let isOneMoreMinuteActive: Bool
   let isOneMoreMinuteAvailable: Bool
-  let oneMoreMinuteTimeRemaining: TimeInterval
+  let oneMoreMinuteStartTime: Date?
   var onOneMoreMinuteTapped: (BlockedProfiles) -> Void
 
   // State for tracking current profile index and drag gesture
@@ -74,7 +74,7 @@ struct BlockedProfileCarousel: View {
     onAppSelectionTapped: @escaping (BlockedProfiles) -> Void = { _ in },
     isOneMoreMinuteActive: Bool = false,
     isOneMoreMinuteAvailable: Bool = false,
-    oneMoreMinuteTimeRemaining: TimeInterval = 0,
+    oneMoreMinuteStartTime: Date? = nil,
     onOneMoreMinuteTapped: @escaping (BlockedProfiles) -> Void = { _ in }
   ) {
     self.profiles = profiles
@@ -94,7 +94,7 @@ struct BlockedProfileCarousel: View {
     self.onAppSelectionTapped = onAppSelectionTapped
     self.isOneMoreMinuteActive = isOneMoreMinuteActive
     self.isOneMoreMinuteAvailable = isOneMoreMinuteAvailable
-    self.oneMoreMinuteTimeRemaining = oneMoreMinuteTimeRemaining
+    self.oneMoreMinuteStartTime = oneMoreMinuteStartTime
     self.onOneMoreMinuteTapped = onOneMoreMinuteTapped
   }
 
@@ -172,7 +172,7 @@ struct BlockedProfileCarousel: View {
                   },
                   isOneMoreMinuteActive: isOneMoreMinuteActive,
                   isOneMoreMinuteAvailable: isOneMoreMinuteAvailable,
-                  oneMoreMinuteTimeRemaining: oneMoreMinuteTimeRemaining,
+                  oneMoreMinuteStartTime: oneMoreMinuteStartTime,
                   onOneMoreMinuteTapped: {
                     onOneMoreMinuteTapped(validProfiles[index])
                   }
