@@ -81,7 +81,6 @@ class StrategyManager: ObservableObject {
     return activeSession?.isOneMoreMinuteAvailable ?? false
   }
 
-
   func defaultReminderMessage(forProfile profile: BlockedProfiles?) -> String {
     let baseMessage = "Get back to productivity"
     guard let profile else {
