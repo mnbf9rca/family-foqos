@@ -587,11 +587,11 @@ struct HomeView: View {
   }
 
   private func loadApp() {
-    strategyManager.loadActiveSession(context: context)
+    try? strategyManager.loadActiveSession(context: context)
   }
 
   private func onAppearApp() {
-    strategyManager.loadActiveSession(context: context)
+    try? strategyManager.loadActiveSession(context: context)
     strategyManager.cleanUpGhostSchedules(context: context)
   }
 

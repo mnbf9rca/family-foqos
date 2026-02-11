@@ -115,7 +115,7 @@ struct BlockedProfileListView: View {
   }
 
   private func deleteProfiles(at offsets: IndexSet) {
-    let activeSession = BlockedProfileSession.mostRecentActiveSession(
+    let activeSession = try? BlockedProfileSession.mostRecentActiveSession(
       in: context)
     let profilesToDelete = validProfiles
 

@@ -112,7 +112,7 @@ class BlockedProfileSession {
     )
   }
 
-  static func mostRecentActiveSession(in context: ModelContext)
+  static func mostRecentActiveSession(in context: ModelContext) throws
     -> BlockedProfileSession?
   {
     var descriptor = FetchDescriptor<BlockedProfileSession>(
@@ -121,7 +121,7 @@ class BlockedProfileSession {
     )
     descriptor.fetchLimit = 1
 
-    return try? context.fetch(descriptor).first
+    return try context.fetch(descriptor).first
   }
 
   static func createSession(

@@ -252,7 +252,7 @@ struct foqosApp: App {
             let profiles = try BlockedProfiles.fetchProfiles(in: context)
 
             // Find profile ID with active session (if any)
-            let activeSession = BlockedProfileSession.mostRecentActiveSession(in: context)
+            let activeSession = try? BlockedProfileSession.mostRecentActiveSession(in: context)
             let activeProfileId = activeSession?.blockedProfile.id
 
             var migratedCount = 0

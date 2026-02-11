@@ -21,10 +21,12 @@ struct CheckSessionActiveIntent: AppIntent {
   func perform() async throws -> some IntentResult & ReturnsValue<Bool> & ProvidesDialog {
     let strategyManager = StrategyManager.shared
 
-    // Load the active session (this syncs scheduled sessions)
-    strategyManager.loadActiveSession(context: modelContext)
+    do {
+      try strategyManager.loadActiveSession(context: modelContext)
+    } catch {
+      throw IntentError.unexpected("Failed to load session data")
+    }
 
-    // Check if there's any active session using the isBlocking property
     let isActive = strategyManager.isBlocking
 
     let dialogMessage =

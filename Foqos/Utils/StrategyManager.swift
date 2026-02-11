@@ -92,8 +92,8 @@ class StrategyManager: ObservableObject {
     return baseMessage + " by enabling \(profile.name)"
   }
 
-  func loadActiveSession(context: ModelContext) {
-    activeSession = getActiveSession(context: context)
+  func loadActiveSession(context: ModelContext) throws {
+    activeSession = try getActiveSession(context: context)
 
     if activeSession?.isActive == true {
       startTimer()
@@ -508,7 +508,7 @@ class StrategyManager: ObservableObject {
 
       let manualStrategy = getStrategy(id: ManualBlockingStrategy.id)
 
-      if let localActiveSession = getActiveSession(context: context) {
+      if let localActiveSession = try? getActiveSession(context: context) {
         if localActiveSession.blockedProfile.disableBackgroundStops {
           Log.info(
             "profile: \(localActiveSession.blockedProfile.name) has disable background stops enabled, not stopping it",
@@ -620,7 +620,7 @@ class StrategyManager: ObservableObject {
         throw IntentError.profileNotFound
       }
 
-      if let localActiveSession = getActiveSession(context: context) {
+      if let localActiveSession = try getActiveSession(context: context) {
         Log.info(
           "session is already active for profile: \(localActiveSession.blockedProfile.name), not starting a new one",
           category: .strategy)
@@ -687,7 +687,7 @@ class StrategyManager: ObservableObject {
 
       let manualStrategy = getStrategy(id: ManualBlockingStrategy.id)
 
-      guard let localActiveSession = getActiveSession(context: context) else {
+      guard let localActiveSession = try getActiveSession(context: context) else {
         Log.info(
           "session is not active for profile: \(profile.name), not stopping it", category: .strategy
         )
@@ -755,7 +755,7 @@ class StrategyManager: ObservableObject {
     }
 
     // Do not allow emergency unblocks if there is no active session
-    guard let activeSession = getActiveSession(context: context) else {
+    guard let activeSession = try? getActiveSession(context: context) else {
       return
     }
 
@@ -1047,7 +1047,7 @@ class StrategyManager: ObservableObject {
     WidgetCenter.shared.reloadTimelines(ofKind: "ProfileControlWidget")
 
     // Load the active session since the break start time was set in a different thread
-    loadActiveSession(context: context)
+    try? loadActiveSession(context: context)
 
     // Update live activity to show break state
     liveActivityManager.updateBreakState(session: session)
@@ -1074,7 +1074,7 @@ class StrategyManager: ObservableObject {
     WidgetCenter.shared.reloadTimelines(ofKind: "ProfileControlWidget")
 
     // Load the active session since the break end time was set in a different thread
-    loadActiveSession(context: context)
+    try? loadActiveSession(context: context)
 
     // Update live activity to show break has ended
     liveActivityManager.updateBreakState(session: session)
@@ -1085,14 +1085,14 @@ class StrategyManager: ObservableObject {
     customStrategyView = nil
   }
 
-  private func getActiveSession(context: ModelContext)
+  private func getActiveSession(context: ModelContext) throws
     -> BlockedProfileSession?
   {
     // Before fetching the active session, sync any schedule sessions
     syncScheduleSessions(context: context)
 
     return
-      BlockedProfileSession
+      try BlockedProfileSession
       .mostRecentActiveSession(in: context)
   }
 

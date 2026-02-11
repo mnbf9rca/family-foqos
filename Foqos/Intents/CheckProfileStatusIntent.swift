@@ -20,10 +20,12 @@ struct CheckProfileStatusIntent: AppIntent {
   func perform() async throws -> some IntentResult & ReturnsValue<Bool> & ProvidesDialog {
     let strategyManager = StrategyManager.shared
 
-    // Load the active session (this syncs scheduled sessions)
-    strategyManager.loadActiveSession(context: modelContext)
+    do {
+      try strategyManager.loadActiveSession(context: modelContext)
+    } catch {
+      throw IntentError.unexpected("Failed to load session data")
+    }
 
-    // Check if there's an active session and if it belongs to the specified profile
     let isActive = strategyManager.activeSession?.blockedProfile.id == profile.id
 
     let dialogMessage =
