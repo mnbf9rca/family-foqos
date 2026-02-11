@@ -92,8 +92,14 @@ class StrategyManager: ObservableObject {
     return baseMessage + " by enabling \(profile.name)"
   }
 
-  func loadActiveSession(context: ModelContext) {
-    activeSession = getActiveSession(context: context)
+  func loadActiveSession(context: ModelContext) throws {
+    do {
+      activeSession = try getActiveSession(context: context)
+    } catch {
+      activeSession = nil
+      liveActivityManager.endSessionActivity()
+      throw error
+    }
 
     if activeSession?.isActive == true {
       startTimer()
@@ -508,7 +514,9 @@ class StrategyManager: ObservableObject {
 
       let manualStrategy = getStrategy(id: ManualBlockingStrategy.id)
 
-      if let localActiveSession = getActiveSession(context: context) {
+      let activeSession = try getActiveSession(context: context)
+
+      if let localActiveSession = activeSession {
         if localActiveSession.blockedProfile.disableBackgroundStops {
           Log.info(
             "profile: \(localActiveSession.blockedProfile.name) has disable background stops enabled, not stopping it",
@@ -608,7 +616,7 @@ class StrategyManager: ObservableObject {
     _ profileId: UUID,
     context: ModelContext,
     durationInMinutes: Int? = nil
-  ) {
+  ) throws {
     do {
       guard
         let profile = try BlockedProfiles.findProfile(
@@ -616,22 +624,22 @@ class StrategyManager: ObservableObject {
           in: context
         )
       else {
-        self.errorMessage =
-          "Failed to find a profile stored locally that matches the tag"
-        return
+        self.errorMessage = "Could not find that profile."
+        throw IntentError.profileNotFound
       }
 
-      if let localActiveSession = getActiveSession(context: context) {
+      if let localActiveSession = try getActiveSession(context: context) {
         Log.info(
           "session is already active for profile: \(localActiveSession.blockedProfile.name), not starting a new one",
           category: .strategy)
-        return
+        self.errorMessage = "A session is already active."
+        throw IntentError.sessionAlreadyActive
       }
 
       if let duration = durationInMinutes {
         if duration < 15 || duration > 1440 {
-          self.errorMessage = "Duration must be between 15 and 1440 minutes"
-          return
+          self.errorMessage = "Duration must be between 15 and 1440 minutes."
+          throw IntentError.durationOutOfRange
         }
 
         if let strategyTimerData = StrategyTimerData.toData(
@@ -657,15 +665,23 @@ class StrategyManager: ObservableObject {
           forceStart: true
         )
       }
+    } catch let error as IntentError {
+      throw error
     } catch {
-      self.errorMessage = "Something went wrong fetching profile"
+      Log.error(
+        "Unexpected error in startSessionFromBackground: \(error.localizedDescription)",
+        category: .strategy
+      )
+      let message = "Something went wrong starting the session"
+      self.errorMessage = message
+      throw IntentError.unexpected(message)
     }
   }
 
   func stopSessionFromBackground(
     _ profileId: UUID,
     context: ModelContext
-  ) async {
+  ) async throws {
     do {
       guard
         let profile = try BlockedProfiles.findProfile(
@@ -673,36 +689,34 @@ class StrategyManager: ObservableObject {
           in: context
         )
       else {
-        self.errorMessage =
-          "Failed to find a profile stored locally that matches the tag"
-        return
+        self.errorMessage = "Could not find that profile."
+        throw IntentError.profileNotFound
       }
 
       let manualStrategy = getStrategy(id: ManualBlockingStrategy.id)
 
-      guard let localActiveSession = getActiveSession(context: context) else {
+      guard let localActiveSession = try getActiveSession(context: context) else {
         Log.info(
           "session is not active for profile: \(profile.name), not stopping it", category: .strategy
         )
-        return
+        self.errorMessage = "\(profile.name) is not currently active."
+        throw IntentError.noActiveSession(profileName: profile.name)
       }
 
       if localActiveSession.blockedProfile.id != profile.id {
         Log.info(
           "session is not active for profile: \(profile.name), not stopping it", category: .strategy
         )
-        self.errorMessage =
-          "session is not active for profile: \(profile.name), not stopping it"
-        return
+        self.errorMessage = "\(profile.name) is not currently active."
+        throw IntentError.noActiveSession(profileName: profile.name)
       }
 
       if profile.disableBackgroundStops {
         Log.info(
           "profile: \(profile.name) has disable background stops enabled, not stopping it",
           category: .strategy)
-        self.errorMessage =
-          "profile: \(profile.name) has disable background stops enabled, not stopping it"
-        return
+        self.errorMessage = "\(profile.name) cannot be stopped remotely."
+        throw IntentError.backgroundStopsDisabled(profileName: profile.name)
       }
 
       // Check geofence rule — fail-closed if location can't be determined
@@ -717,15 +731,24 @@ class StrategyManager: ObservableObject {
           category: .strategy)
         postGeofenceBlockedNotification(
           profileId: profile.id, profileName: profile.name, reason: reason)
-        return
+        self.errorMessage = "Cannot stop — \(reason)"
+        throw IntentError.geofenceBlocked(reason: reason)
       }
 
       let _ = manualStrategy.stopBlocking(
         context: context,
         session: localActiveSession
       )
+    } catch let error as IntentError {
+      throw error
     } catch {
-      self.errorMessage = "Something went wrong fetching profile"
+      Log.error(
+        "Unexpected error in stopSessionFromBackground: \(error.localizedDescription)",
+        category: .strategy
+      )
+      let message = "Something went wrong stopping the session"
+      self.errorMessage = message
+      throw IntentError.unexpected(message)
     }
   }
 
@@ -740,7 +763,7 @@ class StrategyManager: ObservableObject {
     }
 
     // Do not allow emergency unblocks if there is no active session
-    guard let activeSession = getActiveSession(context: context) else {
+    guard let activeSession = try? getActiveSession(context: context) else {
       return
     }
 
@@ -1032,7 +1055,7 @@ class StrategyManager: ObservableObject {
     WidgetCenter.shared.reloadTimelines(ofKind: "ProfileControlWidget")
 
     // Load the active session since the break start time was set in a different thread
-    loadActiveSession(context: context)
+    try? loadActiveSession(context: context)
 
     // Update live activity to show break state
     liveActivityManager.updateBreakState(session: session)
@@ -1059,7 +1082,7 @@ class StrategyManager: ObservableObject {
     WidgetCenter.shared.reloadTimelines(ofKind: "ProfileControlWidget")
 
     // Load the active session since the break end time was set in a different thread
-    loadActiveSession(context: context)
+    try? loadActiveSession(context: context)
 
     // Update live activity to show break has ended
     liveActivityManager.updateBreakState(session: session)
@@ -1070,14 +1093,14 @@ class StrategyManager: ObservableObject {
     customStrategyView = nil
   }
 
-  private func getActiveSession(context: ModelContext)
+  private func getActiveSession(context: ModelContext) throws
     -> BlockedProfileSession?
   {
     // Before fetching the active session, sync any schedule sessions
     syncScheduleSessions(context: context)
 
     return
-      BlockedProfileSession
+      try BlockedProfileSession
       .mostRecentActiveSession(in: context)
   }
 
