@@ -514,7 +514,9 @@ class StrategyManager: ObservableObject {
 
       let manualStrategy = getStrategy(id: ManualBlockingStrategy.id)
 
-      if let localActiveSession = try? getActiveSession(context: context) {
+      let activeSession = try getActiveSession(context: context)
+
+      if let localActiveSession = activeSession {
         if localActiveSession.blockedProfile.disableBackgroundStops {
           Log.info(
             "profile: \(localActiveSession.blockedProfile.name) has disable background stops enabled, not stopping it",
