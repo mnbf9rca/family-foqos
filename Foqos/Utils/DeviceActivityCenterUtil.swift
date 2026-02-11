@@ -330,11 +330,18 @@ class DeviceActivityCenterUtil {
         let now = Date()
         let endDate = now.addingTimeInterval(60)
         let endComponents = Calendar.current.dateComponents([.hour, .minute, .second], from: endDate)
-        let intervalEnd = DateComponents(
-            hour: endComponents.hour,
-            minute: endComponents.minute,
-            second: endComponents.second
-        )
+
+        // Cap at 23:59:59 if the end time wraps past midnight
+        let intervalEnd: DateComponents
+        if endComponents.hour == 0 && Calendar.current.component(.hour, from: now) == 23 {
+            intervalEnd = DateComponents(hour: 23, minute: 59, second: 59)
+        } else {
+            intervalEnd = DateComponents(
+                hour: endComponents.hour,
+                minute: endComponents.minute,
+                second: endComponents.second
+            )
+        }
 
         let deviceActivitySchedule = DeviceActivitySchedule(
             intervalStart: intervalStart,
