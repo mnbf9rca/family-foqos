@@ -15,8 +15,29 @@ struct BlockedProfileListView: View {
   @State private var showingDataExport = false
 
   @State private var profileToEdit: BlockedProfiles?
-  @State private var showErrorAlert = false
+  @State private var deleteError: DeleteError?
   @State private var editMode: EditMode = .inactive
+
+  private enum DeleteError {
+    case activeProfile
+    case fetchFailed
+
+    var title: String {
+      switch self {
+      case .activeProfile: "Cannot Delete Active Profile"
+      case .fetchFailed: "Unable to Delete"
+      }
+    }
+
+    var message: String {
+      switch self {
+      case .activeProfile:
+        "You cannot delete a profile that is currently active. Please switch to a different profile first."
+      case .fetchFailed:
+        "Something went wrong while checking profile status. Please try again."
+      }
+    }
+  }
 
   /// Filtered profiles excluding deleted models
   private var validProfiles: [BlockedProfiles] {
@@ -102,14 +123,15 @@ struct BlockedProfileListView: View {
         BlockedProfileDataExportView()
       }
       .alert(
-        "Cannot Delete Active Profile",
-        isPresented: $showErrorAlert
+        deleteError?.title ?? "",
+        isPresented: Binding(
+          get: { deleteError != nil },
+          set: { if !$0 { deleteError = nil } }
+        )
       ) {
         Button("OK", role: .cancel) {}
       } message: {
-        Text(
-          "You cannot delete a profile that is currently active. Please switch to a different profile first."
-        )
+        Text(deleteError?.message ?? "")
       }
     }
   }
@@ -120,7 +142,7 @@ struct BlockedProfileListView: View {
       activeSession = try BlockedProfileSession.mostRecentActiveSession(in: context)
     } catch {
       Log.error("Failed to determine active session: \(error.localizedDescription)", category: .ui)
-      showErrorAlert = true
+      deleteError = .fetchFailed
       return
     }
     let profilesToDelete = validProfiles
@@ -129,7 +151,7 @@ struct BlockedProfileListView: View {
     for index in offsets {
       let profile = profilesToDelete[index]
       if profile.id == activeSession?.blockedProfile.id {
-        showErrorAlert = true
+        deleteError = .activeProfile
         return
       }
     }
