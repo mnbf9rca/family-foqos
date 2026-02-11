@@ -24,6 +24,10 @@ struct CheckSessionActiveIntent: AppIntent {
     do {
       try strategyManager.loadActiveSession(context: modelContext)
     } catch {
+      Log.error(
+        "Unexpected error in CheckSessionActiveIntent: \(error.localizedDescription)",
+        category: .strategy
+      )
       throw IntentError.unexpected("Failed to load session data")
     }
 
