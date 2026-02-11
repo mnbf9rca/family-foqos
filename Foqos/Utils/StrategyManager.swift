@@ -93,7 +93,13 @@ class StrategyManager: ObservableObject {
   }
 
   func loadActiveSession(context: ModelContext) throws {
-    activeSession = try getActiveSession(context: context)
+    do {
+      activeSession = try getActiveSession(context: context)
+    } catch {
+      activeSession = nil
+      liveActivityManager.endSessionActivity()
+      throw error
+    }
 
     if activeSession?.isActive == true {
       startTimer()
@@ -664,7 +670,7 @@ class StrategyManager: ObservableObject {
         "Unexpected error in startSessionFromBackground: \(error.localizedDescription)",
         category: .strategy
       )
-      let message = "Something went wrong fetching profile"
+      let message = "Something went wrong starting the session"
       self.errorMessage = message
       throw IntentError.unexpected(message)
     }
@@ -738,7 +744,7 @@ class StrategyManager: ObservableObject {
         "Unexpected error in stopSessionFromBackground: \(error.localizedDescription)",
         category: .strategy
       )
-      let message = "Something went wrong fetching profile"
+      let message = "Something went wrong stopping the session"
       self.errorMessage = message
       throw IntentError.unexpected(message)
     }

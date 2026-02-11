@@ -115,8 +115,14 @@ struct BlockedProfileListView: View {
   }
 
   private func deleteProfiles(at offsets: IndexSet) {
-    let activeSession = try? BlockedProfileSession.mostRecentActiveSession(
-      in: context)
+    var activeSession: BlockedProfileSession?
+    do {
+      activeSession = try BlockedProfileSession.mostRecentActiveSession(in: context)
+    } catch {
+      Log.error("Failed to determine active session: \(error.localizedDescription)", category: .ui)
+      showErrorAlert = true
+      return
+    }
     let profilesToDelete = validProfiles
 
     // Check if any of the profiles to delete are active
