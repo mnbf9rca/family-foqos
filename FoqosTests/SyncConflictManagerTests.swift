@@ -202,4 +202,41 @@ final class SyncConflictManagerTests: XCTestCase {
     XCTAssertTrue(manager.showConflictBanner)
     XCTAssertNotNil(manager.newerVersionProfiles[newerId])
   }
+
+  // MARK: - Computed Banner Visibility Tests
+
+  func testShouldShowNewerVersionBannerWhenConflictsExist() {
+    let manager = SyncConflictManager.shared
+    manager.addNewerVersionConflict(profileId: UUID(), profileName: "New Version")
+
+    XCTAssertTrue(manager.shouldShowNewerVersionBanner)
+    XCTAssertFalse(manager.shouldShowOlderDeviceBanner)
+  }
+
+  func testShouldShowOlderDeviceBannerWhenConflictsExist() {
+    let manager = SyncConflictManager.shared
+    manager.addConflict(profileId: UUID(), profileName: "Old Device")
+
+    XCTAssertTrue(manager.shouldShowOlderDeviceBanner)
+    XCTAssertFalse(manager.shouldShowNewerVersionBanner)
+  }
+
+  func testComputedPropertiesFalseWhenBannerDismissed() {
+    let manager = SyncConflictManager.shared
+    manager.addConflict(profileId: UUID(), profileName: "Old Device")
+    manager.addNewerVersionConflict(profileId: UUID(), profileName: "New Version")
+    manager.dismissBanner()
+
+    XCTAssertFalse(manager.shouldShowNewerVersionBanner)
+    XCTAssertFalse(manager.shouldShowOlderDeviceBanner)
+  }
+
+  func testBothComputedPropertiesTrueWhenBothConflictTypesExist() {
+    let manager = SyncConflictManager.shared
+    manager.addConflict(profileId: UUID(), profileName: "Old Device")
+    manager.addNewerVersionConflict(profileId: UUID(), profileName: "New Version")
+
+    XCTAssertTrue(manager.shouldShowNewerVersionBanner)
+    XCTAssertTrue(manager.shouldShowOlderDeviceBanner)
+  }
 }

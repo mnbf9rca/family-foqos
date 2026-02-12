@@ -41,6 +41,14 @@ final class SyncConflictManager: ObservableObject {
     showConflictBanner = false
   }
 
+  var shouldShowNewerVersionBanner: Bool {
+    !newerVersionProfiles.isEmpty && showConflictBanner
+  }
+
+  var shouldShowOlderDeviceBanner: Bool {
+    !conflictedProfiles.isEmpty && showConflictBanner
+  }
+
   var conflictMessage: String {
     if conflictedProfiles.count == 1, let name = conflictedProfiles.values.first {
       return "\"\(name)\" was edited on an older app version. Update Foqos on all devices to sync."

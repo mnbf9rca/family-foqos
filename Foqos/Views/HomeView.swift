@@ -162,21 +162,15 @@ struct HomeView: View {
           )
           .padding(.horizontal, 16)
 
-          if !syncConflictManager.conflictedProfiles.isEmpty
-            && syncConflictManager.showConflictBanner
-          {
+          if syncConflictManager.shouldShowNewerVersionBanner {
             SyncConflictBanner(
-              message: syncConflictManager.conflictMessage,
+              message: syncConflictManager.newerVersionMessage,
               onDismiss: { syncConflictManager.dismissBanner() }
             )
             .padding(.vertical, 8)
-          }
-
-          if !syncConflictManager.newerVersionProfiles.isEmpty
-            && syncConflictManager.showConflictBanner
-          {
+          } else if syncConflictManager.shouldShowOlderDeviceBanner {
             SyncConflictBanner(
-              message: syncConflictManager.newerVersionMessage,
+              message: syncConflictManager.conflictMessage,
               onDismiss: { syncConflictManager.dismissBanner() }
             )
             .padding(.vertical, 8)
