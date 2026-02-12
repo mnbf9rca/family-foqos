@@ -54,7 +54,9 @@ class SyncCoordinator: ObservableObject {
     NotificationCenter.default.publisher(for: .syncedLocationsReceived)
       .receive(on: DispatchQueue.main)
       .sink { [weak self] notification in
-        guard let locations = notification.userInfo?["locations"] as? [SyncedLocation] else { return }
+        guard let locations = notification.userInfo?["locations"] as? [SyncedLocation] else {
+          return
+        }
         self?.handleSyncedLocations(locations)
       }
       .store(in: &cancellables)
@@ -109,7 +111,9 @@ class SyncCoordinator: ObservableObject {
         .map { SyncedProfile(from: $0, originDeviceId: deviceId) }
       let syncedLocations = locations.map { SyncedLocation(from: $0) }
 
-      Log.info("Pushing \(syncedProfiles.count) profiles and \(syncedLocations.count) locations to CloudKit", category: .sync)
+      Log.info(
+        "Pushing \(syncedProfiles.count) profiles and \(syncedLocations.count) locations to CloudKit",
+        category: .sync)
 
       Task.detached {
         // Push synced profiles
@@ -168,8 +172,26 @@ class SyncCoordinator: ObservableObject {
               "Auto-healed: pushed V2 data back to CloudKit for '\(existingProfile.name)'",
               category: .sync
             )
+          } else if syncedProfile.profileSchemaVersion
+            > BlockedProfiles.currentSchemaVersion
+          {
+            // Newer than this app understands — reject data, mark read-only
+            Log.warning(
+              "Ignoring sync from newer schema version (\(syncedProfile.profileSchemaVersion)) "
+                + "for profile: \(existingProfile.name) (\(existingProfile.id.uuidString))",
+              category: .sync
+            )
+            SyncConflictManager.shared.addNewerVersionConflict(
+              profileId: existingProfile.id,
+              profileName: existingProfile.name
+            )
+            // Mark profile as newer schema so UI shows "Update app to edit"
+            existingProfile.profileSchemaVersion = syncedProfile.profileSchemaVersion
+            // Update sync version to avoid re-processing every cycle
+            existingProfile.syncVersion = syncedProfile.version
+            // Do NOT auto-heal push — the newer device is authoritative
           } else if syncedProfile.version > existingProfile.syncVersion {
-            // Update existing profile if remote version is newer and schema is same or newer
+            // Same understood schema, newer sync version — apply update
             updateLocalProfile(existingProfile, from: syncedProfile, in: context)
             // Clear any existing sync conflict now that the profile has been updated
             SyncConflictManager.shared.clearConflict(profileId: existingProfile.id)
