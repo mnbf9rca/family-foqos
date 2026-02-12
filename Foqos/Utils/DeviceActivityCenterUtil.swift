@@ -315,7 +315,7 @@ class DeviceActivityCenterUtil {
         stopActivities(for: [deviceActivityName])
     }
 
-    static func startOneMoreMinuteActivity(for profile: BlockedProfiles) {
+    static func startOneMoreMinuteActivity(for profile: BlockedProfiles) throws {
         let center = DeviceActivityCenter()
         let oneMoreMinuteActivity = OneMoreMinuteTimerActivity()
         let deviceActivityName = oneMoreMinuteActivity.getDeviceActivityName(
@@ -323,25 +323,24 @@ class DeviceActivityCenterUtil {
         )
 
         // Use second-level precision for the 60-second timer.
-        // getTimeIntervalStartAndEnd() works at minute granularity only, which is
-        // too coarse — if called at 10:30:45, a 1-minute offset yields 10:31:00
-        // (only 15 seconds away). Instead, compute the exact end time with seconds.
-        let intervalStart = DateComponents(hour: 0, minute: 0, second: 0)
+        // Compute exact start and end times with seconds.
+        // Allow the interval to cross midnight if needed so the user always gets
+        // a full 60 seconds.
         let now = Date()
+        let calendar = Calendar.current
+        let nowComponents = calendar.dateComponents([.hour, .minute, .second], from: now)
+        let intervalStart = DateComponents(
+            hour: nowComponents.hour,
+            minute: nowComponents.minute,
+            second: nowComponents.second
+        )
         let endDate = now.addingTimeInterval(60)
-        let endComponents = Calendar.current.dateComponents([.hour, .minute, .second], from: endDate)
-
-        // Cap at 23:59:59 if the end time wraps past midnight
-        let intervalEnd: DateComponents
-        if endComponents.hour == 0 && Calendar.current.component(.hour, from: now) == 23 {
-            intervalEnd = DateComponents(hour: 23, minute: 59, second: 59)
-        } else {
-            intervalEnd = DateComponents(
-                hour: endComponents.hour,
-                minute: endComponents.minute,
-                second: endComponents.second
-            )
-        }
+        let endComponents = calendar.dateComponents([.hour, .minute, .second], from: endDate)
+        let intervalEnd = DateComponents(
+            hour: endComponents.hour,
+            minute: endComponents.minute,
+            second: endComponents.second
+        )
 
         let deviceActivitySchedule = DeviceActivitySchedule(
             intervalStart: intervalStart,
@@ -349,19 +348,12 @@ class DeviceActivityCenterUtil {
             repeats: false
         )
 
-        do {
-            stopActivities(for: [deviceActivityName], with: center)
-            try center.startMonitoring(deviceActivityName, during: deviceActivitySchedule)
-            Log.info(
-                "Scheduled one more minute activity from \(intervalStart) to \(intervalEnd)",
-                category: .timer
-            )
-        } catch {
-            Log.error(
-                "Failed to start one more minute activity: \(error.localizedDescription)",
-                category: .timer
-            )
-        }
+        stopActivities(for: [deviceActivityName], with: center)
+        try center.startMonitoring(deviceActivityName, during: deviceActivitySchedule)
+        Log.info(
+            "Scheduled one more minute activity from \(intervalStart) to \(intervalEnd)",
+            category: .timer
+        )
     }
 
     static func removeOneMoreMinuteActivity(for profile: BlockedProfiles) {

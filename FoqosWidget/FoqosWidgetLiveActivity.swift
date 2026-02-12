@@ -75,10 +75,13 @@ struct FoqosWidgetLiveActivity: Widget {
               Text("One more minute")
                 .font(.caption)
                 .foregroundColor(.yellow)
-              Text(startTime.addingTimeInterval(60), style: .timer)
-                .font(.title2)
-                .fontWeight(.semibold)
-                .foregroundColor(.yellow)
+              Text(
+                timerInterval: startTime...startTime.addingTimeInterval(60),
+                countsDown: true
+              )
+              .font(.title2)
+              .fontWeight(.semibold)
+              .foregroundColor(.yellow)
             }
           } else if context.state.isBreakActive {
             HStack(spacing: 6) {
@@ -130,10 +133,13 @@ struct FoqosWidgetLiveActivity: Widget {
                 Text("One more minute")
                   .font(.caption)
                   .foregroundColor(.yellow)
-                Text(startTime.addingTimeInterval(60), style: .timer)
-                  .font(.title2)
-                  .fontWeight(.semibold)
-                  .foregroundColor(.yellow)
+                Text(
+                  timerInterval: startTime...startTime.addingTimeInterval(60),
+                  countsDown: true
+                )
+                .font(.title2)
+                .fontWeight(.semibold)
+                .foregroundColor(.yellow)
               }
             } else if context.state.isBreakActive {
               VStack(spacing: 2) {

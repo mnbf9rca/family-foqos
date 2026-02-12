@@ -13,7 +13,7 @@ struct OneMoreMinuteButton: View {
   }
 
   var body: some View {
-    if isActive && oneMoreMinuteStartTime != nil {
+    if isActive && oneMoreMinuteStartTime != nil && timeRemaining(at: .now) > 0 {
       TimelineView(.periodic(from: .now, by: 1)) { context in
         let remaining = timeRemaining(at: context.date)
         if remaining > 0 {

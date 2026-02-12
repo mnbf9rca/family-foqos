@@ -349,19 +349,21 @@ class StrategyManager: ObservableObject {
       return
     }
 
-    // Mark as used
+    // Schedule DeviceActivity enforcement FIRST — if this fails, don't lift restrictions
+    do {
+      try DeviceActivityCenterUtil.startOneMoreMinuteActivity(for: session.blockedProfile)
+    } catch {
+      Log.error(
+        "Failed to schedule one more minute activity: \(error.localizedDescription)",
+        category: .strategy
+      )
+      return
+    }
+
+    // Monitoring scheduled successfully — now safe to lift restrictions
     session.startOneMoreMinute()
-
-    // LIFT RESTRICTIONS - user can now use blocked apps
     appBlocker.deactivateRestrictions()
-
-    // Schedule DeviceActivity to re-apply restrictions after 60 seconds
-    DeviceActivityCenterUtil.startOneMoreMinuteActivity(for: session.blockedProfile)
-
-    // Update live activity
     liveActivityManager.updateOneMoreMinuteState(session: session)
-
-    // Refresh widgets
     WidgetCenter.shared.reloadTimelines(ofKind: "ProfileControlWidget")
 
     Log.info("Started one more minute - restrictions lifted for 60s", category: .strategy)
