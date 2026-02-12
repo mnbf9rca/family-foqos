@@ -45,7 +45,8 @@ final class SyncConflictManager: ObservableObject {
     if conflictedProfiles.count == 1, let name = conflictedProfiles.values.first {
       return "\"\(name)\" was edited on an older app version. Update Foqos on all devices to sync."
     } else {
-      return "Several profiles were edited on an older app version. Update Foqos on all devices to sync."
+      return
+        "Several profiles were edited on an older app version. Update Foqos on all devices to sync."
     }
   }
 

@@ -54,7 +54,9 @@ class SyncCoordinator: ObservableObject {
     NotificationCenter.default.publisher(for: .syncedLocationsReceived)
       .receive(on: DispatchQueue.main)
       .sink { [weak self] notification in
-        guard let locations = notification.userInfo?["locations"] as? [SyncedLocation] else { return }
+        guard let locations = notification.userInfo?["locations"] as? [SyncedLocation] else {
+          return
+        }
         self?.handleSyncedLocations(locations)
       }
       .store(in: &cancellables)
@@ -109,7 +111,9 @@ class SyncCoordinator: ObservableObject {
         .map { SyncedProfile(from: $0, originDeviceId: deviceId) }
       let syncedLocations = locations.map { SyncedLocation(from: $0) }
 
-      Log.info("Pushing \(syncedProfiles.count) profiles and \(syncedLocations.count) locations to CloudKit", category: .sync)
+      Log.info(
+        "Pushing \(syncedProfiles.count) profiles and \(syncedLocations.count) locations to CloudKit",
+        category: .sync)
 
       Task.detached {
         // Push synced profiles
