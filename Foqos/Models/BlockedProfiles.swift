@@ -11,6 +11,10 @@ class BlockedProfiles {
     var selectedActivity: FamilyActivitySelection
     var createdAt: Date
     var updatedAt: Date
+    /// Legacy V1 strategy identifier. Retained for:
+    /// - Executing unmigrated V1 profiles (migration deferred during active sessions)
+    /// - CloudKit sync with V1 devices
+    /// Not written for V2-native profiles. See #59 for future removal.
     var blockingStrategyId: String?
     var strategyData: Data?
     var order: Int = 0
@@ -740,58 +744,5 @@ extension BlockedProfiles {
 
         // Step 5: Mark as migrated (only if all data encoded successfully)
         profileSchemaVersion = 2
-
-        // Step 6: Update legacy strategy ID for backwards compatibility
-        updateCompatibilityStrategyId()
-    }
-
-    /// Best-match strategy ID for backwards compatibility with older app versions.
-    /// Maps new triggers to closest legacy strategy.
-    var compatibilityStrategyId: String {
-        let start = startTriggers
-        let stop = stopConditions
-
-        // NFC auto-start with same/specific tag stop
-        if start.hasNFC && (stop.sameNFC || stop.specificNFC) {
-            return "NFCBlockingStrategy"
-        }
-        // Manual start + NFC stop + timer
-        if start.manual && stop.hasNFC && stop.timer {
-            return "NFCTimerBlockingStrategy"
-        }
-        // Manual start + NFC stop
-        if start.manual && stop.hasNFC {
-            return "NFCManualBlockingStrategy"
-        }
-        // QR auto-start with same/specific code stop
-        if start.hasQR && (stop.sameQR || stop.specificQR) {
-            return "QRCodeBlockingStrategy"
-        }
-        // Manual start + QR stop + timer
-        if start.manual && stop.hasQR && stop.timer {
-            return "QRTimerBlockingStrategy"
-        }
-        // Manual start + QR stop
-        if start.manual && stop.hasQR {
-            return "QRManualBlockingStrategy"
-        }
-        // NFC/QR auto-start only (no manual) with NFC/QR stop
-        if start.hasNFC && stop.hasNFC {
-            return "NFCManualBlockingStrategy"
-        }
-        if start.hasQR && stop.hasQR {
-            return "QRManualBlockingStrategy"
-        }
-        if start.manual && stop.timer && !stop.hasNFC && !stop.hasQR {
-            return "ShortcutTimerBlockingStrategy"
-        }
-
-        // Default to manual
-        return "ManualBlockingStrategy"
-    }
-
-    /// Updates blockingStrategyId for backwards compatibility with older app versions
-    func updateCompatibilityStrategyId() {
-        blockingStrategyId = compatibilityStrategyId
     }
 }

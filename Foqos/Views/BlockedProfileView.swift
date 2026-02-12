@@ -842,10 +842,9 @@ struct BlockedProfileView: View {
         }
     }
 
-    /// Save trigger config to profile, update compatibility, schedule, and push to sync.
+    /// Save trigger config to profile, schedule, and push to sync.
     private func finalizeSave(_ profile: BlockedProfiles) {
         triggerConfig.saveToProfile(profile)
-        profile.updateCompatibilityStrategyId()
         try? modelContext.save()
         DeviceActivityCenterUtil.scheduleTimerActivity(for: profile)
         SyncCoordinator.shared.pushProfile(profile)
