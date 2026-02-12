@@ -17,7 +17,7 @@ struct ProfileTimerButton: View {
 
   let isOneMoreMinuteActive: Bool
   let isOneMoreMinuteAvailable: Bool
-  let oneMoreMinuteTimeRemaining: TimeInterval
+  let oneMoreMinuteStartTime: Date?
 
   let onOneMoreMinuteTapped: () -> Void
 
@@ -96,7 +96,7 @@ struct ProfileTimerButton: View {
         OneMoreMinuteButton(
           isActive: isOneMoreMinuteActive,
           isAvailable: isOneMoreMinuteAvailable,
-          timeRemaining: oneMoreMinuteTimeRemaining,
+          oneMoreMinuteStartTime: oneMoreMinuteStartTime,
           onTapped: onOneMoreMinuteTapped
         )
       }
@@ -124,7 +124,7 @@ struct ProfileTimerButton: View {
       onBreakTapped: {},
       isOneMoreMinuteActive: false,
       isOneMoreMinuteAvailable: false,
-      oneMoreMinuteTimeRemaining: 0,
+      oneMoreMinuteStartTime: nil,
       onOneMoreMinuteTapped: {}
     )
 
@@ -138,7 +138,7 @@ struct ProfileTimerButton: View {
       onBreakTapped: {},
       isOneMoreMinuteActive: false,
       isOneMoreMinuteAvailable: true,
-      oneMoreMinuteTimeRemaining: 0,
+      oneMoreMinuteStartTime: nil,
       onOneMoreMinuteTapped: {}
     )
 
@@ -152,7 +152,7 @@ struct ProfileTimerButton: View {
       onBreakTapped: {},
       isOneMoreMinuteActive: true,
       isOneMoreMinuteAvailable: false,
-      oneMoreMinuteTimeRemaining: 45,
+      oneMoreMinuteStartTime: Date(),
       onOneMoreMinuteTapped: {}
     )
   }

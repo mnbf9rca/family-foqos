@@ -51,6 +51,8 @@ class TimerActivityUtil {
       return StrategyTimerActivity()
     case StopScheduleTimerActivity.id:
       return StopScheduleTimerActivity()
+    case OneMoreMinuteTimerActivity.id:
+      return OneMoreMinuteTimerActivity()
     default:
       return nil
     }

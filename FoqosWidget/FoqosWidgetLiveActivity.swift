@@ -9,7 +9,7 @@ struct FoqosWidgetAttributes: ActivityAttributes {
     var breakStartTime: Date?
     var breakEndTime: Date?
     var isOneMoreMinuteActive: Bool = false
-    var oneMoreMinuteTimeRemaining: TimeInterval = 0
+    var oneMoreMinuteStartTime: Date? = nil
 
     func getTimeIntervalSinceNow() -> Double {
       // Calculate the break duration to subtract from elapsed time
@@ -70,15 +70,18 @@ struct FoqosWidgetLiveActivity: Widget {
 
         // Right side - Timer, one-more-minute, or break indicator
         VStack(alignment: .trailing, spacing: 4) {
-          if context.state.isOneMoreMinuteActive && context.state.oneMoreMinuteTimeRemaining > 0 {
+          if context.state.isOneMoreMinuteActive, let startTime = context.state.oneMoreMinuteStartTime {
             VStack(alignment: .trailing, spacing: 2) {
               Text("One more minute")
                 .font(.caption)
                 .foregroundColor(.yellow)
-              Text("\(Int(context.state.oneMoreMinuteTimeRemaining))s")
-                .font(.title2)
-                .fontWeight(.semibold)
-                .foregroundColor(.yellow)
+              Text(
+                timerInterval: startTime...startTime.addingTimeInterval(60),
+                countsDown: true
+              )
+              .font(.title2)
+              .fontWeight(.semibold)
+              .foregroundColor(.yellow)
             }
           } else if context.state.isBreakActive {
             HStack(spacing: 6) {
@@ -125,15 +128,18 @@ struct FoqosWidgetLiveActivity: Widget {
               .foregroundColor(.secondary)
               .multilineTextAlignment(.center)
 
-            if context.state.isOneMoreMinuteActive && context.state.oneMoreMinuteTimeRemaining > 0 {
+            if context.state.isOneMoreMinuteActive, let startTime = context.state.oneMoreMinuteStartTime {
               VStack(spacing: 2) {
                 Text("One more minute")
                   .font(.caption)
                   .foregroundColor(.yellow)
-                Text("\(Int(context.state.oneMoreMinuteTimeRemaining))s")
-                  .font(.title2)
-                  .fontWeight(.semibold)
-                  .foregroundColor(.yellow)
+                Text(
+                  timerInterval: startTime...startTime.addingTimeInterval(60),
+                  countsDown: true
+                )
+                .font(.title2)
+                .fontWeight(.semibold)
+                .foregroundColor(.yellow)
               }
             } else if context.state.isBreakActive {
               VStack(spacing: 2) {

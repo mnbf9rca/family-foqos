@@ -136,6 +136,7 @@
 				Models/Schedule.swift,
 				Models/Shared.swift,
 				Models/Timers/BreakTimerActivity.swift,
+				Models/Timers/OneMoreMinuteTimerActivity.swift,
 				Models/Timers/ScheduleTimerActivity.swift,
 				Models/Timers/StopScheduleTimerActivity.swift,
 				Models/Timers/StrategyTimerActivity.swift,

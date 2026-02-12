@@ -88,7 +88,7 @@ class LiveActivityManager: ObservableObject {
       breakStartTime: session.breakStartTime,
       breakEndTime: session.breakEndTime,
       isOneMoreMinuteActive: false,
-      oneMoreMinuteTimeRemaining: 0
+      oneMoreMinuteStartTime: nil
     )
 
     do {
@@ -114,20 +114,13 @@ class LiveActivityManager: ObservableObject {
       return
     }
 
-    let oneMoreMinuteTimeRemaining: TimeInterval
-    if session.isOneMoreMinuteActive, let startTime = session.oneMoreMinuteStartTime {
-      oneMoreMinuteTimeRemaining = max(0, 60 - Date().timeIntervalSince(startTime))
-    } else {
-      oneMoreMinuteTimeRemaining = 0
-    }
-
     let updatedState = FoqosWidgetAttributes.ContentState(
       startTime: session.startTime,
       isBreakActive: session.isBreakActive,
       breakStartTime: session.breakStartTime,
       breakEndTime: session.breakEndTime,
       isOneMoreMinuteActive: session.isOneMoreMinuteActive,
-      oneMoreMinuteTimeRemaining: oneMoreMinuteTimeRemaining
+      oneMoreMinuteStartTime: session.oneMoreMinuteStartTime
     )
 
     Task {
@@ -143,20 +136,13 @@ class LiveActivityManager: ObservableObject {
       return
     }
 
-    let oneMoreMinuteTimeRemaining: TimeInterval
-    if session.isOneMoreMinuteActive, let startTime = session.oneMoreMinuteStartTime {
-      oneMoreMinuteTimeRemaining = max(0, 60 - Date().timeIntervalSince(startTime))
-    } else {
-      oneMoreMinuteTimeRemaining = 0
-    }
-
     let updatedState = FoqosWidgetAttributes.ContentState(
       startTime: session.startTime,
       isBreakActive: session.isBreakActive,
       breakStartTime: session.breakStartTime,
       breakEndTime: session.breakEndTime,
       isOneMoreMinuteActive: session.isOneMoreMinuteActive,
-      oneMoreMinuteTimeRemaining: oneMoreMinuteTimeRemaining
+      oneMoreMinuteStartTime: session.oneMoreMinuteStartTime
     )
 
     Task {
@@ -166,7 +152,7 @@ class LiveActivityManager: ObservableObject {
     }
   }
 
-  func updateOneMoreMinuteState(session: BlockedProfileSession, timeRemaining: TimeInterval) {
+  func updateOneMoreMinuteState(session: BlockedProfileSession) {
     guard let activity = currentActivity else {
       Log.info("No Live Activity to update for one-more-minute state", category: .liveActivity)
       return
@@ -178,14 +164,14 @@ class LiveActivityManager: ObservableObject {
       breakStartTime: session.breakStartTime,
       breakEndTime: session.breakEndTime,
       isOneMoreMinuteActive: session.isOneMoreMinuteActive,
-      oneMoreMinuteTimeRemaining: timeRemaining
+      oneMoreMinuteStartTime: session.oneMoreMinuteStartTime
     )
 
     Task {
       let content = ActivityContent(state: updatedState, staleDate: nil)
       await activity.update(content)
       Log.info(
-        "Updated Live Activity one-more-minute: \(timeRemaining)s remaining", category: .liveActivity)
+        "Updated Live Activity one-more-minute state", category: .liveActivity)
     }
   }
 

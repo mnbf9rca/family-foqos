@@ -315,6 +315,63 @@ class DeviceActivityCenterUtil {
         stopActivities(for: [deviceActivityName])
     }
 
+    static func startOneMoreMinuteActivity(for profile: BlockedProfiles) throws {
+        let center = DeviceActivityCenter()
+        let oneMoreMinuteActivity = OneMoreMinuteTimerActivity()
+        let deviceActivityName = oneMoreMinuteActivity.getDeviceActivityName(
+            from: profile.id.uuidString
+        )
+
+        // Use second-level precision for the 60-second timer.
+        // Compute exact start and end times with seconds.
+        // Allow the interval to cross midnight if needed so the user always gets
+        // a full 60 seconds.
+        let now = Date()
+        let calendar = Calendar.current
+        let nowComponents = calendar.dateComponents([.hour, .minute, .second], from: now)
+        let intervalStart = DateComponents(
+            hour: nowComponents.hour,
+            minute: nowComponents.minute,
+            second: nowComponents.second
+        )
+        let endDate = now.addingTimeInterval(60)
+        let endComponents = calendar.dateComponents([.hour, .minute, .second], from: endDate)
+        let intervalEnd = DateComponents(
+            hour: endComponents.hour,
+            minute: endComponents.minute,
+            second: endComponents.second
+        )
+
+        let deviceActivitySchedule = DeviceActivitySchedule(
+            intervalStart: intervalStart,
+            intervalEnd: intervalEnd,
+            repeats: false
+        )
+
+        stopActivities(for: [deviceActivityName], with: center)
+        try center.startMonitoring(deviceActivityName, during: deviceActivitySchedule)
+        Log.info(
+            "Scheduled one more minute activity from \(intervalStart) to \(intervalEnd)",
+            category: .timer
+        )
+    }
+
+    static func removeOneMoreMinuteActivity(for profile: BlockedProfiles) {
+        let oneMoreMinuteActivity = OneMoreMinuteTimerActivity()
+        let deviceActivityName = oneMoreMinuteActivity.getDeviceActivityName(
+            from: profile.id.uuidString
+        )
+        stopActivities(for: [deviceActivityName])
+    }
+
+    static func removeAllOneMoreMinuteActivities() {
+        let center = DeviceActivityCenter()
+        let activities = center.activities
+        let oneMoreMinuteActivity = OneMoreMinuteTimerActivity()
+        let oneMoreMinuteActivities = oneMoreMinuteActivity.getAllOneMoreMinuteActivities(from: activities)
+        stopActivities(for: oneMoreMinuteActivities, with: center)
+    }
+
     static func removeAllStrategyTimerActivities() {
         let center = DeviceActivityCenter()
         let activities = center.activities

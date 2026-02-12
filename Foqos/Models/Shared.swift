@@ -207,6 +207,12 @@ enum SharedData {
         activeSharedSession = session
     }
 
+    static func clearOneMoreMinuteStartTime() {
+        guard var session = activeSharedSession else { return }
+        session.oneMoreMinuteStartTime = nil
+        activeSharedSession = session
+    }
+
     // MARK: - Device Sync Settings
 
     /// Unique identifier for this device in sync operations.

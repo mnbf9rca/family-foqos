@@ -205,7 +205,7 @@ struct HomeView: View {
             },
             isOneMoreMinuteActive: isOneMoreMinuteActive,
             isOneMoreMinuteAvailable: isOneMoreMinuteAvailable,
-            oneMoreMinuteTimeRemaining: strategyManager.oneMoreMinuteTimeRemaining,
+            oneMoreMinuteStartTime: strategyManager.activeSession?.oneMoreMinuteStartTime,
             onOneMoreMinuteTapped: { _ in
               strategyManager.startOneMoreMinute(context: context)
             }

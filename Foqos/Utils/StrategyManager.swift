@@ -81,9 +81,6 @@ class StrategyManager: ObservableObject {
     return activeSession?.isOneMoreMinuteAvailable ?? false
   }
 
-  @Published var oneMoreMinuteTimeRemaining: TimeInterval = 0
-  private var oneMoreMinuteTimer: Timer?
-
   func defaultReminderMessage(forProfile profile: BlockedProfiles?) -> String {
     let baseMessage = "Get back to productivity"
     guard let profile else {
@@ -352,97 +349,24 @@ class StrategyManager: ObservableObject {
       return
     }
 
-    // Mark as used
-    session.startOneMoreMinute()
-
-    // LIFT RESTRICTIONS - user can now use blocked apps
-    appBlocker.deactivateRestrictions()
-
-    // Start 60-second countdown
-    oneMoreMinuteTimeRemaining = 60
-    startOneMoreMinuteTimer()
-
-    // Update live activity
-    liveActivityManager.updateOneMoreMinuteState(
-      session: session, timeRemaining: oneMoreMinuteTimeRemaining)
-
-    // Refresh widgets
-    WidgetCenter.shared.reloadTimelines(ofKind: "ProfileControlWidget")
-
-    Log.info("Started one more minute - restrictions lifted for 60s", category: .strategy)
-  }
-
-  private func endOneMoreMinute() {
-    stopOneMoreMinuteTimer()
-    oneMoreMinuteTimeRemaining = 0
-
-    // RE-ACTIVATE RESTRICTIONS
-    if let session = activeSession {
-      appBlocker.activateRestrictions(for: BlockedProfiles.getSnapshot(for: session.blockedProfile))
-      liveActivityManager.updateOneMoreMinuteState(session: session, timeRemaining: 0)
-    }
-
-    WidgetCenter.shared.reloadTimelines(ofKind: "ProfileControlWidget")
-  }
-
-  private func startOneMoreMinuteTimer() {
-    stopOneMoreMinuteTimer()
-
-    oneMoreMinuteTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-      Task { @MainActor in
-        guard let self else { return }
-
-        guard let session = self.activeSession,
-          let startTime = session.oneMoreMinuteStartTime
-        else {
-          self.endOneMoreMinute()
-          Log.info("One more minute ended - no session or start time", category: .strategy)
-          return
-        }
-
-        let elapsed = Date().timeIntervalSince(startTime)
-        let remaining = max(0, 60 - elapsed)
-        self.oneMoreMinuteTimeRemaining = remaining
-
-        self.liveActivityManager.updateOneMoreMinuteState(
-          session: session, timeRemaining: self.oneMoreMinuteTimeRemaining)
-
-        if remaining <= 0 {
-          self.endOneMoreMinute()
-          Log.info("One more minute ended - restrictions re-activated", category: .strategy)
-        }
-      }
-    }
-  }
-
-  private func stopOneMoreMinuteTimer() {
-    oneMoreMinuteTimer?.invalidate()
-    oneMoreMinuteTimer = nil
-  }
-
-  /// Resume the One More Minute timer if it was active when app went to background
-  /// Call this when app returns to foreground
-  func resumeOneMoreMinuteIfNeeded() {
-    guard let session = activeSession,
-      let startTime = session.oneMoreMinuteStartTime
-    else {
+    // Schedule DeviceActivity enforcement FIRST — if this fails, don't lift restrictions
+    do {
+      try DeviceActivityCenterUtil.startOneMoreMinuteActivity(for: session.blockedProfile)
+    } catch {
+      Log.error(
+        "Failed to schedule one more minute activity: \(error.localizedDescription)",
+        category: .strategy
+      )
       return
     }
 
-    let elapsed = Date().timeIntervalSince(startTime)
-    let remaining = max(0, 60 - elapsed)
+    // Monitoring scheduled successfully — now safe to lift restrictions
+    session.startOneMoreMinute()
+    appBlocker.deactivateRestrictions()
+    liveActivityManager.updateOneMoreMinuteState(session: session)
+    WidgetCenter.shared.reloadTimelines(ofKind: "ProfileControlWidget")
 
-    if remaining > 0 {
-      // Time still remaining - restart the timer
-      oneMoreMinuteTimeRemaining = remaining
-      startOneMoreMinuteTimer()
-      Log.info(
-        "Resumed one more minute timer with \(Int(remaining))s remaining", category: .strategy)
-    } else {
-      // Time expired while in background - end it now
-      endOneMoreMinute()
-      Log.info("One more minute expired while in background", category: .strategy)
-    }
+    Log.info("Started one more minute - restrictions lifted for 60s", category: .strategy)
   }
 
   func startTimer() {
@@ -471,7 +395,6 @@ class StrategyManager: ObservableObject {
   func stopTimer() {
     timer?.invalidate()
     timer = nil
-    stopOneMoreMinuteTimer()
   }
 
   private func calculateBreakDuration() -> TimeInterval {
@@ -978,6 +901,9 @@ class StrategyManager: ObservableObject {
         // Remove all break timer activities
         DeviceActivityCenterUtil.removeAllBreakTimerActivities()
 
+        // Remove one more minute activity for the ended profile
+        DeviceActivityCenterUtil.removeOneMoreMinuteActivity(for: endedProfile)
+
         // Remove all strategy timer activities
         DeviceActivityCenterUtil.removeAllStrategyTimerActivities()
 
@@ -1391,6 +1317,7 @@ class StrategyManager: ObservableObject {
     }
 
     DeviceActivityCenterUtil.removeStopScheduleActivity(for: session.blockedProfile)
+    DeviceActivityCenterUtil.removeOneMoreMinuteActivity(for: session.blockedProfile)
   }
 
   private func scheduleReminder(profile: BlockedProfiles) {
@@ -1515,6 +1442,9 @@ class StrategyManager: ObservableObject {
 
     // Remove all break timer activities
     DeviceActivityCenterUtil.removeAllBreakTimerActivities()
+
+    // Remove all one more minute activities
+    DeviceActivityCenterUtil.removeAllOneMoreMinuteActivities()
 
     // Remove all strategy timer activities
     DeviceActivityCenterUtil.removeAllStrategyTimerActivities()
