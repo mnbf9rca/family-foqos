@@ -162,7 +162,9 @@ struct HomeView: View {
           )
           .padding(.horizontal, 16)
 
-          if !syncConflictManager.conflictedProfiles.isEmpty {
+          if !syncConflictManager.conflictedProfiles.isEmpty
+            && syncConflictManager.showConflictBanner
+          {
             SyncConflictBanner(
               message: syncConflictManager.conflictMessage,
               onDismiss: { syncConflictManager.dismissBanner() }
@@ -170,7 +172,9 @@ struct HomeView: View {
             .padding(.vertical, 8)
           }
 
-          if !syncConflictManager.newerVersionProfiles.isEmpty {
+          if !syncConflictManager.newerVersionProfiles.isEmpty
+            && syncConflictManager.showConflictBanner
+          {
             SyncConflictBanner(
               message: syncConflictManager.newerVersionMessage,
               onDismiss: { syncConflictManager.dismissBanner() }
