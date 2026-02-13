@@ -513,7 +513,7 @@ struct BlockedProfileView: View {
                   .foregroundColor(.secondary)
 
                 HStack(spacing: 8) {
-                  ForEach(UInt8(1)...UInt8(5), id: \.self) { minutes in
+                  ForEach(TimersUtil.supportedReminderRange, id: \.self) { minutes in
                     let isSelected = preActivationReminderTimes.contains(minutes)
                     Button {
                       if isSelected {
