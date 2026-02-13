@@ -7,9 +7,11 @@ struct ProfileScheduleRow: View {
   private var hasLegacySchedule: Bool { profile.schedule?.isActive == true }
 
   private var hasV2Schedule: Bool {
-    let hasStart = profile.startTriggers.schedule
+    let hasStart =
+      profile.startTriggers.schedule
       && profile.startSchedule?.isActive == true
-    let hasStop = profile.stopConditions.schedule
+    let hasStop =
+      profile.stopConditions.schedule
       && profile.stopSchedule?.isActive == true
     return hasStart || hasStop
   }
@@ -57,9 +59,11 @@ struct ProfileScheduleRow: View {
 
   private var timeLine: String? {
     if hasV2Schedule {
-      let startText = profile.startTriggers.schedule
+      let startText =
+        profile.startTriggers.schedule
         ? profile.startSchedule?.formattedTime : nil
-      let stopText = profile.stopConditions.schedule
+      let stopText =
+        profile.stopConditions.schedule
         ? profile.stopSchedule?.formattedTime : nil
       if let s = startText, let e = stopText {
         return "\(s) - \(e)"

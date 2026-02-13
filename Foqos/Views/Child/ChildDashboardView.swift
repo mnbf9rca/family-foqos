@@ -314,11 +314,13 @@ struct ChildDashboardView: View {
               .font(.headline)
               .foregroundColor(.primary)
 
-            Text(unlockedProfiles.isEmpty
-              ? "Create focus profiles to block distracting apps"
-              : "\(unlockedProfiles.count) profile\(unlockedProfiles.count == 1 ? "" : "s") you can edit")
-              .font(.caption)
-              .foregroundColor(.secondary)
+            Text(
+              unlockedProfiles.isEmpty
+                ? "Create focus profiles to block distracting apps"
+                : "\(unlockedProfiles.count) profile\(unlockedProfiles.count == 1 ? "" : "s") you can edit"
+            )
+            .font(.caption)
+            .foregroundColor(.secondary)
           }
 
           Spacer()
@@ -481,13 +483,15 @@ struct EditLockedProfilesSheet: View {
       List {
         Section {
           ForEach(profiles) { profile in
-            Toggle(isOn: Binding(
-              get: { profile.isManaged },
-              set: { newValue in
-                profile.isManaged = newValue
-                try? modelContext.save()
-              }
-            )) {
+            Toggle(
+              isOn: Binding(
+                get: { profile.isManaged },
+                set: { newValue in
+                  profile.isManaged = newValue
+                  try? modelContext.save()
+                }
+              )
+            ) {
               HStack(spacing: 12) {
                 Image(systemName: profile.isManaged ? "lock.fill" : "lock.open")
                   .foregroundColor(profile.isManaged ? .orange : .secondary)

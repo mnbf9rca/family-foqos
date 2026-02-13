@@ -90,10 +90,11 @@ struct AddLocationView: View {
       let stepIndex = SavedLocation.radiusStepIndex(for: location.defaultRadiusMeters)
       _radiusSliderValue = State(initialValue: Double(stepIndex))
 
-      _mapRegion = State(initialValue: MKCoordinateRegion(
-        center: CLLocationCoordinate2D(latitude: location.latitude, longitude: location.longitude),
-        span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
-      ))
+      _mapRegion = State(
+        initialValue: MKCoordinateRegion(
+          center: CLLocationCoordinate2D(latitude: location.latitude, longitude: location.longitude),
+          span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
+        ))
     }
   }
 
@@ -303,10 +304,13 @@ struct AddLocationView: View {
           .disabled(!canSave)
         }
       }
-      .alert("Error", isPresented: .init(
-        get: { errorMessage != nil },
-        set: { if !$0 { errorMessage = nil } }
-      )) {
+      .alert(
+        "Error",
+        isPresented: .init(
+          get: { errorMessage != nil },
+          set: { if !$0 { errorMessage = nil } }
+        )
+      ) {
         Button("OK", role: .cancel) {}
       } message: {
         if let message = errorMessage {

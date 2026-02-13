@@ -14,8 +14,7 @@ class ScheduleTimerActivity: TimerActivity {
     return DeviceActivityName(rawValue: profileId)
   }
 
-  func getAllScheduleTimerActivities(from activities: [DeviceActivityName]) -> [DeviceActivityName]
-  {
+  func getAllScheduleTimerActivities(from activities: [DeviceActivityName]) -> [DeviceActivityName] {
     // Schedule timer activities use just the profile UUID as the rawValue (no prefix)
     // Other activities use prefixes like "BreakScheduleActivity:" or "StrategyTimerActivity:"
     return activities.filter { activity in

@@ -14,8 +14,6 @@ struct SessionRow: View {
           .fontWeight(.semibold)
           .lineLimit(1)
 
-        
-
         Spacer(minLength: 8)
 
         HStack(spacing: 4) {
@@ -37,8 +35,6 @@ struct SessionRow: View {
       .font(.subheadline)
       .foregroundColor(.secondary)
 
-      
-
       if let breakText = session.breakRangeText {
         HStack(spacing: 6) {
           Image(systemName: "cup.and.saucer")
@@ -55,8 +51,6 @@ struct SessionRow: View {
   }
 }
 
-
-
 extension BlockedProfileSession {
   var formattedDate: String {
     let calendar = Calendar.current
@@ -71,8 +65,6 @@ extension BlockedProfileSession {
     formatter.timeStyle = .none
     return formatter.string(from: startTime)
   }
-
-  
 
   var formattedStartTime: String {
     startTime.formatted(date: .omitted, time: .shortened)

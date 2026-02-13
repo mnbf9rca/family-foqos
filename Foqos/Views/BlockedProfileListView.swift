@@ -77,62 +77,62 @@ struct BlockedProfileListView: View {
   var body: some View {
     NavigationStack {
       contentView
-      .navigationTitle("Profiles")
-      .toolbar {
-        ToolbarItem(placement: .topBarLeading) {
-          Button(action: { dismiss() }) {
-            Image(systemName: "xmark")
-          }
-        }
-
-        ToolbarItemGroup(placement: .topBarTrailing) {
-          if editMode == .active {
-            Button(action: { editMode = .inactive }) {
-              Image(systemName: "checkmark.circle")
+        .navigationTitle("Profiles")
+        .toolbar {
+          ToolbarItem(placement: .topBarLeading) {
+            Button(action: { dismiss() }) {
+              Image(systemName: "xmark")
             }
           }
-          if !validProfiles.isEmpty {
-            Menu {
-              Button {
-                editMode = .active
-              } label: {
-                Label("Edit/Move", systemImage: "pencil")
-              }
 
-              Button {
-                showingDataExport = true
-              } label: {
-                Label("Export Data", systemImage: "square.and.arrow.up")
+          ToolbarItemGroup(placement: .topBarTrailing) {
+            if editMode == .active {
+              Button(action: { editMode = .inactive }) {
+                Image(systemName: "checkmark.circle")
               }
-            } label: {
-              Image(systemName: "ellipsis.circle")
+            }
+            if !validProfiles.isEmpty {
+              Menu {
+                Button {
+                  editMode = .active
+                } label: {
+                  Label("Edit/Move", systemImage: "pencil")
+                }
+
+                Button {
+                  showingDataExport = true
+                } label: {
+                  Label("Export Data", systemImage: "square.and.arrow.up")
+                }
+              } label: {
+                Image(systemName: "ellipsis.circle")
+              }
+            }
+            Button(action: { showingCreateProfile = true }) {
+              Image(systemName: "plus")
             }
           }
-          Button(action: { showingCreateProfile = true }) {
-            Image(systemName: "plus")
-          }
         }
-      }
-      .sheet(isPresented: $showingCreateProfile) {
-        BlockedProfileView()
-      }
-      .sheet(item: $profileToEdit) { profile in
-        BlockedProfileView(profile: profile)
-      }
-      .sheet(isPresented: $showingDataExport) {
-        BlockedProfileDataExportView()
-      }
-      .alert(
-        deleteError?.title ?? "",
-        isPresented: Binding(
-          get: { deleteError != nil },
-          set: { if !$0 { deleteError = nil } }
-        )
-      ) {
-        Button("OK", role: .cancel) {}
-      } message: {
-        Text(deleteError?.message ?? "")
-      }
+        .sheet(isPresented: $showingCreateProfile) {
+          BlockedProfileView()
+        }
+        .sheet(item: $profileToEdit) { profile in
+          BlockedProfileView(profile: profile)
+        }
+        .sheet(isPresented: $showingDataExport) {
+          BlockedProfileDataExportView()
+        }
+        .alert(
+          deleteError?.title ?? "",
+          isPresented: Binding(
+            get: { deleteError != nil },
+            set: { if !$0 { deleteError = nil } }
+          )
+        ) {
+          Button("OK", role: .cancel) {}
+        } message: {
+          Text(deleteError?.message ?? "")
+        }
     }
   }
 

@@ -174,10 +174,10 @@ final class LogExportManager {
     let presenter =
       viewController
       ?? UIApplication.shared.connectedScenes
-        .compactMap { $0 as? UIWindowScene }
-        .flatMap { $0.windows }
-        .first { $0.isKeyWindow }?
-        .rootViewController
+      .compactMap { $0 as? UIWindowScene }
+      .flatMap { $0.windows }
+      .first { $0.isKeyWindow }?
+      .rootViewController
 
     // Configure for iPad
     if let popover = activityVC.popoverPresentationController {

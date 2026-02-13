@@ -2,7 +2,7 @@ import Foundation
 
 /// The type of geofence rule for profile override restrictions
 enum GeofenceRuleType: String, Codable, CaseIterable {
-  case within   // User must be inside ANY of the referenced locations
+  case within  // User must be inside ANY of the referenced locations
   case outside  // User must be outside ALL of the referenced locations
 
   var displayName: String {
