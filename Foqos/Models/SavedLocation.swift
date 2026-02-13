@@ -113,7 +113,7 @@ class SavedLocation {
   /// Radius steps for the slider (in meters)
   /// Range: 10m ("at this spot") to ~2 miles
   static let radiusSteps: [Double] = [
-    10, 25, 50, 100, 150, 200, 250, 300, 400, 500, 750, 1000, 1500, 2000, 3200
+    10, 25, 50, 100, 150, 200, 250, 300, 400, 500, 750, 1000, 1500, 2000, 3200,
   ]
 
   /// Default radius index (500m)

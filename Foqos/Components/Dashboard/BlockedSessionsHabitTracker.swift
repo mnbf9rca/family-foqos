@@ -64,8 +64,7 @@ struct BlockedSessionsHabitTracker: View {
   }
 
   /// Calculates how much of a session occurred on a specific date
-  private func sessionDurationForDate(_ session: BlockedProfileSession, date: Date) -> TimeInterval
-  {
+  private func sessionDurationForDate(_ session: BlockedProfileSession, date: Date) -> TimeInterval {
     let calendar = Calendar.current
     let dayStart = calendar.startOfDay(for: date)
     guard let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) else { return 0 }

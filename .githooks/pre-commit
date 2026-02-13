@@ -1,9 +1,27 @@
 #!/bin/sh
 
+# --- Branch protection ---
 branch="$(git rev-parse --abbrev-ref HEAD)"
-
 if [ "$branch" = "main" ] || [ "$branch" = "release/v1" ]; then
   echo "ERROR: Direct commits to '$branch' are not allowed."
   echo "Create a feature branch and open a pull request instead."
   exit 1
+fi
+
+# --- Auto-format staged Swift files ---
+STAGED_SWIFT=$(git diff --cached --name-only --diff-filter=ACMR -- '*.swift')
+if [ -n "$STAGED_SWIFT" ]; then
+  if ! command -v swift-format >/dev/null 2>&1; then
+    echo "ERROR: swift-format is not installed."
+    echo "Install it with: brew install swift-format"
+    exit 1
+  fi
+  while IFS= read -r file; do
+    if ! swift-format --in-place "$file"; then
+      echo "WARNING: swift-format failed on $file"
+    fi
+    git add "$file"
+  done <<EOF
+$STAGED_SWIFT
+EOF
 fi

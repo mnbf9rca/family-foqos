@@ -11,7 +11,8 @@ struct LogPreviewView: View {
     if searchText.isEmpty {
       return logContent
     }
-    return logContent
+    return
+      logContent
       .components(separatedBy: "\n")
       .filter { $0.localizedCaseInsensitiveContains(searchText) }
       .joined(separator: "\n")

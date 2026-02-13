@@ -41,8 +41,7 @@ class StrategyManager: ObservableObject {
   @AppStorage("emergencyUnblocksRemaining") private var emergencyUnblocksRemaining: Int = 3
   @AppStorage("emergencyUnblocksResetPeriodInWeeks") private
     var emergencyUnblocksResetPeriodInWeeks: Int = 4
-  @AppStorage("lastEmergencyUnblocksResetDate") private var lastEmergencyUnblocksResetDateTimestamp:
-    Double = 0
+  @AppStorage("lastEmergencyUnblocksResetDate") private var lastEmergencyUnblocksResetDateTimestamp: Double = 0
 
   private let liveActivityManager = LiveActivityManager.shared
   private let profileSyncManager = ProfileSyncManager.shared

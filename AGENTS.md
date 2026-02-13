@@ -31,19 +31,16 @@ xcodebuild test -project FamilyFoqos.xcodeproj -scheme FamilyFoqos -destination 
 **IMPORTANT:** Tests take 2-3 seconds, but starting a simulator takes 3-4 minutes. When running tests, prestart the simulator and wait for the simulator to be `ready` before executing tests. 
 
 ### Code Formatting
-The project uses swift-format to maintain consistent code style. Run format commands before committing:
+The project uses swift-format to maintain consistent code style. Configuration is in `.swift-format` at the repo root. A pre-commit hook auto-formats staged Swift files.
+
+**Prerequisite:** Install swift-format: `brew install swift-format`
+
 ```bash
 # Format all Swift files
-swift-format .
+swift-format --in-place --recursive .
 
-# Format specific files or directories
-swift-format Foqos/Views/
-
-# Check formatting without making changes
-swift-format --dry-run .
-
-# Format in recursive mode
-swift-format --recursive .
+# Check for formatting violations without making changes
+swift-format lint --recursive .
 ```
 
 ## Code Style Guidelines
