@@ -577,20 +577,51 @@ class ProfileSyncManager: ObservableObject {
 
     do {
       let allResults = try await fetchAllRecords(matching: query)
-      let syncedLocations = allResults.compactMap { (_, result) -> SyncedLocation? in
-        if case .success(let record) = result {
-          return SyncedLocation(from: record)
+
+      // Extract ALL remote record IDs before filtering decode failures.
+      // This prevents false deletions when a record fails to decode —
+      // without the full ID set, reconciliation would incorrectly delete
+      // the local copy of any record that failed to decode.
+      var allRemoteLocationIds = Set<UUID>()
+      for (recordID, _) in allResults {
+        if let uuid = UUID(uuidString: recordID.recordName) {
+          allRemoteLocationIds.insert(uuid)
         }
-        return nil
       }
 
-      Log.info("Pulled \(syncedLocations.count) locations from CloudKit", category: .sync)
+      var decodeFailureCount = 0
+      let syncedLocations = allResults.compactMap { (recordID, result) -> SyncedLocation? in
+        switch result {
+        case .success(let record):
+          return SyncedLocation(from: record)
+        case .failure(let error):
+          decodeFailureCount += 1
+          Log.warning(
+            "Failed to decode location record '\(recordID.recordName)': \(error.localizedDescription)",
+            category: .sync
+          )
+          return nil
+        }
+      }
 
-      // Notify about received locations
+      if decodeFailureCount > 0 {
+        Log.warning(
+          "Pulled \(syncedLocations.count) locations from CloudKit (\(decodeFailureCount) records failed to decode)",
+          category: .sync
+        )
+      } else {
+        Log.info("Pulled \(syncedLocations.count) locations from CloudKit", category: .sync)
+      }
+
+      // Notify about received locations, including full remote ID set
+      // so deletion reconciliation doesn't treat decode failures as deletions
       NotificationCenter.default.post(
         name: .syncedLocationsReceived,
         object: nil,
-        userInfo: ["locations": syncedLocations]
+        userInfo: [
+          "locations": syncedLocations,
+          "remoteLocationIds": allRemoteLocationIds,
+        ]
       )
     } catch let error as CKError {
       if error.code == .zoneNotFound || error.code == .unknownItem {

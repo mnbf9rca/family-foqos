@@ -57,7 +57,9 @@ class SyncCoordinator: ObservableObject {
         guard let locations = notification.userInfo?["locations"] as? [SyncedLocation] else {
           return
         }
-        self?.handleSyncedLocations(locations)
+        let remoteLocationIds =
+          notification.userInfo?["remoteLocationIds"] as? Set<UUID> ?? Set()
+        self?.handleSyncedLocations(locations, remoteLocationIds: remoteLocationIds)
       }
       .store(in: &cancellables)
 
@@ -437,14 +439,14 @@ class SyncCoordinator: ObservableObject {
 
   // MARK: - Location Handling
 
-  private func handleSyncedLocations(_ syncedLocations: [SyncedLocation]) {
+  private func handleSyncedLocations(
+    _ syncedLocations: [SyncedLocation],
+    remoteLocationIds: Set<UUID>
+  ) {
     guard let context = modelContext else {
       Log.info("No model context available", category: .sync)
       return
     }
-
-    // Collect remote location IDs for deletion reconciliation
-    let remoteLocationIds = Set(syncedLocations.map { $0.locationId })
 
     for syncedLocation in syncedLocations {
       do {
@@ -489,18 +491,26 @@ class SyncCoordinator: ObservableObject {
     // Reconcile deletions: remove local locations not in remote set
     // Only delete locations that have been synced at least once (syncVersion > 0)
     // This avoids deleting locally-created locations that haven't been pushed yet
-    do {
-      let localLocations = try SavedLocation.fetchAll(in: context)
-      for location in localLocations {
-        guard location.syncVersion > 0 else { continue }
+    if remoteLocationIds.isEmpty && !syncedLocations.isEmpty {
+      Log.warning(
+        "Remote location IDs set is empty but decoded locations exist — skipping deletion reconciliation to prevent data loss",
+        category: .sync
+      )
+    } else {
+      do {
+        let localLocations = try SavedLocation.fetchAll(in: context)
+        for location in localLocations {
+          guard location.syncVersion > 0 else { continue }
 
-        if !remoteLocationIds.contains(location.id) {
-          Log.info("Removing location '\(location.name)' deleted from remote", category: .sync)
-          try SavedLocation.delete(location, in: context)
+          if !remoteLocationIds.contains(location.id) {
+            Log.info(
+              "Removing location '\(location.name)' deleted from remote", category: .sync)
+            try SavedLocation.delete(location, in: context)
+          }
         }
+      } catch {
+        Log.info("Error reconciling location deletions - \(error)", category: .sync)
       }
-    } catch {
-      Log.info("Error reconciling location deletions - \(error)", category: .sync)
     }
   }
 
