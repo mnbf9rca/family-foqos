@@ -6,20 +6,25 @@ enum SharedData {
         suiteName: "group.com.cynexia.family-foqos"
     )!
 
-    /// URL of the shared app group container for cross-process file locking
-    private static let containerURL: URL = FileManager.default.containerURL(
+    private static let containerURL: URL = FileManager.default.containerURL(  // SAFETY: same app group as `suite`
         forSecurityApplicationGroupIdentifier: "group.com.cynexia.family-foqos"
     )!
+
+    private static let lockPath: String = containerURL
+        .appendingPathComponent(".shared-data.lock").path
 
     /// Cross-process file lock for compound UserDefaults operations.
     /// Uses POSIX flock() — works across app and extension processes.
     /// Lock is automatically released if the process crashes.
     private static func withLock<T>(_ body: () -> T) -> T {
-        let lockPath = containerURL.appendingPathComponent(".shared-data.lock").path
         let fd = open(lockPath, O_CREAT | O_RDWR, 0o644)
         guard fd >= 0 else { return body() }  // fallback: run unlocked if file can't be opened
         defer { close(fd) }
-        flock(fd, LOCK_EX)
+        var ret: Int32
+        repeat {
+            ret = flock(fd, LOCK_EX)
+        } while ret == -1 && errno == EINTR
+        guard ret == 0 else { return body() }  // fallback: run unlocked if lock can't be acquired
         defer { flock(fd, LOCK_UN) }
         return body()
     }
