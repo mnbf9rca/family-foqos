@@ -364,12 +364,27 @@ class ProfileSyncManager: ObservableObject {
     )
 
     do {
-      let (results, _) = try await privateDatabase.records(
+      var allResults: [(CKRecord.ID, Result<CKRecord, any Error>)] = []
+      var cursor: CKQueryOperation.Cursor? = nil
+
+      // First batch
+      let (initialResults, initialCursor) = try await privateDatabase.records(
         matching: query,
         inZoneWith: syncZoneID
       )
+      allResults.append(contentsOf: initialResults)
+      cursor = initialCursor
 
-      for (recordID, result) in results {
+      // Continue fetching while there are more results
+      while let currentCursor = cursor {
+        let (moreResults, nextCursor) = try await privateDatabase.records(
+          continuingMatchFrom: currentCursor
+        )
+        allResults.append(contentsOf: moreResults)
+        cursor = nextCursor
+      }
+
+      for (recordID, result) in allResults {
         if case .success(let record) = result,
           let resetRequest = SyncResetRequest(from: record)
         {
@@ -378,7 +393,9 @@ class ProfileSyncManager: ObservableObject {
             continue
           }
 
-          Log.info("Processing reset request from device \(resetRequest.originDeviceId)", category: .sync)
+          Log.info(
+            "Processing reset request from device \(resetRequest.originDeviceId)",
+            category: .sync)
 
           // Notify coordinator to handle the reset
           NotificationCenter.default.post(
