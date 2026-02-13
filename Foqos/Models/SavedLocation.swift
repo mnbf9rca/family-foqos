@@ -11,6 +11,7 @@ class SavedLocation {
   var isLocked: Bool
   var createdAt: Date
   var updatedAt: Date
+  var syncVersion: Int = 0  // 0 = never synced, >0 = synced at least once
 
   init(
     id: UUID = UUID(),
@@ -20,7 +21,8 @@ class SavedLocation {
     defaultRadiusMeters: Double = 500,
     isLocked: Bool = false,
     createdAt: Date = Date(),
-    updatedAt: Date = Date()
+    updatedAt: Date = Date(),
+    syncVersion: Int = 0
   ) {
     self.id = id
     self.name = name
@@ -30,6 +32,7 @@ class SavedLocation {
     self.isLocked = isLocked
     self.createdAt = createdAt
     self.updatedAt = updatedAt
+    self.syncVersion = syncVersion
   }
 
   // MARK: - Fetch Operations
