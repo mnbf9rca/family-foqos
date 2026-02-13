@@ -700,9 +700,9 @@ class ProfileSyncManager: ObservableObject {
     for recordType in recordTypes {
       let query = CKQuery(recordType: recordType, predicate: NSPredicate(value: true))
       let results = try await fetchAllRecords(matching: query)
-      for (recordID, _) in results {
-        try await privateDatabase.deleteRecord(withID: recordID)
-      }
+      let recordIDs = results.map { $0.0 }
+      guard !recordIDs.isEmpty else { continue }
+      _ = try await privateDatabase.modifyRecords(saving: [], deleting: recordIDs)
     }
 
     Log.info("Deleted all synced data from CloudKit", category: .sync)
