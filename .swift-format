@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "lineLength": 999,
+  "indentation": {
+    "spaces": 2
+  },
+  "respectsExistingLineBreaks": true,
+  "maximumBlankLines": 1
+}
