@@ -408,29 +408,16 @@ class DeviceActivityCenterUtil {
     center.stopMonitoring(activities)
   }
 
-  private static func getTimeIntervalStartAndEnd(from minutes: Int) -> (
+  static func getTimeIntervalStartAndEnd(from minutes: Int, now: Date = Date()) -> (
     intervalStart: DateComponents, intervalEnd: DateComponents
   ) {
     let intervalStart = DateComponents(hour: 0, minute: 0)
 
-    // Get current time
-    let now = Date()
-    let currentComponents = Calendar.current.dateComponents([.hour, .minute], from: now)
-    let currentHour = currentComponents.hour ?? 0
-    let currentMinute = currentComponents.minute ?? 0
+    let calendar = Calendar.current
+    let endDate = now.addingTimeInterval(Double(minutes) * 60)
+    let endComponents = calendar.dateComponents([.hour, .minute], from: endDate)
+    let intervalEnd = DateComponents(hour: endComponents.hour, minute: endComponents.minute)
 
-    // Calculate end time by adding minutes to current time
-    let totalMinutes = currentMinute + minutes
-    var endHour = currentHour + (totalMinutes / 60)
-    var endMinute = totalMinutes % 60
-
-    // Cap at 23:59 if it would roll over past midnight
-    if endHour >= 24 || (endHour == 23 && endMinute >= 59) {
-      endHour = 23
-      endMinute = 59
-    }
-
-    let intervalEnd = DateComponents(hour: endHour, minute: endMinute)
     return (intervalStart: intervalStart, intervalEnd: intervalEnd)
   }
 }
