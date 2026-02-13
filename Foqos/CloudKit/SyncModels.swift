@@ -202,7 +202,19 @@ struct SyncedProfile: Codable, Equatable {
     enableAllowMode = record[FieldKey.enableAllowMode.rawValue] as? Bool ?? false
     enableAllowModeDomains = record[FieldKey.enableAllowModeDomains.rawValue] as? Bool ?? false
     enableSafariBlocking = record[FieldKey.enableSafariBlocking.rawValue] as? Bool ?? true
-    preActivationReminderTimesData = record[FieldKey.preActivationReminderTimesData.rawValue] as? Data
+    if let data = record[FieldKey.preActivationReminderTimesData.rawValue] as? Data {
+      preActivationReminderTimesData = data
+    } else if let legacyEnabled = record["preActivationReminderEnabled"] as? Bool,
+      legacyEnabled,
+      let legacyMinutes = record["preActivationReminderMinutes"] as? Int,
+      let uint8Minutes = UInt8(exactly: legacyMinutes),
+      (1...5).contains(legacyMinutes)
+    {
+      // Migration: synthesize new format from legacy single-reminder fields
+      preActivationReminderTimesData = try? JSONEncoder().encode([uint8Minutes])
+    } else {
+      preActivationReminderTimesData = nil
+    }
     physicalUnblockNFCTagId = record[FieldKey.physicalUnblockNFCTagId.rawValue] as? String
     physicalUnblockQRCodeId = record[FieldKey.physicalUnblockQRCodeId.rawValue] as? String
     domains = record[FieldKey.domains.rawValue] as? [String]
