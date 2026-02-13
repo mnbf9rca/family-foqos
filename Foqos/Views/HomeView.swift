@@ -64,7 +64,7 @@ struct HomeView: View {
 
   // Mode selection
   @ObservedObject private var appModeManager = AppModeManager.shared
-  @State private var showModeSelection = false
+  @AppStorage("showModeSelection") private var showModeSelection = false
 
   // Sync conflict manager
   @ObservedObject private var syncConflictManager = SyncConflictManager.shared
@@ -258,13 +258,13 @@ struct HomeView: View {
     }
     .onChange(of: requestAuthorizer.isAuthorized) { _, newValue in
       if newValue {
+        // Auth succeeded — dismiss mode selection if it was showing
+        // (ModeSelectionView's onModeSelected callback handles its own dismissal,
+        // but this covers edge cases like auth granted from Settings)
         showIntroScreen = false
-        // Show mode selection if user hasn't selected a mode yet
-        if !appModeManager.hasSelectedMode {
-          showModeSelection = true
-        }
       } else {
         showIntroScreen = true
+        showModeSelection = false
       }
     }
     .onChange(of: profiles) { oldValue, newValue in
@@ -289,7 +289,8 @@ struct HomeView: View {
     }
     .fullScreenCover(isPresented: $showIntroScreen) {
       IntroView {
-        requestAuthorizer.requestAuthorization()
+        showIntroScreen = false
+        showModeSelection = true
       }.interactiveDismissDisabled()
     }
     .fullScreenCover(isPresented: $showModeSelection) {
@@ -599,6 +600,10 @@ struct HomeView: View {
   private func onAppearApp() {
     try? strategyManager.loadActiveSession(context: context)
     strategyManager.cleanUpGhostSchedules(context: context)
+    // Safety net: if not authorized and both onboarding screens are dismissed, reset
+    if !requestAuthorizer.isAuthorized && !showIntroScreen && !showModeSelection {
+      showIntroScreen = true
+    }
   }
 
   private func unloadApp() {
