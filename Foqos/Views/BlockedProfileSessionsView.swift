@@ -27,12 +27,16 @@ struct BlockedProfileSessionsView: View {
 
   @Query private var sessions: [BlockedProfileSession]
 
+  private var validSessions: [BlockedProfileSession] {
+    sessions.valid
+  }
+
   private var activeSession: BlockedProfileSession? {
-    sessions.first { $0.isActive }
+    validSessions.first { $0.isActive }
   }
 
   private var inactiveSessions: [BlockedProfileSession] {
-    sessions.filter { !$0.isActive }
+    validSessions.filter { !$0.isActive }
   }
 
   init(profile: BlockedProfiles) {
@@ -74,7 +78,7 @@ struct BlockedProfileSessionsView: View {
           }
         }
 
-        if sessions.isEmpty {
+        if validSessions.isEmpty {
           VStack(spacing: 16) {
             Spacer()
 

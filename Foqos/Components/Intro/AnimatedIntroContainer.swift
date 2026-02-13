@@ -65,7 +65,7 @@ struct AnimatedIntroContainer: View {
   private func getNextButtonTitle() -> String {
     switch currentStep {
     case totalSteps - 1:
-      return "Allow Screen Time Access"
+      return "Get Started"
     default:
       return "Continue"
     }
