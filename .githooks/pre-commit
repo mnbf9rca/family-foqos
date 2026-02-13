@@ -9,7 +9,7 @@ if [ "$branch" = "main" ] || [ "$branch" = "release/v1" ]; then
 fi
 
 # --- Auto-format staged Swift files ---
-STAGED_SWIFT=$(git diff --cached --name-only --diff-filter=ACM -- '*.swift')
+STAGED_SWIFT=$(git diff --cached --name-only --diff-filter=ACMR -- '*.swift')
 if [ -n "$STAGED_SWIFT" ]; then
   if ! command -v swift-format >/dev/null 2>&1; then
     echo "ERROR: swift-format is not installed."
