@@ -71,6 +71,7 @@ class ScheduleTimerActivity: TimerActivity {
     appBlocker.activateRestrictions(for: profile)
 
     // Cancel any pending pre-activation reminders now that the profile is active
+    // SYNC: identifier format must match TimersUtil.preActivationReminderIdentifier(for:minutes:)
     let reminderIds = (1...5).map { "pre-activation-reminder-\(profile.id.uuidString)-\($0)" }
     UNUserNotificationCenter.current().removePendingNotificationRequests(
       withIdentifiers: reminderIds
