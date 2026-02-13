@@ -456,6 +456,8 @@ class SyncCoordinator: ObservableObject {
         ) {
           // Update existing location if remote version is newer
           if syncedLocation.lastModified > existingLocation.updatedAt {
+            // Set syncVersion before update() since update() calls context.save()
+            existingLocation.syncVersion = max(existingLocation.syncVersion, 1) + 1
             _ = try SavedLocation.update(
               existingLocation,
               in: context,
@@ -465,8 +467,10 @@ class SyncCoordinator: ObservableObject {
               defaultRadiusMeters: syncedLocation.defaultRadiusMeters,
               isLocked: syncedLocation.isLocked
             )
-            existingLocation.syncVersion += 1
             Log.info("Updated location '\(syncedLocation.name)' from remote", category: .sync)
+          } else {
+            // Mark as "seen from remote" even if we didn't update fields
+            existingLocation.syncVersion = max(existingLocation.syncVersion, 1)
           }
         } else {
           // Create new location from synced data with original ID preserved
@@ -512,6 +516,8 @@ class SyncCoordinator: ObservableObject {
         Log.info("Error reconciling location deletions - \(error)", category: .sync)
       }
     }
+
+    try? context.save()
   }
 
   // MARK: - Sync Reset Handling
