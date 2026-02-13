@@ -17,6 +17,9 @@ class BlockedProfiles {
   /// Not written for V2-native profiles. See #59 for future removal.
   var blockingStrategyId: String?
   var strategyData: Data?
+  // Property defaults mirror init() defaults intentionally: property-level defaults
+  // are used by SwiftData/CloudKit when decoding records missing newer fields, while
+  // init() defaults provide caller convenience. See #75.
   var order: Int = 0
 
   var enableLiveActivity: Bool = false
