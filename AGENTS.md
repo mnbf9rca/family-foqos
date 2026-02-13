@@ -2,6 +2,11 @@
 
 This file provides guidelines for agentic coding assistants working on the Family Foqos iOS app codebase.
 
+## Key rules agents often forget but must ALWAYS follow:
+
+  - **NEVER** force commit or amend commits. Ever. Always create new commits for fixes, and use Git's revert feature to undo changes if needed. This preserves the integrity of the commit history and allows for proper code review.
+  - **ALWAYS** request code review from a human before merging any changes. This ensures that all changes are vetted for quality, correctness, and adherence to project standards.
+
 ## Build & Test Commands
 
 ### Building

@@ -251,6 +251,7 @@ class SyncCoordinator: ObservableObject {
     profile.schedule = synced.schedule
     profile.geofenceRule = synced.geofenceRule
     profile.disableBackgroundStops = synced.disableBackgroundStops
+    profile.preActivationReminderTimes = synced.preActivationReminderTimes
     profile.isManaged = synced.isManaged
     profile.managedByChildId = synced.managedByChildId
     profile.syncVersion = synced.version
@@ -305,6 +306,7 @@ class SyncCoordinator: ObservableObject {
       schedule: synced.schedule,
       geofenceRule: synced.geofenceRule,
       disableBackgroundStops: synced.disableBackgroundStops,
+      preActivationReminderTimes: synced.preActivationReminderTimes,
       isManaged: synced.isManaged,
       managedByChildId: synced.managedByChildId,
       syncVersion: synced.version,
