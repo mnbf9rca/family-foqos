@@ -693,6 +693,7 @@ class ProfileSyncManager: ObservableObject {
     let recordTypes = [
       SyncedProfile.recordType,
       LegacySyncedSession.recordType,
+      ProfileSessionRecord.recordType,
       SyncedLocation.recordType,
       SyncResetRequest.recordType,
     ]
