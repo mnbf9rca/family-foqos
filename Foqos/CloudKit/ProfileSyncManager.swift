@@ -228,6 +228,33 @@ class ProfileSyncManager: ObservableObject {
     }
   }
 
+  // MARK: - Paginated Fetch Helper
+
+  /// Fetch all records matching a query with cursor-based pagination.
+  /// Returns raw results so callers can map/filter as needed.
+  private func fetchAllRecords(
+    matching query: CKQuery
+  ) async throws -> [(CKRecord.ID, Result<CKRecord, any Error>)] {
+    var allResults: [(CKRecord.ID, Result<CKRecord, any Error>)] = []
+
+    let (initialResults, initialCursor) = try await privateDatabase.records(
+      matching: query,
+      inZoneWith: syncZoneID
+    )
+    allResults.append(contentsOf: initialResults)
+    var cursor = initialCursor
+
+    while let currentCursor = cursor {
+      let (moreResults, nextCursor) = try await privateDatabase.records(
+        continuingMatchFrom: currentCursor
+      )
+      allResults.append(contentsOf: moreResults)
+      cursor = nextCursor
+    }
+
+    return allResults
+  }
+
   // MARK: - Legacy Cleanup
 
   /// Check for and delete legacy SyncedSession records.
@@ -248,32 +275,8 @@ class ProfileSyncManager: ObservableObject {
     )
 
     do {
-      // Collect all legacy record IDs with pagination
-      var recordIDsToDelete: [CKRecord.ID] = []
-      var cursor: CKQueryOperation.Cursor? = nil
-
-      // First batch
-      let (initialResults, initialCursor) = try await privateDatabase.records(
-        matching: query,
-        inZoneWith: syncZoneID
-      )
-
-      for (recordID, _) in initialResults {
-        recordIDsToDelete.append(recordID)
-      }
-      cursor = initialCursor
-
-      // Continue fetching while there are more results
-      while let currentCursor = cursor {
-        let (moreResults, nextCursor) = try await privateDatabase.records(
-          continuingMatchFrom: currentCursor
-        )
-
-        for (recordID, _) in moreResults {
-          recordIDsToDelete.append(recordID)
-        }
-        cursor = nextCursor
-      }
+      let allResults = try await fetchAllRecords(matching: query)
+      let recordIDsToDelete = allResults.map { $0.0 }
 
       if recordIDsToDelete.isEmpty {
         // No legacy records - mark complete, no notice needed
@@ -364,12 +367,9 @@ class ProfileSyncManager: ObservableObject {
     )
 
     do {
-      let (results, _) = try await privateDatabase.records(
-        matching: query,
-        inZoneWith: syncZoneID
-      )
+      let allResults = try await fetchAllRecords(matching: query)
 
-      for (recordID, result) in results {
+      for (recordID, result) in allResults {
         if case .success(let record) = result,
           let resetRequest = SyncResetRequest(from: record)
         {
@@ -378,7 +378,9 @@ class ProfileSyncManager: ObservableObject {
             continue
           }
 
-          Log.info("Processing reset request from device \(resetRequest.originDeviceId)", category: .sync)
+          Log.info(
+            "Processing reset request from device \(resetRequest.originDeviceId)",
+            category: .sync)
 
           // Notify coordinator to handle the reset
           NotificationCenter.default.post(
@@ -448,18 +450,12 @@ class ProfileSyncManager: ObservableObject {
     )
 
     do {
-      let (results, _) = try await privateDatabase.records(
-        matching: query,
-        inZoneWith: syncZoneID
-      )
-
-      var syncedProfiles: [SyncedProfile] = []
-      for (_, result) in results {
-        if case .success(let record) = result,
-          let syncedProfile = SyncedProfile(from: record)
-        {
-          syncedProfiles.append(syncedProfile)
+      let allResults = try await fetchAllRecords(matching: query)
+      let syncedProfiles = allResults.compactMap { (_, result) -> SyncedProfile? in
+        if case .success(let record) = result {
+          return SyncedProfile(from: record)
         }
+        return nil
       }
 
       Log.info("Pulled \(syncedProfiles.count) profiles from CloudKit", category: .sync)
@@ -507,38 +503,12 @@ class ProfileSyncManager: ObservableObject {
     )
 
     do {
-      var sessions: [ProfileSessionRecord] = []
-      var cursor: CKQueryOperation.Cursor? = nil
-
-      // First batch
-      let (initialResults, initialCursor) = try await privateDatabase.records(
-        matching: query,
-        inZoneWith: syncZoneID
-      )
-
-      for (_, result) in initialResults {
-        if case .success(let record) = result,
-          let session = ProfileSessionRecord(from: record)
-        {
-          sessions.append(session)
+      let allResults = try await fetchAllRecords(matching: query)
+      let sessions = allResults.compactMap { (_, result) -> ProfileSessionRecord? in
+        if case .success(let record) = result {
+          return ProfileSessionRecord(from: record)
         }
-      }
-      cursor = initialCursor
-
-      // Continue fetching while there are more results
-      while let currentCursor = cursor {
-        let (moreResults, nextCursor) = try await privateDatabase.records(
-          continuingMatchFrom: currentCursor
-        )
-
-        for (_, result) in moreResults {
-          if case .success(let record) = result,
-            let session = ProfileSessionRecord(from: record)
-          {
-            sessions.append(session)
-          }
-        }
-        cursor = nextCursor
+        return nil
       }
 
       Log.info("Pulled \(sessions.count) session records from CloudKit", category: .sync)
@@ -606,27 +576,52 @@ class ProfileSyncManager: ObservableObject {
     )
 
     do {
-      let (results, _) = try await privateDatabase.records(
-        matching: query,
-        inZoneWith: syncZoneID
-      )
+      let allResults = try await fetchAllRecords(matching: query)
 
-      var syncedLocations: [SyncedLocation] = []
-      for (_, result) in results {
-        if case .success(let record) = result,
-          let syncedLocation = SyncedLocation(from: record)
-        {
-          syncedLocations.append(syncedLocation)
+      // Extract ALL remote record IDs before filtering decode failures.
+      // This prevents false deletions when a record fails to decode —
+      // without the full ID set, reconciliation would incorrectly delete
+      // the local copy of any record that failed to decode.
+      var allRemoteLocationIds = Set<UUID>()
+      for (recordID, _) in allResults {
+        if let uuid = UUID(uuidString: recordID.recordName) {
+          allRemoteLocationIds.insert(uuid)
         }
       }
 
-      Log.info("Pulled \(syncedLocations.count) locations from CloudKit", category: .sync)
+      var decodeFailureCount = 0
+      let syncedLocations = allResults.compactMap { (recordID, result) -> SyncedLocation? in
+        switch result {
+        case .success(let record):
+          return SyncedLocation(from: record)
+        case .failure(let error):
+          decodeFailureCount += 1
+          Log.warning(
+            "Failed to decode location record '\(recordID.recordName)': \(error.localizedDescription)",
+            category: .sync
+          )
+          return nil
+        }
+      }
 
-      // Notify about received locations
+      if decodeFailureCount > 0 {
+        Log.warning(
+          "Pulled \(syncedLocations.count) locations from CloudKit (\(decodeFailureCount) records failed to decode)",
+          category: .sync
+        )
+      } else {
+        Log.info("Pulled \(syncedLocations.count) locations from CloudKit", category: .sync)
+      }
+
+      // Notify about received locations, including full remote ID set
+      // so deletion reconciliation doesn't treat decode failures as deletions
       NotificationCenter.default.post(
         name: .syncedLocationsReceived,
         object: nil,
-        userInfo: ["locations": syncedLocations]
+        userInfo: [
+          "locations": syncedLocations,
+          "remoteLocationIds": allRemoteLocationIds,
+        ]
       )
     } catch let error as CKError {
       if error.code == .zoneNotFound || error.code == .unknownItem {
@@ -695,56 +690,19 @@ class ProfileSyncManager: ObservableObject {
 
   /// Delete all synced data from CloudKit
   private func deleteAllSyncedData() async throws {
-    // Fetch and delete all profiles
-    let profileQuery = CKQuery(
-      recordType: SyncedProfile.recordType,
-      predicate: NSPredicate(value: true)
-    )
-    let (profileResults, _) = try await privateDatabase.records(
-      matching: profileQuery,
-      inZoneWith: syncZoneID
-    )
-    for (recordID, _) in profileResults {
-      try await privateDatabase.deleteRecord(withID: recordID)
-    }
+    let recordTypes = [
+      SyncedProfile.recordType,
+      LegacySyncedSession.recordType,
+      SyncedLocation.recordType,
+      SyncResetRequest.recordType,
+    ]
 
-    // Fetch and delete all legacy sessions
-    let sessionQuery = CKQuery(
-      recordType: LegacySyncedSession.recordType,
-      predicate: NSPredicate(value: true)
-    )
-    let (sessionResults, _) = try await privateDatabase.records(
-      matching: sessionQuery,
-      inZoneWith: syncZoneID
-    )
-    for (recordID, _) in sessionResults {
-      try await privateDatabase.deleteRecord(withID: recordID)
-    }
-
-    // Fetch and delete all locations
-    let locationQuery = CKQuery(
-      recordType: SyncedLocation.recordType,
-      predicate: NSPredicate(value: true)
-    )
-    let (locationResults, _) = try await privateDatabase.records(
-      matching: locationQuery,
-      inZoneWith: syncZoneID
-    )
-    for (recordID, _) in locationResults {
-      try await privateDatabase.deleteRecord(withID: recordID)
-    }
-
-    // Fetch and delete reset requests
-    let resetQuery = CKQuery(
-      recordType: SyncResetRequest.recordType,
-      predicate: NSPredicate(value: true)
-    )
-    let (resetResults, _) = try await privateDatabase.records(
-      matching: resetQuery,
-      inZoneWith: syncZoneID
-    )
-    for (recordID, _) in resetResults {
-      try await privateDatabase.deleteRecord(withID: recordID)
+    for recordType in recordTypes {
+      let query = CKQuery(recordType: recordType, predicate: NSPredicate(value: true))
+      let results = try await fetchAllRecords(matching: query)
+      let recordIDs = results.map { $0.0 }
+      guard !recordIDs.isEmpty else { continue }
+      _ = try await privateDatabase.modifyRecords(saving: [], deleting: recordIDs)
     }
 
     Log.info("Deleted all synced data from CloudKit", category: .sync)

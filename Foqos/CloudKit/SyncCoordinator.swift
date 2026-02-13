@@ -57,7 +57,9 @@ class SyncCoordinator: ObservableObject {
         guard let locations = notification.userInfo?["locations"] as? [SyncedLocation] else {
           return
         }
-        self?.handleSyncedLocations(locations)
+        let remoteLocationIds =
+          notification.userInfo?["remoteLocationIds"] as? Set<UUID> ?? Set()
+        self?.handleSyncedLocations(locations, remoteLocationIds: remoteLocationIds)
       }
       .store(in: &cancellables)
 
@@ -437,7 +439,10 @@ class SyncCoordinator: ObservableObject {
 
   // MARK: - Location Handling
 
-  private func handleSyncedLocations(_ syncedLocations: [SyncedLocation]) {
+  private func handleSyncedLocations(
+    _ syncedLocations: [SyncedLocation],
+    remoteLocationIds: Set<UUID>
+  ) {
     guard let context = modelContext else {
       Log.info("No model context available", category: .sync)
       return
@@ -451,6 +456,8 @@ class SyncCoordinator: ObservableObject {
         ) {
           // Update existing location if remote version is newer
           if syncedLocation.lastModified > existingLocation.updatedAt {
+            // Set syncVersion before update() since update() calls context.save()
+            existingLocation.syncVersion = max(existingLocation.syncVersion, 1) + 1
             _ = try SavedLocation.update(
               existingLocation,
               in: context,
@@ -461,6 +468,9 @@ class SyncCoordinator: ObservableObject {
               isLocked: syncedLocation.isLocked
             )
             Log.info("Updated location '\(syncedLocation.name)' from remote", category: .sync)
+          } else {
+            // Mark as "seen from remote" even if we didn't update fields
+            existingLocation.syncVersion = max(existingLocation.syncVersion, 1)
           }
         } else {
           // Create new location from synced data with original ID preserved
@@ -470,7 +480,8 @@ class SyncCoordinator: ObservableObject {
             latitude: syncedLocation.latitude,
             longitude: syncedLocation.longitude,
             defaultRadiusMeters: syncedLocation.defaultRadiusMeters,
-            isLocked: syncedLocation.isLocked
+            isLocked: syncedLocation.isLocked,
+            syncVersion: 1
           )
           context.insert(location)
           try context.save()
@@ -480,6 +491,33 @@ class SyncCoordinator: ObservableObject {
         Log.info("Error handling synced location - \(error)", category: .sync)
       }
     }
+
+    // Reconcile deletions: remove local locations not in remote set
+    // Only delete locations that have been synced at least once (syncVersion > 0)
+    // This avoids deleting locally-created locations that haven't been pushed yet
+    if remoteLocationIds.isEmpty && !syncedLocations.isEmpty {
+      Log.warning(
+        "Remote location IDs set is empty but decoded locations exist — skipping deletion reconciliation to prevent data loss",
+        category: .sync
+      )
+    } else {
+      do {
+        let localLocations = try SavedLocation.fetchAll(in: context)
+        for location in localLocations {
+          guard location.syncVersion > 0 else { continue }
+
+          if !remoteLocationIds.contains(location.id) {
+            Log.info(
+              "Removing location '\(location.name)' deleted from remote", category: .sync)
+            try SavedLocation.delete(location, in: context)
+          }
+        }
+      } catch {
+        Log.info("Error reconciling location deletions - \(error)", category: .sync)
+      }
+    }
+
+    try? context.save()
   }
 
   // MARK: - Sync Reset Handling
