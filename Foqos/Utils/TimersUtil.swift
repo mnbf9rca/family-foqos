@@ -48,6 +48,21 @@ final class TimersUtil: @unchecked Sendable {  // SAFETY: Mutable state (backgro
     UNUserNotificationCenter.current().removePendingNotificationRequests(
       withIdentifiers: identifiers
     )
+
+    // Also remove stored background task metadata for these notifications
+    let identifierSet = Set(identifiers)
+    var storedTasks =
+      UserDefaults.standard.dictionary(
+        forKey: backgroundTaskUserDefaultsKey
+      ) as? [String: [String: Any]] ?? [:]
+    let originalCount = storedTasks.count
+    storedTasks = storedTasks.filter { (_, value) in
+      guard let notificationId = value["notificationId"] as? String else { return true }
+      return !identifierSet.contains(notificationId)
+    }
+    if storedTasks.count != originalCount {
+      UserDefaults.standard.set(storedTasks, forKey: backgroundTaskUserDefaultsKey)
+    }
   }
 
   private var backgroundTasks: [String: [String: Any]] {
