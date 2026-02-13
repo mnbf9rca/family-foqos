@@ -34,8 +34,7 @@ struct SyncedProfile: Codable, Equatable {
   var enableAllowMode: Bool
   var enableAllowModeDomains: Bool
   var enableSafariBlocking: Bool
-  var preActivationReminderEnabled: Bool
-  var preActivationReminderMinutes: UInt8
+  var preActivationReminderTimesData: Data?
 
   // Physical unlock settings
   var physicalUnblockNFCTagId: String?
@@ -96,8 +95,7 @@ struct SyncedProfile: Codable, Equatable {
     case enableAllowMode
     case enableAllowModeDomains
     case enableSafariBlocking
-    case preActivationReminderEnabled
-    case preActivationReminderMinutes
+    case preActivationReminderTimesData
     case physicalUnblockNFCTagId
     case physicalUnblockQRCodeId
     case domains
@@ -147,8 +145,7 @@ struct SyncedProfile: Codable, Equatable {
     record[FieldKey.enableAllowMode.rawValue] = enableAllowMode
     record[FieldKey.enableAllowModeDomains.rawValue] = enableAllowModeDomains
     record[FieldKey.enableSafariBlocking.rawValue] = enableSafariBlocking
-    record[FieldKey.preActivationReminderEnabled.rawValue] = preActivationReminderEnabled
-    record[FieldKey.preActivationReminderMinutes.rawValue] = Int(preActivationReminderMinutes)
+    record[FieldKey.preActivationReminderTimesData.rawValue] = preActivationReminderTimesData
     record[FieldKey.physicalUnblockNFCTagId.rawValue] = physicalUnblockNFCTagId
     record[FieldKey.physicalUnblockQRCodeId.rawValue] = physicalUnblockQRCodeId
     record[FieldKey.domains.rawValue] = domains
@@ -205,15 +202,7 @@ struct SyncedProfile: Codable, Equatable {
     enableAllowMode = record[FieldKey.enableAllowMode.rawValue] as? Bool ?? false
     enableAllowModeDomains = record[FieldKey.enableAllowModeDomains.rawValue] as? Bool ?? false
     enableSafariBlocking = record[FieldKey.enableSafariBlocking.rawValue] as? Bool ?? true
-    preActivationReminderEnabled = record[FieldKey.preActivationReminderEnabled.rawValue] as? Bool ?? false
-    if let reminderMinutes = record[FieldKey.preActivationReminderMinutes.rawValue] as? Int,
-      let minutes = UInt8(exactly: reminderMinutes),
-      (1...5).contains(reminderMinutes)
-    {
-      preActivationReminderMinutes = minutes
-    } else {
-      preActivationReminderMinutes = 1
-    }
+    preActivationReminderTimesData = record[FieldKey.preActivationReminderTimesData.rawValue] as? Data
     physicalUnblockNFCTagId = record[FieldKey.physicalUnblockNFCTagId.rawValue] as? String
     physicalUnblockQRCodeId = record[FieldKey.physicalUnblockQRCodeId.rawValue] as? String
     domains = record[FieldKey.domains.rawValue] as? [String]
@@ -259,8 +248,7 @@ struct SyncedProfile: Codable, Equatable {
     enableAllowMode = profile.enableAllowMode
     enableAllowModeDomains = profile.enableAllowModeDomains
     enableSafariBlocking = profile.enableSafariBlocking
-    preActivationReminderEnabled = profile.preActivationReminderEnabled
-    preActivationReminderMinutes = profile.preActivationReminderMinutes
+    preActivationReminderTimesData = try? JSONEncoder().encode(profile.preActivationReminderTimes)
     physicalUnblockNFCTagId = profile.physicalUnblockNFCTagId
     physicalUnblockQRCodeId = profile.physicalUnblockQRCodeId
     domains = profile.domains
@@ -330,6 +318,11 @@ struct SyncedProfile: Codable, Equatable {
   var stopSchedule: ProfileScheduleTime? {
     guard let data = stopScheduleData else { return nil }
     return try? JSONDecoder().decode(ProfileScheduleTime.self, from: data)
+  }
+
+  var preActivationReminderTimes: [UInt8] {
+    guard let data = preActivationReminderTimesData else { return [] }
+    return (try? JSONDecoder().decode([UInt8].self, from: data)) ?? []
   }
 }
 
