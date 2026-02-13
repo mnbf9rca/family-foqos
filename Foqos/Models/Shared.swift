@@ -6,6 +6,24 @@ enum SharedData {
         suiteName: "group.com.cynexia.family-foqos"
     )!
 
+    /// URL of the shared app group container for cross-process file locking
+    private static let containerURL: URL = FileManager.default.containerURL(
+        forSecurityApplicationGroupIdentifier: "group.com.cynexia.family-foqos"
+    )!
+
+    /// Cross-process file lock for compound UserDefaults operations.
+    /// Uses POSIX flock() — works across app and extension processes.
+    /// Lock is automatically released if the process crashes.
+    private static func withLock<T>(_ body: () -> T) -> T {
+        let lockPath = containerURL.appendingPathComponent(".shared-data.lock").path
+        let fd = open(lockPath, O_CREAT | O_RDWR, 0o644)
+        guard fd >= 0 else { return body() }  // fallback: run unlocked if file can't be opened
+        defer { close(fd) }
+        flock(fd, LOCK_EX)
+        defer { flock(fd, LOCK_UN) }
+        return body()
+    }
+
     // MARK: – Keys
 
     private enum Key: String {
@@ -106,15 +124,19 @@ enum SharedData {
     }
 
     static func setSnapshot(_ snapshot: ProfileSnapshot, for profileID: String) {
-        var all = profileSnapshots
-        all[profileID] = snapshot
-        profileSnapshots = all
+        withLock {
+            var all = profileSnapshots
+            all[profileID] = snapshot
+            profileSnapshots = all
+        }
     }
 
     static func removeSnapshot(for profileID: String) {
-        var all = profileSnapshots
-        all.removeValue(forKey: profileID)
-        profileSnapshots = all
+        withLock {
+            var all = profileSnapshots
+            all.removeValue(forKey: profileID)
+            profileSnapshots = all
+        }
     }
 
     // MARK: – Persisted array of scheduled sessions
@@ -150,17 +172,21 @@ enum SharedData {
     }
 
     static func createSessionForSchedular(for profileID: UUID) {
-        activeSharedSession = SessionSnapshot(
-            id: UUID().uuidString,
-            tag: profileID.uuidString,
-            blockedProfileId: profileID,
-            startTime: Date(),
-            forceStarted: true
-        )
+        withLock {
+            activeSharedSession = SessionSnapshot(
+                id: UUID().uuidString,
+                tag: profileID.uuidString,
+                blockedProfileId: profileID,
+                startTime: Date(),
+                forceStarted: true
+            )
+        }
     }
 
     static func createActiveSharedSession(for session: SessionSnapshot) {
-        activeSharedSession = session
+        withLock {
+            activeSharedSession = session
+        }
     }
 
     static func getActiveSharedSession() -> SessionSnapshot? {
@@ -168,16 +194,20 @@ enum SharedData {
     }
 
     static func endActiveSharedSession() {
-        guard var existingScheduledSession = activeSharedSession else { return }
+        withLock {
+            guard var existingScheduledSession = activeSharedSession else { return }
 
-        existingScheduledSession.endTime = Date()
-        completedSessionsInSchedular.append(existingScheduledSession)
+            existingScheduledSession.endTime = Date()
+            completedSessionsInSchedular.append(existingScheduledSession)
 
-        activeSharedSession = nil
+            activeSharedSession = nil
+        }
     }
 
     static func flushActiveSession() {
-        activeSharedSession = nil
+        withLock {
+            activeSharedSession = nil
+        }
     }
 
     static func getCompletedSessionsForSchedular() -> [SessionSnapshot] {
@@ -185,32 +215,44 @@ enum SharedData {
     }
 
     static func flushCompletedSessionsForSchedular() {
-        completedSessionsInSchedular = []
+        withLock {
+            completedSessionsInSchedular = []
+        }
     }
 
     static func setBreakStartTime(date: Date) {
-        activeSharedSession?.breakStartTime = date
+        withLock {
+            activeSharedSession?.breakStartTime = date
+        }
     }
 
     static func setBreakEndTime(date: Date) {
-        activeSharedSession?.breakEndTime = date
+        withLock {
+            activeSharedSession?.breakEndTime = date
+        }
     }
 
     static func setEndTime(date: Date) {
-        activeSharedSession?.endTime = date
+        withLock {
+            activeSharedSession?.endTime = date
+        }
     }
 
     static func setOneMoreMinuteStartTime(date: Date) {
-        guard var session = activeSharedSession else { return }
-        session.oneMoreMinuteStartTime = date
-        session.oneMoreMinuteUsed = true
-        activeSharedSession = session
+        withLock {
+            guard var session = activeSharedSession else { return }
+            session.oneMoreMinuteStartTime = date
+            session.oneMoreMinuteUsed = true
+            activeSharedSession = session
+        }
     }
 
     static func clearOneMoreMinuteStartTime() {
-        guard var session = activeSharedSession else { return }
-        session.oneMoreMinuteStartTime = nil
-        activeSharedSession = session
+        withLock {
+            guard var session = activeSharedSession else { return }
+            session.oneMoreMinuteStartTime = nil
+            activeSharedSession = session
+        }
     }
 
     // MARK: - Device Sync Settings
