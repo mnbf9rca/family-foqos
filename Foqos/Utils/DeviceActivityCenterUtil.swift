@@ -172,6 +172,8 @@ class DeviceActivityCenterUtil {
     startMinute: Int
   ) {
     let timersUtil = TimersUtil()
+    var scheduledCount = 0
+    let reminderTimes = profile.preActivationReminderTimes
     let calendar = Calendar.current
     let now = Date()
 
@@ -184,7 +186,7 @@ class DeviceActivityCenterUtil {
       )
     else { return }
 
-    for minutes in profile.preActivationReminderTimes {
+    for minutes in reminderTimes {
       let reminderMinutes = Int(minutes)
       guard
         let reminderTime = calendar.date(
@@ -206,11 +208,12 @@ class DeviceActivityCenterUtil {
         title: title, message: message,
         seconds: secondsUntilReminder, identifier: notificationId
       )
+      scheduledCount += 1
     }
 
-    if !profile.preActivationReminderTimes.isEmpty {
+    if scheduledCount > 0 {
       Log.info(
-        "Scheduled \(profile.preActivationReminderTimes.count) pre-activation reminder(s) for \(profile.name)",
+        "Scheduled \(scheduledCount) pre-activation reminder(s) for \(profile.name)",
         category: .timer
       )
     }
