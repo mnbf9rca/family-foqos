@@ -16,8 +16,12 @@ if [ -n "$STAGED_SWIFT" ]; then
     echo "Install it with: brew install swift-format"
     exit 1
   fi
-  echo "$STAGED_SWIFT" | while read -r file; do
-    swift-format --in-place "$file"
+  while IFS= read -r file; do
+    if ! swift-format --in-place "$file"; then
+      echo "WARNING: swift-format failed on $file"
+    fi
     git add "$file"
-  done
+  done <<EOF
+$STAGED_SWIFT
+EOF
 fi
