@@ -16,11 +16,6 @@ final class LogExportManager {
   /// Offloads heavy file I/O to a background thread to avoid blocking the UI
   func createLogArchive() async throws -> URL {
     // Capture values that need main actor access
-    let logURLs = Log.shared.getLogFileURLs()
-    guard !logURLs.isEmpty else {
-      throw LogExportError.noLogsAvailable
-    }
-
     let deviceInfo = generateDeviceInfo()
     let timestamp = formattedTimestamp()
 
@@ -43,11 +38,14 @@ final class LogExportManager {
         try? fileManager.removeItem(at: stagingDir)
       }
 
-      // Copy log files to staging
-      for (index, url) in logURLs.enumerated() {
-        let destName = index == 0 ? "foqos-current.log" : "foqos-\(index).log"
-        let destURL = stagingDir.appendingPathComponent(destName)
-        try fileManager.copyItem(at: url, to: destURL)
+      // Copy log files atomically (no rotation can occur during copy)
+      try Log.shared.copyLogFilesToStagingDirectory(stagingDir)
+
+      // Check that we actually copied something
+      let copiedFiles = try fileManager.contentsOfDirectory(
+        at: stagingDir, includingPropertiesForKeys: nil)
+      guard !copiedFiles.isEmpty else {
+        throw LogExportError.noLogsAvailable
       }
 
       // Add device info file
