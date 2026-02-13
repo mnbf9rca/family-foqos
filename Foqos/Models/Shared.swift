@@ -2,6 +2,21 @@ import FamilyControls
 import Foundation
 import os
 
+// MARK: – Break-duration calculation shared by SessionSnapshot, ContentState, and BlockedProfileSession
+
+protocol BreakDurationCalculable {
+  var breakStartTime: Date? { get }
+  var breakEndTime: Date? { get }
+}
+
+extension BreakDurationCalculable {
+  func calculateBreakDuration() -> TimeInterval {
+    guard let breakStart = breakStartTime else { return 0 }
+    guard let breakEnd = breakEndTime else { return 0 }
+    return breakEnd.timeIntervalSince(breakStart)
+  }
+}
+
 enum SharedData {
   private nonisolated(unsafe) static let suite = UserDefaults(  // SAFETY: UserDefaults is thread-safe per Apple docs
     suiteName: "group.com.cynexia.family-foqos"
@@ -105,7 +120,7 @@ enum SharedData {
 
   // MARK: – Serializable snapshot of a session (no profile object)
 
-  struct SessionSnapshot: Codable, Equatable {
+  struct SessionSnapshot: Codable, Equatable, BreakDurationCalculable {
     var id: String
     var tag: String
     var blockedProfileId: UUID
