@@ -1,5 +1,6 @@
 import CloudKit
 import Foundation
+import os
 
 /// Manages session state synchronization using CloudKit with CAS (Compare-And-Swap).
 /// Ensures only one authoritative session record exists per profile.
@@ -289,14 +290,17 @@ actor SessionSyncService {
       operation.savePolicy = policy
       operation.qualityOfService = .userInitiated
 
-      nonisolated(unsafe) var hasResumed = false  // SAFETY: CloudKit guarantees callbacks are serialized
+      let hasResumed = OSAllocatedUnfairLock(initialState: false)
 
       operation.perRecordSaveBlock = { _, result in
-        guard !hasResumed else { return }
-        hasResumed = true
+        let alreadyResumed = hasResumed.withLock { resumed -> Bool in
+          if resumed { return true }
+          resumed = true
+          return false
+        }
+        guard !alreadyResumed else { return }
         switch result {
         case .success(let savedRecord):
-          // Return the saved record which has updated server fields (recordChangeTag)
           continuation.resume(returning: savedRecord)
         case .failure(let error):
           continuation.resume(throwing: error)
@@ -304,13 +308,14 @@ actor SessionSyncService {
       }
 
       operation.modifyRecordsResultBlock = { result in
-        // Only handle if perRecordSaveBlock didn't fire (edge case for batch failures)
-        guard !hasResumed else { return }
-        hasResumed = true
+        let alreadyResumed = hasResumed.withLock { resumed -> Bool in
+          if resumed { return true }
+          resumed = true
+          return false
+        }
+        guard !alreadyResumed else { return }
         switch result {
         case .success:
-          // This shouldn't happen for single record saves - perRecordSaveBlock should fire
-          // But if it does, we can't return the updated record, so fail gracefully
           continuation.resume(throwing: SessionSyncError.unexpectedState)
         case .failure(let error):
           continuation.resume(throwing: error)
