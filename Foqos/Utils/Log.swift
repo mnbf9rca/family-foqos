@@ -85,7 +85,7 @@ struct LogEntry: Codable, Identifiable {
 }
 
 /// Privacy-focused logging framework with file persistence and export capabilities
-final class Log: @unchecked Sendable {  // SAFETY: entries/file I/O protected by serial queue; minimumLevel/fileLoggingEnabled set once at init
+final class Log: @unchecked Sendable {  // SAFETY: entries/file I/O protected by serial queue; minimumLevel/fileLoggingEnabled are immutable
   static let shared = Log()
 
   private let queue = DispatchQueue(label: "com.cynexia.family-foqos.log", qos: .utility)
@@ -98,10 +98,10 @@ final class Log: @unchecked Sendable {  // SAFETY: entries/file I/O protected by
   private let fileManager = FileManager.default
 
   /// Minimum log level to record
-  private(set) var minimumLevel: LogLevel = .debug
+  let minimumLevel: LogLevel = .debug
 
   /// Whether to persist logs to file
-  private(set) var fileLoggingEnabled: Bool = true
+  let fileLoggingEnabled: Bool = true
 
   private var logDirectory: URL? {
     guard
