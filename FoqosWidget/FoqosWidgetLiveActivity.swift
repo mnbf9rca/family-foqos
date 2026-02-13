@@ -3,7 +3,7 @@ import SwiftUI
 import WidgetKit
 
 struct FoqosWidgetAttributes: ActivityAttributes {
-  public struct ContentState: Codable, Hashable {
+  public struct ContentState: Codable, Hashable, BreakDurationCalculable {
     var startTime: Date
     var isBreakActive: Bool = false
     var breakStartTime: Date?
@@ -22,19 +22,6 @@ struct FoqosWidgetAttributes: ActivityAttributes {
         - Date().timeIntervalSince1970
     }
 
-    private func calculateBreakDuration() -> TimeInterval {
-      guard let breakStart = breakStartTime else {
-        return 0
-      }
-
-      if let breakEnd = breakEndTime {
-        // Break is complete, return the full duration
-        return breakEnd.timeIntervalSince(breakStart)
-      }
-
-      // Break is not yet ended, don't count it
-      return 0
-    }
   }
 
   var name: String

@@ -104,13 +104,15 @@ struct ProfileWidgetEntryView: View {
             }
           } else if entry.isSessionActive {
             if let startTime = entry.sessionStartTime {
+              let breakDuration = entry.activeSession?.calculateBreakDuration() ?? 0
+              let adjustedStartTime = startTime.addingTimeInterval(breakDuration)
               HStack(spacing: 4) {
                 Image(systemName: "clock.fill")
                   .font(.body)
                   .foregroundColor(.white)
                 Text(
                   Date(
-                    timeIntervalSinceNow: startTime.timeIntervalSince1970
+                    timeIntervalSinceNow: adjustedStartTime.timeIntervalSince1970
                       - Date().timeIntervalSince1970
                   ),
                   style: .timer

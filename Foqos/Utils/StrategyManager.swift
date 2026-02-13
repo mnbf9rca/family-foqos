@@ -384,7 +384,7 @@ class StrategyManager: ObservableObject {
         } else {
           // Calculate session elapsed time
           let rawElapsedTime = Date().timeIntervalSince(session.startTime)
-          let breakDuration = self.calculateBreakDuration()
+          let breakDuration = session.calculateBreakDuration()
           self.elapsedTime = rawElapsedTime - breakDuration
         }
       }
@@ -394,22 +394,6 @@ class StrategyManager: ObservableObject {
   func stopTimer() {
     timer?.invalidate()
     timer = nil
-  }
-
-  private func calculateBreakDuration() -> TimeInterval {
-    guard let session = activeSession else {
-      return 0
-    }
-
-    guard let breakStartTime = session.breakStartTime else {
-      return 0
-    }
-
-    if let breakEndTime = session.breakEndTime {
-      return breakEndTime.timeIntervalSince(breakStartTime)
-    }
-
-    return 0
   }
 
   func toggleSessionFromDeeplink(
