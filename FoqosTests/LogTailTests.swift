@@ -100,13 +100,21 @@ final class LogTailTests: XCTestCase {
       at: stagingDir, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: stagingDir) }
 
+    // Capture the count of log files before copying
+    let originalCount = Log.shared.getLogFileURLs().count
+
     // When: We copy log files to staging (queue.sync drains pending writes first)
     try Log.shared.copyLogFilesToStagingDirectory(stagingDir)
 
-    // Then: At least one file was copied
+    // Then: All log files were copied
     let copiedFiles = try FileManager.default.contentsOfDirectory(
       at: stagingDir, includingPropertiesForKeys: nil)
     XCTAssertFalse(copiedFiles.isEmpty, "Should have copied at least one log file")
+    XCTAssertEqual(
+      copiedFiles.count,
+      originalCount,
+      "Number of copied log files should match the number of existing log files"
+    )
 
     // And: copied files contain our marker
     let hasMarker = copiedFiles.contains { url in

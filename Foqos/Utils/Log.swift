@@ -305,8 +305,9 @@ final class Log: @unchecked Sendable {  // SAFETY: entries/file I/O protected by
     return queue.sync { _getLogFileURLsUnsafe() }
   }
 
-  /// Copy all log files to a staging directory atomically.
-  /// Runs within the serial queue so no rotation can occur mid-copy.
+  /// Copy all log files to a staging directory as a consistent snapshot.
+  /// Runs within the serial queue so no rotation can occur mid-copy, but does
+  /// not provide an all-or-nothing filesystem transaction if a copy fails.
   /// - Parameter stagingDir: Destination directory (must already exist).
   /// - Throws: If any file copy fails.
   func copyLogFilesToStagingDirectory(_ stagingDir: URL) throws {
