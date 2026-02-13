@@ -535,14 +535,29 @@ class ProfileSyncManager: ObservableObject {
 
     do {
       let allResults = try await fetchAllRecords(matching: query)
-      let sessions = allResults.compactMap { (_, result) -> ProfileSessionRecord? in
-        if case .success(let record) = result {
+      var decodeFailureCount = 0
+      let sessions = allResults.compactMap { (recordID, result) -> ProfileSessionRecord? in
+        switch result {
+        case .success(let record):
           return ProfileSessionRecord(from: record)
+        case .failure(let error):
+          decodeFailureCount += 1
+          Log.warning(
+            "Failed to decode session record '\(recordID.recordName)': \(error.localizedDescription)",
+            category: .sync
+          )
+          return nil
         }
-        return nil
       }
 
-      Log.info("Pulled \(sessions.count) session records from CloudKit", category: .sync)
+      if decodeFailureCount > 0 {
+        Log.warning(
+          "Pulled \(sessions.count) session records from CloudKit (\(decodeFailureCount) records failed to decode)",
+          category: .sync
+        )
+      } else {
+        Log.info("Pulled \(sessions.count) session records from CloudKit", category: .sync)
+      }
 
       // Notify coordinator about sessions
       NotificationCenter.default.post(
