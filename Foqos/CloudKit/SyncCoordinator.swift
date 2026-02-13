@@ -443,6 +443,9 @@ class SyncCoordinator: ObservableObject {
       return
     }
 
+    // Collect remote location IDs for deletion reconciliation
+    let remoteLocationIds = Set(syncedLocations.map { $0.locationId })
+
     for syncedLocation in syncedLocations {
       do {
         if let existingLocation = try SavedLocation.find(
@@ -460,6 +463,7 @@ class SyncCoordinator: ObservableObject {
               defaultRadiusMeters: syncedLocation.defaultRadiusMeters,
               isLocked: syncedLocation.isLocked
             )
+            existingLocation.syncVersion += 1
             Log.info("Updated location '\(syncedLocation.name)' from remote", category: .sync)
           }
         } else {
@@ -470,7 +474,8 @@ class SyncCoordinator: ObservableObject {
             latitude: syncedLocation.latitude,
             longitude: syncedLocation.longitude,
             defaultRadiusMeters: syncedLocation.defaultRadiusMeters,
-            isLocked: syncedLocation.isLocked
+            isLocked: syncedLocation.isLocked,
+            syncVersion: 1
           )
           context.insert(location)
           try context.save()
@@ -479,6 +484,23 @@ class SyncCoordinator: ObservableObject {
       } catch {
         Log.info("Error handling synced location - \(error)", category: .sync)
       }
+    }
+
+    // Reconcile deletions: remove local locations not in remote set
+    // Only delete locations that have been synced at least once (syncVersion > 0)
+    // This avoids deleting locally-created locations that haven't been pushed yet
+    do {
+      let localLocations = try SavedLocation.fetchAll(in: context)
+      for location in localLocations {
+        guard location.syncVersion > 0 else { continue }
+
+        if !remoteLocationIds.contains(location.id) {
+          Log.info("Removing location '\(location.name)' deleted from remote", category: .sync)
+          try SavedLocation.delete(location, in: context)
+        }
+      }
+    } catch {
+      Log.info("Error reconciling location deletions - \(error)", category: .sync)
     }
   }
 
