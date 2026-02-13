@@ -371,19 +371,21 @@ final class Log: @unchecked Sendable {  // SAFETY: All mutable state protected b
     }
   }
 
-  /// Get total size of all log files
+  /// Get total size of all log files (thread-safe)
   func getTotalLogSize() -> Int {
-    let urls = getLogFileURLs()
-    var totalSize = 0
+    return queue.sync {
+      let urls = _getLogFileURLsUnsafe()
+      var totalSize = 0
 
-    for url in urls {
-      if let attributes = try? fileManager.attributesOfItem(atPath: url.path),
-        let size = attributes[.size] as? Int
-      {
-        totalSize += size
+      for url in urls {
+        if let attributes = try? fileManager.attributesOfItem(atPath: url.path),
+          let size = attributes[.size] as? Int
+        {
+          totalSize += size
+        }
       }
-    }
 
-    return totalSize
+      return totalSize
+    }
   }
 }
