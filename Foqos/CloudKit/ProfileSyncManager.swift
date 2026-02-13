@@ -451,20 +451,67 @@ class ProfileSyncManager: ObservableObject {
 
     do {
       let allResults = try await fetchAllRecords(matching: query)
-      let syncedProfiles = allResults.compactMap { (_, result) -> SyncedProfile? in
-        if case .success(let record) = result {
-          return SyncedProfile(from: record)
+
+      // Extract ALL remote record IDs before filtering decode failures.
+      // This prevents false deletions when a record fails to decode —
+      // without the full ID set, reconciliation would incorrectly delete
+      // the local copy of any record that failed to decode.
+      var allRemoteProfileIds = Set<UUID>()
+      for (recordID, _) in allResults {
+        if let uuid = UUID(uuidString: recordID.recordName) {
+          allRemoteProfileIds.insert(uuid)
+        } else {
+          Log.debug(
+            "Skipping remote record with non-UUID recordName '\(recordID.recordName)' when building remote ID set for reconciliation",
+            category: .sync
+          )
         }
-        return nil
       }
 
-      Log.info("Pulled \(syncedProfiles.count) profiles from CloudKit", category: .sync)
+      var fetchFailureCount = 0
+      var decodeFailureCount = 0
+      let syncedProfiles = allResults.compactMap { (recordID, result) -> SyncedProfile? in
+        switch result {
+        case .success(let record):
+          if let profile = SyncedProfile(from: record) {
+            return profile
+          } else {
+            decodeFailureCount += 1
+            Log.warning(
+              "Failed to decode profile from record '\(recordID.recordName)': failable initializer returned nil",
+              category: .sync
+            )
+            return nil
+          }
+        case .failure(let error):
+          fetchFailureCount += 1
+          Log.warning(
+            "Failed to fetch profile record '\(recordID.recordName)': \(error.localizedDescription)",
+            category: .sync
+          )
+          return nil
+        }
+      }
 
-      // Process pulled profiles on main actor with context
+      let totalFailures = fetchFailureCount + decodeFailureCount
+      if totalFailures > 0 {
+        Log.warning(
+          "Pulled \(syncedProfiles.count) profiles from CloudKit (\(fetchFailureCount) fetch failures, \(decodeFailureCount) decode failures)",
+          category: .sync
+        )
+      } else {
+        Log.info("Pulled \(syncedProfiles.count) profiles from CloudKit", category: .sync)
+      }
+
+      // Notify about received profiles, including full remote ID set
+      // so deletion reconciliation doesn't treat decode failures as deletions
       NotificationCenter.default.post(
         name: .syncedProfilesReceived,
         object: nil,
-        userInfo: ["profiles": syncedProfiles]
+        userInfo: [
+          "profiles": syncedProfiles,
+          "remoteProfileIds": allRemoteProfileIds,
+        ]
       )
     } catch let error as CKError {
       if error.code == .zoneNotFound || error.code == .unknownItem {
@@ -504,14 +551,40 @@ class ProfileSyncManager: ObservableObject {
 
     do {
       let allResults = try await fetchAllRecords(matching: query)
-      let sessions = allResults.compactMap { (_, result) -> ProfileSessionRecord? in
-        if case .success(let record) = result {
-          return ProfileSessionRecord(from: record)
+      var fetchFailureCount = 0
+      var decodeFailureCount = 0
+      let sessions = allResults.compactMap { (recordID, result) -> ProfileSessionRecord? in
+        switch result {
+        case .success(let record):
+          if let session = ProfileSessionRecord(from: record) {
+            return session
+          } else {
+            decodeFailureCount += 1
+            Log.warning(
+              "Failed to decode session from record '\(recordID.recordName)': failable initializer returned nil",
+              category: .sync
+            )
+            return nil
+          }
+        case .failure(let error):
+          fetchFailureCount += 1
+          Log.warning(
+            "Failed to fetch session record '\(recordID.recordName)': \(error.localizedDescription)",
+            category: .sync
+          )
+          return nil
         }
-        return nil
       }
 
-      Log.info("Pulled \(sessions.count) session records from CloudKit", category: .sync)
+      let totalFailures = fetchFailureCount + decodeFailureCount
+      if totalFailures > 0 {
+        Log.warning(
+          "Pulled \(sessions.count) session records from CloudKit (\(fetchFailureCount) fetch failures, \(decodeFailureCount) decode failures)",
+          category: .sync
+        )
+      } else {
+        Log.info("Pulled \(sessions.count) session records from CloudKit", category: .sync)
+      }
 
       // Notify coordinator about sessions
       NotificationCenter.default.post(
@@ -586,27 +659,43 @@ class ProfileSyncManager: ObservableObject {
       for (recordID, _) in allResults {
         if let uuid = UUID(uuidString: recordID.recordName) {
           allRemoteLocationIds.insert(uuid)
+        } else {
+          Log.debug(
+            "Skipping remote record with non-UUID recordName '\(recordID.recordName)' when building remote ID set for reconciliation",
+            category: .sync
+          )
         }
       }
 
+      var fetchFailureCount = 0
       var decodeFailureCount = 0
       let syncedLocations = allResults.compactMap { (recordID, result) -> SyncedLocation? in
         switch result {
         case .success(let record):
-          return SyncedLocation(from: record)
+          if let location = SyncedLocation(from: record) {
+            return location
+          } else {
+            decodeFailureCount += 1
+            Log.warning(
+              "Failed to decode location from record '\(recordID.recordName)': failable initializer returned nil",
+              category: .sync
+            )
+            return nil
+          }
         case .failure(let error):
-          decodeFailureCount += 1
+          fetchFailureCount += 1
           Log.warning(
-            "Failed to decode location record '\(recordID.recordName)': \(error.localizedDescription)",
+            "Failed to fetch location record '\(recordID.recordName)': \(error.localizedDescription)",
             category: .sync
           )
           return nil
         }
       }
 
-      if decodeFailureCount > 0 {
+      let totalFailures = fetchFailureCount + decodeFailureCount
+      if totalFailures > 0 {
         Log.warning(
-          "Pulled \(syncedLocations.count) locations from CloudKit (\(decodeFailureCount) records failed to decode)",
+          "Pulled \(syncedLocations.count) locations from CloudKit (\(fetchFailureCount) fetch failures, \(decodeFailureCount) decode failures)",
           category: .sync
         )
       } else {
@@ -693,6 +782,7 @@ class ProfileSyncManager: ObservableObject {
     let recordTypes = [
       SyncedProfile.recordType,
       LegacySyncedSession.recordType,
+      ProfileSessionRecord.recordType,
       SyncedLocation.recordType,
       SyncResetRequest.recordType,
     ]

@@ -32,7 +32,9 @@ class SyncCoordinator: ObservableObject {
       .receive(on: DispatchQueue.main)
       .sink { [weak self] notification in
         guard let profiles = notification.userInfo?["profiles"] as? [SyncedProfile] else { return }
-        self?.handleSyncedProfiles(profiles)
+        let remoteProfileIds =
+          notification.userInfo?["remoteProfileIds"] as? Set<UUID> ?? Set()
+        self?.handleSyncedProfiles(profiles, remoteProfileIds: remoteProfileIds)
       }
       .store(in: &cancellables)
 
@@ -135,16 +137,16 @@ class SyncCoordinator: ObservableObject {
 
   // MARK: - Profile Handling
 
-  private func handleSyncedProfiles(_ syncedProfiles: [SyncedProfile]) {
+  private func handleSyncedProfiles(
+    _ syncedProfiles: [SyncedProfile],
+    remoteProfileIds: Set<UUID>
+  ) {
     guard let context = modelContext else {
       Log.info("No model context available", category: .sync)
       return
     }
 
     let deviceId = SharedData.deviceSyncId.uuidString
-
-    // Collect remote profile IDs for deletion reconciliation
-    let remoteProfileIds = Set(syncedProfiles.map { $0.profileId })
 
     for syncedProfile in syncedProfiles {
       // Skip profiles originating from this device
@@ -210,20 +212,28 @@ class SyncCoordinator: ObservableObject {
     // Reconcile deletions: remove local profiles not in remote set
     // Only delete profiles that have been synced at least once (syncVersion > 0)
     // This avoids deleting locally-created profiles that haven't been pushed yet
-    do {
-      let localProfiles = try BlockedProfiles.fetchProfiles(in: context)
-      for profile in localProfiles {
-        // Only consider profiles that have been synced at least once
-        guard profile.syncVersion > 0 else { continue }
+    if remoteProfileIds.isEmpty && !syncedProfiles.isEmpty {
+      Log.warning(
+        "Remote profile IDs set is empty but decoded profiles exist — skipping deletion reconciliation to prevent data loss",
+        category: .sync
+      )
+    } else {
+      do {
+        let localProfiles = try BlockedProfiles.fetchProfiles(in: context)
+        for profile in localProfiles {
+          // Only consider profiles that have been synced at least once
+          guard profile.syncVersion > 0 else { continue }
 
-        // If profile was synced but is no longer in remote, it was deleted remotely
-        if !remoteProfileIds.contains(profile.id) {
-          Log.info("Removing profile '\(profile.name)' deleted from remote", category: .sync)
-          try BlockedProfiles.deleteProfile(profile, in: context)
+          // If profile was synced but is no longer in remote, it was deleted remotely
+          if !remoteProfileIds.contains(profile.id) {
+            Log.info(
+              "Removing profile '\(profile.name)' deleted from remote", category: .sync)
+            try BlockedProfiles.deleteProfile(profile, in: context)
+          }
         }
+      } catch {
+        Log.info("Error reconciling profile deletions - \(error)", category: .sync)
       }
-    } catch {
-      Log.info("Error reconciling profile deletions - \(error)", category: .sync)
     }
 
     try? context.save()
