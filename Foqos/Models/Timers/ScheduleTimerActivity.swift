@@ -68,6 +68,9 @@ class ScheduleTimerActivity: TimerActivity {
 
     SharedData.createSessionForSchedular(for: profile.id)
     appBlocker.activateRestrictions(for: profile)
+
+    // Cancel any pending pre-activation reminders now that the profile is active
+    TimersUtil.cancelAllPreActivationReminders(for: profile.id)
   }
 
   func stop(for profile: SharedData.ProfileSnapshot) {

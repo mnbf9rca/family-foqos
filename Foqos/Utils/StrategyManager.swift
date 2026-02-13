@@ -1141,6 +1141,9 @@ class StrategyManager: ObservableObject {
     }
 
     DeviceActivityCenterUtil.scheduleStopActivity(for: definedProfile)
+
+    // Cancel any pending pre-activation reminders now that the profile is active
+    TimersUtil.cancelAllPreActivationReminders(for: definedProfile.id)
   }
 
   /// Start blocking with a pre-scanned NFC tag (for trigger-based start)
@@ -1248,6 +1251,9 @@ class StrategyManager: ObservableObject {
 
     // Register stop schedule if configured
     DeviceActivityCenterUtil.scheduleStopActivity(for: profile)
+
+    // Cancel any pending pre-activation reminders now that the profile is active
+    TimersUtil.cancelAllPreActivationReminders(for: profile.id)
 
     // Refresh widgets when session starts
     WidgetCenter.shared.reloadTimelines(ofKind: "ProfileControlWidget")
