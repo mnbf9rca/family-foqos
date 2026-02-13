@@ -316,6 +316,8 @@ actor SessionSyncService {
         guard !alreadyResumed else { return }
         switch result {
         case .success:
+          // For single-record saves, perRecordSaveBlock should fire instead.
+          // If we reach here without it, we can't return the updated record.
           continuation.resume(throwing: SessionSyncError.unexpectedState)
         case .failure(let error):
           continuation.resume(throwing: error)
