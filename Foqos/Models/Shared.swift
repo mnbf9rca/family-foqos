@@ -10,6 +10,7 @@ protocol BreakDurationCalculable {
 }
 
 extension BreakDurationCalculable {
+  /// Returns the duration of a completed break in seconds. Returns 0 if no break occurred or if the break is still active.
   func calculateBreakDuration() -> TimeInterval {
     guard let breakStart = breakStartTime else { return 0 }
     guard let breakEnd = breakEndTime else { return 0 }
