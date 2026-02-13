@@ -53,7 +53,7 @@ final class TimersUtil: @unchecked Sendable {  // SAFETY: Mutable state (backgro
     let identifierSet = Set(identifiers)
     var storedTasks =
       UserDefaults.standard.dictionary(
-        forKey: backgroundTaskUserDefaultsKey
+        forKey: Self.backgroundTaskUserDefaultsKey
       ) as? [String: [String: Any]] ?? [:]
     let originalCount = storedTasks.count
     storedTasks = storedTasks.filter { (_, value) in
@@ -61,7 +61,7 @@ final class TimersUtil: @unchecked Sendable {  // SAFETY: Mutable state (backgro
       return !identifierSet.contains(notificationId)
     }
     if storedTasks.count != originalCount {
-      UserDefaults.standard.set(storedTasks, forKey: backgroundTaskUserDefaultsKey)
+      UserDefaults.standard.set(storedTasks, forKey: Self.backgroundTaskUserDefaultsKey)
     }
   }
 
