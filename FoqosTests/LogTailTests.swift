@@ -21,14 +21,7 @@ final class LogTailTests: XCTestCase {
     let uniqueMarker = "TAIL_TEST_\(UUID().uuidString)"
     Log.info(uniqueMarker, category: .app)
 
-    // Allow async write to complete
-    let expectation = XCTestExpectation(description: "Log write")
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-      expectation.fulfill()
-    }
-    wait(for: [expectation], timeout: 2.0)
-
-    // When: We get tailed content
+    // When: We get tailed content (queue.sync drains pending writes)
     let tailedContent = Log.shared.getLogContentTail(maxLines: 100)
 
     // Then: The newest entry is present
@@ -51,14 +44,7 @@ final class LogTailTests: XCTestCase {
     Log.info(marker2, category: .app)
     Log.info(marker3, category: .app)
 
-    // Allow async writes to complete
-    let expectation = XCTestExpectation(description: "Log writes")
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-      expectation.fulfill()
-    }
-    wait(for: [expectation], timeout: 2.0)
-
-    // When: We get tailed content
+    // When: We get tailed content (queue.sync drains pending writes)
     let tailedContent = Log.shared.getLogContentTail(maxLines: 100)
 
     // Then: Entries appear in chronological order (first logged appears before last logged)
