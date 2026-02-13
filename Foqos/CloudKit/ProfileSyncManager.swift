@@ -659,27 +659,43 @@ class ProfileSyncManager: ObservableObject {
       for (recordID, _) in allResults {
         if let uuid = UUID(uuidString: recordID.recordName) {
           allRemoteLocationIds.insert(uuid)
+        } else {
+          Log.debug(
+            "Skipping remote record with non-UUID recordName '\(recordID.recordName)' when building remote ID set for reconciliation",
+            category: .sync
+          )
         }
       }
 
+      var fetchFailureCount = 0
       var decodeFailureCount = 0
       let syncedLocations = allResults.compactMap { (recordID, result) -> SyncedLocation? in
         switch result {
         case .success(let record):
-          return SyncedLocation(from: record)
+          if let location = SyncedLocation(from: record) {
+            return location
+          } else {
+            decodeFailureCount += 1
+            Log.warning(
+              "Failed to decode location from record '\(recordID.recordName)': failable initializer returned nil",
+              category: .sync
+            )
+            return nil
+          }
         case .failure(let error):
-          decodeFailureCount += 1
+          fetchFailureCount += 1
           Log.warning(
-            "Failed to decode location record '\(recordID.recordName)': \(error.localizedDescription)",
+            "Failed to fetch location record '\(recordID.recordName)': \(error.localizedDescription)",
             category: .sync
           )
           return nil
         }
       }
 
-      if decodeFailureCount > 0 {
+      let totalFailures = fetchFailureCount + decodeFailureCount
+      if totalFailures > 0 {
         Log.warning(
-          "Pulled \(syncedLocations.count) locations from CloudKit (\(decodeFailureCount) records failed to decode)",
+          "Pulled \(syncedLocations.count) locations from CloudKit (\(fetchFailureCount) fetch failures, \(decodeFailureCount) decode failures)",
           category: .sync
         )
       } else {
