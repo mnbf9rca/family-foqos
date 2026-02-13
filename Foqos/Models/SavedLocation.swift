@@ -11,7 +11,7 @@ class SavedLocation {
   var isLocked: Bool
   var createdAt: Date
   var updatedAt: Date
-  var syncVersion: Int = 0  // 0 = never synced, >0 = synced at least once
+  var syncVersion: Int  // 0 = never synced, >0 = synced at least once
 
   init(
     id: UUID = UUID(),
