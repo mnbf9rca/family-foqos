@@ -111,6 +111,8 @@ class StrategyManager: ObservableObject {
     } else {
       // Close live activity if no session is active and a scheduled session might have ended
       liveActivityManager.endSessionActivity()
+      // Re-attempt migration for profiles deferred due to active sessions
+      ProfileMigrationUtil.migrateProfilesIfNeeded(context: context)
     }
   }
 
