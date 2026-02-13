@@ -280,8 +280,8 @@ final class Log: @unchecked Sendable {  // SAFETY: All mutable state protected b
     return queue.sync { entries }
   }
 
-  /// Get all log file URLs for export
-  func getLogFileURLs() -> [URL] {
+  /// Get all log file URLs — MUST be called from within `queue` (or `queue.sync`)
+  private func _getLogFileURLsUnsafe() -> [URL] {
     guard let logDir = logDirectory else { return [] }
 
     var urls: [URL] = []
@@ -300,10 +300,15 @@ final class Log: @unchecked Sendable {  // SAFETY: All mutable state protected b
     return urls
   }
 
+  /// Get all log file URLs for export (thread-safe)
+  func getLogFileURLs() -> [URL] {
+    return queue.sync { _getLogFileURLsUnsafe() }
+  }
+
   /// Get combined log content as a string
   func getLogContent() -> String {
     return queue.sync {
-      let urls = getLogFileURLs().reversed()  // Oldest first
+      let urls = _getLogFileURLsUnsafe().reversed()  // Oldest first
       var content = ""
 
       for url in urls {
@@ -321,7 +326,7 @@ final class Log: @unchecked Sendable {  // SAFETY: All mutable state protected b
     guard maxLines > 0 else { return "" }
 
     return queue.sync {
-      let urls = getLogFileURLs()  // Current file first, then rotated
+      let urls = _getLogFileURLsUnsafe()  // Current file first, then rotated
       var collectedLines: [String] = []
 
       // Read files newest-first, stop when we have enough lines
