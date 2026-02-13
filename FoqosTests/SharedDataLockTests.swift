@@ -33,6 +33,11 @@ final class SharedDataLockTests: XCTestCase {
   }
 
   func testConcurrentSnapshotWritesPreserveAllEntries() {
+    // NOTE: Uses GCD to simulate concurrent writes within a single process.
+    // True cross-process testing (main app vs DeviceActivity extension) is
+    // impractical in XCTest, but the POSIX flock() mechanism is identical
+    // in-process and cross-process, so this validates the lock behavior.
+
     // Given: many concurrent writes to different keys
     let count = 50
     let ids = (0..<count).map { _ in UUID() }

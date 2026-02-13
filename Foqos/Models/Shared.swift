@@ -1,5 +1,6 @@
 import FamilyControls
 import Foundation
+import os
 
 enum SharedData {
     private nonisolated(unsafe) static let suite = UserDefaults(  // SAFETY: UserDefaults is thread-safe per Apple docs
@@ -13,18 +14,31 @@ enum SharedData {
     private static let lockPath: String = containerURL
         .appendingPathComponent(".shared-data.lock").path
 
+    private static let lockLog = Logger(
+        subsystem: "com.cynexia.family-foqos", category: "SharedData"
+    )
+
     /// Cross-process file lock for compound UserDefaults operations.
     /// Uses POSIX flock() — works across app and extension processes.
     /// Lock is automatically released if the process crashes.
+    /// **Not reentrant** — do not call a withLock-wrapped method from inside
+    /// another withLock closure. On BSD/macOS the inner unlock would release
+    /// the process-wide lock while the outer critical section is still running.
     private static func withLock<T>(_ body: () -> T) -> T {
         let fd = open(lockPath, O_CREAT | O_RDWR, 0o644)
-        guard fd >= 0 else { return body() }  // fallback: run unlocked if file can't be opened
+        guard fd >= 0 else {
+            lockLog.warning("SharedData: open() failed, errno \(errno) — proceeding unlocked")
+            return body()
+        }
         defer { close(fd) }
         var ret: Int32
         repeat {
             ret = flock(fd, LOCK_EX)
         } while ret == -1 && errno == EINTR
-        guard ret == 0 else { return body() }  // fallback: run unlocked if lock can't be acquired
+        guard ret == 0 else {
+            lockLog.warning("SharedData: flock() failed, errno \(errno) — proceeding unlocked")
+            return body()
+        }
         defer { flock(fd, LOCK_UN) }
         return body()
     }
