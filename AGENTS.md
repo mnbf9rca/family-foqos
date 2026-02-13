@@ -39,8 +39,8 @@ The project uses swift-format to maintain consistent code style. Configuration i
 # Format all Swift files
 swift-format --in-place --recursive .
 
-# Check formatting without making changes
-swift-format --dry-run --recursive .
+# Check for formatting violations without making changes
+swift-format lint --recursive .
 ```
 
 ## Code Style Guidelines
