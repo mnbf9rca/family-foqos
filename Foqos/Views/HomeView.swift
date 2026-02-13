@@ -258,9 +258,9 @@ struct HomeView: View {
     }
     .onChange(of: requestAuthorizer.isAuthorized) { _, newValue in
       if newValue {
-        // Auth succeeded — dismiss mode selection if it was showing
-        // (ModeSelectionView's onModeSelected callback handles its own dismissal,
-        // but this covers edge cases like auth granted from Settings)
+        // Auth succeeded — just dismiss intro. No need to check hasSelectedMode here
+        // because IntroView's callback already sets showModeSelection = true before
+        // auth happens in ModeSelectionView.
         showIntroScreen = false
       } else {
         showIntroScreen = true
