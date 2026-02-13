@@ -548,6 +548,9 @@ struct BlockedProfileView: View {
                     }
                     .disabled(isBlocking)
                     .buttonStyle(.plain)
+                    .accessibilityLabel("\(minutes)-minute reminder")
+                    .accessibilityValue(isSelected ? "Selected" : "Not selected")
+                    .accessibilityAddTraits(isSelected ? [.isSelected] : [])
                   }
                 }
               }
