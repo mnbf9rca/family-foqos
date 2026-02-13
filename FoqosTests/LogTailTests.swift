@@ -21,14 +21,7 @@ final class LogTailTests: XCTestCase {
     let uniqueMarker = "TAIL_TEST_\(UUID().uuidString)"
     Log.info(uniqueMarker, category: .app)
 
-    // Allow async write to complete
-    let expectation = XCTestExpectation(description: "Log write")
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-      expectation.fulfill()
-    }
-    wait(for: [expectation], timeout: 2.0)
-
-    // When: We get tailed content
+    // When: We get tailed content (queue.sync drains pending writes)
     let tailedContent = Log.shared.getLogContentTail(maxLines: 100)
 
     // Then: The newest entry is present
@@ -51,14 +44,7 @@ final class LogTailTests: XCTestCase {
     Log.info(marker2, category: .app)
     Log.info(marker3, category: .app)
 
-    // Allow async writes to complete
-    let expectation = XCTestExpectation(description: "Log writes")
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-      expectation.fulfill()
-    }
-    wait(for: [expectation], timeout: 2.0)
-
-    // When: We get tailed content
+    // When: We get tailed content (queue.sync drains pending writes)
     let tailedContent = Log.shared.getLogContentTail(maxLines: 100)
 
     // Then: Entries appear in chronological order (first logged appears before last logged)
@@ -72,5 +58,34 @@ final class LogTailTests: XCTestCase {
 
     XCTAssertLessThan(pos1, pos2, "First entry should appear before second entry")
     XCTAssertLessThan(pos2, pos3, "Second entry should appear before third entry")
+  }
+
+  func testGetLogFileURLsReturnsNonEmptyAfterLogging() {
+    // Given: We log something to ensure a file exists
+    let marker = "FILE_URL_TEST_\(UUID().uuidString)"
+    Log.info(marker, category: .app)
+
+    // When: We get log file URLs (queue.sync drains pending writes)
+    let urls = Log.shared.getLogFileURLs()
+
+    // Then: At least one log file exists
+    XCTAssertFalse(urls.isEmpty, "Should have at least one log file after logging")
+    for url in urls {
+      XCTAssertTrue(
+        FileManager.default.fileExists(atPath: url.path),
+        "Returned URL should point to existing file: \(url.path)")
+    }
+  }
+
+  func testGetTotalLogSizeReturnsPositiveAfterLogging() {
+    // Given: We log something to ensure files have content
+    let marker = "SIZE_TEST_\(UUID().uuidString)"
+    Log.info(marker, category: .app)
+
+    // When: We get total log size (queue.sync drains pending writes)
+    let size = Log.shared.getTotalLogSize()
+
+    // Then: Size is positive
+    XCTAssertGreaterThan(size, 0, "Total log size should be positive after logging")
   }
 }

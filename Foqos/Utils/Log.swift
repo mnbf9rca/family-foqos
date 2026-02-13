@@ -85,7 +85,7 @@ struct LogEntry: Codable, Identifiable {
 }
 
 /// Privacy-focused logging framework with file persistence and export capabilities
-final class Log: @unchecked Sendable {  // SAFETY: All mutable state protected by serial DispatchQueue
+final class Log: @unchecked Sendable {  // SAFETY: entries/file I/O protected by serial queue; minimumLevel/fileLoggingEnabled are immutable
   static let shared = Log()
 
   private let queue = DispatchQueue(label: "com.cynexia.family-foqos.log", qos: .utility)
@@ -97,11 +97,11 @@ final class Log: @unchecked Sendable {  // SAFETY: All mutable state protected b
   private let osLog: OSLog
   private let fileManager = FileManager.default
 
-  /// Minimum log level to record (configurable)
-  var minimumLevel: LogLevel = .debug
+  /// Minimum log level to record
+  let minimumLevel: LogLevel = .debug
 
   /// Whether to persist logs to file
-  var fileLoggingEnabled: Bool = true
+  let fileLoggingEnabled: Bool = true
 
   private var logDirectory: URL? {
     guard
@@ -280,8 +280,8 @@ final class Log: @unchecked Sendable {  // SAFETY: All mutable state protected b
     return queue.sync { entries }
   }
 
-  /// Get all log file URLs for export
-  func getLogFileURLs() -> [URL] {
+  /// Get all log file URLs — MUST be called from within `queue` (or `queue.sync`)
+  private func _getLogFileURLsUnsafe() -> [URL] {
     guard let logDir = logDirectory else { return [] }
 
     var urls: [URL] = []
@@ -300,49 +300,58 @@ final class Log: @unchecked Sendable {  // SAFETY: All mutable state protected b
     return urls
   }
 
+  /// Get all log file URLs for export (thread-safe)
+  func getLogFileURLs() -> [URL] {
+    return queue.sync { _getLogFileURLsUnsafe() }
+  }
+
   /// Get combined log content as a string
   func getLogContent() -> String {
-    let urls = getLogFileURLs().reversed()  // Oldest first
-    var content = ""
+    return queue.sync {
+      let urls = _getLogFileURLsUnsafe().reversed()  // Oldest first
+      var content = ""
 
-    for url in urls {
-      if let fileContent = try? String(contentsOf: url, encoding: .utf8) {
-        content += fileContent
+      for url in urls {
+        if let fileContent = try? String(contentsOf: url, encoding: .utf8) {
+          content += fileContent
+        }
       }
-    }
 
-    return content
+      return content
+    }
   }
 
   /// Get tailed log content (last N lines) for preview - avoids loading massive logs
   func getLogContentTail(maxLines: Int) -> String {
     guard maxLines > 0 else { return "" }
 
-    let urls = getLogFileURLs()  // Current file first, then rotated
-    var collectedLines: [String] = []
+    return queue.sync {
+      let urls = _getLogFileURLsUnsafe()  // Current file first, then rotated
+      var collectedLines: [String] = []
 
-    // Read files newest-first, stop when we have enough lines
-    for url in urls {
-      guard collectedLines.count < maxLines else { break }
+      // Read files newest-first, stop when we have enough lines
+      for url in urls {
+        guard collectedLines.count < maxLines else { break }
 
-      guard let fileContent = try? String(contentsOf: url, encoding: .utf8) else { continue }
+        guard let fileContent = try? String(contentsOf: url, encoding: .utf8) else { continue }
 
-      let lines = fileContent.components(separatedBy: "\n").filter { !$0.isEmpty }
-      let neededLines = maxLines - collectedLines.count
+        let lines = fileContent.components(separatedBy: "\n").filter { !$0.isEmpty }
+        let neededLines = maxLines - collectedLines.count
 
-      if lines.count <= neededLines {
-        // Prepend all lines from this file (older content goes first)
-        collectedLines.insert(contentsOf: lines, at: 0)
-      } else {
-        // Take only the last neededLines from this file
-        let tailLines = Array(lines.suffix(neededLines))
-        collectedLines.insert(contentsOf: tailLines, at: 0)
+        if lines.count <= neededLines {
+          // Prepend all lines from this file (older content goes first)
+          collectedLines.insert(contentsOf: lines, at: 0)
+        } else {
+          // Take only the last neededLines from this file
+          let tailLines = Array(lines.suffix(neededLines))
+          collectedLines.insert(contentsOf: tailLines, at: 0)
+        }
       }
-    }
 
-    // Return most recent lines (last maxLines)
-    let result = Array(collectedLines.suffix(maxLines))
-    return result.joined(separator: "\n")
+      // Return most recent lines (last maxLines)
+      let result = Array(collectedLines.suffix(maxLines))
+      return result.joined(separator: "\n")
+    }
   }
 
   /// Clear all log files and in-memory entries
@@ -362,19 +371,21 @@ final class Log: @unchecked Sendable {  // SAFETY: All mutable state protected b
     }
   }
 
-  /// Get total size of all log files
+  /// Get total size of all log files (thread-safe)
   func getTotalLogSize() -> Int {
-    let urls = getLogFileURLs()
-    var totalSize = 0
+    return queue.sync {
+      let urls = _getLogFileURLsUnsafe()
+      var totalSize = 0
 
-    for url in urls {
-      if let attributes = try? fileManager.attributesOfItem(atPath: url.path),
-        let size = attributes[.size] as? Int
-      {
-        totalSize += size
+      for url in urls {
+        if let attributes = try? fileManager.attributesOfItem(atPath: url.path),
+          let size = attributes[.size] as? Int
+        {
+          totalSize += size
+        }
       }
-    }
 
-    return totalSize
+      return totalSize
+    }
   }
 }
