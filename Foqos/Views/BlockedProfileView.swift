@@ -42,8 +42,7 @@ struct BlockedProfileView: View {
   @State private var enableAllowModeDomain: Bool = false
   @State private var enableSafariBlocking: Bool = true
   @State private var disableBackgroundStops: Bool = false
-  @State private var preActivationReminderEnabled: Bool = false
-  @State private var preActivationReminderMinutes: Int = 1
+  @State private var preActivationReminderTimes: Set<UInt8> = []
   @State private var domains: [String] = []
 
   @State private var physicalUnblockNFCTagId: String?
@@ -171,11 +170,8 @@ struct BlockedProfileView: View {
     _disableBackgroundStops = State(
       initialValue: profile?.disableBackgroundStops ?? false
     )
-    _preActivationReminderEnabled = State(
-      initialValue: profile?.preActivationReminderEnabled ?? false
-    )
-    _preActivationReminderMinutes = State(
-      initialValue: Int(profile?.preActivationReminderMinutes ?? 1)
+    _preActivationReminderTimes = State(
+      initialValue: Set(profile?.preActivationReminderTimes ?? [])
     )
     _reminderTimeInMinutes = State(
       initialValue: Int(profile?.reminderTimeInSeconds ?? 900) / 60
@@ -507,33 +503,56 @@ struct BlockedProfileView: View {
               }
             }
 
-            CustomToggle(
-              title: "Pre-Activation Reminder",
-              description: hasScheduledStart
-                ? "Get notified before this profile's scheduled start time."
-                : "Add a schedule to enable pre-activation reminders.",
-              isOn: $preActivationReminderEnabled,
-              isDisabled: isBlocking || !hasScheduledStart
-            )
-
-            if preActivationReminderEnabled && hasScheduledStart {
+            if hasScheduledStart {
               VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                  Text("Remind me")
-                  Spacer()
-                  Text("\(preActivationReminderMinutes) minute\(preActivationReminderMinutes == 1 ? "" : "s") before")
-                    .foregroundColor(.secondary)
-                }
+                Text("Pre-activation reminders")
+                  .font(.subheadline)
+                  .fontWeight(.medium)
+                Text("Get notified before this profile's scheduled start time.")
+                  .font(.caption)
+                  .foregroundColor(.secondary)
 
-                Slider(
-                  value: Binding(
-                    get: { Double(preActivationReminderMinutes) },
-                    set: { preActivationReminderMinutes = Int($0) }
-                  ),
-                  in: 1...5,
-                  step: 1
-                )
-                .disabled(isBlocking)
+                HStack(spacing: 8) {
+                  ForEach(TimersUtil.supportedReminderRange, id: \.self) { minutes in
+                    let isSelected = preActivationReminderTimes.contains(minutes)
+                    Button {
+                      if isSelected {
+                        preActivationReminderTimes.remove(minutes)
+                      } else {
+                        preActivationReminderTimes.insert(minutes)
+                      }
+                    } label: {
+                      Text("\(minutes) min")
+                        .font(.caption)
+                        .fontWeight(isSelected ? .semibold : .regular)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(
+                          isSelected
+                            ? themeManager.themeColor.opacity(0.15)
+                            : Color(.systemGray6)
+                        )
+                        .foregroundColor(
+                          isSelected ? themeManager.themeColor : .secondary
+                        )
+                        .clipShape(Capsule())
+                        .overlay(
+                          Capsule()
+                            .strokeBorder(
+                              isSelected
+                                ? themeManager.themeColor
+                                : Color(.systemGray4),
+                              lineWidth: 1
+                            )
+                        )
+                    }
+                    .disabled(isBlocking)
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("\(minutes)-minute reminder")
+                    .accessibilityValue(isSelected ? "Selected" : "Not selected")
+                    .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+                  }
+                }
               }
             }
 
@@ -897,8 +916,7 @@ struct BlockedProfileView: View {
           schedule: nil,
           geofenceRule: geofenceRule,
           disableBackgroundStops: disableBackgroundStops,
-          preActivationReminderEnabled: preActivationReminderEnabled,
-          preActivationReminderMinutes: UInt8(preActivationReminderMinutes),
+          preActivationReminderTimes: Array(preActivationReminderTimes).sorted(),
           isManaged: isManaged,
           managedByChildId: managedChildId,
           needsAppSelection: false  // Clear needsAppSelection since user is saving with app selection
@@ -926,8 +944,7 @@ struct BlockedProfileView: View {
           schedule: nil,
           geofenceRule: geofenceRule,
           disableBackgroundStops: disableBackgroundStops,
-          preActivationReminderEnabled: preActivationReminderEnabled,
-          preActivationReminderMinutes: UInt8(preActivationReminderMinutes),
+          preActivationReminderTimes: Array(preActivationReminderTimes).sorted(),
           isManaged: isManaged,
           managedByChildId: managedChildId
         )

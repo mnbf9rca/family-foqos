@@ -39,9 +39,41 @@ class BlockedProfiles {
 
   var disableBackgroundStops: Bool = false
 
-  // Pre-activation reminder for scheduled profiles
-  var preActivationReminderEnabled: Bool = false
-  var preActivationReminderMinutes: UInt8 = 1  // 1-5 minutes
+  // Pre-activation reminders for scheduled profiles (JSON-encoded [UInt8])
+  var preActivationReminderTimesData: Data?
+
+  /// Selected reminder times (1-5 minutes before). Empty = disabled.
+  var preActivationReminderTimes: [UInt8] {
+    get {
+      guard let data = preActivationReminderTimesData else { return [] }
+      do {
+        return try JSONDecoder().decode([UInt8].self, from: data)
+      } catch {
+        Log.error(
+          "Failed to decode preActivationReminderTimes: \(error.localizedDescription)",
+          category: .sync
+        )
+        return []
+      }
+    }
+    set {
+      let filtered = Set(newValue.filter { TimersUtil.supportedReminderRange.contains($0) })
+      let sorted = Array(filtered).sorted()
+      do {
+        preActivationReminderTimesData = try JSONEncoder().encode(sorted)
+      } catch {
+        Log.error(
+          "Failed to encode preActivationReminderTimes: \(error.localizedDescription)",
+          category: .sync
+        )
+      }
+    }
+  }
+
+  /// Computed: true if any reminder times are selected
+  var preActivationReminderEnabled: Bool {
+    !preActivationReminderTimes.isEmpty
+  }
 
   var customReminderMessage: String?
 
@@ -219,8 +251,7 @@ class BlockedProfiles {
     schedule: BlockedProfileSchedule? = nil,
     geofenceRule: ProfileGeofenceRule? = nil,
     disableBackgroundStops: Bool = false,
-    preActivationReminderEnabled: Bool = false,
-    preActivationReminderMinutes: UInt8 = 1,
+    preActivationReminderTimes: [UInt8] = [],
     isManaged: Bool = false,
     managedByChildId: String? = nil,
     syncVersion: Int = 0,
@@ -252,8 +283,7 @@ class BlockedProfiles {
     self.geofenceRule = geofenceRule
 
     self.disableBackgroundStops = disableBackgroundStops
-    self.preActivationReminderEnabled = preActivationReminderEnabled
-    self.preActivationReminderMinutes = preActivationReminderMinutes
+    self.preActivationReminderTimes = preActivationReminderTimes
     self.isManaged = isManaged
     self.managedByChildId = managedByChildId
     self.syncVersion = syncVersion
@@ -313,8 +343,7 @@ class BlockedProfiles {
     schedule: BlockedProfileSchedule? = nil,
     geofenceRule: ProfileGeofenceRule? = nil,
     disableBackgroundStops: Bool? = nil,
-    preActivationReminderEnabled: Bool? = nil,
-    preActivationReminderMinutes: UInt8? = nil,
+    preActivationReminderTimes: [UInt8]? = nil,
     isManaged: Bool? = nil,
     managedByChildId: String? = nil,
     syncVersion: Int? = nil,
@@ -383,12 +412,8 @@ class BlockedProfiles {
       profile.disableBackgroundStops = newDisableBackgroundStops
     }
 
-    if let newPreActivationReminderEnabled = preActivationReminderEnabled {
-      profile.preActivationReminderEnabled = newPreActivationReminderEnabled
-    }
-
-    if let newPreActivationReminderMinutes = preActivationReminderMinutes {
-      profile.preActivationReminderMinutes = newPreActivationReminderMinutes
+    if let newPreActivationReminderTimes = preActivationReminderTimes {
+      profile.preActivationReminderTimes = newPreActivationReminderTimes
     }
 
     if let newIsManaged = isManaged {
@@ -472,8 +497,7 @@ class BlockedProfiles {
       enableAllowMode: profile.enableAllowMode,
       enableAllowModeDomains: profile.enableAllowModeDomains,
       enableSafariBlocking: profile.enableSafariBlocking,
-      preActivationReminderEnabled: profile.preActivationReminderEnabled,
-      preActivationReminderMinutes: profile.preActivationReminderMinutes,
+      preActivationReminderTimes: profile.preActivationReminderTimes,
       domains: profile.domains,
       physicalUnblockNFCTagId: profile.physicalUnblockNFCTagId,
       physicalUnblockQRCodeId: profile.physicalUnblockQRCodeId,
@@ -542,8 +566,7 @@ class BlockedProfiles {
     schedule: BlockedProfileSchedule? = nil,
     geofenceRule: ProfileGeofenceRule? = nil,
     disableBackgroundStops: Bool = false,
-    preActivationReminderEnabled: Bool = false,
-    preActivationReminderMinutes: UInt8 = 1,
+    preActivationReminderTimes: [UInt8] = [],
     isManaged: Bool = false,
     managedByChildId: String? = nil,
     syncVersion: Int = 0,
@@ -571,8 +594,7 @@ class BlockedProfiles {
       physicalUnblockQRCodeId: physicalUnblockQRCodeId,
       geofenceRule: geofenceRule,
       disableBackgroundStops: disableBackgroundStops,
-      preActivationReminderEnabled: preActivationReminderEnabled,
-      preActivationReminderMinutes: preActivationReminderMinutes,
+      preActivationReminderTimes: preActivationReminderTimes,
       isManaged: isManaged,
       managedByChildId: managedByChildId,
       syncVersion: syncVersion,
@@ -618,8 +640,7 @@ class BlockedProfiles {
       schedule: source.schedule,
       geofenceRule: source.geofenceRule,
       disableBackgroundStops: source.disableBackgroundStops,
-      preActivationReminderEnabled: source.preActivationReminderEnabled,
-      preActivationReminderMinutes: source.preActivationReminderMinutes,
+      preActivationReminderTimes: source.preActivationReminderTimes,
       isManaged: source.isManaged,
       managedByChildId: source.managedByChildId,
       syncVersion: 0,  // Reset sync version for cloned profile

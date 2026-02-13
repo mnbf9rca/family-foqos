@@ -32,8 +32,37 @@ final class TimersUtil: @unchecked Sendable {  // SAFETY: Mutable state (backgro
   /// Pre-activation reminder notification identifier prefix
   static let preActivationReminderPrefix = "pre-activation-reminder-"
 
-  static func preActivationReminderIdentifier(for profileId: UUID) -> String {
-    return preActivationReminderPrefix + profileId.uuidString
+  static func preActivationReminderIdentifier(for profileId: UUID, minutes: Int) -> String {
+    return "\(preActivationReminderPrefix)\(profileId.uuidString)-\(minutes)"
+  }
+
+  /// Supported pre-activation reminder range (minutes before scheduled start)
+  static let supportedReminderRange: ClosedRange<UInt8> = 1...5
+
+  static func allPreActivationReminderIdentifiers(for profileId: UUID) -> [String] {
+    supportedReminderRange.map { preActivationReminderIdentifier(for: profileId, minutes: Int($0)) }
+  }
+
+  static func cancelAllPreActivationReminders(for profileId: UUID) {
+    let identifiers = allPreActivationReminderIdentifiers(for: profileId)
+    UNUserNotificationCenter.current().removePendingNotificationRequests(
+      withIdentifiers: identifiers
+    )
+
+    // Also remove stored background task metadata for these notifications
+    let identifierSet = Set(identifiers)
+    var storedTasks =
+      UserDefaults.standard.dictionary(
+        forKey: Self.backgroundTaskUserDefaultsKey
+      ) as? [String: [String: Any]] ?? [:]
+    let originalCount = storedTasks.count
+    storedTasks = storedTasks.filter { (_, value) in
+      guard let notificationId = value["notificationId"] as? String else { return true }
+      return !identifierSet.contains(notificationId)
+    }
+    if storedTasks.count != originalCount {
+      UserDefaults.standard.set(storedTasks, forKey: Self.backgroundTaskUserDefaultsKey)
+    }
   }
 
   private var backgroundTasks: [String: [String: Any]] {
