@@ -626,18 +626,38 @@ class ProfileSyncManager: ObservableObject {
     )
 
     do {
-      let (results, _) = try await privateDatabase.records(
+      var syncedLocations: [SyncedLocation] = []
+      var cursor: CKQueryOperation.Cursor? = nil
+
+      // First batch
+      let (initialResults, initialCursor) = try await privateDatabase.records(
         matching: query,
         inZoneWith: syncZoneID
       )
 
-      var syncedLocations: [SyncedLocation] = []
-      for (_, result) in results {
+      for (_, result) in initialResults {
         if case .success(let record) = result,
           let syncedLocation = SyncedLocation(from: record)
         {
           syncedLocations.append(syncedLocation)
         }
+      }
+      cursor = initialCursor
+
+      // Continue fetching while there are more results
+      while let currentCursor = cursor {
+        let (moreResults, nextCursor) = try await privateDatabase.records(
+          continuingMatchFrom: currentCursor
+        )
+
+        for (_, result) in moreResults {
+          if case .success(let record) = result,
+            let syncedLocation = SyncedLocation(from: record)
+          {
+            syncedLocations.append(syncedLocation)
+          }
+        }
+        cursor = nextCursor
       }
 
       Log.info("Pulled \(syncedLocations.count) locations from CloudKit", category: .sync)
