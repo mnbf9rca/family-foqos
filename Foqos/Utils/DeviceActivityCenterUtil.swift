@@ -5,11 +5,8 @@ import SwiftUI
 
 class DeviceActivityCenterUtil {
   static func scheduleTimerActivity(for profile: BlockedProfiles) {
-    let timersUtil = TimersUtil()
-    let notificationId = TimersUtil.preActivationReminderIdentifier(for: profile.id)
-
-    // Always cancel any existing pre-activation reminder first
-    timersUtil.cancelNotification(identifier: notificationId)
+    // Always cancel any existing pre-activation reminders first
+    TimersUtil.cancelAllPreActivationReminders(for: profile.id)
 
     let center = DeviceActivityCenter()
     let scheduleTimerActivity = ScheduleTimerActivity()
@@ -96,7 +93,10 @@ class DeviceActivityCenterUtil {
     guard schedule.isTodayScheduled() else { return }
 
     let timersUtil = TimersUtil()
-    let notificationId = TimersUtil.preActivationReminderIdentifier(for: profile.id)
+    let reminderMinutes = Int(profile.preActivationReminderMinutes)
+    let notificationId = TimersUtil.preActivationReminderIdentifier(
+      for: profile.id, minutes: reminderMinutes
+    )
 
     // Calculate seconds until the scheduled start time
     let calendar = Calendar.current
@@ -112,7 +112,6 @@ class DeviceActivityCenterUtil {
     else { return }
 
     // Calculate reminder time (start time minus reminder minutes)
-    let reminderMinutes = Int(profile.preActivationReminderMinutes)
     guard
       let reminderTime = calendar.date(
         byAdding: .minute,
@@ -206,7 +205,10 @@ class DeviceActivityCenterUtil {
     guard startSchedule.isTodayScheduled() else { return }
 
     let timersUtil = TimersUtil()
-    let notificationId = TimersUtil.preActivationReminderIdentifier(for: profile.id)
+    let reminderMinutes = Int(profile.preActivationReminderMinutes)
+    let notificationId = TimersUtil.preActivationReminderIdentifier(
+      for: profile.id, minutes: reminderMinutes
+    )
 
     let calendar = Calendar.current
     let now = Date()
@@ -220,7 +222,6 @@ class DeviceActivityCenterUtil {
       )
     else { return }
 
-    let reminderMinutes = Int(profile.preActivationReminderMinutes)
     guard
       let reminderTime = calendar.date(
         byAdding: .minute, value: -reminderMinutes, to: scheduledStart

@@ -3,43 +3,48 @@ import XCTest
 @testable import FamilyFoqos
 
 final class PreActivationReminderTests: XCTestCase {
-  // MARK: - Notification Identifier Tests
+  // MARK: - Identifier Tests
 
-  func testPreActivationReminderIdentifier_generatesCorrectFormat() {
+  func testPreActivationReminderIdentifier_includesMinutes() {
     let profileId = UUID()
-    let identifier = TimersUtil.preActivationReminderIdentifier(for: profileId)
+    let identifier = TimersUtil.preActivationReminderIdentifier(for: profileId, minutes: 3)
 
-    XCTAssertEqual(identifier, "pre-activation-reminder-\(profileId.uuidString)")
+    XCTAssertEqual(identifier, "pre-activation-reminder-\(profileId.uuidString)-3")
   }
 
-  func testPreActivationReminderIdentifier_uniquePerProfile() {
-    let profileId1 = UUID()
-    let profileId2 = UUID()
+  func testPreActivationReminderIdentifier_uniquePerMinuteValue() {
+    let profileId = UUID()
+    let id1 = TimersUtil.preActivationReminderIdentifier(for: profileId, minutes: 1)
+    let id2 = TimersUtil.preActivationReminderIdentifier(for: profileId, minutes: 5)
 
-    let identifier1 = TimersUtil.preActivationReminderIdentifier(for: profileId1)
-    let identifier2 = TimersUtil.preActivationReminderIdentifier(for: profileId2)
-
-    XCTAssertNotEqual(identifier1, identifier2)
+    XCTAssertNotEqual(id1, id2)
   }
 
   func testPreActivationReminderIdentifier_hasCorrectPrefix() {
     let profileId = UUID()
-    let identifier = TimersUtil.preActivationReminderIdentifier(for: profileId)
+    let identifier = TimersUtil.preActivationReminderIdentifier(for: profileId, minutes: 2)
 
     XCTAssertTrue(identifier.hasPrefix(TimersUtil.preActivationReminderPrefix))
   }
 
+  func testAllPreActivationReminderIdentifiers_returns5Ids() {
+    let profileId = UUID()
+    let ids = TimersUtil.allPreActivationReminderIdentifiers(for: profileId)
+
+    XCTAssertEqual(ids.count, 5)
+    for minutes in 1...5 {
+      let expected = "pre-activation-reminder-\(profileId.uuidString)-\(minutes)"
+      XCTAssertTrue(ids.contains(expected), "Missing identifier for \(minutes) minutes")
+    }
+  }
+
   func testReminderTimeCalculation() {
-    // Test that reminder time is correctly calculated as (start time - minutes)
     let calendar = Calendar.current
     let now = Date()
 
     guard
       let scheduledStart = calendar.date(
-        bySettingHour: 10,
-        minute: 0,
-        second: 0,
-        of: now
+        bySettingHour: 10, minute: 0, second: 0, of: now
       )
     else {
       XCTFail("Could not create scheduled start time")
@@ -49,23 +54,17 @@ final class PreActivationReminderTests: XCTestCase {
     let reminderMinutes = 5
     guard
       let reminderTime = calendar.date(
-        byAdding: .minute,
-        value: -reminderMinutes,
-        to: scheduledStart
+        byAdding: .minute, value: -reminderMinutes, to: scheduledStart
       )
     else {
       XCTFail("Could not calculate reminder time")
       return
     }
 
-    // The reminder time should be 5 minutes before the scheduled start
-    let expectedHour = 9
-    let expectedMinute = 55
-
     let reminderHour = calendar.component(.hour, from: reminderTime)
     let reminderMinute = calendar.component(.minute, from: reminderTime)
 
-    XCTAssertEqual(reminderHour, expectedHour)
-    XCTAssertEqual(reminderMinute, expectedMinute)
+    XCTAssertEqual(reminderHour, 9)
+    XCTAssertEqual(reminderMinute, 55)
   }
 }

@@ -32,8 +32,19 @@ final class TimersUtil: @unchecked Sendable {  // SAFETY: Mutable state (backgro
   /// Pre-activation reminder notification identifier prefix
   static let preActivationReminderPrefix = "pre-activation-reminder-"
 
-  static func preActivationReminderIdentifier(for profileId: UUID) -> String {
-    return preActivationReminderPrefix + profileId.uuidString
+  static func preActivationReminderIdentifier(for profileId: UUID, minutes: Int) -> String {
+    return "\(preActivationReminderPrefix)\(profileId.uuidString)-\(minutes)"
+  }
+
+  static func allPreActivationReminderIdentifiers(for profileId: UUID) -> [String] {
+    (1...5).map { preActivationReminderIdentifier(for: profileId, minutes: $0) }
+  }
+
+  static func cancelAllPreActivationReminders(for profileId: UUID) {
+    let identifiers = allPreActivationReminderIdentifiers(for: profileId)
+    UNUserNotificationCenter.current().removePendingNotificationRequests(
+      withIdentifiers: identifiers
+    )
   }
 
   private var backgroundTasks: [String: [String: Any]] {
