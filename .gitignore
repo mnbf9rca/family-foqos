@@ -63,5 +63,8 @@ fastlane/test_output
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# Git worktrees
+.worktrees/
 docs/plans/
 docs/codebase-analysis/
