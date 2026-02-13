@@ -54,6 +54,13 @@ final class PreActivationReminderTests: XCTestCase {
     XCTAssertEqual(profile.preActivationReminderTimes, [1, 2, 3])
   }
 
+  func testPreActivationReminderTimes_filtersOutOfRangeValues() {
+    let profile = BlockedProfiles(name: "Test")
+    profile.preActivationReminderTimes = [0, 1, 3, 6, 255]
+
+    XCTAssertEqual(profile.preActivationReminderTimes, [1, 3])
+  }
+
   func testPreActivationReminderEnabled_emptyMeansDisabled() {
     let profile = BlockedProfiles(name: "Test")
     profile.preActivationReminderTimes = []
