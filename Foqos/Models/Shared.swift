@@ -261,18 +261,22 @@ enum SharedData {
     /// Generated once and persisted across app launches.
     static var deviceSyncId: UUID {
         get {
-            if let idString = suite.string(forKey: Key.deviceSyncId.rawValue),
-               let uuid = UUID(uuidString: idString)
-            {
-                return uuid
+            withLock {
+                if let idString = suite.string(forKey: Key.deviceSyncId.rawValue),
+                   let uuid = UUID(uuidString: idString)
+                {
+                    return uuid
+                }
+                // Generate new ID if none exists
+                let newId = UUID()
+                suite.set(newId.uuidString, forKey: Key.deviceSyncId.rawValue)
+                return newId
             }
-            // Generate new ID if none exists
-            let newId = UUID()
-            suite.set(newId.uuidString, forKey: Key.deviceSyncId.rawValue)
-            return newId
         }
         set {
-            suite.set(newValue.uuidString, forKey: Key.deviceSyncId.rawValue)
+            withLock {
+                suite.set(newValue.uuidString, forKey: Key.deviceSyncId.rawValue)
+            }
         }
     }
 
