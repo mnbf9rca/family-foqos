@@ -460,27 +460,43 @@ class ProfileSyncManager: ObservableObject {
       for (recordID, _) in allResults {
         if let uuid = UUID(uuidString: recordID.recordName) {
           allRemoteProfileIds.insert(uuid)
+        } else {
+          Log.debug(
+            "Skipping remote record with non-UUID recordName '\(recordID.recordName)' when building remote ID set for reconciliation",
+            category: .sync
+          )
         }
       }
 
+      var fetchFailureCount = 0
       var decodeFailureCount = 0
       let syncedProfiles = allResults.compactMap { (recordID, result) -> SyncedProfile? in
         switch result {
         case .success(let record):
-          return SyncedProfile(from: record)
+          if let profile = SyncedProfile(from: record) {
+            return profile
+          } else {
+            decodeFailureCount += 1
+            Log.warning(
+              "Failed to decode profile from record '\(recordID.recordName)': failable initializer returned nil",
+              category: .sync
+            )
+            return nil
+          }
         case .failure(let error):
-          decodeFailureCount += 1
+          fetchFailureCount += 1
           Log.warning(
-            "Failed to decode profile record '\(recordID.recordName)': \(error.localizedDescription)",
+            "Failed to fetch profile record '\(recordID.recordName)': \(error.localizedDescription)",
             category: .sync
           )
           return nil
         }
       }
 
-      if decodeFailureCount > 0 {
+      let totalFailures = fetchFailureCount + decodeFailureCount
+      if totalFailures > 0 {
         Log.warning(
-          "Pulled \(syncedProfiles.count) profiles from CloudKit (\(decodeFailureCount) records failed to decode)",
+          "Pulled \(syncedProfiles.count) profiles from CloudKit (\(fetchFailureCount) fetch failures, \(decodeFailureCount) decode failures)",
           category: .sync
         )
       } else {
