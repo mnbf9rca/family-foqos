@@ -2,7 +2,7 @@ import Foundation
 @preconcurrency import SwiftData  // ReferenceWritableKeyPath in SortDescriptor lacks Sendable conformance
 
 @Model
-class BlockedProfileSession {
+class BlockedProfileSession: BreakDurationCalculable {
   @Attribute(.unique) var id: String
   var tag: String
 
