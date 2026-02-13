@@ -448,18 +448,38 @@ class ProfileSyncManager: ObservableObject {
     )
 
     do {
-      let (results, _) = try await privateDatabase.records(
+      var syncedProfiles: [SyncedProfile] = []
+      var cursor: CKQueryOperation.Cursor? = nil
+
+      // First batch
+      let (initialResults, initialCursor) = try await privateDatabase.records(
         matching: query,
         inZoneWith: syncZoneID
       )
 
-      var syncedProfiles: [SyncedProfile] = []
-      for (_, result) in results {
+      for (_, result) in initialResults {
         if case .success(let record) = result,
           let syncedProfile = SyncedProfile(from: record)
         {
           syncedProfiles.append(syncedProfile)
         }
+      }
+      cursor = initialCursor
+
+      // Continue fetching while there are more results
+      while let currentCursor = cursor {
+        let (moreResults, nextCursor) = try await privateDatabase.records(
+          continuingMatchFrom: currentCursor
+        )
+
+        for (_, result) in moreResults {
+          if case .success(let record) = result,
+            let syncedProfile = SyncedProfile(from: record)
+          {
+            syncedProfiles.append(syncedProfile)
+          }
+        }
+        cursor = nextCursor
       }
 
       Log.info("Pulled \(syncedProfiles.count) profiles from CloudKit", category: .sync)
