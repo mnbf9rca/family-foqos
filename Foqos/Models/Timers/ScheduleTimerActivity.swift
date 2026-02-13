@@ -1,5 +1,6 @@
 import DeviceActivity
 import OSLog
+import UserNotifications
 
 private let log: Logger = Logger(subsystem: "com.cynexia.family-foqos.monitor", category: ScheduleTimerActivity.id)
 
@@ -70,7 +71,10 @@ class ScheduleTimerActivity: TimerActivity {
     appBlocker.activateRestrictions(for: profile)
 
     // Cancel any pending pre-activation reminders now that the profile is active
-    TimersUtil.cancelAllPreActivationReminders(for: profile.id)
+    let reminderIds = (1...5).map { "pre-activation-reminder-\(profile.id.uuidString)-\($0)" }
+    UNUserNotificationCenter.current().removePendingNotificationRequests(
+      withIdentifiers: reminderIds
+    )
   }
 
   func stop(for profile: SharedData.ProfileSnapshot) {
