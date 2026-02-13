@@ -451,20 +451,51 @@ class ProfileSyncManager: ObservableObject {
 
     do {
       let allResults = try await fetchAllRecords(matching: query)
-      let syncedProfiles = allResults.compactMap { (_, result) -> SyncedProfile? in
-        if case .success(let record) = result {
-          return SyncedProfile(from: record)
+
+      // Extract ALL remote record IDs before filtering decode failures.
+      // This prevents false deletions when a record fails to decode —
+      // without the full ID set, reconciliation would incorrectly delete
+      // the local copy of any record that failed to decode.
+      var allRemoteProfileIds = Set<UUID>()
+      for (recordID, _) in allResults {
+        if let uuid = UUID(uuidString: recordID.recordName) {
+          allRemoteProfileIds.insert(uuid)
         }
-        return nil
       }
 
-      Log.info("Pulled \(syncedProfiles.count) profiles from CloudKit", category: .sync)
+      var decodeFailureCount = 0
+      let syncedProfiles = allResults.compactMap { (recordID, result) -> SyncedProfile? in
+        switch result {
+        case .success(let record):
+          return SyncedProfile(from: record)
+        case .failure(let error):
+          decodeFailureCount += 1
+          Log.warning(
+            "Failed to decode profile record '\(recordID.recordName)': \(error.localizedDescription)",
+            category: .sync
+          )
+          return nil
+        }
+      }
 
-      // Process pulled profiles on main actor with context
+      if decodeFailureCount > 0 {
+        Log.warning(
+          "Pulled \(syncedProfiles.count) profiles from CloudKit (\(decodeFailureCount) records failed to decode)",
+          category: .sync
+        )
+      } else {
+        Log.info("Pulled \(syncedProfiles.count) profiles from CloudKit", category: .sync)
+      }
+
+      // Notify about received profiles, including full remote ID set
+      // so deletion reconciliation doesn't treat decode failures as deletions
       NotificationCenter.default.post(
         name: .syncedProfilesReceived,
         object: nil,
-        userInfo: ["profiles": syncedProfiles]
+        userInfo: [
+          "profiles": syncedProfiles,
+          "remoteProfileIds": allRemoteProfileIds,
+        ]
       )
     } catch let error as CKError {
       if error.code == .zoneNotFound || error.code == .unknownItem {
