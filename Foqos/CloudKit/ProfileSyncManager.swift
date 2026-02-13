@@ -551,24 +551,35 @@ class ProfileSyncManager: ObservableObject {
 
     do {
       let allResults = try await fetchAllRecords(matching: query)
+      var fetchFailureCount = 0
       var decodeFailureCount = 0
       let sessions = allResults.compactMap { (recordID, result) -> ProfileSessionRecord? in
         switch result {
         case .success(let record):
-          return ProfileSessionRecord(from: record)
+          if let session = ProfileSessionRecord(from: record) {
+            return session
+          } else {
+            decodeFailureCount += 1
+            Log.warning(
+              "Failed to decode session from record '\(recordID.recordName)': failable initializer returned nil",
+              category: .sync
+            )
+            return nil
+          }
         case .failure(let error):
-          decodeFailureCount += 1
+          fetchFailureCount += 1
           Log.warning(
-            "Failed to decode session record '\(recordID.recordName)': \(error.localizedDescription)",
+            "Failed to fetch session record '\(recordID.recordName)': \(error.localizedDescription)",
             category: .sync
           )
           return nil
         }
       }
 
-      if decodeFailureCount > 0 {
+      let totalFailures = fetchFailureCount + decodeFailureCount
+      if totalFailures > 0 {
         Log.warning(
-          "Pulled \(sessions.count) session records from CloudKit (\(decodeFailureCount) records failed to decode)",
+          "Pulled \(sessions.count) session records from CloudKit (\(fetchFailureCount) fetch failures, \(decodeFailureCount) decode failures)",
           category: .sync
         )
       } else {
