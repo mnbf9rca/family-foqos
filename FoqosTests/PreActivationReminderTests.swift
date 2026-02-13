@@ -38,6 +38,38 @@ final class PreActivationReminderTests: XCTestCase {
     }
   }
 
+  // MARK: - Model Behavior Tests
+
+  func testPreActivationReminderTimes_roundTrip() {
+    let profile = BlockedProfiles(name: "Test")
+    profile.preActivationReminderTimes = [1, 3, 5]
+
+    XCTAssertEqual(profile.preActivationReminderTimes, [1, 3, 5])
+  }
+
+  func testPreActivationReminderTimes_deduplicatesAndSorts() {
+    let profile = BlockedProfiles(name: "Test")
+    profile.preActivationReminderTimes = [3, 1, 3, 2]
+
+    XCTAssertEqual(profile.preActivationReminderTimes, [1, 2, 3])
+  }
+
+  func testPreActivationReminderEnabled_emptyMeansDisabled() {
+    let profile = BlockedProfiles(name: "Test")
+    profile.preActivationReminderTimes = []
+
+    XCTAssertFalse(profile.preActivationReminderEnabled)
+  }
+
+  func testPreActivationReminderEnabled_nonEmptyMeansEnabled() {
+    let profile = BlockedProfiles(name: "Test")
+    profile.preActivationReminderTimes = [2]
+
+    XCTAssertTrue(profile.preActivationReminderEnabled)
+  }
+
+  // MARK: - Time Calculation Tests
+
   func testReminderTimeCalculation() {
     let calendar = Calendar.current
     let now = Date()

@@ -4,7 +4,7 @@ This file provides guidelines for agentic coding assistants working on the Famil
 
 ## Key rules agents often forget but must ALWAYS follow:
 
-  - **NEVERforce commit or amend commits.** Ever. Always create new commits for fixes, and use Git's revert feature to undo changes if needed. This preserves the integrity of the commit history and allows for proper code review.
+  - **NEVER** force commit or amend commits. Ever. Always create new commits for fixes, and use Git's revert feature to undo changes if needed. This preserves the integrity of the commit history and allows for proper code review.
   - **ALWAYS request code review before merging any changes.** This ensures that all changes are vetted for quality, correctness, and adherence to project standards.
   - **NEVER use worktrees**. Always work on feature branches. This prevents accidental changes to the main branch and allows for better organization of work.
 

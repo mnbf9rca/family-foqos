@@ -91,53 +91,9 @@ class DeviceActivityCenterUtil {
   ) {
     guard profile.preActivationReminderEnabled else { return }
     guard schedule.isTodayScheduled() else { return }
-
-    let timersUtil = TimersUtil()
-    let calendar = Calendar.current
-    let now = Date()
-
-    guard
-      let scheduledStart = calendar.date(
-        bySettingHour: schedule.startHour,
-        minute: schedule.startMinute,
-        second: 0,
-        of: now
-      )
-    else { return }
-
-    // Cancel all existing reminders for clean slate
-    TimersUtil.cancelAllPreActivationReminders(for: profile.id)
-
-    for minutes in profile.preActivationReminderTimes {
-      let reminderMinutes = Int(minutes)
-      guard
-        let reminderTime = calendar.date(
-          byAdding: .minute, value: -reminderMinutes, to: scheduledStart
-        )
-      else { continue }
-
-      let secondsUntilReminder = reminderTime.timeIntervalSince(now)
-      guard secondsUntilReminder > 0 else { continue }
-
-      let title =
-        "\(profile.name) starts in \(reminderMinutes) minute\(reminderMinutes == 1 ? "" : "s")"
-      let message = "Your scheduled focus session is about to begin."
-      let notificationId = TimersUtil.preActivationReminderIdentifier(
-        for: profile.id, minutes: reminderMinutes
-      )
-
-      timersUtil.scheduleNotification(
-        title: title, message: message,
-        seconds: secondsUntilReminder, identifier: notificationId
-      )
-    }
-
-    if !profile.preActivationReminderTimes.isEmpty {
-      Log.info(
-        "Scheduled \(profile.preActivationReminderTimes.count) pre-activation reminder(s) for \(profile.name)",
-        category: .timer
-      )
-    }
+    schedulePreActivationNotifications(
+      for: profile, startHour: schedule.startHour, startMinute: schedule.startMinute
+    )
   }
 
   /// Register a stop-only DeviceActivity for profiles with scheduled stop but no scheduled start.
@@ -202,22 +158,31 @@ class DeviceActivityCenterUtil {
   ) {
     guard profile.preActivationReminderEnabled else { return }
     guard startSchedule.isTodayScheduled() else { return }
+    schedulePreActivationNotifications(
+      for: profile, startHour: startSchedule.hour, startMinute: startSchedule.minute
+    )
+  }
 
+  /// Shared helper: schedules one notification per selected reminder time before the given start.
+  /// Caller is responsible for guard checks (preActivationReminderEnabled, isTodayScheduled).
+  /// Cancellation is handled by scheduleTimerActivity before calling this.
+  private static func schedulePreActivationNotifications(
+    for profile: BlockedProfiles,
+    startHour: Int,
+    startMinute: Int
+  ) {
     let timersUtil = TimersUtil()
     let calendar = Calendar.current
     let now = Date()
 
     guard
       let scheduledStart = calendar.date(
-        bySettingHour: startSchedule.hour,
-        minute: startSchedule.minute,
+        bySettingHour: startHour,
+        minute: startMinute,
         second: 0,
         of: now
       )
     else { return }
-
-    // Cancel all existing reminders for clean slate
-    TimersUtil.cancelAllPreActivationReminders(for: profile.id)
 
     for minutes in profile.preActivationReminderTimes {
       let reminderMinutes = Int(minutes)

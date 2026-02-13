@@ -248,7 +248,7 @@ struct SyncedProfile: Codable, Equatable {
     enableAllowMode = profile.enableAllowMode
     enableAllowModeDomains = profile.enableAllowModeDomains
     enableSafariBlocking = profile.enableSafariBlocking
-    preActivationReminderTimesData = try? JSONEncoder().encode(profile.preActivationReminderTimes)
+    preActivationReminderTimesData = profile.preActivationReminderTimesData
     physicalUnblockNFCTagId = profile.physicalUnblockNFCTagId
     physicalUnblockQRCodeId = profile.physicalUnblockQRCodeId
     domains = profile.domains

@@ -46,11 +46,26 @@ class BlockedProfiles {
   var preActivationReminderTimes: [UInt8] {
     get {
       guard let data = preActivationReminderTimesData else { return [] }
-      return (try? JSONDecoder().decode([UInt8].self, from: data)) ?? []
+      do {
+        return try JSONDecoder().decode([UInt8].self, from: data)
+      } catch {
+        Log.error(
+          "Failed to decode preActivationReminderTimes: \(error.localizedDescription)",
+          category: .sync
+        )
+        return []
+      }
     }
     set {
       let sorted = Array(Set(newValue)).sorted()
-      preActivationReminderTimesData = try? JSONEncoder().encode(sorted)
+      do {
+        preActivationReminderTimesData = try JSONEncoder().encode(sorted)
+      } catch {
+        Log.error(
+          "Failed to encode preActivationReminderTimes: \(error.localizedDescription)",
+          category: .sync
+        )
+      }
     }
   }
 
