@@ -88,4 +88,30 @@ final class LogTailTests: XCTestCase {
     // Then: Size is positive
     XCTAssertGreaterThan(size, 0, "Total log size should be positive after logging")
   }
+
+  func testCopyLogFilesToStagingDirectoryCopiesAllFiles() throws {
+    // Given: We log something to ensure files exist
+    let marker = "COPY_TEST_\(UUID().uuidString)"
+    Log.info(marker, category: .app)
+
+    let stagingDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("LogCopyTest-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(
+      at: stagingDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: stagingDir) }
+
+    // When: We copy log files to staging (queue.sync drains pending writes first)
+    try Log.shared.copyLogFilesToStagingDirectory(stagingDir)
+
+    // Then: At least one file was copied
+    let copiedFiles = try FileManager.default.contentsOfDirectory(
+      at: stagingDir, includingPropertiesForKeys: nil)
+    XCTAssertFalse(copiedFiles.isEmpty, "Should have copied at least one log file")
+
+    // And: copied files contain our marker
+    let hasMarker = copiedFiles.contains { url in
+      (try? String(contentsOf: url, encoding: .utf8))?.contains(marker) == true
+    }
+    XCTAssertTrue(hasMarker, "Copied files should contain the logged marker")
+  }
 }

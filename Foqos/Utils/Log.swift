@@ -305,6 +305,21 @@ final class Log: @unchecked Sendable {  // SAFETY: entries/file I/O protected by
     return queue.sync { _getLogFileURLsUnsafe() }
   }
 
+  /// Copy all log files to a staging directory atomically.
+  /// Runs within the serial queue so no rotation can occur mid-copy.
+  /// - Parameter stagingDir: Destination directory (must already exist).
+  /// - Throws: If any file copy fails.
+  func copyLogFilesToStagingDirectory(_ stagingDir: URL) throws {
+    try queue.sync {
+      let urls = _getLogFileURLsUnsafe()
+      for (index, url) in urls.enumerated() {
+        let destName = index == 0 ? "foqos-current.log" : "foqos-\(index).log"
+        let destURL = stagingDir.appendingPathComponent(destName)
+        try fileManager.copyItem(at: url, to: destURL)
+      }
+    }
+  }
+
   /// Get combined log content as a string
   func getLogContent() -> String {
     return queue.sync {
