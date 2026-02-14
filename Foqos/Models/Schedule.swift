@@ -74,8 +74,8 @@ struct BlockedProfileSchedule: Codable, Equatable {
     return days.contains(today)
   }
 
-  func olderThan15Minutes(now: Date = Date()) -> Bool {
-    return now.timeIntervalSince(updatedAt) > 15 * 60
+  func olderThanOneMinute(now: Date = Date()) -> Bool {
+    return now.timeIntervalSince(updatedAt) > 1 * 60
   }
 
   private func formattedTimeString(hour24: Int, minute: Int) -> String {

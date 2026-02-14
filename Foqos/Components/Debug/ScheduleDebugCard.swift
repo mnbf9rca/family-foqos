@@ -38,7 +38,7 @@ struct ScheduleDebugCard: View {
             DebugRow(label: "Start Days", value: start.daysText)
             DebugRow(label: "Start Updated At", value: DateFormatters.formatDate(start.updatedAt))
             DebugRow(label: "Start Today Scheduled", value: "\(start.isTodayScheduled())")
-            DebugRow(label: "Start Older Than 15m", value: "\(start.olderThan15Minutes())")
+            DebugRow(label: "Start Older Than 1m", value: "\(start.olderThanOneMinute())")
           }
         }
 
@@ -89,7 +89,7 @@ struct ScheduleDebugCard: View {
 
         Group {
           DebugRow(label: "Is Today Scheduled", value: "\(schedule.isTodayScheduled())")
-          DebugRow(label: "Older Than 15 Minutes", value: "\(schedule.olderThan15Minutes())")
+          DebugRow(label: "Older Than 1 Minute", value: "\(schedule.olderThanOneMinute())")
         }
       }
 

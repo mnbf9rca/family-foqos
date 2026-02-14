@@ -36,10 +36,10 @@ class ScheduleTimerActivity: TimerActivity {
 
     if let startSchedule = profile.startSchedule, profile.startTriggersSchedule == true {
       isTodayScheduled = startSchedule.isTodayScheduled()
-      isOldEnough = startSchedule.olderThan15Minutes()
+      isOldEnough = startSchedule.olderThanOneMinute()
     } else if let schedule = profile.schedule {
       isTodayScheduled = schedule.isTodayScheduled()
-      isOldEnough = schedule.olderThan15Minutes()
+      isOldEnough = schedule.olderThanOneMinute()
     } else {
       log.info("Start schedule timer activity for \(profileId), no schedule found")
       return
