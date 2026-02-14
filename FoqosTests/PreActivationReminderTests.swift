@@ -38,6 +38,30 @@ final class PreActivationReminderTests: XCTestCase {
     }
   }
 
+  // MARK: - Profile ID Extraction Tests
+
+  func testProfileIdFromReminderIdentifier_extractsCorrectUUID() {
+    let profileId = UUID()
+    let identifier = TimersUtil.preActivationReminderIdentifier(for: profileId, minutes: 3)
+
+    XCTAssertEqual(TimersUtil.profileIdFromReminderIdentifier(identifier), profileId)
+  }
+
+  func testProfileIdFromReminderIdentifier_returnsNilForNonReminderIdentifier() {
+    XCTAssertNil(TimersUtil.profileIdFromReminderIdentifier("some-other-notification"))
+  }
+
+  func testProfileIdFromReminderIdentifier_returnsNilForMalformedIdentifier() {
+    XCTAssertNil(TimersUtil.profileIdFromReminderIdentifier("pre-activation-reminder-not-a-uuid-3"))
+  }
+
+  func testPreActivationReminderThreadIdentifier_format() {
+    let profileId = UUID()
+    let expected = "pre-activation-reminder-\(profileId.uuidString)"
+
+    XCTAssertEqual(TimersUtil.preActivationReminderThreadIdentifier(for: profileId), expected)
+  }
+
   // MARK: - Model Behavior Tests
 
   func testPreActivationReminderTimes_roundTrip() {

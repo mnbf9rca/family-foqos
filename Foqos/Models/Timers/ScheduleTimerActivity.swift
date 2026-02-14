@@ -30,6 +30,18 @@ class ScheduleTimerActivity: TimerActivity {
   func start(for profile: SharedData.ProfileSnapshot) {
     let profileId = profile.id.uuidString
 
+    // Cancel any pre-activation reminders now that the start time has arrived,
+    // regardless of whether the profile actually starts (early returns below).
+    // SYNC: identifier format must match TimersUtil.preActivationReminderIdentifier(for:minutes:)
+    // SYNC: range must match TimersUtil.supportedReminderRange
+    let reminderIds = (1...5).map { "pre-activation-reminder-\(profile.id.uuidString)-\($0)" }
+    UNUserNotificationCenter.current().removePendingNotificationRequests(
+      withIdentifiers: reminderIds
+    )
+    UNUserNotificationCenter.current().removeDeliveredNotifications(
+      withIdentifiers: reminderIds
+    )
+
     // Check start schedule — prefer V2, fall back to legacy
     let isTodayScheduled: Bool
     let isOldEnough: Bool
@@ -76,14 +88,6 @@ class ScheduleTimerActivity: TimerActivity {
 
     SharedData.createSessionForSchedular(for: profile.id)
     appBlocker.activateRestrictions(for: profile)
-
-    // Cancel any pending pre-activation reminders now that the profile is active
-    // SYNC: identifier format must match TimersUtil.preActivationReminderIdentifier(for:minutes:)
-    // SYNC: range must match TimersUtil.supportedReminderRange
-    let reminderIds = (1...5).map { "pre-activation-reminder-\(profile.id.uuidString)-\($0)" }
-    UNUserNotificationCenter.current().removePendingNotificationRequests(
-      withIdentifiers: reminderIds
-    )
   }
 
   func stop(for profile: SharedData.ProfileSnapshot) {

@@ -32,6 +32,22 @@ final class TimersUtil: @unchecked Sendable {  // SAFETY: Mutable state (backgro
   /// Pre-activation reminder notification identifier prefix
   static let preActivationReminderPrefix = "pre-activation-reminder-"
 
+  /// Thread identifier for grouping pre-activation reminders per profile
+  static func preActivationReminderThreadIdentifier(for profileId: UUID) -> String {
+    return "\(preActivationReminderPrefix)\(profileId.uuidString)"
+  }
+
+  /// Extract profile UUID from a pre-activation reminder notification identifier.
+  /// Returns nil if the identifier doesn't match the expected format.
+  static func profileIdFromReminderIdentifier(_ identifier: String) -> UUID? {
+    guard identifier.hasPrefix(preActivationReminderPrefix) else { return nil }
+    let remainder = String(identifier.dropFirst(preActivationReminderPrefix.count))
+    // Format: "UUID-minutes" — UUID is 36 chars, then "-", then digits
+    guard remainder.count > 36 else { return nil }
+    let uuidString = String(remainder.prefix(36))
+    return UUID(uuidString: uuidString)
+  }
+
   static func preActivationReminderIdentifier(for profileId: UUID, minutes: Int) -> String {
     return "\(preActivationReminderPrefix)\(profileId.uuidString)-\(minutes)"
   }
@@ -46,6 +62,9 @@ final class TimersUtil: @unchecked Sendable {  // SAFETY: Mutable state (backgro
   static func cancelAllPreActivationReminders(for profileId: UUID) {
     let identifiers = allPreActivationReminderIdentifiers(for: profileId)
     UNUserNotificationCenter.current().removePendingNotificationRequests(
+      withIdentifiers: identifiers
+    )
+    UNUserNotificationCenter.current().removeDeliveredNotifications(
       withIdentifiers: identifiers
     )
 
@@ -190,6 +209,7 @@ final class TimersUtil: @unchecked Sendable {  // SAFETY: Mutable state (backgro
     message: String,
     seconds: TimeInterval,
     identifier: String? = nil,
+    threadIdentifier: String? = nil,
     completion: @escaping @Sendable (NotificationResult) -> Void = { _ in }
   ) -> String {
     let notificationId = identifier ?? UUID().uuidString
@@ -206,6 +226,9 @@ final class TimersUtil: @unchecked Sendable {  // SAFETY: Mutable state (backgro
         content.title = title
         content.body = message
         content.sound = .default
+        if let threadIdentifier {
+          content.threadIdentifier = threadIdentifier
+        }
 
         let trigger = UNTimeIntervalNotificationTrigger(
           timeInterval: seconds,
@@ -243,11 +266,26 @@ final class TimersUtil: @unchecked Sendable {  // SAFETY: Mutable state (backgro
     UNUserNotificationCenter.current().removePendingNotificationRequests(
       withIdentifiers: [identifier]
     )
+    UNUserNotificationCenter.current().removeDeliveredNotifications(
+      withIdentifiers: [identifier]
+    )
   }
 
   func cancelAllNotifications() {
     UNUserNotificationCenter.current()
       .removeAllPendingNotificationRequests()
+    // Only remove delivered pre-activation reminders, not other notification types
+    // (e.g., geofence-blocked, break/session reminders)
+    let center = UNUserNotificationCenter.current()
+    center.getDeliveredNotifications { notifications in
+      let preActivationIds =
+        notifications
+        .map(\.request.identifier)
+        .filter { $0.hasPrefix(Self.preActivationReminderPrefix) }
+      if !preActivationIds.isEmpty {
+        center.removeDeliveredNotifications(withIdentifiers: preActivationIds)
+      }
+    }
   }
 
   func cancelAll() {

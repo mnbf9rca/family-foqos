@@ -986,7 +986,7 @@ class StrategyManager: ObservableObject {
     // Remove the break timer activity
     DeviceActivityCenterUtil.removeBreakTimerActivity(for: session.blockedProfile)
 
-    // Cancel all notifications that were scheduled during break
+    // Cancel pending notifications and clean up any delivered pre-activation reminders
     timersUtil.cancelAllNotifications()
 
     // Refresh widgets when break ends

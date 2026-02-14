@@ -11,6 +11,7 @@ import CloudKit
 import FamilyControls
 import SwiftData
 import SwiftUI
+import UserNotifications
 
 /// Redact query and fragment from URL for safe logging (may contain tokens)
 private func redactedURLString(_ url: URL) -> String {
@@ -90,6 +91,7 @@ struct foqosApp: App {
   init() {
     Log.info("init() called", category: .app)
     TimersUtil.registerBackgroundTasks()
+    UNUserNotificationCenter.current().delegate = NotificationDelegate.shared
 
     let asyncDependency: @Sendable () async -> (ModelContainer) = {
       @MainActor in
