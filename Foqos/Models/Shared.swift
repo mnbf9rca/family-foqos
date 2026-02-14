@@ -241,6 +241,18 @@ enum SharedData {
     }
   }
 
+  /// Sets scheduleSuppressedUntil on the profile snapshot in SharedData.
+  /// Called from extension processes that cannot access SwiftData.
+  static func setSuppression(for profileID: String, until date: Date) {
+    withLock {
+      var all = profileSnapshots
+      guard var snapshot = all[profileID] else { return }
+      snapshot.scheduleSuppressedUntil = date
+      all[profileID] = snapshot
+      profileSnapshots = all
+    }
+  }
+
   static func flushActiveSession() {
     withLock {
       activeSharedSession = nil

@@ -51,6 +51,20 @@ class StrategyTimerActivity: TimerActivity {
       return
     }
 
+    // If this was a schedule-started session, suppress schedule restart until next window.
+    // Schedule-started sessions have tag == profile UUID (set by createSessionForSchedular).
+    let isScheduleStarted = (activeSession.tag == profileId)
+    if isScheduleStarted,
+      let startSchedule = profile.startSchedule,
+      profile.startTriggersSchedule == true
+    {
+      if let nextStart = startSchedule.nextScheduledStartTime(after: Date()) {
+        log.info(
+          "Stop strategy timer for \(profileId), suppressing schedule until \(nextStart)")
+        SharedData.setSuppression(for: profileId, until: nextStart)
+      }
+    }
+
     // End restrictions
     appBlocker.deactivateRestrictions()
 
