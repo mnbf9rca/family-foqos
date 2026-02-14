@@ -79,6 +79,21 @@ struct ProfileScheduleTime: Codable, Equatable {
     return calendar.date(from: components)
   }
 
+  /// Whether this schedule's current-window start should be suppressed
+  /// because the user manually stopped it after the start time.
+  ///
+  /// Compares today's scheduled start time against the last stop time:
+  /// if `todayStart <= lastStoppedAt`, this occurrence was already dismissed.
+  func shouldSuppressStart(
+    lastStoppedAt: Date?,
+    on date: Date = Date(),
+    calendar: Calendar = .current
+  ) -> Bool {
+    guard let stoppedAt = lastStoppedAt else { return false }
+    guard let todayStart = scheduledStartTime(on: date, calendar: calendar) else { return false }
+    return todayStart <= stoppedAt
+  }
+
   var scheduleDescription: String {
     let dayNames = days.compactDaysText()
     let time = String(format: "%d:%02d", hour, minute)
