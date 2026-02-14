@@ -117,6 +117,8 @@ enum SharedData {
     // Device sync fields
     var syncVersion: Int?
     var needsAppSelection: Bool?
+
+    var scheduleSuppressedUntil: Date?
   }
 
   // MARK: – Serializable snapshot of a session (no profile object)
@@ -236,6 +238,18 @@ enum SharedData {
       completedSessionsInSchedular.append(existingScheduledSession)
 
       activeSharedSession = nil
+    }
+  }
+
+  /// Sets scheduleSuppressedUntil on the profile snapshot in SharedData.
+  /// Called from extension processes that cannot access SwiftData.
+  static func setSuppression(for profileID: String, until date: Date) {
+    withLock {
+      var all = profileSnapshots
+      guard var snapshot = all[profileID] else { return }
+      snapshot.scheduleSuppressedUntil = date
+      all[profileID] = snapshot
+      profileSnapshots = all
     }
   }
 

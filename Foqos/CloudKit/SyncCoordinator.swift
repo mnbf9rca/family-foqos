@@ -287,6 +287,7 @@ class SyncCoordinator: ObservableObject {
     profile.stopNFCTagId = synced.stopNFCTagId
     profile.stopQRCodeId = synced.stopQRCodeId
     profile.profileSchemaVersion = max(profile.profileSchemaVersion, synced.profileSchemaVersion)
+    profile.scheduleSuppressedUntil = synced.scheduleSuppressedUntil
 
     // Update snapshot for extensions
     BlockedProfiles.updateSnapshot(for: profile)
@@ -339,6 +340,7 @@ class SyncCoordinator: ObservableObject {
     profile.stopNFCTagId = synced.stopNFCTagId
     profile.stopQRCodeId = synced.stopQRCodeId
     profile.profileSchemaVersion = synced.profileSchemaVersion
+    profile.scheduleSuppressedUntil = synced.scheduleSuppressedUntil
 
     context.insert(profile)
     BlockedProfiles.updateSnapshot(for: profile)

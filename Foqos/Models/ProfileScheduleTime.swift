@@ -35,6 +35,42 @@ struct ProfileScheduleTime: Codable, Equatable {
       .joined(separator: " ")
   }
 
+  /// Returns the next future occurrence of this schedule after the given date.
+  /// Walks up to 7 days forward to find the next scheduled day.
+  func nextScheduledStartTime(after date: Date, calendar: Calendar = .current) -> Date? {
+    guard isActive else { return nil }
+
+    var components = calendar.dateComponents([.year, .month, .day], from: date)
+    components.hour = hour
+    components.minute = minute
+    components.second = 0
+    guard let todayStart = calendar.date(from: components) else { return nil }
+
+    // If we haven't passed today's start yet, today could be the candidate;
+    // otherwise start looking from tomorrow's start time.
+    var candidate: Date
+    if date < todayStart {
+      candidate = todayStart
+    } else {
+      guard let tomorrow = calendar.date(byAdding: .day, value: 1, to: todayStart) else {
+        return nil
+      }
+      candidate = tomorrow
+    }
+
+    for _ in 0..<7 {
+      let weekdayRaw = calendar.component(.weekday, from: candidate)
+      if let weekday = Weekday(rawValue: weekdayRaw), days.contains(weekday) {
+        return candidate
+      }
+      guard let nextDay = calendar.date(byAdding: .day, value: 1, to: candidate) else {
+        return nil
+      }
+      candidate = nextDay
+    }
+    return nil
+  }
+
   var scheduleDescription: String {
     let dayNames = days.map { $0.shortLabel }.joined(separator: " ")
     let time = String(format: "%d:%02d", hour, minute)

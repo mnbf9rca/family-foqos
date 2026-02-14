@@ -100,6 +100,184 @@ final class ProfileScheduleTimeTests: XCTestCase {
     XCTAssertEqual(schedule.formattedTime, "12:00 AM")
   }
 
+  // MARK: - nextScheduledStartTime tests
+
+  func testNextScheduledStartTime_dailySchedule_beforeStartTime_returnsToday() {
+    let now = Date()
+    let calendar = Calendar.current
+
+    // Build a schedule for "every day at 23:00"
+    let schedule = ProfileScheduleTime(
+      days: Weekday.allCases,
+      hour: 23,
+      minute: 0,
+      updatedAt: now
+    )
+
+    // Set "now" to today at 10:00 (before 23:00)
+    var components = calendar.dateComponents([.year, .month, .day], from: now)
+    components.hour = 10
+    components.minute = 0
+    components.second = 0
+    let morning = calendar.date(from: components)!
+
+    let result = schedule.nextScheduledStartTime(after: morning, calendar: calendar)
+    XCTAssertNotNil(result)
+
+    // Should be today at 23:00
+    let resultComponents = calendar.dateComponents(
+      [.year, .month, .day, .hour, .minute], from: result!)
+    let morningComponents = calendar.dateComponents([.year, .month, .day], from: morning)
+    XCTAssertEqual(resultComponents.year, morningComponents.year)
+    XCTAssertEqual(resultComponents.month, morningComponents.month)
+    XCTAssertEqual(resultComponents.day, morningComponents.day)
+    XCTAssertEqual(resultComponents.hour, 23)
+    XCTAssertEqual(resultComponents.minute, 0)
+  }
+
+  func testNextScheduledStartTime_dailySchedule_afterStartTime_returnsTomorrow() {
+    let now = Date()
+    let calendar = Calendar.current
+
+    let schedule = ProfileScheduleTime(
+      days: Weekday.allCases,
+      hour: 14,
+      minute: 0,
+      updatedAt: now
+    )
+
+    // Set "now" to today at 15:00 (after 14:00)
+    var components = calendar.dateComponents([.year, .month, .day], from: now)
+    components.hour = 15
+    components.minute = 0
+    components.second = 0
+    let afternoon = calendar.date(from: components)!
+
+    let result = schedule.nextScheduledStartTime(after: afternoon, calendar: calendar)
+    XCTAssertNotNil(result)
+
+    // Should be tomorrow at 14:00
+    let tomorrow = calendar.date(byAdding: .day, value: 1, to: afternoon)!
+    let resultComponents = calendar.dateComponents(
+      [.year, .month, .day, .hour, .minute], from: result!)
+    let tomorrowComponents = calendar.dateComponents([.year, .month, .day], from: tomorrow)
+    XCTAssertEqual(resultComponents.year, tomorrowComponents.year)
+    XCTAssertEqual(resultComponents.month, tomorrowComponents.month)
+    XCTAssertEqual(resultComponents.day, tomorrowComponents.day)
+    XCTAssertEqual(resultComponents.hour, 14)
+    XCTAssertEqual(resultComponents.minute, 0)
+  }
+
+  func testNextScheduledStartTime_weekdaySchedule_skipsNonScheduledDays() {
+    let now = Date()
+    let calendar = Calendar.current
+
+    // Build a date that is a known Wednesday at 15:00
+    var wednesdayComponents = calendar.dateComponents(
+      [.yearForWeekOfYear, .weekOfYear], from: now)
+    wednesdayComponents.weekday = Weekday.wednesday.rawValue  // 4
+    wednesdayComponents.hour = 15
+    wednesdayComponents.minute = 0
+    wednesdayComponents.second = 0
+    let wednesday = calendar.date(from: wednesdayComponents)!
+
+    // Schedule only on Fridays at 14:00
+    let schedule = ProfileScheduleTime(
+      days: [.friday],
+      hour: 14,
+      minute: 0,
+      updatedAt: now
+    )
+
+    let result = schedule.nextScheduledStartTime(after: wednesday, calendar: calendar)
+    XCTAssertNotNil(result)
+
+    // Should be this Friday at 14:00 (2 days later)
+    let resultComponents = calendar.dateComponents([.weekday, .hour, .minute], from: result!)
+    XCTAssertEqual(resultComponents.weekday, Weekday.friday.rawValue)  // 6
+    XCTAssertEqual(resultComponents.hour, 14)
+    XCTAssertEqual(resultComponents.minute, 0)
+  }
+
+  func testNextScheduledStartTime_emptyDays_returnsNil() {
+    let schedule = ProfileScheduleTime(
+      days: [],
+      hour: 14,
+      minute: 0,
+      updatedAt: Date()
+    )
+    XCTAssertNil(schedule.nextScheduledStartTime(after: Date()))
+  }
+
+  func testNextScheduledStartTime_exactlyAtStartTime_returnsTomorrow() {
+    let now = Date()
+    let calendar = Calendar.current
+
+    let schedule = ProfileScheduleTime(
+      days: Weekday.allCases,
+      hour: 14,
+      minute: 0,
+      updatedAt: now
+    )
+
+    // Set "now" to exactly 14:00
+    var components = calendar.dateComponents([.year, .month, .day], from: now)
+    components.hour = 14
+    components.minute = 0
+    components.second = 0
+    let exact = calendar.date(from: components)!
+
+    let result = schedule.nextScheduledStartTime(after: exact, calendar: calendar)
+    XCTAssertNotNil(result)
+
+    // At exactly the start time, we're "not before" it, so next is tomorrow
+    let tomorrow = calendar.date(byAdding: .day, value: 1, to: exact)!
+    let resultDay = calendar.component(.day, from: result!)
+    let tomorrowDay = calendar.component(.day, from: tomorrow)
+    XCTAssertEqual(resultDay, tomorrowDay)
+  }
+
+  func testNextScheduledStartTime_dstSpringForwardGap_returnsNilInsteadOfCrashing() {
+    // US Eastern: March 9, 2025 at 2:00 AM clocks jump to 3:00 AM
+    // So 2:30 AM doesn't exist on that day
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(identifier: "America/New_York")!
+
+    // Schedule at 2:30 AM daily
+    let schedule = ProfileScheduleTime(
+      days: Weekday.allCases,
+      hour: 2,
+      minute: 30,
+      updatedAt: Date(timeIntervalSince1970: 0)
+    )
+
+    // "now" is March 9, 2025 at 1:00 AM EST (before the gap)
+    var components = DateComponents()
+    components.year = 2025
+    components.month = 3
+    components.day = 9
+    components.hour = 1
+    components.minute = 0
+    components.second = 0
+    let beforeGap = calendar.date(from: components)!
+
+    // Should NOT crash — should return nil or skip to next valid day
+    let result = schedule.nextScheduledStartTime(after: beforeGap, calendar: calendar)
+    // Result could be nil (gap day skipped) or the next valid occurrence — either is fine
+    // The key assertion: we didn't crash
+    if let result = result {
+      // If it returns a date, it should NOT be March 9 at 2:30 (that doesn't exist)
+      let resultComponents = calendar.dateComponents([.month, .day, .hour], from: result)
+      let isGapDay = resultComponents.month == 3 && resultComponents.day == 9
+      if isGapDay {
+        // If it picked March 9, the hour should have been adjusted (not 2:30)
+        XCTAssertNotEqual(
+          resultComponents.hour, 2,
+          "Should not return a time in the DST gap")
+      }
+    }
+  }
+
   func testCodableRoundTrip() throws {
     let original = ProfileScheduleTime(
       days: [.monday, .wednesday, .friday],
