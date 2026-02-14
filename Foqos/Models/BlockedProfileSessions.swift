@@ -94,6 +94,15 @@ class BlockedProfileSession: BreakDurationCalculable {
     SharedData.setEndTime(date: endTime)
     self.endTime = endTime
 
+    // If this was a schedule-started session, suppress until next start time
+    if forceStarted, modelContext != nil {
+      let profile = blockedProfile
+      if let nextStart = profile.startSchedule?.nextScheduledStartTime(after: endTime) {
+        profile.scheduleSuppressedUntil = nextStart
+        BlockedProfiles.updateSnapshot(for: profile)
+      }
+    }
+
     SharedData.flushActiveSession()
   }
 
