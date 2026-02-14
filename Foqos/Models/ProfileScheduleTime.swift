@@ -19,7 +19,7 @@ struct ProfileScheduleTime: Codable, Equatable {
   }
 
   func olderThanOneMinute(now: Date = Date()) -> Bool {
-    return now.timeIntervalSince(updatedAt) > 60
+    return now.timeIntervalSince(updatedAt) > 1 * 60
   }
 
   var formattedTime: String {
