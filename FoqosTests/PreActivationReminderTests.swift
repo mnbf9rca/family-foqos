@@ -73,16 +73,16 @@ final class PreActivationReminderTests: XCTestCase {
 
   func testPreActivationReminderTimes_deduplicatesAndSorts() {
     let profile = BlockedProfiles(name: "Test")
-    profile.preActivationReminderTimes = [3, 1, 3, 2]
+    profile.preActivationReminderTimes = [5, 1, 5, 3]
 
-    XCTAssertEqual(profile.preActivationReminderTimes, [1, 2, 3])
+    XCTAssertEqual(profile.preActivationReminderTimes, [1, 3, 5])
   }
 
   func testPreActivationReminderTimes_filtersOutOfRangeValues() {
     let profile = BlockedProfiles(name: "Test")
-    profile.preActivationReminderTimes = [0, 1, 3, 6, 255]
+    profile.preActivationReminderTimes = [0, 1, 2, 3, 4, 5, 6, 255]
 
-    XCTAssertEqual(profile.preActivationReminderTimes, [1, 3])
+    XCTAssertEqual(profile.preActivationReminderTimes, [1, 3, 5])
   }
 
   func testPreActivationReminderEnabled_emptyMeansDisabled() {
@@ -94,7 +94,7 @@ final class PreActivationReminderTests: XCTestCase {
 
   func testPreActivationReminderEnabled_nonEmptyMeansEnabled() {
     let profile = BlockedProfiles(name: "Test")
-    profile.preActivationReminderTimes = [2]
+    profile.preActivationReminderTimes = [3]
 
     XCTAssertTrue(profile.preActivationReminderEnabled)
   }

@@ -53,10 +53,11 @@ final class TimersUtil: @unchecked Sendable {  // SAFETY: Mutable state (backgro
   }
 
   /// Supported pre-activation reminder range (minutes before scheduled start)
-  static let supportedReminderRange: ClosedRange<UInt8> = 1...5
+  static let supportedReminderRange: [UInt8] = [1, 3, 5]
 
   static func allPreActivationReminderIdentifiers(for profileId: UUID) -> [String] {
-    supportedReminderRange.map { preActivationReminderIdentifier(for: profileId, minutes: Int($0)) }
+    // Always cancel identifiers for 1-5 (not just supported range) to clean up stale reminders
+    (1...5).map { preActivationReminderIdentifier(for: profileId, minutes: $0) }
   }
 
   static func cancelAllPreActivationReminders(for profileId: UUID) {
