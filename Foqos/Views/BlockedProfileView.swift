@@ -512,46 +512,24 @@ struct BlockedProfileView: View {
                   .font(.caption)
                   .foregroundColor(.secondary)
 
-                HStack(spacing: 8) {
-                  ForEach(TimersUtil.supportedReminderRange, id: \.self) { minutes in
-                    let isSelected = preActivationReminderTimes.contains(minutes)
-                    Button {
-                      if isSelected {
-                        preActivationReminderTimes.remove(minutes)
-                      } else {
-                        preActivationReminderTimes.insert(minutes)
+                ForEach(TimersUtil.supportedReminderRange, id: \.self) { minutes in
+                  Toggle(
+                    minutes == 1
+                      ? "1 minute before"
+                      : "\(minutes) minutes before",
+                    isOn: Binding(
+                      get: { preActivationReminderTimes.contains(minutes) },
+                      set: { enabled in
+                        if enabled {
+                          preActivationReminderTimes.insert(minutes)
+                        } else {
+                          preActivationReminderTimes.remove(minutes)
+                        }
                       }
-                    } label: {
-                      Text("\(minutes) min")
-                        .font(.caption)
-                        .fontWeight(isSelected ? .semibold : .regular)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(
-                          isSelected
-                            ? themeManager.themeColor.opacity(0.15)
-                            : Color(.systemGray6)
-                        )
-                        .foregroundColor(
-                          isSelected ? themeManager.themeColor : .secondary
-                        )
-                        .clipShape(Capsule())
-                        .overlay(
-                          Capsule()
-                            .strokeBorder(
-                              isSelected
-                                ? themeManager.themeColor
-                                : Color(.systemGray4),
-                              lineWidth: 1
-                            )
-                        )
-                    }
-                    .disabled(isBlocking)
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("\(minutes)-minute reminder")
-                    .accessibilityValue(isSelected ? "Selected" : "Not selected")
-                    .accessibilityAddTraits(isSelected ? [.isSelected] : [])
-                  }
+                    )
+                  )
+                  .tint(themeManager.themeColor)
+                  .disabled(isBlocking)
                 }
               }
             }
