@@ -32,6 +32,37 @@ enum Weekday: Int, CaseIterable, Codable, Equatable {
     case .saturday: return "Sa"
     }
   }
+
+  /// Returns all weekdays ordered by the locale's first day of week.
+  static func localeOrdered(calendar: Calendar = .current) -> [Weekday] {
+    let first = calendar.firstWeekday  // 1=Sunday, 2=Monday, etc.
+    return (0..<7).compactMap { offset in
+      Weekday(rawValue: ((first - 1 + offset) % 7) + 1)
+    }
+  }
+}
+
+extension Array where Element == Weekday {
+  /// Sorts weekdays by locale order (e.g., Monday-first in EU locales).
+  func localeSorted(calendar: Calendar = .current) -> [Weekday] {
+    let order = Weekday.localeOrdered(calendar: calendar)
+    return self.sorted { a, b in
+      (order.firstIndex(of: a) ?? 0) < (order.firstIndex(of: b) ?? 0)
+    }
+  }
+
+  /// Compact display text: "Every day", "Weekdays", "Weekends", or short labels.
+  func compactDaysText(calendar: Calendar = .current) -> String {
+    let daySet = Set(self)
+    if daySet.count == 7 { return "Every day" }
+    let weekdays: Set<Weekday> = [.monday, .tuesday, .wednesday, .thursday, .friday]
+    if daySet == weekdays { return "Weekdays" }
+    let weekends: Set<Weekday> = [.saturday, .sunday]
+    if daySet == weekends { return "Weekends" }
+    return self.localeSorted(calendar: calendar)
+      .map { $0.shortLabel }
+      .joined(separator: " ")
+  }
 }
 
 struct BlockedProfileSchedule: Codable, Equatable {
@@ -55,11 +86,7 @@ struct BlockedProfileSchedule: Codable, Equatable {
   var summaryText: String {
     guard isActive else { return "No Schedule Set" }
 
-    let daysSummary =
-      days
-      .sorted { $0.rawValue < $1.rawValue }
-      .map { $0.shortLabel }
-      .joined(separator: " ")
+    let daysSummary = days.compactDaysText()
 
     let start = formattedTimeString(hour24: startHour, minute: startMinute)
     let end = formattedTimeString(hour24: endHour, minute: endMinute)
