@@ -42,9 +42,10 @@ class BlockedProfiles {
 
   var disableBackgroundStops: Bool = false
 
-  /// When set, suppresses scheduled auto-start until this date passes.
-  /// Set on manual stop of a schedule-started session, cleared naturally by time comparison.
-  var scheduleSuppressedUntil: Date?
+  /// Records when a schedule-started session was last manually stopped.
+  /// The reader in ScheduleTimerActivity compares this against today's start time
+  /// to decide whether this window was already dismissed.
+  var scheduleLastStoppedAt: Date?
 
   // Pre-activation reminders for scheduled profiles (JSON-encoded [UInt8])
   var preActivationReminderTimesData: Data?
@@ -520,7 +521,7 @@ class BlockedProfiles {
       managedByChildId: profile.managedByChildId,
       syncVersion: profile.syncVersion,
       needsAppSelection: profile.needsAppSelection,
-      scheduleSuppressedUntil: profile.scheduleSuppressedUntil
+      scheduleLastStoppedAt: profile.scheduleLastStoppedAt
     )
   }
 

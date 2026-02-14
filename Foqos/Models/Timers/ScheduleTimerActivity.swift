@@ -67,10 +67,12 @@ class ScheduleTimerActivity: TimerActivity {
       return
     }
 
-    // Check if schedule was manually suppressed (user stopped it this window)
-    if let suppressedUntil = profile.scheduleSuppressedUntil, Date() < suppressedUntil {
+    // V2 only: skip if user already stopped this schedule window
+    if let startSchedule = profile.startSchedule, profile.startTriggersSchedule == true,
+      startSchedule.shouldSuppressStart(lastStoppedAt: profile.scheduleLastStoppedAt)
+    {
       log.info(
-        "Start schedule timer activity for \(profileId), suppressed until \(suppressedUntil)")
+        "Start schedule timer activity for \(profileId), already stopped this window")
       return
     }
 
