@@ -274,6 +274,8 @@ final class TimersUtil: @unchecked Sendable {  // SAFETY: Mutable state (backgro
   func cancelAllNotifications() {
     UNUserNotificationCenter.current()
       .removeAllPendingNotificationRequests()
+    UNUserNotificationCenter.current()
+      .removeAllDeliveredNotifications()
   }
 
   func cancelAll() {
