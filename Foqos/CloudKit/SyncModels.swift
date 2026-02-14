@@ -119,7 +119,7 @@ struct SyncedProfile: Codable, Equatable {
     case originDeviceId
     case version
     case profileSchemaVersion
-    case scheduleLastStoppedAt = "scheduleSuppressedUntil"
+    case scheduleLastStoppedAt
   }
 
   // MARK: - CloudKit Conversion
