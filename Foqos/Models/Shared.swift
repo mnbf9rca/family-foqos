@@ -117,6 +117,8 @@ enum SharedData {
     // Device sync fields
     var syncVersion: Int?
     var needsAppSelection: Bool?
+
+    var scheduleSuppressedUntil: Date?
   }
 
   // MARK: – Serializable snapshot of a session (no profile object)
