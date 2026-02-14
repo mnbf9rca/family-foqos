@@ -286,6 +286,7 @@ strategy.onSessionCreation = { [weak self] status in
 - Mock dependencies for unit tests
 - Test both success and failure paths
 - Name tests descriptively: `testGivenX_WhenY_ThenZ()`
+- Pin time in tests: never call `Date()` more than once per test. Capture a single `let now = Date()` and derive all other dates from it. Inject `now` into the method under test via `now:` parameters. This prevents flaky failures from clock drift between independent `Date()` calls.
 
 ## App Modes & Lock Code Behavior
 

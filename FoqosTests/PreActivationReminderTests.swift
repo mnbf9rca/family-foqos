@@ -79,11 +79,12 @@ final class PreActivationReminderTests: XCTestCase {
 
   func testReminderTimeCalculation() {
     let calendar = Calendar.current
-    let now = Date()
+    // Use a fixed reference date to avoid midnight/DST boundary issues
+    let referenceDate = Date(timeIntervalSince1970: 1_700_000_000)  // 2023-11-14
 
     guard
       let scheduledStart = calendar.date(
-        bySettingHour: 10, minute: 0, second: 0, of: now
+        bySettingHour: 10, minute: 0, second: 0, of: referenceDate
       )
     else {
       XCTFail("Could not create scheduled start time")

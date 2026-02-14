@@ -6,12 +6,17 @@ final class TimerIntervalTests: XCTestCase {
 
   // MARK: - Helper
 
-  /// Build a Date for today at the given hour:minute.
+  /// Build a deterministic Date at the given hour:minute on a fixed reference day.
+  /// Uses a hardcoded date to avoid midnight/DST boundary issues with `Date()`.
   private func todayAt(hour: Int, minute: Int) -> Date {
-    let calendar = Calendar.current
-    return calendar.date(
-      bySettingHour: hour, minute: minute, second: 0, of: Date()
-    )!
+    var components = DateComponents()
+    components.year = 2025
+    components.month = 6
+    components.day = 15
+    components.hour = hour
+    components.minute = minute
+    components.second = 0
+    return Calendar.current.date(from: components)!
   }
 
   // MARK: - Same-day timer

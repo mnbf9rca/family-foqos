@@ -16,25 +16,27 @@ final class ProfileScheduleTimeTests: XCTestCase {
   }
 
   func testIsTodayScheduled_whenTodayInDays_returnsTrue() {
+    let now = Date()
     let calendar = Calendar.current
-    let today = calendar.component(.weekday, from: Date())
+    let today = calendar.component(.weekday, from: now)
     let weekday = Weekday(rawValue: today)!
 
     let schedule = ProfileScheduleTime(
-      days: [weekday], hour: 9, minute: 0, updatedAt: Date()
+      days: [weekday], hour: 9, minute: 0, updatedAt: now
     )
-    XCTAssertTrue(schedule.isTodayScheduled())
+    XCTAssertTrue(schedule.isTodayScheduled(now: now))
   }
 
   func testIsTodayScheduled_whenTodayNotInDays_returnsFalse() {
+    let now = Date()
     let calendar = Calendar.current
-    let today = calendar.component(.weekday, from: Date())
+    let today = calendar.component(.weekday, from: now)
     let otherDay = Weekday.allCases.first { $0.rawValue != today }!
 
     let schedule = ProfileScheduleTime(
-      days: [otherDay], hour: 9, minute: 0, updatedAt: Date()
+      days: [otherDay], hour: 9, minute: 0, updatedAt: now
     )
-    XCTAssertFalse(schedule.isTodayScheduled())
+    XCTAssertFalse(schedule.isTodayScheduled(now: now))
   }
 
   func testIsTodayScheduled_whenDaysEmpty_returnsFalse() {
@@ -45,11 +47,12 @@ final class ProfileScheduleTimeTests: XCTestCase {
   }
 
   func testOlderThanOneMinute_whenOld_returnsTrue() {
+    let now = Date()
     let schedule = ProfileScheduleTime(
       days: [.monday], hour: 9, minute: 0,
-      updatedAt: Date().addingTimeInterval(-61)
+      updatedAt: now.addingTimeInterval(-61)
     )
-    XCTAssertTrue(schedule.olderThanOneMinute())
+    XCTAssertTrue(schedule.olderThanOneMinute(now: now))
   }
 
   func testOlderThanOneMinute_whenExactlyOneMinute_returnsFalse() {
@@ -62,10 +65,11 @@ final class ProfileScheduleTimeTests: XCTestCase {
   }
 
   func testOlderThanOneMinute_whenRecent_returnsFalse() {
+    let now = Date()
     let schedule = ProfileScheduleTime(
-      days: [.monday], hour: 9, minute: 0, updatedAt: Date()
+      days: [.monday], hour: 9, minute: 0, updatedAt: now
     )
-    XCTAssertFalse(schedule.olderThanOneMinute())
+    XCTAssertFalse(schedule.olderThanOneMinute(now: now))
   }
 
   func testFormattedTime_am() {

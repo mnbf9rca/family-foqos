@@ -102,11 +102,12 @@ final class ProfileSessionRecordTests: XCTestCase {
 
   func testBreakTimesAreUpdated() {
     var record = ProfileSessionRecord(profileId: UUID())
-    let breakStart = Date()
-    let breakEnd = Date().addingTimeInterval(300)
+    let now = Date()
+    let breakStart = now
+    let breakEnd = now.addingTimeInterval(300)
 
     // Start session
-    _ = record.applyUpdate(isActive: true, sequenceNumber: 1, deviceId: "a", startTime: Date())
+    _ = record.applyUpdate(isActive: true, sequenceNumber: 1, deviceId: "a", startTime: now)
 
     // Update with break times
     _ = record.applyUpdate(
