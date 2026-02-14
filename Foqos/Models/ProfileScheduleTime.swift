@@ -30,7 +30,7 @@ struct ProfileScheduleTime: Codable, Equatable {
   }
 
   var daysText: String {
-    days.sorted { $0.rawValue < $1.rawValue }
+    days.localeSorted()
       .map { $0.shortLabel }
       .joined(separator: " ")
   }
@@ -72,7 +72,7 @@ struct ProfileScheduleTime: Codable, Equatable {
   }
 
   var scheduleDescription: String {
-    let dayNames = days.map { $0.shortLabel }.joined(separator: " ")
+    let dayNames = days.localeSorted().map { $0.shortLabel }.joined(separator: " ")
     let time = String(format: "%d:%02d", hour, minute)
     return "\(dayNames) at \(time)"
   }

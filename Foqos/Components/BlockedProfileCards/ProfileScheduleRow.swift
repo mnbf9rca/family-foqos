@@ -46,13 +46,13 @@ struct ProfileScheduleRow: View {
       if let stop = profile.stopSchedule, profile.stopConditions.schedule {
         allDays.formUnion(stop.days)
       }
-      return allDays.sorted { $0.rawValue < $1.rawValue }
+      return Array(allDays).localeSorted()
         .map { $0.shortLabel }
         .joined(separator: " ")
     }
     guard let schedule = profile.schedule, schedule.isActive else { return "" }
     return schedule.days
-      .sorted { $0.rawValue < $1.rawValue }
+      .localeSorted()
       .map { $0.shortLabel }
       .joined(separator: " ")
   }

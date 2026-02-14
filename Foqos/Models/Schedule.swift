@@ -75,7 +75,7 @@ struct BlockedProfileSchedule: Codable, Equatable {
 
     let daysSummary =
       days
-      .sorted { $0.rawValue < $1.rawValue }
+      .localeSorted()
       .map { $0.shortLabel }
       .joined(separator: " ")
 
