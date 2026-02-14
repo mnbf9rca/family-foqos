@@ -84,6 +84,9 @@ class ScheduleTimerActivity: TimerActivity {
     UNUserNotificationCenter.current().removePendingNotificationRequests(
       withIdentifiers: reminderIds
     )
+    UNUserNotificationCenter.current().removeDeliveredNotifications(
+      withIdentifiers: reminderIds
+    )
   }
 
   func stop(for profile: SharedData.ProfileSnapshot) {
