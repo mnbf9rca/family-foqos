@@ -85,6 +85,17 @@ final class PreActivationReminderTests: XCTestCase {
     XCTAssertEqual(profile.preActivationReminderTimes, [1, 3, 5])
   }
 
+  func testPreActivationReminderTimes_getterFiltersLegacyPersistedValues() {
+    let profile = BlockedProfiles(name: "Test")
+    // Bypass the setter by writing directly to the raw data property,
+    // simulating legacy persisted data or unfiltered CloudKit sync
+    let legacyValues: [UInt8] = [1, 2, 3, 4, 5]
+    profile.preActivationReminderTimesData = try! JSONEncoder().encode(legacyValues)
+
+    // Getter should filter out unsupported values (2, 4)
+    XCTAssertEqual(profile.preActivationReminderTimes, [1, 3, 5])
+  }
+
   func testPreActivationReminderEnabled_emptyMeansDisabled() {
     let profile = BlockedProfiles(name: "Test")
     profile.preActivationReminderTimes = []
