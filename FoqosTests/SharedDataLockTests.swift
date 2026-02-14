@@ -52,7 +52,8 @@ final class SharedDataLockTests: XCTestCase {
         group.leave()
       }
     }
-    group.wait()
+    let result = group.wait(timeout: .now() + 10)
+    XCTAssertEqual(result, .success, "Concurrent writes timed out — possible deadlock")
 
     // Then: all entries present (no lost writes)
     let all = SharedData.profileSnapshots

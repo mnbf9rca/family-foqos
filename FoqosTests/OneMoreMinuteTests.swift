@@ -134,8 +134,8 @@ final class OneMoreMinuteTests: XCTestCase {
 
   func testOneMoreMinuteActiveWhenStartTimeWithin60Seconds() {
     // When start time is within 60 seconds, should be active
-    let startTime = Date()
     let now = Date()
+    let startTime = now
     let timeSinceStart = now.timeIntervalSince(startTime)
     let isActive = timeSinceStart < 60
 
@@ -144,8 +144,8 @@ final class OneMoreMinuteTests: XCTestCase {
 
   func testOneMoreMinuteNotActiveWhenStartTimeOver60Seconds() {
     // When start time is over 60 seconds ago, should not be active
-    let startTime = Date().addingTimeInterval(-61)  // 61 seconds ago
     let now = Date()
+    let startTime = now.addingTimeInterval(-61)  // 61 seconds ago
     let timeSinceStart = now.timeIntervalSince(startTime)
     let isActive = timeSinceStart < 60
 
@@ -154,10 +154,11 @@ final class OneMoreMinuteTests: XCTestCase {
 
   func testOneMoreMinuteNotActiveWhenNoStartTime() {
     // When start time is nil, should not be active
+    let now = Date()
     let startTime: Date? = nil
     let isActive: Bool
     if let start = startTime {
-      isActive = Date().timeIntervalSince(start) < 60
+      isActive = now.timeIntervalSince(start) < 60
     } else {
       isActive = false
     }
@@ -168,17 +169,19 @@ final class OneMoreMinuteTests: XCTestCase {
   // MARK: - Time Remaining Calculation Tests
 
   func testTimeRemainingCalculation() {
-    let startTime = Date().addingTimeInterval(-30)  // Started 30 seconds ago
-    let elapsed = Date().timeIntervalSince(startTime)
+    let now = Date()
+    let startTime = now.addingTimeInterval(-30)  // Started 30 seconds ago
+    let elapsed = now.timeIntervalSince(startTime)
     let remaining = max(0, 60 - elapsed)
 
-    // Should have approximately 30 seconds remaining (within a small margin for test execution)
-    XCTAssertTrue(remaining > 29 && remaining <= 30)
+    // Exactly 30 seconds remaining (deterministic with pinned time)
+    XCTAssertEqual(remaining, 30, accuracy: 0.001)
   }
 
   func testTimeRemainingZeroWhenExpired() {
-    let startTime = Date().addingTimeInterval(-65)  // Started 65 seconds ago
-    let elapsed = Date().timeIntervalSince(startTime)
+    let now = Date()
+    let startTime = now.addingTimeInterval(-65)  // Started 65 seconds ago
+    let elapsed = now.timeIntervalSince(startTime)
     let remaining = max(0, 60 - elapsed)
 
     XCTAssertEqual(remaining, 0)
