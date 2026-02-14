@@ -32,6 +32,22 @@ final class TimersUtil: @unchecked Sendable {  // SAFETY: Mutable state (backgro
   /// Pre-activation reminder notification identifier prefix
   static let preActivationReminderPrefix = "pre-activation-reminder-"
 
+  /// Thread identifier for grouping pre-activation reminders per profile
+  static func preActivationReminderThreadIdentifier(for profileId: UUID) -> String {
+    return "\(preActivationReminderPrefix)\(profileId.uuidString)"
+  }
+
+  /// Extract profile UUID from a pre-activation reminder notification identifier.
+  /// Returns nil if the identifier doesn't match the expected format.
+  static func profileIdFromReminderIdentifier(_ identifier: String) -> UUID? {
+    guard identifier.hasPrefix(preActivationReminderPrefix) else { return nil }
+    let remainder = String(identifier.dropFirst(preActivationReminderPrefix.count))
+    // Format: "UUID-minutes" — UUID is 36 chars, then "-", then digits
+    guard remainder.count > 36 else { return nil }
+    let uuidString = String(remainder.prefix(36))
+    return UUID(uuidString: uuidString)
+  }
+
   static func preActivationReminderIdentifier(for profileId: UUID, minutes: Int) -> String {
     return "\(preActivationReminderPrefix)\(profileId.uuidString)-\(minutes)"
   }
