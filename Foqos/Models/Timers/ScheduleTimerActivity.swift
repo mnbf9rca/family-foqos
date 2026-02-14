@@ -33,7 +33,7 @@ class ScheduleTimerActivity: TimerActivity {
     // Cancel any pre-activation reminders now that the start time has arrived,
     // regardless of whether the profile actually starts (early returns below).
     // SYNC: identifier format must match TimersUtil.preActivationReminderIdentifier(for:minutes:)
-    // SYNC: range must match TimersUtil.supportedReminderRange
+    // SYNC: cancels full 1-5 range intentionally (matches allPreActivationReminderIdentifiers)
     let reminderIds = (1...5).map { "pre-activation-reminder-\(profile.id.uuidString)-\($0)" }
     UNUserNotificationCenter.current().removePendingNotificationRequests(
       withIdentifiers: reminderIds

@@ -55,6 +55,7 @@ class BlockedProfiles {
       guard let data = preActivationReminderTimesData else { return [] }
       do {
         return try JSONDecoder().decode([UInt8].self, from: data)
+          .filter { TimersUtil.supportedReminderOptions.contains($0) }
       } catch {
         Log.error(
           "Failed to decode preActivationReminderTimes: \(error.localizedDescription)",
@@ -64,7 +65,7 @@ class BlockedProfiles {
       }
     }
     set {
-      let filtered = Set(newValue.filter { TimersUtil.supportedReminderRange.contains($0) })
+      let filtered = Set(newValue.filter { TimersUtil.supportedReminderOptions.contains($0) })
       let sorted = Array(filtered).sorted()
       do {
         preActivationReminderTimesData = try JSONEncoder().encode(sorted)

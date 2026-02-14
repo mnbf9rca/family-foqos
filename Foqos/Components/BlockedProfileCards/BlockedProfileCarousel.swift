@@ -33,7 +33,12 @@ struct BlockedProfileCarousel: View {
   private let cardSpacing: CGFloat = 12
   private let dragThreshold: CGFloat = 50
 
-  private var cardHeight: CGFloat = 240
+  private var cardHeight: CGFloat {
+    if isBlocking {
+      return isBreakAvailable ? 360 : 320
+    }
+    return 240
+  }
 
   /// Filtered profiles excluding deleted models
   private var validProfiles: [BlockedProfiles] {
@@ -227,6 +232,7 @@ struct BlockedProfileCarousel: View {
           }
         }
         .frame(height: cardHeight)
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: cardHeight)
         .padding(.bottom, 10)
 
         // Page indicator dots

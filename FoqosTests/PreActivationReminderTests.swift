@@ -32,7 +32,7 @@ final class PreActivationReminderTests: XCTestCase {
     let ids = TimersUtil.allPreActivationReminderIdentifiers(for: profileId)
 
     XCTAssertEqual(ids.count, 5)
-    for minutes in TimersUtil.supportedReminderRange {
+    for minutes in TimersUtil.allReminderCleanupRange {
       let expected = "pre-activation-reminder-\(profileId.uuidString)-\(minutes)"
       XCTAssertTrue(ids.contains(expected), "Missing identifier for \(minutes) minutes")
     }
@@ -73,16 +73,27 @@ final class PreActivationReminderTests: XCTestCase {
 
   func testPreActivationReminderTimes_deduplicatesAndSorts() {
     let profile = BlockedProfiles(name: "Test")
-    profile.preActivationReminderTimes = [3, 1, 3, 2]
+    profile.preActivationReminderTimes = [5, 1, 5, 3]
 
-    XCTAssertEqual(profile.preActivationReminderTimes, [1, 2, 3])
+    XCTAssertEqual(profile.preActivationReminderTimes, [1, 3, 5])
   }
 
   func testPreActivationReminderTimes_filtersOutOfRangeValues() {
     let profile = BlockedProfiles(name: "Test")
-    profile.preActivationReminderTimes = [0, 1, 3, 6, 255]
+    profile.preActivationReminderTimes = [0, 1, 2, 3, 4, 5, 6, 255]
 
-    XCTAssertEqual(profile.preActivationReminderTimes, [1, 3])
+    XCTAssertEqual(profile.preActivationReminderTimes, [1, 3, 5])
+  }
+
+  func testPreActivationReminderTimes_getterFiltersLegacyPersistedValues() {
+    let profile = BlockedProfiles(name: "Test")
+    // Bypass the setter by writing directly to the raw data property,
+    // simulating legacy persisted data or unfiltered CloudKit sync
+    let legacyValues: [UInt8] = [1, 2, 3, 4, 5]
+    profile.preActivationReminderTimesData = try! JSONEncoder().encode(legacyValues)
+
+    // Getter should filter out unsupported values (2, 4)
+    XCTAssertEqual(profile.preActivationReminderTimes, [1, 3, 5])
   }
 
   func testPreActivationReminderEnabled_emptyMeansDisabled() {
@@ -94,7 +105,7 @@ final class PreActivationReminderTests: XCTestCase {
 
   func testPreActivationReminderEnabled_nonEmptyMeansEnabled() {
     let profile = BlockedProfiles(name: "Test")
-    profile.preActivationReminderTimes = [2]
+    profile.preActivationReminderTimes = [3]
 
     XCTAssertTrue(profile.preActivationReminderEnabled)
   }
