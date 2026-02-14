@@ -53,11 +53,12 @@ final class ProfileScheduleTimeTests: XCTestCase {
   }
 
   func testOlderThanOneMinute_whenExactlyOneMinute_returnsFalse() {
+    let now = Date()
     let schedule = ProfileScheduleTime(
       days: [.monday], hour: 9, minute: 0,
-      updatedAt: Date().addingTimeInterval(-60)
+      updatedAt: now.addingTimeInterval(-60)
     )
-    XCTAssertFalse(schedule.olderThanOneMinute())
+    XCTAssertFalse(schedule.olderThanOneMinute(now: now))
   }
 
   func testOlderThanOneMinute_whenRecent_returnsFalse() {

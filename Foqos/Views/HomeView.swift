@@ -66,6 +66,9 @@ struct HomeView: View {
   @ObservedObject private var appModeManager = AppModeManager.shared
   @AppStorage("showModeSelection") private var showModeSelection = false
 
+  // Onboarding completion — persists across launches, cleared on app delete
+  @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
+
   // Sync conflict manager
   @ObservedObject private var syncConflictManager = SyncConflictManager.shared
 
@@ -257,12 +260,13 @@ struct HomeView: View {
       }
     }
     .onChange(of: requestAuthorizer.isAuthorized) { _, newValue in
+      Log.debug("isAuthorized changed to \(newValue)", category: .authorization)
       if newValue {
-        // Auth succeeded — just dismiss intro. No need to check hasSelectedMode here
-        // because IntroView's callback already sets showModeSelection = true before
-        // auth happens in ModeSelectionView.
         showIntroScreen = false
-      } else {
+        hasCompletedOnboarding = true
+      } else if !hasCompletedOnboarding {
+        // Only reset to onboarding for users who haven't completed it yet.
+        // Completed users who lose auth see AuthorizationCallout inline instead.
         showIntroScreen = true
         showModeSelection = false
       }
@@ -600,8 +604,27 @@ struct HomeView: View {
   private func onAppearApp() {
     try? strategyManager.loadActiveSession(context: context)
     strategyManager.cleanUpGhostSchedules(context: context)
-    // Safety net: if not authorized and both onboarding screens are dismissed, reset
-    if !requestAuthorizer.isAuthorized && !showIntroScreen && !showModeSelection {
+
+    // Migration: existing users upgrading from a version without hasCompletedOnboarding.
+    // showIntroScreen defaults to true, so if it's false the user must have completed
+    // onboarding in a prior version. Bootstrap the new flag for them.
+    // Also check !showModeSelection to avoid triggering for new users mid-onboarding
+    // (e.g., tapped "Get Started" but crashed before completing authorization).
+    if !hasCompletedOnboarding && !showIntroScreen && !showModeSelection {
+      Log.info(
+        "Upgrade migration: setting hasCompletedOnboarding=true for existing user",
+        category: .authorization)
+      hasCompletedOnboarding = true
+    }
+
+    // Safety net: if onboarding was never completed and both screens are dismissed, reset
+    Log.debug(
+      "onAppearApp safety net check: hasCompletedOnboarding=\(hasCompletedOnboarding), showIntroScreen=\(showIntroScreen), showModeSelection=\(showModeSelection)",
+      category: .authorization)
+    if !hasCompletedOnboarding && !showIntroScreen && !showModeSelection {
+      Log.warning(
+        "Safety net triggered: onboarding incomplete but both screens dismissed, resetting",
+        category: .authorization)
       showIntroScreen = true
     }
   }
@@ -628,9 +651,8 @@ struct HomeView: View {
     .environmentObject(StrategyManager())
     .defaultAppStorage(UserDefaults(suiteName: "preview")!)
     .onAppear {
-      UserDefaults(suiteName: "preview")!.set(
-        false,
-        forKey: "showIntroScreen"
-      )
+      let defaults = UserDefaults(suiteName: "preview")!
+      defaults.set(false, forKey: "showIntroScreen")
+      defaults.set(true, forKey: "hasCompletedOnboarding")
     }
 }

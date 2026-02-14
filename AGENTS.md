@@ -27,14 +27,19 @@ xcodebuild -project FamilyFoqos.xcodeproj -scheme FamilyFoqos -configuration Deb
 ### Running Tests
 The project has unit tests in the `FoqosTests` target. Run tests using:
 ```bash
-# Run all tests
-xcodebuild test -project FamilyFoqos.xcodeproj -scheme FamilyFoqos -destination 'platform=iOS Simulator,name=iPhone 17' | xcpretty
+# 1. Find and boot the simulator (do this ONCE per session)
+xcrun simctl list devices available | grep "iPhone 17"
+# Pick the iPhone 17 UUID from the output, e.g. B9E4A679-BDF3-4541-A59F-DA4BE21F80ED
+xcrun simctl boot <UUID>
 
-# Run a single test class
-xcodebuild test -project FamilyFoqos.xcodeproj -scheme FamilyFoqos -destination 'platform=iOS Simulator,name=iPhone 17' -only-testing:FoqosTests/ClassName | xcpretty
+# 2. Run all tests using the UUID (NOT the device name — using the name clones a new simulator every time)
+xcodebuild test -project FamilyFoqos.xcodeproj -scheme FamilyFoqos -destination 'platform=iOS Simulator,id=<UUID>' | xcpretty
+
+# 3. Run a single test class
+xcodebuild test -project FamilyFoqos.xcodeproj -scheme FamilyFoqos -destination 'platform=iOS Simulator,id=<UUID>' -only-testing:FoqosTests/ClassName | xcpretty
 ```
 
-**IMPORTANT:** Tests take 2-3 seconds, but starting a simulator takes 3-4 minutes. When running tests, prestart the simulator and wait for the simulator to be `ready` before executing tests. 
+**IMPORTANT:** Tests take 2-3 seconds, but starting a simulator takes 3-4 minutes. Always use the simulator UUID (not name) in the `-destination` flag to reuse the already-booted simulator. Using the device name causes xcodebuild to clone a new simulator instance each time. Boot the simulator once, then run tests as many times as needed.
 
 ### Code Formatting
 The project uses swift-format to maintain consistent code style. Configuration is in `.swift-format` at the repo root. A pre-commit hook auto-formats staged Swift files.
