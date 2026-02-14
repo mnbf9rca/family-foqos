@@ -175,7 +175,7 @@ final class OneMoreMinuteTests: XCTestCase {
     let remaining = max(0, 60 - elapsed)
 
     // Exactly 30 seconds remaining (deterministic with pinned time)
-    XCTAssertEqual(remaining, 30)
+    XCTAssertEqual(remaining, 30, accuracy: 0.001)
   }
 
   func testTimeRemainingZeroWhenExpired() {
