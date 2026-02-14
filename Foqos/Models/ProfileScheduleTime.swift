@@ -94,6 +94,49 @@ struct ProfileScheduleTime: Codable, Equatable {
     return todayStart <= stoppedAt
   }
 
+  /// Returns the start Date of the currently active schedule window, or nil
+  /// if the current time is not inside any window.
+  ///
+  /// - Start-only (no stop): in window after today's start time
+  /// - Same-day (start < stop): in window when todayStart <= now < todayStop
+  /// - Overnight (start >= stop): could be in tonight's window (now >= todayStart)
+  ///   or last night's window (now < todayStop, start was yesterday)
+  func activeWindowStart(
+    on date: Date,
+    stopSchedule: ProfileScheduleTime?,
+    calendar: Calendar = .current
+  ) -> Date? {
+    guard let todayStart = scheduledStartTime(on: date, calendar: calendar) else { return nil }
+
+    // Start-only: in window if past today's start
+    guard let stopSched = stopSchedule else {
+      return date >= todayStart ? todayStart : nil
+    }
+
+    guard let todayStop = stopSched.scheduledStartTime(on: date, calendar: calendar) else {
+      return nil
+    }
+
+    let isOvernight =
+      (hour > stopSched.hour)
+      || (hour == stopSched.hour && minute >= stopSched.minute)
+
+    if !isOvernight {
+      // Same-day (e.g., 10:00-17:00)
+      return (date >= todayStart && date < todayStop) ? todayStart : nil
+    } else {
+      // Overnight (e.g., 22:00-06:00)
+      if date >= todayStart {
+        return todayStart  // In tonight's window
+      } else if date < todayStop {
+        // In last night's window — start was yesterday
+        return calendar.date(byAdding: .day, value: -1, to: todayStart)
+      } else {
+        return nil  // Between windows (e.g., 12:00)
+      }
+    }
+  }
+
   var scheduleDescription: String {
     let dayNames = days.compactDaysText()
     let time = String(format: "%d:%02d", hour, minute)
