@@ -69,6 +69,9 @@ struct SyncedProfile: Codable, Equatable {
   var originDeviceId: String
   var version: Int
 
+  // Schedule suppression (syncs manual-stop-until-next-start across devices)
+  var scheduleSuppressedUntil: Date?
+
   // Schema version (for trigger system migration)
   var profileSchemaVersion: Int
 
@@ -116,6 +119,7 @@ struct SyncedProfile: Codable, Equatable {
     case originDeviceId
     case version
     case profileSchemaVersion
+    case scheduleSuppressedUntil
   }
 
   // MARK: - CloudKit Conversion
@@ -166,6 +170,7 @@ struct SyncedProfile: Codable, Equatable {
     record[FieldKey.originDeviceId.rawValue] = originDeviceId
     record[FieldKey.version.rawValue] = version
     record[FieldKey.profileSchemaVersion.rawValue] = profileSchemaVersion
+    record[FieldKey.scheduleSuppressedUntil.rawValue] = scheduleSuppressedUntil
   }
 
   init?(from record: CKRecord) {
@@ -236,6 +241,7 @@ struct SyncedProfile: Codable, Equatable {
     self.version = version
     // Default to schema version 1 (legacy) if not present - older devices don't send this field
     profileSchemaVersion = record[FieldKey.profileSchemaVersion.rawValue] as? Int ?? 1
+    scheduleSuppressedUntil = record[FieldKey.scheduleSuppressedUntil.rawValue] as? Date
   }
 
   // MARK: - Initialization from BlockedProfiles
@@ -298,6 +304,7 @@ struct SyncedProfile: Codable, Equatable {
     startQRCodeId = profile.startQRCodeId
     stopNFCTagId = profile.stopNFCTagId
     stopQRCodeId = profile.stopQRCodeId
+    scheduleSuppressedUntil = profile.scheduleSuppressedUntil
   }
 
   // MARK: - Decode Schedule and Geofence
