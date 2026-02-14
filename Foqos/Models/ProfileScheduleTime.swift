@@ -69,6 +69,16 @@ struct ProfileScheduleTime: Codable, Equatable {
     return nil
   }
 
+  /// Returns this schedule's start time on the given date.
+  /// Constructs a Date from the date's year/month/day and this schedule's hour:minute.
+  func scheduledStartTime(on date: Date, calendar: Calendar = .current) -> Date? {
+    var components = calendar.dateComponents([.year, .month, .day], from: date)
+    components.hour = hour
+    components.minute = minute
+    components.second = 0
+    return calendar.date(from: components)
+  }
+
   var scheduleDescription: String {
     let dayNames = days.compactDaysText()
     let time = String(format: "%d:%02d", hour, minute)

@@ -278,6 +278,49 @@ final class ProfileScheduleTimeTests: XCTestCase {
     }
   }
 
+  // MARK: - scheduledStartTime(on:) tests
+
+  func testScheduledStartTime_returnsCorrectTimeForToday() {
+    let now = Date()
+    let calendar = Calendar.current
+    let schedule = ProfileScheduleTime(
+      days: Weekday.allCases, hour: 14, minute: 30, updatedAt: now
+    )
+
+    let result = schedule.scheduledStartTime(on: now, calendar: calendar)
+    XCTAssertNotNil(result)
+
+    let components = calendar.dateComponents([.hour, .minute, .second], from: result!)
+    XCTAssertEqual(components.hour, 14)
+    XCTAssertEqual(components.minute, 30)
+    XCTAssertEqual(components.second, 0)
+  }
+
+  func testScheduledStartTime_preservesDateComponents() {
+    let calendar = Calendar.current
+    var dateComponents = DateComponents()
+    dateComponents.year = 2026
+    dateComponents.month = 2
+    dateComponents.day = 14
+    dateComponents.hour = 8
+    dateComponents.minute = 0
+    let specificDate = calendar.date(from: dateComponents)!
+
+    let schedule = ProfileScheduleTime(
+      days: Weekday.allCases, hour: 10, minute: 0, updatedAt: specificDate
+    )
+
+    let result = schedule.scheduledStartTime(on: specificDate, calendar: calendar)
+    XCTAssertNotNil(result)
+
+    let c = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: result!)
+    XCTAssertEqual(c.year, 2026)
+    XCTAssertEqual(c.month, 2)
+    XCTAssertEqual(c.day, 14)
+    XCTAssertEqual(c.hour, 10)
+    XCTAssertEqual(c.minute, 0)
+  }
+
   func testCodableRoundTrip() throws {
     let original = ProfileScheduleTime(
       days: [.monday, .wednesday, .friday],
