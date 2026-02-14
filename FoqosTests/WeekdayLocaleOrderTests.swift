@@ -58,4 +58,28 @@ final class WeekdayLocaleOrderTests: XCTestCase {
     // Sunday-first order: Sun, Tue, Fri
     XCTAssertEqual(sorted, [.sunday, .tuesday, .friday])
   }
+
+  // MARK: - compactDaysText
+
+  func testCompactDaysText_allDays_returnsEveryDay() {
+    let days = Weekday.allCases
+    XCTAssertEqual(days.compactDaysText(), "Every day")
+  }
+
+  func testCompactDaysText_weekdays_returnsWeekdays() {
+    let days: [Weekday] = [.monday, .tuesday, .wednesday, .thursday, .friday]
+    XCTAssertEqual(days.compactDaysText(), "Weekdays")
+  }
+
+  func testCompactDaysText_weekends_returnsWeekends() {
+    let days: [Weekday] = [.saturday, .sunday]
+    XCTAssertEqual(days.compactDaysText(), "Weekends")
+  }
+
+  func testCompactDaysText_subset_returnsShortLabels() {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.firstWeekday = 2  // Monday-first
+    let days: [Weekday] = [.sunday, .wednesday, .monday]
+    XCTAssertEqual(days.compactDaysText(calendar: calendar), "Mo We Su")
+  }
 }

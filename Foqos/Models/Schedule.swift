@@ -50,6 +50,19 @@ extension Array where Element == Weekday {
       (order.firstIndex(of: a) ?? 0) < (order.firstIndex(of: b) ?? 0)
     }
   }
+
+  /// Compact display text: "Every day", "Weekdays", "Weekends", or short labels.
+  func compactDaysText(calendar: Calendar = .current) -> String {
+    let daySet = Set(self)
+    if daySet.count == 7 { return "Every day" }
+    let weekdays: Set<Weekday> = [.monday, .tuesday, .wednesday, .thursday, .friday]
+    if daySet == weekdays { return "Weekdays" }
+    let weekends: Set<Weekday> = [.saturday, .sunday]
+    if daySet == weekends { return "Weekends" }
+    return self.localeSorted(calendar: calendar)
+      .map { $0.shortLabel }
+      .joined(separator: " ")
+  }
 }
 
 struct BlockedProfileSchedule: Codable, Equatable {
@@ -73,11 +86,7 @@ struct BlockedProfileSchedule: Codable, Equatable {
   var summaryText: String {
     guard isActive else { return "No Schedule Set" }
 
-    let daysSummary =
-      days
-      .localeSorted()
-      .map { $0.shortLabel }
-      .joined(separator: " ")
+    let daysSummary = days.compactDaysText()
 
     let start = formattedTimeString(hour24: startHour, minute: startMinute)
     let end = formattedTimeString(hour24: endHour, minute: endMinute)

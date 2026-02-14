@@ -30,9 +30,7 @@ struct ProfileScheduleTime: Codable, Equatable {
   }
 
   var daysText: String {
-    days.localeSorted()
-      .map { $0.shortLabel }
-      .joined(separator: " ")
+    days.compactDaysText()
   }
 
   /// Returns the next future occurrence of this schedule after the given date.
@@ -72,7 +70,7 @@ struct ProfileScheduleTime: Codable, Equatable {
   }
 
   var scheduleDescription: String {
-    let dayNames = days.localeSorted().map { $0.shortLabel }.joined(separator: " ")
+    let dayNames = days.compactDaysText()
     let time = String(format: "%d:%02d", hour, minute)
     return "\(dayNames) at \(time)"
   }

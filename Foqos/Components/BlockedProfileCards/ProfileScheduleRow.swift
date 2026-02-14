@@ -46,15 +46,11 @@ struct ProfileScheduleRow: View {
       if let stop = profile.stopSchedule, profile.stopConditions.schedule {
         allDays.formUnion(stop.days)
       }
-      return Array(allDays).localeSorted()
-        .map { $0.shortLabel }
-        .joined(separator: " ")
+      return Array(allDays).compactDaysText()
     }
     guard let schedule = profile.schedule, schedule.isActive else { return "" }
     return schedule.days
-      .localeSorted()
-      .map { $0.shortLabel }
-      .joined(separator: " ")
+      .compactDaysText()
   }
 
   private var timeLine: String? {
