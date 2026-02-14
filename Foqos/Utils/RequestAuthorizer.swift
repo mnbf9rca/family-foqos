@@ -5,7 +5,7 @@ import SwiftUI
 
 @MainActor
 class RequestAuthorizer: ObservableObject {
-  @Published var isAuthorized: Bool
+  @Published private(set) var isAuthorized: Bool
   @Published var authorizationError: String?
 
   init() {
