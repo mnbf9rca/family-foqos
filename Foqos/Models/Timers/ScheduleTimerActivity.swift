@@ -55,6 +55,13 @@ class ScheduleTimerActivity: TimerActivity {
       return
     }
 
+    // Check if schedule was manually suppressed (user stopped it this window)
+    if let suppressedUntil = profile.scheduleSuppressedUntil, Date() < suppressedUntil {
+      log.info(
+        "Start schedule timer activity for \(profileId), suppressed until \(suppressedUntil)")
+      return
+    }
+
     log.info("Start schedule timer activity for \(profileId)")
 
     if let existingSession = SharedData.getActiveSharedSession() {
