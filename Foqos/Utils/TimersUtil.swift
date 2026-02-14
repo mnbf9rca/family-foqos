@@ -209,6 +209,7 @@ final class TimersUtil: @unchecked Sendable {  // SAFETY: Mutable state (backgro
     message: String,
     seconds: TimeInterval,
     identifier: String? = nil,
+    threadIdentifier: String? = nil,
     completion: @escaping @Sendable (NotificationResult) -> Void = { _ in }
   ) -> String {
     let notificationId = identifier ?? UUID().uuidString
@@ -225,6 +226,9 @@ final class TimersUtil: @unchecked Sendable {  // SAFETY: Mutable state (backgro
         content.title = title
         content.body = message
         content.sound = .default
+        if let threadIdentifier {
+          content.threadIdentifier = threadIdentifier
+        }
 
         let trigger = UNTimeIntervalNotificationTrigger(
           timeInterval: seconds,

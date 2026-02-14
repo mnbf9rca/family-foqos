@@ -204,9 +204,12 @@ class DeviceActivityCenterUtil {
         for: profile.id, minutes: reminderMinutes
       )
 
+      let threadId = TimersUtil.preActivationReminderThreadIdentifier(for: profile.id)
+
       timersUtil.scheduleNotification(
         title: title, message: message,
-        seconds: secondsUntilReminder, identifier: notificationId
+        seconds: secondsUntilReminder, identifier: notificationId,
+        threadIdentifier: threadId
       )
       scheduledCount += 1
     }
