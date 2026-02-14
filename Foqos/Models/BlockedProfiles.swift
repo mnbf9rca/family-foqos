@@ -64,7 +64,7 @@ class BlockedProfiles {
       }
     }
     set {
-      let filtered = Set(newValue.filter { TimersUtil.supportedReminderRange.contains($0) })
+      let filtered = Set(newValue.filter { TimersUtil.supportedReminderOptions.contains($0) })
       let sorted = Array(filtered).sorted()
       do {
         preActivationReminderTimesData = try JSONEncoder().encode(sorted)

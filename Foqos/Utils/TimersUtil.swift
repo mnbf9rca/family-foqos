@@ -52,12 +52,17 @@ final class TimersUtil: @unchecked Sendable {  // SAFETY: Mutable state (backgro
     return "\(preActivationReminderPrefix)\(profileId.uuidString)-\(minutes)"
   }
 
-  /// Supported pre-activation reminder range (minutes before scheduled start)
-  static let supportedReminderRange: [UInt8] = [1, 3, 5]
+  /// Supported pre-activation reminder options (minutes before scheduled start)
+  static let supportedReminderOptions: [UInt8] = [1, 3, 5]
+
+  /// Superset range covering all reminder minute values ever shipped, used to clean up
+  /// stale notifications when the supported options change between releases.
+  /// SYNC: ScheduleTimerActivity.swift duplicates this range (module boundary prevents import).
+  static let allReminderCleanupRange: ClosedRange<Int> = 1...5
 
   static func allPreActivationReminderIdentifiers(for profileId: UUID) -> [String] {
-    // Always cancel identifiers for 1-5 (not just supported range) to clean up stale reminders
-    (1...5).map { preActivationReminderIdentifier(for: profileId, minutes: $0) }
+    // Always cancel identifiers for full cleanup range (not just current options) to clean up stale reminders
+    allReminderCleanupRange.map { preActivationReminderIdentifier(for: profileId, minutes: $0) }
   }
 
   static func cancelAllPreActivationReminders(for profileId: UUID) {

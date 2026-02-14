@@ -32,7 +32,7 @@ final class PreActivationReminderTests: XCTestCase {
     let ids = TimersUtil.allPreActivationReminderIdentifiers(for: profileId)
 
     XCTAssertEqual(ids.count, 5)
-    for minutes: UInt8 in 1...5 {
+    for minutes in TimersUtil.allReminderCleanupRange {
       let expected = "pre-activation-reminder-\(profileId.uuidString)-\(minutes)"
       XCTAssertTrue(ids.contains(expected), "Missing identifier for \(minutes) minutes")
     }

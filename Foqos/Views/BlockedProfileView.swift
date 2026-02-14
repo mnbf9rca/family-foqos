@@ -512,7 +512,7 @@ struct BlockedProfileView: View {
                   .font(.caption)
                   .foregroundColor(.secondary)
 
-                ForEach(TimersUtil.supportedReminderRange, id: \.self) { minutes in
+                ForEach(TimersUtil.supportedReminderOptions, id: \.self) { minutes in
                   Toggle(
                     minutes == 1
                       ? "1 minute before"
