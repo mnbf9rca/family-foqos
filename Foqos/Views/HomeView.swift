@@ -604,6 +604,17 @@ struct HomeView: View {
   private func onAppearApp() {
     try? strategyManager.loadActiveSession(context: context)
     strategyManager.cleanUpGhostSchedules(context: context)
+
+    // Migration: existing users upgrading from a version without hasCompletedOnboarding.
+    // showIntroScreen defaults to true, so if it's false the user must have completed
+    // onboarding in a prior version. Bootstrap the new flag for them.
+    if !hasCompletedOnboarding && !showIntroScreen {
+      Log.info(
+        "Upgrade migration: setting hasCompletedOnboarding=true for existing user",
+        category: .authorization)
+      hasCompletedOnboarding = true
+    }
+
     // Safety net: if onboarding was never completed and both screens are dismissed, reset
     Log.debug(
       "onAppearApp safety net check: hasCompletedOnboarding=\(hasCompletedOnboarding), showIntroScreen=\(showIntroScreen), showModeSelection=\(showModeSelection)",
