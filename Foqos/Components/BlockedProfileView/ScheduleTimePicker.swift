@@ -87,6 +87,7 @@ struct ScheduleTimePicker: View {
       let components = Calendar.current.dateComponents(
         [.hour, .minute], from: selectedTime)
       schedule = ProfileScheduleTime(
+        // rawValue sort for locale-independent storage order (not display order)
         days: Array(selectedDays).sorted { $0.rawValue < $1.rawValue },
         hour: components.hour ?? 9,
         minute: components.minute ?? 0,
