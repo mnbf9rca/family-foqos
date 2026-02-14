@@ -530,7 +530,6 @@ struct BlockedProfileView: View {
                   )
                   .tint(themeManager.themeColor)
                   .disabled(isBlocking)
-                  .accessibilityLabel("\(minutes)-minute reminder")
                 }
               }
             }
