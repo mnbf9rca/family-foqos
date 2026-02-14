@@ -5,7 +5,8 @@ import SwiftUI
 
 @MainActor
 class RequestAuthorizer: ObservableObject {
-  @Published var isAuthorized = false
+  @Published var isAuthorized =
+    AuthorizationCenter.shared.authorizationStatus == .approved
   @Published var authorizationError: String?
 
   /// Request authorization for the current app mode
