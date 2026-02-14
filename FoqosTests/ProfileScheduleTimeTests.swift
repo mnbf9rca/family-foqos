@@ -44,19 +44,19 @@ final class ProfileScheduleTimeTests: XCTestCase {
     XCTAssertFalse(schedule.isTodayScheduled())
   }
 
-  func testOlderThan15Minutes_whenOld_returnsTrue() {
+  func testOlderThanOneMinute_whenOld_returnsTrue() {
     let schedule = ProfileScheduleTime(
       days: [.monday], hour: 9, minute: 0,
-      updatedAt: Date().addingTimeInterval(-16 * 60)
+      updatedAt: Date().addingTimeInterval(-61)
     )
-    XCTAssertTrue(schedule.olderThan15Minutes())
+    XCTAssertTrue(schedule.olderThanOneMinute())
   }
 
-  func testOlderThan15Minutes_whenRecent_returnsFalse() {
+  func testOlderThanOneMinute_whenRecent_returnsFalse() {
     let schedule = ProfileScheduleTime(
       days: [.monday], hour: 9, minute: 0, updatedAt: Date()
     )
-    XCTAssertFalse(schedule.olderThan15Minutes())
+    XCTAssertFalse(schedule.olderThanOneMinute())
   }
 
   func testFormattedTime_am() {
