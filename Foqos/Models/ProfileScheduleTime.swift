@@ -137,6 +137,40 @@ struct ProfileScheduleTime: Codable, Equatable {
     }
   }
 
+  /// Whether this schedule should be actively running right now.
+  /// Single source of truth combining: window detection, day check, age check, suppression.
+  ///
+  /// Used by both the DA extension reader and the foreground catch-up mechanism.
+  func shouldBeActiveNow(
+    stopSchedule: ProfileScheduleTime?,
+    lastStoppedAt: Date?,
+    on date: Date = Date(),
+    calendar: Calendar = .current
+  ) -> Bool {
+    // 1. Are we inside a schedule window?
+    guard
+      let windowStart = activeWindowStart(
+        on: date, stopSchedule: stopSchedule, calendar: calendar
+      )
+    else { return false }
+
+    // 2. Was the window's start day a scheduled day?
+    let startWeekdayRaw = calendar.component(.weekday, from: windowStart)
+    guard let startWeekday = Weekday(rawValue: startWeekdayRaw),
+      days.contains(startWeekday)
+    else { return false }
+
+    // 3. Is the schedule old enough? (prevents immediate fire on save)
+    guard olderThanOneMinute(now: date) else { return false }
+
+    // 4. Was this window manually stopped?
+    if let stoppedAt = lastStoppedAt, windowStart <= stoppedAt {
+      return false
+    }
+
+    return true
+  }
+
   var scheduleDescription: String {
     let dayNames = days.compactDaysText()
     let time = String(format: "%d:%02d", hour, minute)
