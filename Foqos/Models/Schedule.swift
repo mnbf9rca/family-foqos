@@ -32,6 +32,24 @@ enum Weekday: Int, CaseIterable, Codable, Equatable {
     case .saturday: return "Sa"
     }
   }
+
+  /// Returns all weekdays ordered by the locale's first day of week.
+  static func localeOrdered(calendar: Calendar = .current) -> [Weekday] {
+    let first = calendar.firstWeekday  // 1=Sunday, 2=Monday, etc.
+    return (0..<7).compactMap { offset in
+      Weekday(rawValue: ((first - 1 + offset) % 7) + 1)
+    }
+  }
+}
+
+extension Array where Element == Weekday {
+  /// Sorts weekdays by locale order (e.g., Monday-first in EU locales).
+  func localeSorted(calendar: Calendar = .current) -> [Weekday] {
+    let order = Weekday.localeOrdered(calendar: calendar)
+    return self.sorted { a, b in
+      (order.firstIndex(of: a) ?? 0) < (order.firstIndex(of: b) ?? 0)
+    }
+  }
 }
 
 struct BlockedProfileSchedule: Codable, Equatable {
