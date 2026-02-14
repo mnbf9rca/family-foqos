@@ -64,6 +64,9 @@ final class TimersUtil: @unchecked Sendable {  // SAFETY: Mutable state (backgro
     UNUserNotificationCenter.current().removePendingNotificationRequests(
       withIdentifiers: identifiers
     )
+    UNUserNotificationCenter.current().removeDeliveredNotifications(
+      withIdentifiers: identifiers
+    )
 
     // Also remove stored background task metadata for these notifications
     let identifierSet = Set(identifiers)
@@ -257,6 +260,9 @@ final class TimersUtil: @unchecked Sendable {  // SAFETY: Mutable state (backgro
 
   func cancelNotification(identifier: String) {
     UNUserNotificationCenter.current().removePendingNotificationRequests(
+      withIdentifiers: [identifier]
+    )
+    UNUserNotificationCenter.current().removeDeliveredNotifications(
       withIdentifiers: [identifier]
     )
   }
