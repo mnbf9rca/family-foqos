@@ -237,6 +237,47 @@ final class ProfileScheduleTimeTests: XCTestCase {
     XCTAssertEqual(resultDay, tomorrowDay)
   }
 
+  func testNextScheduledStartTime_dstSpringForwardGap_returnsNilInsteadOfCrashing() {
+    // US Eastern: March 9, 2025 at 2:00 AM clocks jump to 3:00 AM
+    // So 2:30 AM doesn't exist on that day
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(identifier: "America/New_York")!
+
+    // Schedule at 2:30 AM daily
+    let schedule = ProfileScheduleTime(
+      days: Weekday.allCases,
+      hour: 2,
+      minute: 30,
+      updatedAt: Date(timeIntervalSince1970: 0)
+    )
+
+    // "now" is March 9, 2025 at 1:00 AM EST (before the gap)
+    var components = DateComponents()
+    components.year = 2025
+    components.month = 3
+    components.day = 9
+    components.hour = 1
+    components.minute = 0
+    components.second = 0
+    let beforeGap = calendar.date(from: components)!
+
+    // Should NOT crash — should return nil or skip to next valid day
+    let result = schedule.nextScheduledStartTime(after: beforeGap, calendar: calendar)
+    // Result could be nil (gap day skipped) or the next valid occurrence — either is fine
+    // The key assertion: we didn't crash
+    if let result = result {
+      // If it returns a date, it should NOT be March 9 at 2:30 (that doesn't exist)
+      let resultComponents = calendar.dateComponents([.month, .day, .hour], from: result)
+      let isGapDay = resultComponents.month == 3 && resultComponents.day == 9
+      if isGapDay {
+        // If it picked March 9, the hour should have been adjusted (not 2:30)
+        XCTAssertNotEqual(
+          resultComponents.hour, 2,
+          "Should not return a time in the DST gap")
+      }
+    }
+  }
+
   func testCodableRoundTrip() throws {
     let original = ProfileScheduleTime(
       days: [.monday, .wednesday, .friday],

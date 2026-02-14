@@ -44,21 +44,29 @@ struct ProfileScheduleTime: Codable, Equatable {
     components.hour = hour
     components.minute = minute
     components.second = 0
-    let todayStart = calendar.date(from: components)!
+    guard let todayStart = calendar.date(from: components) else { return nil }
 
     // If we haven't passed today's start yet, today could be the candidate;
     // otherwise start looking from tomorrow's start time.
-    var candidate =
-      date < todayStart
-      ? todayStart
-      : calendar.date(byAdding: .day, value: 1, to: todayStart)!
+    var candidate: Date
+    if date < todayStart {
+      candidate = todayStart
+    } else {
+      guard let tomorrow = calendar.date(byAdding: .day, value: 1, to: todayStart) else {
+        return nil
+      }
+      candidate = tomorrow
+    }
 
     for _ in 0..<7 {
       let weekdayRaw = calendar.component(.weekday, from: candidate)
       if let weekday = Weekday(rawValue: weekdayRaw), days.contains(weekday) {
         return candidate
       }
-      candidate = calendar.date(byAdding: .day, value: 1, to: candidate)!
+      guard let nextDay = calendar.date(byAdding: .day, value: 1, to: candidate) else {
+        return nil
+      }
+      candidate = nextDay
     }
     return nil
   }
