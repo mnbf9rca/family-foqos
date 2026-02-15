@@ -54,6 +54,9 @@ struct HomeView: View {
     sort: \BlockedProfileSession.endTime,
     order: .reverse
   ) private var recentCompletedSessions: [BlockedProfileSession]
+  private var validRecentCompletedSessions: [BlockedProfileSession] {
+    recentCompletedSessions.valid
+  }
 
   // Alerts
   @State private var showingAlert = false
@@ -162,7 +165,7 @@ struct HomeView: View {
 
         if !validProfiles.isEmpty {
           BlockedSessionsHabitTracker(
-            sessions: recentCompletedSessions
+            sessions: validRecentCompletedSessions
           )
           .padding(.horizontal, 16)
 
