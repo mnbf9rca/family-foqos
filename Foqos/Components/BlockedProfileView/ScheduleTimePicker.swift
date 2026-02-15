@@ -5,6 +5,7 @@ import SwiftUI
 struct ScheduleTimePicker: View {
   @Binding var schedule: ProfileScheduleTime?
   let title: String
+  // Snapshot is fine — sheets are modal so the other schedule can't change while this picker is open
   let otherScheduleTime: ProfileScheduleTime?
 
   @State private var selectedDays: Set<Weekday> = []

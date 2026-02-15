@@ -88,14 +88,15 @@ final class TriggerConfigurationModelTests: XCTestCase {
   }
 
   func testValidationErrorWhenStartAndStopScheduleTimesMatch() {
+    let now = Date()
     let model = TriggerConfigurationModel()
     model.startTriggers.schedule = true
     model.stopConditions.schedule = true
     model.startSchedule = ProfileScheduleTime(
-      days: [.monday], hour: 10, minute: 0, updatedAt: Date()
+      days: [.monday], hour: 10, minute: 0, updatedAt: now
     )
     model.stopSchedule = ProfileScheduleTime(
-      days: [.monday], hour: 10, minute: 0, updatedAt: Date()
+      days: [.monday], hour: 10, minute: 0, updatedAt: now
     )
     model.validate()
 
@@ -106,14 +107,15 @@ final class TriggerConfigurationModelTests: XCTestCase {
   }
 
   func testNoValidationErrorWhenScheduleTimesDiffer() {
+    let now = Date()
     let model = TriggerConfigurationModel()
     model.startTriggers.schedule = true
     model.stopConditions.schedule = true
     model.startSchedule = ProfileScheduleTime(
-      days: [.monday], hour: 10, minute: 0, updatedAt: Date()
+      days: [.monday], hour: 10, minute: 0, updatedAt: now
     )
     model.stopSchedule = ProfileScheduleTime(
-      days: [.monday], hour: 17, minute: 0, updatedAt: Date()
+      days: [.monday], hour: 17, minute: 0, updatedAt: now
     )
     model.validate()
 
