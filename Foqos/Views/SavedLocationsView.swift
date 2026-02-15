@@ -11,10 +11,8 @@ struct SavedLocationsView: View {
   @ObservedObject private var lockCodeManager = LockCodeManager.shared
   @ObservedObject private var profileSyncManager = ProfileSyncManager.shared
 
-  @Query(sort: \SavedLocation.name) private var locations: [SavedLocation]
-  @Query private var profiles: [BlockedProfiles]
-  private var validLocations: [SavedLocation] { locations.valid }
-  private var validProfiles: [BlockedProfiles] { profiles.valid }
+  @SafeQuery(sort: \SavedLocation.name) private var locations: [SavedLocation]
+  @SafeQuery private var profiles: [BlockedProfiles]
 
   @State private var showingAddLocation = false
   @State private var locationToEdit: SavedLocation?
@@ -25,7 +23,7 @@ struct SavedLocationsView: View {
   /// Location IDs that are in use by profiles with active sessions
   private var locationsInUseByActiveProfiles: [UUID: String] {
     var result: [UUID: String] = [:]
-    for profile in validProfiles {
+    for profile in profiles {
       // Check if profile has an active session
       let hasActiveSession = profile.sessions.contains { $0.isActive }
       guard hasActiveSession else { continue }
@@ -43,7 +41,7 @@ struct SavedLocationsView: View {
   var body: some View {
     NavigationStack {
       List {
-        if validLocations.isEmpty {
+        if locations.isEmpty {
           Section {
             VStack(spacing: 16) {
               Image(systemName: "mappin.slash")
@@ -71,7 +69,7 @@ struct SavedLocationsView: View {
           }
         } else {
           Section {
-            ForEach(validLocations) { location in
+            ForEach(locations) { location in
               SavedLocationCard(
                 location: location,
                 onTap: {
@@ -96,7 +94,7 @@ struct SavedLocationsView: View {
           .accessibilityLabel("Close")
         }
 
-        if !validLocations.isEmpty {
+        if !locations.isEmpty {
           ToolbarItem(placement: .topBarTrailing) {
             Button {
               showingAddLocation = true

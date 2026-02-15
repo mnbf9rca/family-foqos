@@ -6,7 +6,7 @@ struct BlockedProfileListView: View {
   @Environment(\.modelContext) private var context
   @Environment(\.dismiss) private var dismiss
 
-  @Query(sort: [
+  @SafeQuery(sort: [
     SortDescriptor(\BlockedProfiles.order, order: .forward),
     SortDescriptor(\BlockedProfiles.createdAt, order: .reverse),
   ]) private var profiles: [BlockedProfiles]
@@ -39,14 +39,9 @@ struct BlockedProfileListView: View {
     }
   }
 
-  /// Filtered profiles excluding deleted models
-  private var validProfiles: [BlockedProfiles] {
-    profiles.valid
-  }
-
   @ViewBuilder
   private var contentView: some View {
-    if validProfiles.isEmpty {
+    if profiles.isEmpty {
       EmptyView(
         iconName: "person.crop.circle.badge.plus",
         headingText:
@@ -59,7 +54,7 @@ struct BlockedProfileListView: View {
 
   private var listView: some View {
     List {
-      ForEach(validProfiles) { profile in
+      ForEach(profiles) { profile in
         ProfileRow(profile: profile)
           .contentShape(Rectangle())
           .onTapGesture {
@@ -91,7 +86,7 @@ struct BlockedProfileListView: View {
                 Image(systemName: "checkmark.circle")
               }
             }
-            if !validProfiles.isEmpty {
+            if !profiles.isEmpty {
               Menu {
                 Button {
                   editMode = .active
@@ -145,7 +140,7 @@ struct BlockedProfileListView: View {
       deleteError = .fetchFailed
       return
     }
-    let profilesToDelete = validProfiles
+    let profilesToDelete = profiles
 
     // Check if any of the profiles to delete are active
     for index in offsets {
@@ -172,7 +167,7 @@ struct BlockedProfileListView: View {
   }
 
   private func moveProfiles(from source: IndexSet, to destination: Int) {
-    var reorderedProfiles = validProfiles
+    var reorderedProfiles = profiles
     reorderedProfiles.move(fromOffsets: source, toOffset: destination)
 
     do {
