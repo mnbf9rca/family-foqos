@@ -19,6 +19,7 @@ struct HomeView: View {
     SortDescriptor(\BlockedProfiles.createdAt, order: .reverse),
   ]) private
     var profiles: [BlockedProfiles]
+  private var validProfiles: [BlockedProfiles] { profiles.valid }
   @State private var isProfileListPresent = false
 
   // New profile view
@@ -152,14 +153,14 @@ struct HomeView: View {
         )
         .padding(.horizontal, 16)
 
-        if profiles.isEmpty {
+        if validProfiles.isEmpty {
           Welcome(onTap: {
             showNewProfileView = true
           })
           .padding(.horizontal, 16)
         }
 
-        if !profiles.isEmpty {
+        if !validProfiles.isEmpty {
           BlockedSessionsHabitTracker(
             sessions: recentCompletedSessions
           )
@@ -180,7 +181,7 @@ struct HomeView: View {
           }
 
           BlockedProfileCarousel(
-            profiles: profiles,
+            profiles: validProfiles,
             isBlocking: isBlocking,
             isBreakAvailable: isBreakAvailable,
             isBreakActive: isBreakActive,
