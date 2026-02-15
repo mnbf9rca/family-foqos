@@ -741,6 +741,8 @@ class ProfileSyncManager: ObservableObject {
 
   /// Pull emergency settings from CloudKit (single record)
   func pullEmergencySettings() async throws {
+    guard isEnabled else { throw SyncError.syncDisabled }
+
     let recordID = CKRecord.ID(
       recordName: SyncedEmergencySettings.recordName,
       zoneID: syncZoneID

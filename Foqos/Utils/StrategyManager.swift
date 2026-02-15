@@ -832,14 +832,14 @@ class StrategyManager: ObservableObject {
   private func pushEmergencySettingsToCloudKit() {
     guard profileSyncManager.isEnabled else { return }
 
-    emergencySettingsVersion += 1
+    let nextVersion = emergencySettingsVersion + 1
     let settings = SyncedEmergencySettings(
       unblocksRemaining: emergencyUnblocksRemaining,
       resetPeriodInDays: emergencyUnblocksResetPeriodInDays,
       lastResetDate: Date(
         timeIntervalSinceReferenceDate: lastEmergencyUnblocksResetDateTimestamp),
       settingsLocked: emergencySettingsLockedStorage,
-      version: emergencySettingsVersion,
+      version: nextVersion,
       lastModified: Date(),
       originDeviceId: SharedData.deviceSyncId.uuidString
     )
@@ -847,6 +847,7 @@ class StrategyManager: ObservableObject {
     Task {
       do {
         try await profileSyncManager.pushEmergencySettings(settings)
+        await MainActor.run { self.emergencySettingsVersion = nextVersion }
       } catch {
         Log.error(
           "Failed to push emergency settings: \(error.localizedDescription)", category: .sync)
