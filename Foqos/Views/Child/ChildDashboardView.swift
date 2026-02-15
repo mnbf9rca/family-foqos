@@ -482,7 +482,7 @@ struct EditLockedProfilesSheet: View {
     NavigationStack {
       List {
         Section {
-          ForEach(profiles) { profile in
+          ForEach(profiles.valid) { profile in
             Toggle(
               isOn: Binding(
                 get: { profile.isManaged },

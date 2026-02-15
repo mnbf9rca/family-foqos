@@ -19,6 +19,7 @@ struct HomeView: View {
     SortDescriptor(\BlockedProfiles.createdAt, order: .reverse),
   ]) private
     var profiles: [BlockedProfiles]
+  private var validProfiles: [BlockedProfiles] { profiles.valid }
   @State private var isProfileListPresent = false
 
   // New profile view
@@ -53,6 +54,9 @@ struct HomeView: View {
     sort: \BlockedProfileSession.endTime,
     order: .reverse
   ) private var recentCompletedSessions: [BlockedProfileSession]
+  private var validRecentCompletedSessions: [BlockedProfileSession] {
+    recentCompletedSessions.valid
+  }
 
   // Alerts
   @State private var showingAlert = false
@@ -152,16 +156,16 @@ struct HomeView: View {
         )
         .padding(.horizontal, 16)
 
-        if profiles.isEmpty {
+        if validProfiles.isEmpty {
           Welcome(onTap: {
             showNewProfileView = true
           })
           .padding(.horizontal, 16)
         }
 
-        if !profiles.isEmpty {
+        if !validProfiles.isEmpty {
           BlockedSessionsHabitTracker(
-            sessions: recentCompletedSessions
+            sessions: validRecentCompletedSessions
           )
           .padding(.horizontal, 16)
 
@@ -180,7 +184,7 @@ struct HomeView: View {
           }
 
           BlockedProfileCarousel(
-            profiles: profiles,
+            profiles: validProfiles,
             isBlocking: isBlocking,
             isBreakAvailable: isBreakAvailable,
             isBreakActive: isBreakActive,
@@ -271,6 +275,7 @@ struct HomeView: View {
         showModeSelection = false
       }
     }
+    // Watch raw @Query (not validProfiles) — SwiftUI observation requires the source property
     .onChange(of: profiles) { oldValue, newValue in
       if !newValue.isEmpty {
         loadApp()
