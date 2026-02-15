@@ -67,8 +67,8 @@ final class ShouldBeActiveNowTests: XCTestCase {
   // MARK: - Age check
 
   func testTooNew_returnsFalse() {
-    let start = makeSchedule(hour: 10, minute: 0, updatedAt: Date())
     let now = today(hour: 14, minute: 0)
+    let start = makeSchedule(hour: 10, minute: 0, updatedAt: now)
 
     XCTAssertFalse(
       start.shouldBeActiveNow(

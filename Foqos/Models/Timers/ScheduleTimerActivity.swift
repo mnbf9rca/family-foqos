@@ -42,37 +42,28 @@ class ScheduleTimerActivity: TimerActivity {
       withIdentifiers: reminderIds
     )
 
-    // Check start schedule — prefer V2, fall back to legacy
-    let isTodayScheduled: Bool
-    let isOldEnough: Bool
-
+    // Check start schedule — V2 uses consolidated shouldBeActiveNow, legacy uses individual checks
     if let startSchedule = profile.startSchedule, profile.startTriggersSchedule == true {
-      isTodayScheduled = startSchedule.isTodayScheduled()
-      isOldEnough = startSchedule.olderThanOneMinute()
+      let activeStopSchedule =
+        (profile.stopConditionsSchedule == true) ? profile.stopSchedule : nil
+      if !startSchedule.shouldBeActiveNow(
+        stopSchedule: activeStopSchedule,
+        lastStoppedAt: profile.scheduleLastStoppedAt)
+      {
+        log.info("Start schedule timer activity for \(profileId), should not be active now")
+        return
+      }
     } else if let schedule = profile.schedule {
-      isTodayScheduled = schedule.isTodayScheduled()
-      isOldEnough = schedule.olderThanOneMinute()
+      guard schedule.isTodayScheduled() else {
+        log.info("Start schedule timer activity for \(profileId), not scheduled for today")
+        return
+      }
+      guard schedule.olderThanOneMinute() else {
+        log.info("Start schedule timer activity for \(profileId), schedule is too new")
+        return
+      }
     } else {
       log.info("Start schedule timer activity for \(profileId), no schedule found")
-      return
-    }
-
-    if !isTodayScheduled {
-      log.info("Start schedule timer activity for \(profileId), not scheduled for today")
-      return
-    }
-
-    if !isOldEnough {
-      log.info("Start schedule timer activity for \(profileId), schedule is too new")
-      return
-    }
-
-    // V2 only: skip if user already stopped this schedule window
-    if let startSchedule = profile.startSchedule, profile.startTriggersSchedule == true,
-      startSchedule.shouldSuppressStart(lastStoppedAt: profile.scheduleLastStoppedAt)
-    {
-      log.info(
-        "Start schedule timer activity for \(profileId), already stopped this window")
       return
     }
 
