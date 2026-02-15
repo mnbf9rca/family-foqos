@@ -757,14 +757,14 @@ struct BlockedProfileView: View {
             )
           )
         }
-        .sheet(isPresented: $showStartSchedulePicker) {
+        .sheet(isPresented: $showStartSchedulePicker, onDismiss: { triggerConfig.validate() }) {
           ScheduleTimePicker(
             schedule: $triggerConfig.startSchedule,
             title: "Start Schedule",
             otherScheduleTime: triggerConfig.stopSchedule
           )
         }
-        .sheet(isPresented: $showStopSchedulePicker) {
+        .sheet(isPresented: $showStopSchedulePicker, onDismiss: { triggerConfig.validate() }) {
           ScheduleTimePicker(
             schedule: $triggerConfig.stopSchedule,
             title: "Stop Schedule",
