@@ -807,7 +807,17 @@ class CloudKitManager: ObservableObject {
 
     self.isConnectedToFamily = true
 
-    guard let userRecordID = currentUserRecordID else { return }
+    let userRecordID: CKRecord.ID
+    if let cached = currentUserRecordID {
+      userRecordID = cached
+    } else {
+      do {
+        userRecordID = try await ensureUserRecordID()
+      } catch {
+        Log.error("Could not fetch user record ID for verification: \(error)", category: .cloudKit)
+        return
+      }
+    }
     let userRecordName = userRecordID.recordName
     let localMode = AppModeManager.shared.currentMode
 
