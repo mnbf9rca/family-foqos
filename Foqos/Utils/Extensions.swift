@@ -16,6 +16,6 @@ extension Array where Element: PersistentModel {
   /// on such models causes a crash. This defensive filter handles the timing window between
   /// SwiftData deletion and SwiftUI re-render.
   var valid: [Element] {
-    filter { $0.modelContext != nil }
+    filter { $0.modelContext != nil && !$0.isDeleted }
   }
 }
