@@ -1327,17 +1327,16 @@ class StrategyManager: ObservableObject {
   }
 
   private func scheduleBreakReminder(profile: BlockedProfiles) {
-    let profileName = profile.name
+    guard profile.breakTimeInMinutes > 1 else { return }
 
-    // Schedule a reminder to let the user know that the break is about to end
-    let breakNotificationTimeInSeconds = UInt32((profile.breakTimeInMinutes - 1) * 60)
-    if breakNotificationTimeInSeconds > 0 {
-      timersUtil.scheduleNotification(
-        title: "Break almost over!",
-        message: "Hope you enjoyed your break, starting " + profileName + " in a 1 minute.",
-        seconds: TimeInterval(breakNotificationTimeInSeconds)
-      )
-    }
+    let profileName = profile.name
+    let breakNotificationTimeInSeconds = (profile.breakTimeInMinutes - 1) * 60
+
+    timersUtil.scheduleNotification(
+      title: "Break almost over!",
+      message: "Hope you enjoyed your break, starting " + profileName + " in a 1 minute.",
+      seconds: TimeInterval(breakNotificationTimeInSeconds)
+    )
   }
 
   /// Post a local notification when a background stop is blocked by geofence
