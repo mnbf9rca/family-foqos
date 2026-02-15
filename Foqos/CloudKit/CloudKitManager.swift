@@ -215,7 +215,13 @@ class CloudKitManager: ObservableObject {
       throw CloudKitError.shareNotFound
     }
 
-    let share = try await privateDatabase.record(for: shareRef.recordID) as! CKShare
+    let shareRecord = try await privateDatabase.record(for: shareRef.recordID)
+    guard let share = shareRecord as? CKShare else {
+      Log.error(
+        "Expected CKShare but received \(type(of: shareRecord))",
+        category: .cloudKit)
+      throw CloudKitError.shareNotFound
+    }
     share.removeParticipant(participant)
     try await privateDatabase.save(share)
     self.activeZoneShare = share
@@ -245,7 +251,13 @@ class CloudKitManager: ObservableObject {
         return
       }
 
-      let share = try await privateDatabase.record(for: shareRef.recordID) as! CKShare
+      let shareRecord = try await privateDatabase.record(for: shareRef.recordID)
+      guard let share = shareRecord as? CKShare else {
+        Log.error(
+          "Expected CKShare but received \(type(of: shareRecord))",
+          category: .cloudKit)
+        return
+      }
 
       // Find the participant to remove
       if let participant = share.participants.first(where: {
@@ -609,7 +621,13 @@ class CloudKitManager: ObservableObject {
 
       // Check if it has a share
       if let shareRef = rootRecord.share {
-        let share = try await privateDatabase.record(for: shareRef.recordID) as! CKShare
+        let shareRecord = try await privateDatabase.record(for: shareRef.recordID)
+        guard let share = shareRecord as? CKShare else {
+          Log.error(
+            "Expected CKShare but received \(type(of: shareRecord))",
+            category: .cloudKit)
+          throw CloudKitError.shareNotFound
+        }
         self.activeZoneShare = share
         Log.debug("Found existing family share", category: .cloudKit)
         return share
@@ -680,7 +698,13 @@ class CloudKitManager: ObservableObject {
       }
 
       // Fetch share record fresh from server
-      let share = try await privateDatabase.record(for: shareRef.recordID) as! CKShare
+      let shareRecord = try await privateDatabase.record(for: shareRef.recordID)
+      guard let share = shareRecord as? CKShare else {
+        Log.error(
+          "Expected CKShare but received \(type(of: shareRecord))",
+          category: .cloudKit)
+        return
+      }
       self.activeZoneShare = share
 
       // Get all participants except owner, log their statuses for debugging
@@ -865,7 +889,15 @@ class CloudKitManager: ObservableObject {
         self.pendingParticipants = []
         return
       }
-      share = try await privateDatabase.record(for: shareRef.recordID) as! CKShare
+      let shareRecord = try await privateDatabase.record(for: shareRef.recordID)
+      guard let fetchedShare = shareRecord as? CKShare else {
+        Log.error(
+          "Expected CKShare but received \(type(of: shareRecord))",
+          category: .cloudKit)
+        self.pendingParticipants = []
+        return
+      }
+      share = fetchedShare
       self.activeZoneShare = share
     } catch {
       Log.error("Could not fetch share: \(error)", category: .cloudKit)
@@ -951,7 +983,13 @@ class CloudKitManager: ObservableObject {
       throw CloudKitError.shareNotFound
     }
 
-    let share = try await sharedDatabase.record(for: shareRef.recordID) as! CKShare
+    let shareRecord = try await sharedDatabase.record(for: shareRef.recordID)
+    guard let share = shareRecord as? CKShare else {
+      Log.error(
+        "Expected CKShare but received \(type(of: shareRecord))",
+        category: .cloudKit)
+      throw CloudKitError.shareNotFound
+    }
     return share
   }
 
