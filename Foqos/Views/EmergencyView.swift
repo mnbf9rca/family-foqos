@@ -92,12 +92,12 @@ struct EmergencyView: View {
             }
           } else {
             Menu {
-              let currentPeriod = strategyManager.getResetPeriodInWeeks()
+              let currentPeriod = strategyManager.getResetPeriodInDays()
 
               Button {
-                strategyManager.setResetPeriodInWeeks(2)
+                strategyManager.setResetPeriodInDays(14)
               } label: {
-                if currentPeriod == 2 {
+                if currentPeriod == 14 {
                   Label("2 weeks", systemImage: "checkmark")
                 } else {
                   Text("2 weeks")
@@ -105,9 +105,9 @@ struct EmergencyView: View {
               }
 
               Button {
-                strategyManager.setResetPeriodInWeeks(4)
+                strategyManager.setResetPeriodInDays(28)
               } label: {
-                if currentPeriod == 4 {
+                if currentPeriod == 28 {
                   Label("4 weeks", systemImage: "checkmark")
                 } else {
                   Text("4 weeks")
@@ -115,9 +115,9 @@ struct EmergencyView: View {
               }
 
               Button {
-                strategyManager.setResetPeriodInWeeks(6)
+                strategyManager.setResetPeriodInDays(42)
               } label: {
-                if currentPeriod == 6 {
+                if currentPeriod == 42 {
                   Label("6 weeks", systemImage: "checkmark")
                 } else {
                   Text("6 weeks")
@@ -125,9 +125,9 @@ struct EmergencyView: View {
               }
 
               Button {
-                strategyManager.setResetPeriodInWeeks(8)
+                strategyManager.setResetPeriodInDays(56)
               } label: {
-                if currentPeriod == 8 {
+                if currentPeriod == 56 {
                   Label("8 weeks", systemImage: "checkmark")
                 } else {
                   Text("8 weeks")
