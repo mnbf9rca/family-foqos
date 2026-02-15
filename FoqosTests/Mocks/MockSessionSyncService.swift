@@ -14,6 +14,9 @@ actor MockSessionSyncService {
   /// Simulate CAS conflict on next operation
   var simulateConflictOnce = false
 
+  /// Number of times to simulate CAS conflicts before succeeding
+  var simulateConflictCount = 0
+
   func fetchSession(profileId: UUID) async -> SessionSyncService.FetchResult {
     if simulatedDelay > 0 {
       try? await Task.sleep(nanoseconds: simulatedDelay * 1_000_000)
@@ -38,6 +41,17 @@ actor MockSessionSyncService {
       var winner = ProfileSessionRecord(profileId: profileId)
       _ = winner.applyUpdate(
         isActive: true, sequenceNumber: 1, deviceId: "other-device", startTime: Date())
+      records[profileId] = winner
+      return .alreadyActive(session: winner)
+    }
+
+    if simulateConflictCount > 0 {
+      simulateConflictCount -= 1
+      // Simulate conflict: another device won the race, session is already active
+      var winner = records[profileId] ?? ProfileSessionRecord(profileId: profileId)
+      let newSeq = winner.sequenceNumber + 1
+      _ = winner.applyUpdate(
+        isActive: true, sequenceNumber: newSeq, deviceId: "conflict-device", startTime: Date())
       records[profileId] = winner
       return .alreadyActive(session: winner)
     }
@@ -78,9 +92,14 @@ actor MockSessionSyncService {
   func reset() {
     records.removeAll()
     simulateConflictOnce = false
+    simulateConflictCount = 0
   }
 
   func setSimulateConflictOnce(_ value: Bool) {
     simulateConflictOnce = value
+  }
+
+  func setSimulateConflictCount(_ value: Int) {
+    simulateConflictCount = value
   }
 }

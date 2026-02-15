@@ -80,121 +80,132 @@ actor SessionSyncService {
 
   // MARK: - Start Session (with CAS)
 
-  /// Attempt to start a session. Uses CAS to handle concurrent starts.
+  private static let maxCASRetries = 3
+
+  /// Attempt to start a session. Uses CAS with iterative retry loop.
   func startSession(profileId: UUID, startTime: Date = Date()) async -> StartResult {
-    // First, fetch current state
-    let fetchResult = await fetchSession(profileId: profileId)
-
-    switch fetchResult {
-    case .found(let existing):
-      if existing.isActive {
-        // Session already active - join it instead of creating new
-        Log.info("Session already active for \(profileId), joining", category: .sync)
-        return .alreadyActive(session: existing)
+    for attempt in 0..<Self.maxCASRetries {
+      // Backoff with jitter on retries (not on first attempt)
+      if attempt > 0 {
+        let baseDelay = UInt64(100_000_000 * (attempt + 1))  // 200ms, 300ms
+        let jitter = UInt64.random(in: 0...100_000_000)  // 0-100ms
+        try? await Task.sleep(nanoseconds: baseDelay + jitter)
+        Log.info(
+          "CAS retry attempt \(attempt + 1)/\(Self.maxCASRetries) for \(profileId)",
+          category: .sync
+        )
       }
-      // Session exists but inactive - try to activate it
-      return await activateExistingSession(profileId: profileId, startTime: startTime)
 
-    case .notFound:
-      // No record exists - create new one
-      return await createNewSession(profileId: profileId, startTime: startTime)
+      // Fetch current state
+      let fetchResult = await fetchSession(profileId: profileId)
 
-    case .error(let error):
-      return .error(error)
+      switch fetchResult {
+      case .found(let existing):
+        if existing.isActive {
+          Log.info("Session already active for \(profileId), joining", category: .sync)
+          return .alreadyActive(session: existing)
+        }
+        // Session exists but inactive - try to activate it
+        guard let cached = cachedRecords[profileId] else {
+          return .error(SessionSyncError.noCachedRecord)
+        }
+        let (existingRecord, existingSession) = cached
+        let newSequence = existingSession.sequenceNumber + 1
+
+        var updatedSession = existingSession
+        updatedSession.resetForNewSession()
+        _ = updatedSession.applyUpdate(
+          isActive: true,
+          sequenceNumber: newSequence,
+          deviceId: deviceId,
+          startTime: startTime
+        )
+        updatedSession.updateCKRecord(existingRecord)
+
+        let saveResult = await attemptCASSave(
+          record: existingRecord,
+          profileId: profileId,
+          newSequence: newSequence
+        )
+        switch saveResult {
+        case .success:
+          return .started(sequenceNumber: newSequence)
+        case .conflict:
+          continue  // Retry the loop
+        case .error(let error):
+          return .error(error)
+        }
+
+      case .notFound:
+        // No record exists - create new one
+        var session = ProfileSessionRecord(profileId: profileId)
+        _ = session.applyUpdate(
+          isActive: true,
+          sequenceNumber: 1,
+          deviceId: deviceId,
+          startTime: startTime
+        )
+        let record = session.toCKRecord(in: syncZoneID)
+
+        let saveResult = await attemptCASSave(
+          record: record,
+          profileId: profileId,
+          newSequence: 1
+        )
+        switch saveResult {
+        case .success:
+          return .started(sequenceNumber: 1)
+        case .conflict:
+          continue  // Retry the loop
+        case .error(let error):
+          return .error(error)
+        }
+
+      case .error(let error):
+        return .error(error)
+      }
     }
+
+    Log.error(
+      "CAS max retries (\(Self.maxCASRetries)) exceeded for \(profileId)",
+      category: .sync
+    )
+    return .error(SessionSyncError.maxRetriesExceeded)
   }
 
-  private func activateExistingSession(profileId: UUID, startTime: Date) async -> StartResult {
-    guard let cached = cachedRecords[profileId] else {
-      return .error(SessionSyncError.noCachedRecord)
-    }
-
-    let (existingRecord, existingSession) = cached
-    let newSequence = existingSession.sequenceNumber + 1
-
-    // Prepare updated record
-    var updatedSession = existingSession
-    updatedSession.resetForNewSession()
-    _ = updatedSession.applyUpdate(
-      isActive: true,
-      sequenceNumber: newSequence,
-      deviceId: deviceId,
-      startTime: startTime
-    )
-    updatedSession.updateCKRecord(existingRecord)
-
-    // Attempt CAS save
-    return await saveWithCAS(
-      record: existingRecord,
-      profileId: profileId,
-      newSequence: newSequence,
-      isStart: true,
-      startTime: startTime
-    )
+  /// Internal CAS save result (not exposed publicly)
+  private enum CASSaveResult {
+    case success
+    case conflict
+    case error(Error)
   }
 
-  private func createNewSession(profileId: UUID, startTime: Date) async -> StartResult {
-    var session = ProfileSessionRecord(profileId: profileId)
-    _ = session.applyUpdate(
-      isActive: true,
-      sequenceNumber: 1,
-      deviceId: deviceId,
-      startTime: startTime
-    )
-
-    let record = session.toCKRecord(in: syncZoneID)
-
-    // Attempt save (will fail if another device created first)
-    return await saveWithCAS(
-      record: record,
-      profileId: profileId,
-      newSequence: 1,
-      isStart: true,
-      startTime: startTime
-    )
-  }
-
-  private func saveWithCAS(
+  /// Attempt a single CAS save. Returns .conflict if server record changed.
+  private func attemptCASSave(
     record: CKRecord,
     profileId: UUID,
-    newSequence: Int,
-    isStart: Bool,
-    startTime: Date? = nil
-  ) async -> StartResult {
+    newSequence: Int
+  ) async -> CASSaveResult {
     do {
-      let savedRecord = try await saveRecordWithPolicy(record, policy: .ifServerRecordUnchanged)
+      let savedRecord = try await saveRecordWithPolicy(
+        record, policy: .ifServerRecordUnchanged)
 
-      // Update cache
       if let session = ProfileSessionRecord(from: savedRecord) {
         cachedRecords[profileId] = (savedRecord, session)
       }
 
       Log.info(
-        "\(isStart ? "Started" : "Updated") session for \(profileId) with seq=\(newSequence)",
+        "CAS save succeeded for \(profileId) with seq=\(newSequence)",
         category: .sync
       )
-      return .started(sequenceNumber: newSequence)
-
+      return .success
     } catch let error as CKError {
       if error.code == .serverRecordChanged {
-        // Another device won the race - fetch their version and join
-        Log.info("CAS conflict for \(profileId), fetching winner's session", category: .sync)
-        let refetchResult = await fetchSession(profileId: profileId)
-
-        switch refetchResult {
-        case .found(let winnerSession):
-          if winnerSession.isActive {
-            return .alreadyActive(session: winnerSession)
-          } else {
-            // Winner's session is stopped - retry our start
-            return await activateExistingSession(
-              profileId: profileId, startTime: startTime ?? Date())
-          }
-        case .notFound:
-          return .error(SessionSyncError.unexpectedState)
-        case .error(let fetchError):
-          return .error(fetchError)
-        }
+        Log.info(
+          "CAS conflict for \(profileId), will retry",
+          category: .sync
+        )
+        return .conflict
       }
       return .error(error)
     } catch {
@@ -345,6 +356,7 @@ enum SessionSyncError: LocalizedError {
   case noCachedRecord
   case invalidRecord
   case unexpectedState
+  case maxRetriesExceeded
 
   var errorDescription: String? {
     switch self {
@@ -354,6 +366,8 @@ enum SessionSyncError: LocalizedError {
       return "CloudKit record could not be parsed"
     case .unexpectedState:
       return "Unexpected state during sync operation"
+    case .maxRetriesExceeded:
+      return "Failed to sync session after maximum retry attempts"
     }
   }
 }

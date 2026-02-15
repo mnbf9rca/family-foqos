@@ -6,11 +6,11 @@ struct ParentDashboardView: View {
   @ObservedObject private var cloudKitManager = CloudKitManager.shared
   @ObservedObject private var appModeManager = AppModeManager.shared
   @ObservedObject private var lockCodeManager = LockCodeManager.shared
+  @ObservedObject private var strategyManager = StrategyManager.shared
 
   @State private var showLockCodeSetup = false
   @State private var showError = false
   @State private var errorMessage = ""
-
   // Share coordinator for direct sharing
   @StateObject private var shareCoordinator = ShareCoordinator()
 
@@ -35,6 +35,13 @@ struct ParentDashboardView: View {
           lockCodeSection
             .disabled(!isPageFunctional)
             .opacity(isPageFunctional ? 1.0 : 0.5)
+
+          // Emergency settings lock (only when lock code is set)
+          if lockCodeManager.hasAnyLockCode {
+            emergencyLockSection
+              .disabled(!isPageFunctional)
+              .opacity(isPageFunctional ? 1.0 : 0.5)
+          }
 
           // Co-parents section
           coParentsSection
@@ -180,6 +187,45 @@ struct ParentDashboardView: View {
           showLockCodeSetup = true
         })
       }
+    }
+  }
+
+  private var emergencyLockSection: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      Text("Emergency Settings")
+        .font(.headline)
+
+      HStack(spacing: 16) {
+        Image(systemName: strategyManager.isEmergencySettingsLocked() ? "lock.fill" : "lock.open")
+          .font(.title2)
+          .foregroundColor(strategyManager.isEmergencySettingsLocked() ? .orange : .secondary)
+
+        VStack(alignment: .leading, spacing: 4) {
+          Text("Lock Emergency Settings")
+            .font(.subheadline)
+            .fontWeight(.medium)
+
+          Text("Requires lock code to change reset period on children's devices")
+            .font(.caption)
+            .foregroundColor(.secondary)
+        }
+
+        Spacer()
+
+        Toggle(
+          "",
+          isOn: Binding(
+            get: { strategyManager.isEmergencySettingsLocked() },
+            set: { strategyManager.setEmergencySettingsLocked($0) }
+          )
+        )
+        .labelsHidden()
+      }
+      .padding()
+      .background(
+        RoundedRectangle(cornerRadius: 12)
+          .fill(Color(.tertiarySystemBackground))
+      )
     }
   }
 

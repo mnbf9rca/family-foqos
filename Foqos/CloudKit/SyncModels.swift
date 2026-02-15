@@ -435,6 +435,110 @@ struct SyncedLocation: Codable, Equatable {
   }
 }
 
+// MARK: - Synced Emergency Settings
+
+/// CloudKit record representation of emergency unblock settings for same-user multi-device sync.
+/// One record per user (fixed record name), version-based conflict resolution.
+struct SyncedEmergencySettings: Codable, Equatable {
+  var unblocksRemaining: Int
+  var resetPeriodInDays: Int
+  var lastResetDate: Date
+  var settingsLocked: Bool
+  var version: Int
+  var lastModified: Date
+  var originDeviceId: String
+
+  // MARK: - CloudKit Record Type
+
+  static let recordType = "EmergencySettings"
+  static let recordName = "emergency-settings"
+
+  static let settingsUserInfoKey = "emergencySettings"
+
+  // MARK: - CloudKit Field Keys
+
+  enum FieldKey: String {
+    case unblocksRemaining
+    case resetPeriodInDays
+    case lastResetDate
+    case settingsLocked
+    case version
+    case lastModified
+    case originDeviceId
+  }
+
+  // MARK: - Defaults
+
+  static func defaults(deviceId: String) -> SyncedEmergencySettings {
+    SyncedEmergencySettings(
+      unblocksRemaining: 3,
+      resetPeriodInDays: 28,
+      lastResetDate: Date(),
+      settingsLocked: false,
+      version: 0,
+      lastModified: Date(),
+      originDeviceId: deviceId
+    )
+  }
+
+  // MARK: - CloudKit Conversion
+
+  func toCKRecord(in zoneID: CKRecordZone.ID) -> CKRecord {
+    let recordID = CKRecord.ID(recordName: Self.recordName, zoneID: zoneID)
+    let record = CKRecord(recordType: Self.recordType, recordID: recordID)
+    updateCKRecord(record)
+    return record
+  }
+
+  func updateCKRecord(_ record: CKRecord) {
+    record[FieldKey.unblocksRemaining.rawValue] = unblocksRemaining
+    record[FieldKey.resetPeriodInDays.rawValue] = resetPeriodInDays
+    record[FieldKey.lastResetDate.rawValue] = lastResetDate
+    record[FieldKey.settingsLocked.rawValue] = settingsLocked
+    record[FieldKey.version.rawValue] = version
+    record[FieldKey.lastModified.rawValue] = lastModified
+    record[FieldKey.originDeviceId.rawValue] = originDeviceId
+  }
+
+  init?(from record: CKRecord) {
+    guard record.recordType == Self.recordType,
+      let unblocksRemaining = record[FieldKey.unblocksRemaining.rawValue] as? Int,
+      let resetPeriodInDays = record[FieldKey.resetPeriodInDays.rawValue] as? Int,
+      let lastResetDate = record[FieldKey.lastResetDate.rawValue] as? Date,
+      let version = record[FieldKey.version.rawValue] as? Int,
+      let lastModified = record[FieldKey.lastModified.rawValue] as? Date
+    else {
+      return nil
+    }
+
+    self.unblocksRemaining = unblocksRemaining
+    self.resetPeriodInDays = resetPeriodInDays
+    self.lastResetDate = lastResetDate
+    self.settingsLocked = record[FieldKey.settingsLocked.rawValue] as? Bool ?? false
+    self.version = version
+    self.lastModified = lastModified
+    self.originDeviceId = record[FieldKey.originDeviceId.rawValue] as? String ?? ""
+  }
+
+  init(
+    unblocksRemaining: Int,
+    resetPeriodInDays: Int,
+    lastResetDate: Date,
+    settingsLocked: Bool,
+    version: Int,
+    lastModified: Date,
+    originDeviceId: String
+  ) {
+    self.unblocksRemaining = unblocksRemaining
+    self.resetPeriodInDays = resetPeriodInDays
+    self.lastResetDate = lastResetDate
+    self.settingsLocked = settingsLocked
+    self.version = version
+    self.lastModified = lastModified
+    self.originDeviceId = originDeviceId
+  }
+}
+
 // MARK: - Sync Reset Request
 
 /// CloudKit record for requesting a sync reset across devices.

@@ -339,6 +339,7 @@ class ProfileSyncManager: ObservableObject {
       try await pullProfiles()
       try await pullProfileSessionRecords()  // CAS-based session sync
       try await pullLocations()
+      try await pullEmergencySettings()
 
       // Request push of local data (SyncCoordinator will handle this)
       NotificationCenter.default.post(name: .localDataPushRequested, object: nil)
@@ -736,6 +737,59 @@ class ProfileSyncManager: ObservableObject {
     }
   }
 
+  // MARK: - Emergency Settings Sync
+
+  /// Pull emergency settings from CloudKit (single record)
+  func pullEmergencySettings() async throws {
+    guard isEnabled else { throw SyncError.syncDisabled }
+
+    let recordID = CKRecord.ID(
+      recordName: SyncedEmergencySettings.recordName,
+      zoneID: syncZoneID
+    )
+
+    do {
+      let record = try await privateDatabase.record(for: recordID)
+      guard let settings = SyncedEmergencySettings(from: record) else {
+        Log.warning("Failed to decode emergency settings record", category: .sync)
+        return
+      }
+
+      NotificationCenter.default.post(
+        name: .emergencySettingsReceived,
+        object: nil,
+        userInfo: [SyncedEmergencySettings.settingsUserInfoKey: settings]
+      )
+
+      Log.info("Pulled emergency settings v\(settings.version)", category: .sync)
+    } catch let error as CKError {
+      if error.code == .unknownItem {
+        Log.info("No emergency settings record in CloudKit yet", category: .sync)
+        return
+      }
+      throw error
+    }
+  }
+
+  /// Push emergency settings to CloudKit (handles create and update)
+  func pushEmergencySettings(_ settings: SyncedEmergencySettings) async throws {
+    guard isEnabled else { return }
+
+    let recordID = CKRecord.ID(
+      recordName: SyncedEmergencySettings.recordName,
+      zoneID: syncZoneID
+    )
+
+    let existingRecord = try? await privateDatabase.record(for: recordID)
+    let record = existingRecord ?? settings.toCKRecord(in: syncZoneID)
+    if existingRecord != nil {
+      settings.updateCKRecord(record)
+    }
+
+    _ = try await privateDatabase.save(record)
+    Log.info("Pushed emergency settings v\(settings.version)", category: .sync)
+  }
+
   // MARK: - Reset Sync
 
   /// Reset syncing - delete all synced data and re-push from this device
@@ -784,6 +838,7 @@ class ProfileSyncManager: ObservableObject {
       LegacySyncedSession.recordType,
       ProfileSessionRecord.recordType,
       SyncedLocation.recordType,
+      SyncedEmergencySettings.recordType,
       SyncResetRequest.recordType,
     ]
 
@@ -830,4 +885,5 @@ extension Notification.Name {
   static let syncResetRequested = Notification.Name("syncResetRequested")
   static let localDataPushRequested = Notification.Name("localDataPushRequested")
   static let profileSessionRecordsReceived = Notification.Name("profileSessionRecordsReceived")
+  static let emergencySettingsReceived = Notification.Name("emergencySettingsReceived")
 }
