@@ -33,7 +33,7 @@ if [ -n "$STAGED_SWIFT" ]; then
     case "$file" in
       */SafeQuery.swift) continue ;;
     esac
-    if grep -q '@Query' "$file" 2>/dev/null; then
+    if grep -q '^[^/]*@Query' "$file" 2>/dev/null; then
       RAW_QUERY_FILES="$RAW_QUERY_FILES  $file\n"
     fi
   done <<QUERYEOF
