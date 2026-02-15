@@ -1327,6 +1327,7 @@ class StrategyManager: ObservableObject {
   }
 
   private func scheduleBreakReminder(profile: BlockedProfiles) {
+    // At 0 minutes, (0-1)*60 underflows; at 1 minute, (1-1)*60 = 0s is meaningless
     guard profile.breakTimeInMinutes > 1 else { return }
 
     let profileName = profile.name
