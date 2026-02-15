@@ -113,10 +113,12 @@ struct foqosApp: App {
         .onChange(of: scenePhase) { oldPhase, newPhase in
           Log.debug("scenePhase changed from \(oldPhase) to \(newPhase)", category: .app)
           if newPhase == .active {
-            // Verify child authorization when app becomes active
-            verifyChildAuthorizationIfNeeded()
-            // Self-heal FamilyMember record if connected to family
-            Task { await CloudKitManager.shared.verifySelfFamilyMemberRecord() }
+            Task {
+              // Enforce CloudKit FamilyMember role as local app mode (must complete before auth check)
+              await CloudKitManager.shared.verifySelfFamilyMemberRecord()
+              // Verify child authorization when app becomes active
+              verifyChildAuthorizationIfNeeded()
+            }
             // Reschedule pre-activation reminders (handles warm returns on new days)
             PreActivationReminderScheduler.rescheduleAllReminders(context: container.mainContext)
             // Catch up any missed schedule starts (DA may not re-fire on foreground)

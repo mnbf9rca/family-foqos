@@ -795,8 +795,10 @@ class CloudKitManager: ObservableObject {
     }
   }
 
-  /// Self-healing: verify own FamilyMember record matches local app mode
-  /// Called on app activation to correct role mismatches.
+  /// Verify own FamilyMember record and enforce CloudKit role locally.
+  /// Called on app activation. If a shared zone exists with a FamilyMember
+  /// record for this user, the record's role is enforced as the local app mode.
+  /// This prevents bypass via reinstall or multi-device inconsistency.
   func verifySelfFamilyMemberRecord() async {
     guard let zone = await findSharedZoneByName() else {
       self.isConnectedToFamily = false
@@ -805,14 +807,19 @@ class CloudKitManager: ObservableObject {
 
     self.isConnectedToFamily = true
 
-    guard let userRecordID = currentUserRecordID else { return }
+    let userRecordID: CKRecord.ID
+    if let cached = currentUserRecordID {
+      userRecordID = cached
+    } else {
+      do {
+        userRecordID = try await ensureUserRecordID()
+      } catch {
+        Log.error("Could not fetch user record ID for verification: \(error)", category: .cloudKit)
+        return
+      }
+    }
     let userRecordName = userRecordID.recordName
     let localMode = AppModeManager.shared.currentMode
-
-    // Only self-heal if in parent or child mode
-    guard localMode == .parent || localMode == .child else { return }
-
-    let expectedRole: FamilyRole = localMode == .parent ? .parent : .child
 
     let query = CKQuery(
       recordType: FamilyMember.recordType,
@@ -827,19 +834,36 @@ class CloudKitManager: ObservableObject {
 
       for (_, result) in results {
         if case .success(let record) = result {
-          let recordRole = record[FamilyMember.RecordKey.role] as? String
-          if recordRole != expectedRole.rawValue {
-            record[FamilyMember.RecordKey.role] = expectedRole.rawValue
-            _ = try await sharedDatabase.save(record)
-            Log.info("Self-healed FamilyMember role to \(expectedRole.rawValue)", category: .cloudKit)
+          guard let recordRoleString = record[FamilyMember.RecordKey.role] as? String,
+            let recordRole = FamilyRole(rawValue: recordRoleString)
+          else {
+            Log.error("FamilyMember record has missing/invalid role", category: .cloudKit)
+            return
           }
+
+          let cloudKitMode: AppMode = recordRole == .parent ? .parent : .child
+
+          if localMode != cloudKitMode {
+            // Enforce CloudKit role locally
+            AppModeManager.shared.selectMode(cloudKitMode)
+            Log.info(
+              "Enforced app mode from CloudKit: \(localMode.rawValue) -> \(cloudKitMode.rawValue)",
+              category: .cloudKit)
+          }
+
           return
         }
       }
 
-      // No record found — re-register
-      Log.info("No self FamilyMember record found, re-registering", category: .cloudKit)
-      await registerSelfAsFamilyMember(role: expectedRole)
+      // No FamilyMember record found
+      if localMode == .parent || localMode == .child {
+        // Re-register only if already in parent/child mode
+        Log.info("No self FamilyMember record found, re-registering", category: .cloudKit)
+        let expectedRole: FamilyRole = localMode == .parent ? .parent : .child
+        await registerSelfAsFamilyMember(role: expectedRole)
+      } else {
+        Log.debug("No self FamilyMember record found, staying in individual mode", category: .cloudKit)
+      }
     } catch {
       Log.error("Failed to verify self FamilyMember record: \(error)", category: .cloudKit)
     }
