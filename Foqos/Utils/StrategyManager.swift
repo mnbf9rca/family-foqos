@@ -38,11 +38,45 @@ class StrategyManager: ObservableObject {
   @Published var pendingStartContext: ModelContext? = nil
   @Published var geofenceWarningMessage: String = ""
 
-  @Published private var emergencyUnblocksRemaining: Int = 3
-  @Published private var emergencyUnblocksResetPeriodInDays: Int = 28
-  @Published private var lastEmergencyUnblocksResetDateTimestamp: Double = 0
-  @Published private var emergencySettingsLockedStorage: Bool = false
-  private(set) var emergencySettingsVersion: Int = 0
+  @Published private var emergencyUnblocksRemaining: Int =
+    UserDefaults.standard.object(forKey: "emergencyUnblocksRemaining") != nil
+    ? UserDefaults.standard.integer(forKey: "emergencyUnblocksRemaining")
+    : 3
+  {
+    didSet { UserDefaults.standard.set(emergencyUnblocksRemaining, forKey: "emergencyUnblocksRemaining") }
+  }
+
+  @Published private var emergencyUnblocksResetPeriodInDays: Int =
+    UserDefaults.standard.object(forKey: "emergencyUnblocksResetPeriodInDays") != nil
+    ? UserDefaults.standard.integer(forKey: "emergencyUnblocksResetPeriodInDays")
+    : 28
+  {
+    didSet { UserDefaults.standard.set(emergencyUnblocksResetPeriodInDays, forKey: "emergencyUnblocksResetPeriodInDays") }
+  }
+
+  @Published private var lastEmergencyUnblocksResetDateTimestamp: Double =
+    UserDefaults.standard.object(forKey: "lastEmergencyUnblocksResetDate") != nil
+    ? UserDefaults.standard.double(forKey: "lastEmergencyUnblocksResetDate")
+    : 0
+  {
+    didSet { UserDefaults.standard.set(lastEmergencyUnblocksResetDateTimestamp, forKey: "lastEmergencyUnblocksResetDate") }
+  }
+
+  @Published private var emergencySettingsLockedStorage: Bool =
+    UserDefaults.standard.object(forKey: "emergencySettingsLocked") != nil
+    ? UserDefaults.standard.bool(forKey: "emergencySettingsLocked")
+    : false
+  {
+    didSet { UserDefaults.standard.set(emergencySettingsLockedStorage, forKey: "emergencySettingsLocked") }
+  }
+
+  private(set) var emergencySettingsVersion: Int =
+    UserDefaults.standard.object(forKey: "emergencySettingsVersion") != nil
+    ? UserDefaults.standard.integer(forKey: "emergencySettingsVersion")
+    : 0
+  {
+    didSet { UserDefaults.standard.set(emergencySettingsVersion, forKey: "emergencySettingsVersion") }
+  }
 
   private let liveActivityManager = LiveActivityManager.shared
   private let profileSyncManager = ProfileSyncManager.shared
