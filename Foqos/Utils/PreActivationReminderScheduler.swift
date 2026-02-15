@@ -54,6 +54,7 @@ enum PreActivationReminderScheduler {
             lastStoppedAt: profile.scheduleLastStoppedAt)
         else { continue }
 
+        Log.info("Catching up missed schedule start for profile: \(profile.name)", category: .timer)
         let snapshot = BlockedProfiles.getSnapshot(for: profile)
         ScheduleTimerActivity().start(for: snapshot)
       }

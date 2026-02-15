@@ -6,19 +6,28 @@ import XCTest
 final class ShouldBeActiveNowTests: XCTestCase {
   private let calendar = Calendar.current
 
-  /// Helper: build a date for today at the given hour:minute
-  private func today(hour: Int, minute: Int) -> Date {
-    let now = Date()
-    var c = calendar.dateComponents([.year, .month, .day], from: now)
+  // Fixed reference: Wednesday 2026-06-15 (weekday 4 = Wednesday)
+  private let referenceDate: Date = {
+    var c = DateComponents()
+    c.year = 2026
+    c.month = 6
+    c.day = 15
+    c.hour = 12
+    c.minute = 0
+    c.second = 0
+    return Calendar.current.date(from: c)!
+  }()
+
+  /// Wednesday's weekday value (4 in Apple's Calendar)
+  private var referenceWeekday: Int { calendar.component(.weekday, from: referenceDate) }
+
+  private func date(hour: Int, minute: Int, dayOffset: Int = 0) -> Date {
+    var c = calendar.dateComponents([.year, .month, .day], from: referenceDate)
     c.hour = hour
     c.minute = minute
     c.second = 0
-    return calendar.date(from: c)!
-  }
-
-  /// Helper: build a date for yesterday at the given hour:minute
-  private func yesterday(hour: Int, minute: Int) -> Date {
-    calendar.date(byAdding: .day, value: -1, to: today(hour: hour, minute: minute))!
+    let base = calendar.date(from: c)!
+    return dayOffset == 0 ? base : calendar.date(byAdding: .day, value: dayOffset, to: base)!
   }
 
   private func makeSchedule(
@@ -35,7 +44,7 @@ final class ShouldBeActiveNowTests: XCTestCase {
 
   func testInWindow_notSuppressed_returnsTrue() {
     let start = makeSchedule(hour: 10, minute: 0)
-    let now = today(hour: 14, minute: 0)
+    let now = date(hour: 14, minute: 0)
 
     XCTAssertTrue(
       start.shouldBeActiveNow(
@@ -45,7 +54,7 @@ final class ShouldBeActiveNowTests: XCTestCase {
 
   func testOutsideWindow_returnsFalse() {
     let start = makeSchedule(hour: 14, minute: 0)
-    let now = today(hour: 9, minute: 0)
+    let now = date(hour: 9, minute: 0)
 
     XCTAssertFalse(
       start.shouldBeActiveNow(
@@ -55,8 +64,8 @@ final class ShouldBeActiveNowTests: XCTestCase {
 
   func testInWindow_suppressed_returnsFalse() {
     let start = makeSchedule(hour: 10, minute: 0)
-    let now = today(hour: 14, minute: 0)
-    let stoppedAt = today(hour: 12, minute: 0)
+    let now = date(hour: 14, minute: 0)
+    let stoppedAt = date(hour: 12, minute: 0)
 
     XCTAssertFalse(
       start.shouldBeActiveNow(
@@ -67,7 +76,7 @@ final class ShouldBeActiveNowTests: XCTestCase {
   // MARK: - Age check
 
   func testTooNew_returnsFalse() {
-    let now = today(hour: 14, minute: 0)
+    let now = date(hour: 14, minute: 0)
     let start = makeSchedule(hour: 10, minute: 0, updatedAt: now)
 
     XCTAssertFalse(
@@ -79,11 +88,10 @@ final class ShouldBeActiveNowTests: XCTestCase {
   // MARK: - Day check
 
   func testNotScheduledDay_returnsFalse() {
-    // Build a schedule only for a day that is NOT today
-    let todayWeekday = calendar.component(.weekday, from: Date())
-    let otherDay = Weekday.allCases.first { $0.rawValue != todayWeekday }!
+    // Reference is Wednesday (weekday 4). Pick a day that is NOT Wednesday.
+    let otherDay = Weekday.allCases.first { $0.rawValue != referenceWeekday }!
     let start = makeSchedule(hour: 10, minute: 0, days: [otherDay])
-    let now = today(hour: 14, minute: 0)
+    let now = date(hour: 14, minute: 0)
 
     XCTAssertFalse(
       start.shouldBeActiveNow(
@@ -96,7 +104,7 @@ final class ShouldBeActiveNowTests: XCTestCase {
   func testOvernight_at2300_notSuppressed_returnsTrue() {
     let start = makeSchedule(hour: 22, minute: 0)
     let stop = makeSchedule(hour: 6, minute: 0)
-    let now = today(hour: 23, minute: 0)
+    let now = date(hour: 23, minute: 0)
 
     XCTAssertTrue(
       start.shouldBeActiveNow(
@@ -107,7 +115,7 @@ final class ShouldBeActiveNowTests: XCTestCase {
   func testOvernight_at0300_notSuppressed_returnsTrue() {
     let start = makeSchedule(hour: 22, minute: 0)
     let stop = makeSchedule(hour: 6, minute: 0)
-    let now = today(hour: 3, minute: 0)
+    let now = date(hour: 3, minute: 0)
 
     XCTAssertTrue(
       start.shouldBeActiveNow(
@@ -118,8 +126,8 @@ final class ShouldBeActiveNowTests: XCTestCase {
   func testOvernight_at0300_stoppedAt2230Yesterday_returnsFalse() {
     let start = makeSchedule(hour: 22, minute: 0)
     let stop = makeSchedule(hour: 6, minute: 0)
-    let now = today(hour: 3, minute: 0)
-    let stoppedAt = yesterday(hour: 22, minute: 30)
+    let now = date(hour: 3, minute: 0)
+    let stoppedAt = date(hour: 22, minute: 30, dayOffset: -1)
 
     XCTAssertFalse(
       start.shouldBeActiveNow(
@@ -130,7 +138,7 @@ final class ShouldBeActiveNowTests: XCTestCase {
   func testOvernight_betweenWindows_returnsFalse() {
     let start = makeSchedule(hour: 22, minute: 0)
     let stop = makeSchedule(hour: 6, minute: 0)
-    let now = today(hour: 12, minute: 0)
+    let now = date(hour: 12, minute: 0)
 
     XCTAssertFalse(
       start.shouldBeActiveNow(
@@ -143,7 +151,7 @@ final class ShouldBeActiveNowTests: XCTestCase {
   func testSameDay_insideWindow_returnsTrue() {
     let start = makeSchedule(hour: 10, minute: 0)
     let stop = makeSchedule(hour: 17, minute: 0)
-    let now = today(hour: 14, minute: 0)
+    let now = date(hour: 14, minute: 0)
 
     XCTAssertTrue(
       start.shouldBeActiveNow(
@@ -154,7 +162,7 @@ final class ShouldBeActiveNowTests: XCTestCase {
   func testSameDay_afterStop_returnsFalse() {
     let start = makeSchedule(hour: 10, minute: 0)
     let stop = makeSchedule(hour: 17, minute: 0)
-    let now = today(hour: 18, minute: 0)
+    let now = date(hour: 18, minute: 0)
 
     XCTAssertFalse(
       start.shouldBeActiveNow(
@@ -165,14 +173,13 @@ final class ShouldBeActiveNowTests: XCTestCase {
   // MARK: - Overnight day check (window started yesterday)
 
   func testOvernight_at0300_yesterdayNotScheduled_returnsFalse() {
-    // Schedule only for a day that is today (not yesterday)
-    let todayWeekday = calendar.component(.weekday, from: Date())
-    let todayDay = Weekday(rawValue: todayWeekday)!
-    let start = makeSchedule(hour: 22, minute: 0, days: [todayDay])
+    // Reference is Wednesday. Schedule only for Wednesday (not Tuesday = yesterday).
+    let wednesdayDay = Weekday(rawValue: referenceWeekday)!
+    let start = makeSchedule(hour: 22, minute: 0, days: [wednesdayDay])
     let stop = makeSchedule(hour: 6, minute: 0)
-    let now = today(hour: 3, minute: 0)
+    let now = date(hour: 3, minute: 0)
 
-    // At 03:00, window started yesterday. Yesterday is NOT in schedule days.
+    // At 03:00, window started yesterday (Tuesday). Tuesday is NOT in schedule days.
     XCTAssertFalse(
       start.shouldBeActiveNow(
         stopSchedule: stop, lastStoppedAt: nil, on: now, calendar: calendar)
