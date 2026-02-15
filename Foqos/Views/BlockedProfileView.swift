@@ -758,10 +758,18 @@ struct BlockedProfileView: View {
           )
         }
         .sheet(isPresented: $showStartSchedulePicker) {
-          ScheduleTimePicker(schedule: $triggerConfig.startSchedule, title: "Start Schedule")
+          ScheduleTimePicker(
+            schedule: $triggerConfig.startSchedule,
+            title: "Start Schedule",
+            otherScheduleTime: triggerConfig.stopSchedule
+          )
         }
         .sheet(isPresented: $showStopSchedulePicker) {
-          ScheduleTimePicker(schedule: $triggerConfig.stopSchedule, title: "Stop Schedule")
+          ScheduleTimePicker(
+            schedule: $triggerConfig.stopSchedule,
+            title: "Stop Schedule",
+            otherScheduleTime: triggerConfig.startSchedule
+          )
         }
         .alert(item: $alertIdentifier) { alert in
           switch alert.id {

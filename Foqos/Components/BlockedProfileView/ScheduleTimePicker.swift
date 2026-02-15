@@ -5,6 +5,7 @@ import SwiftUI
 struct ScheduleTimePicker: View {
   @Binding var schedule: ProfileScheduleTime?
   let title: String
+  let otherScheduleTime: ProfileScheduleTime?
 
   @State private var selectedDays: Set<Weekday> = []
   @State private var selectedTime: Date = {
@@ -12,6 +13,12 @@ struct ScheduleTimePicker: View {
   }()
 
   @Environment(\.dismiss) var dismiss
+
+  private var timesMatch: Bool {
+    guard let other = otherScheduleTime else { return false }
+    let components = Calendar.current.dateComponents([.hour, .minute], from: selectedTime)
+    return components.hour == other.hour && components.minute == other.minute
+  }
 
   var body: some View {
     NavigationStack {
@@ -47,6 +54,16 @@ struct ScheduleTimePicker: View {
           .datePickerStyle(.wheel)
           .labelsHidden()
         }
+
+        if timesMatch {
+          Section {
+            Text(
+              "Start and stop times can't be the same. Try 1 minute apart for a near-24-hour schedule."
+            )
+            .foregroundStyle(.red)
+            .font(.footnote)
+          }
+        }
       }
       .navigationTitle(title)
       .navigationBarTitleDisplayMode(.inline)
@@ -61,7 +78,7 @@ struct ScheduleTimePicker: View {
             saveSchedule()
             dismiss()
           }
-          .disabled(selectedDays.isEmpty)
+          .disabled(selectedDays.isEmpty || timesMatch)
         }
       }
       .onAppear {
@@ -100,6 +117,7 @@ struct ScheduleTimePicker: View {
 #Preview {
   ScheduleTimePicker(
     schedule: .constant(nil),
-    title: "Start Schedule"
+    title: "Start Schedule",
+    otherScheduleTime: nil
   )
 }
