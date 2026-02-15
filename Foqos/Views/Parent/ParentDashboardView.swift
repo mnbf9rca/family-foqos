@@ -11,8 +11,6 @@ struct ParentDashboardView: View {
   @State private var showLockCodeSetup = false
   @State private var showError = false
   @State private var errorMessage = ""
-  @State private var isEmergencySettingsLocked: Bool = false
-
   // Share coordinator for direct sharing
   @StateObject private var shareCoordinator = ShareCoordinator()
 
@@ -73,7 +71,6 @@ struct ParentDashboardView: View {
       }
       .task {
         await refreshData()
-        isEmergencySettingsLocked = strategyManager.isEmergencySettingsLocked()
       }
       .sheet(isPresented: $showLockCodeSetup) {
         LockCodeSetupView(
@@ -199,9 +196,9 @@ struct ParentDashboardView: View {
         .font(.headline)
 
       HStack(spacing: 16) {
-        Image(systemName: isEmergencySettingsLocked ? "lock.fill" : "lock.open")
+        Image(systemName: strategyManager.isEmergencySettingsLocked() ? "lock.fill" : "lock.open")
           .font(.title2)
-          .foregroundColor(isEmergencySettingsLocked ? .orange : .secondary)
+          .foregroundColor(strategyManager.isEmergencySettingsLocked() ? .orange : .secondary)
 
         VStack(alignment: .leading, spacing: 4) {
           Text("Lock Emergency Settings")
@@ -215,11 +212,14 @@ struct ParentDashboardView: View {
 
         Spacer()
 
-        Toggle("", isOn: $isEmergencySettingsLocked)
-          .labelsHidden()
-          .onChange(of: isEmergencySettingsLocked) { _, newValue in
-            strategyManager.setEmergencySettingsLocked(newValue)
-          }
+        Toggle(
+          "",
+          isOn: Binding(
+            get: { strategyManager.isEmergencySettingsLocked() },
+            set: { strategyManager.setEmergencySettingsLocked($0) }
+          )
+        )
+        .labelsHidden()
       }
       .padding()
       .background(
