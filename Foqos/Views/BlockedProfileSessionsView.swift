@@ -25,24 +25,20 @@ struct BlockedProfileSessionsView: View {
   @State private var alertIdentifier: SessionAlertIdentifier?
   @State private var showDeleteAllConfirmation = false
 
-  @Query private var sessions: [BlockedProfileSession]
-
-  private var validSessions: [BlockedProfileSession] {
-    sessions.valid
-  }
+  @SafeQuery private var sessions: [BlockedProfileSession]
 
   private var activeSession: BlockedProfileSession? {
-    validSessions.first { $0.isActive }
+    sessions.first { $0.isActive }
   }
 
   private var inactiveSessions: [BlockedProfileSession] {
-    validSessions.filter { !$0.isActive }
+    sessions.filter { !$0.isActive }
   }
 
   init(profile: BlockedProfiles) {
     self.profile = profile
     let profileId = profile.id
-    _sessions = Query(
+    _sessions = SafeQuery(
       filter: #Predicate<BlockedProfileSession> {
         $0.blockedProfile.id == profileId
       },
@@ -78,7 +74,7 @@ struct BlockedProfileSessionsView: View {
           }
         }
 
-        if validSessions.isEmpty {
+        if sessions.isEmpty {
           VStack(spacing: 16) {
             Spacer()
 
