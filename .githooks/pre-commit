@@ -25,3 +25,25 @@ if [ -n "$STAGED_SWIFT" ]; then
 $STAGED_SWIFT
 EOF
 fi
+
+# --- Reject raw @Query usage (use @SafeQuery instead) ---
+if [ -n "$STAGED_SWIFT" ]; then
+  RAW_QUERY_FILES=""
+  while IFS= read -r file; do
+    case "$file" in
+      */SafeQuery.swift) continue ;;
+    esac
+    if grep -q '@Query' "$file" 2>/dev/null; then
+      RAW_QUERY_FILES="$RAW_QUERY_FILES  $file\n"
+    fi
+  done <<QUERYEOF
+$STAGED_SWIFT
+QUERYEOF
+  if [ -n "$RAW_QUERY_FILES" ]; then
+    echo "ERROR: Raw @Query usage detected. Use @SafeQuery instead."
+    echo "See Foqos/Utils/SafeQuery.swift"
+    echo ""
+    printf "Files:\n$RAW_QUERY_FILES"
+    exit 1
+  fi
+fi
