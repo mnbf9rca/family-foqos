@@ -880,7 +880,17 @@ struct BlockedProfileView: View {
         : nil
 
       if let existingProfile = profile {
-        // Update existing profile
+        // Set nullable fields directly on the model — these can legitimately be
+        // nil (e.g. user removes a geofence or NFC tag), and updateProfile's
+        // if-let guards can't distinguish "not passed" from "clear to nil".
+        existingProfile.geofenceRule = geofenceRule
+        existingProfile.managedByChildId = managedChildId
+        existingProfile.physicalUnblockNFCTagId = physicalUnblockNFCTagId
+        existingProfile.physicalUnblockQRCodeId = physicalUnblockQRCodeId
+        existingProfile.reminderTimeInSeconds = reminderTimeSeconds
+        existingProfile.customReminderMessage = customReminderMessage
+
+        // Update remaining fields through updateProfile (which calls context.save())
         let updatedProfile = try BlockedProfiles.updateProfile(
           existingProfile,
           in: modelContext,
@@ -888,8 +898,6 @@ struct BlockedProfileView: View {
           selection: selectedActivity,
           blockingStrategyId: nil,
           enableLiveActivity: enableLiveActivity,
-          reminderTime: reminderTimeSeconds,
-          customReminderMessage: customReminderMessage,
           enableBreaks: enableBreaks,
           breakTimeInMinutes: breakTimeInMinutes,
           enableStrictMode: enableStrictMode,
@@ -897,14 +905,10 @@ struct BlockedProfileView: View {
           enableAllowModeDomains: enableAllowModeDomain,
           enableSafariBlocking: enableSafariBlocking,
           domains: domains,
-          physicalUnblockNFCTagId: physicalUnblockNFCTagId,
-          physicalUnblockQRCodeId: physicalUnblockQRCodeId,
           schedule: nil,
-          geofenceRule: geofenceRule,
           disableBackgroundStops: disableBackgroundStops,
           preActivationReminderTimes: Array(preActivationReminderTimes).sorted(),
           isManaged: isManaged,
-          managedByChildId: managedChildId,
           needsAppSelection: false  // Clear needsAppSelection since user is saving with app selection
         )
 
