@@ -103,6 +103,5 @@ final class TriggerConfigurationModel: ObservableObject {
     profile.stopQRCodeId = stopQRCodeId
     profile.startSchedule = startSchedule
     profile.stopSchedule = stopSchedule
-    profile.scheduleSuppressedUntil = profile.startSchedule?.nextScheduledStartTime(after: Date())
   }
 }

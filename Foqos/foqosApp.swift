@@ -119,6 +119,8 @@ struct foqosApp: App {
             Task { await CloudKitManager.shared.verifySelfFamilyMemberRecord() }
             // Reschedule pre-activation reminders (handles warm returns on new days)
             PreActivationReminderScheduler.rescheduleAllReminders(context: container.mainContext)
+            // Catch up any missed schedule starts (DA may not re-fire on foreground)
+            PreActivationReminderScheduler.catchUpMissedScheduleStarts(context: container.mainContext)
           }
         }
         .onOpenURL { url in
@@ -211,6 +213,8 @@ struct foqosApp: App {
           }
           // Reschedule pre-activation reminders for today
           PreActivationReminderScheduler.rescheduleAllReminders(context: container.mainContext)
+          // Catch up any missed schedule starts
+          PreActivationReminderScheduler.catchUpMissedScheduleStarts(context: container.mainContext)
         }
     }
     .handlesExternalEvents(matching: ["*"])  // Handle all external events including CloudKit shares

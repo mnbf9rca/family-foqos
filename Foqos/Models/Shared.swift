@@ -118,7 +118,7 @@ enum SharedData {
     var syncVersion: Int?
     var needsAppSelection: Bool?
 
-    var scheduleSuppressedUntil: Date?
+    var scheduleLastStoppedAt: Date?
   }
 
   // MARK: – Serializable snapshot of a session (no profile object)
@@ -241,13 +241,13 @@ enum SharedData {
     }
   }
 
-  /// Sets scheduleSuppressedUntil on the profile snapshot in SharedData.
+  /// Sets scheduleLastStoppedAt on the profile snapshot in SharedData.
   /// Called from extension processes that cannot access SwiftData.
-  static func setSuppression(for profileID: String, until date: Date) {
+  static func setLastStoppedAt(for profileID: String, at date: Date) {
     withLock {
       var all = profileSnapshots
       guard var snapshot = all[profileID] else { return }
-      snapshot.scheduleSuppressedUntil = date
+      snapshot.scheduleLastStoppedAt = date
       all[profileID] = snapshot
       profileSnapshots = all
     }

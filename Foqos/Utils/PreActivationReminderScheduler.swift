@@ -31,4 +31,38 @@ enum PreActivationReminderScheduler {
       )
     }
   }
+
+  /// Catch-up: if a V2 schedule should be active but no session is running, start it directly.
+  /// Called on foreground to handle cases where DeviceActivity didn't fire intervalDidStart.
+  static func catchUpMissedScheduleStarts(context: ModelContext) {
+    do {
+      let profiles = try BlockedProfiles.fetchProfiles(in: context)
+
+      for profile in profiles {
+        guard profile.startTriggers.schedule,
+          let startSchedule = profile.startSchedule,
+          startSchedule.isActive
+        else { continue }
+
+        let activeStopSchedule =
+          (profile.stopConditions.schedule && profile.stopSchedule?.isActive == true)
+          ? profile.stopSchedule : nil
+
+        guard
+          startSchedule.shouldBeActiveNow(
+            stopSchedule: activeStopSchedule,
+            lastStoppedAt: profile.scheduleLastStoppedAt)
+        else { continue }
+
+        Log.info("Catching up missed schedule start for profile: \(profile.name)", category: .timer)
+        let snapshot = BlockedProfiles.getSnapshot(for: profile)
+        ScheduleTimerActivity().start(for: snapshot)
+      }
+    } catch {
+      Log.error(
+        "Failed to catch up missed schedule starts: \(error.localizedDescription)",
+        category: .timer
+      )
+    }
+  }
 }

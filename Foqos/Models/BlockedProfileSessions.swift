@@ -94,16 +94,13 @@ class BlockedProfileSession: BreakDurationCalculable {
     SharedData.setEndTime(date: endTime)
     self.endTime = endTime
 
-    // If this was a schedule-started session, suppress until next start time.
+    // If this was a schedule-started session, record when it stopped.
+    // The reader in ScheduleTimerActivity compares this against today's start time.
     // Schedule-started sessions have tag == profile UUID (set by createSessionForSchedular).
-    // This excludes shortcuts (tag: strategy ID), remote sync (tag: "remote-sync"), etc.
     let isScheduleStarted = (tag == blockedProfile.id.uuidString)
     if isScheduleStarted, modelContext != nil {
-      let profile = blockedProfile
-      if let nextStart = profile.startSchedule?.nextScheduledStartTime(after: endTime) {
-        profile.scheduleSuppressedUntil = nextStart
-        BlockedProfiles.updateSnapshot(for: profile)
-      }
+      blockedProfile.scheduleLastStoppedAt = endTime
+      BlockedProfiles.updateSnapshot(for: blockedProfile)
     }
 
     SharedData.flushActiveSession()
