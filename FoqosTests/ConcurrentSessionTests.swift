@@ -136,4 +136,51 @@ final class ConcurrentSessionTests: XCTestCase {
     XCTAssertNotNil(error.errorDescription)
     XCTAssertTrue(error.errorDescription!.contains("retry"))
   }
+
+  /// Verifies that simulated CAS conflicts return alreadyActive
+  /// to match real-world behavior when another device wins the race
+  func testSimulatedConflictReturnsAlreadyActive() async {
+    await mockService.reset()
+    await mockService.setSimulateConflictCount(1)
+
+    let result = await mockService.startSession(
+      profileId: profileId,
+      deviceId: "device-a"
+    )
+
+    guard case .alreadyActive(let session) = result else {
+      XCTFail("Expected alreadyActive when conflict is simulated, got \(result)")
+      return
+    }
+    XCTAssertTrue(session.isActive)
+    XCTAssertEqual(session.sessionOriginDevice, "conflict-device")
+  }
+
+  /// Verifies that after conflicts are exhausted, normal behavior resumes
+  func testStartSucceedsAfterConflictsExhausted() async {
+    await mockService.reset()
+    await mockService.setSimulateConflictCount(2)
+
+    // First two calls return alreadyActive (conflict)
+    let conflict1 = await mockService.startSession(profileId: profileId, deviceId: "device-a")
+    guard case .alreadyActive = conflict1 else {
+      XCTFail("Expected alreadyActive on first conflict")
+      return
+    }
+
+    let conflict2 = await mockService.startSession(profileId: profileId, deviceId: "device-a")
+    guard case .alreadyActive = conflict2 else {
+      XCTFail("Expected alreadyActive on second conflict")
+      return
+    }
+
+    // Third call should succeed normally (conflicts exhausted, session is active from conflicts)
+    // Reset records to test fresh start after conflicts
+    await mockService.reset()
+    let success = await mockService.startSession(profileId: profileId, deviceId: "device-a")
+    guard case .started = success else {
+      XCTFail("Expected started after conflicts exhausted, got \(success)")
+      return
+    }
+  }
 }

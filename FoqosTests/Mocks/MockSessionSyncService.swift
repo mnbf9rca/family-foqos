@@ -47,13 +47,13 @@ actor MockSessionSyncService {
 
     if simulateConflictCount > 0 {
       simulateConflictCount -= 1
-      // Simulate conflict: create a stopped session (so the real service would retry)
-      var stopped = records[profileId] ?? ProfileSessionRecord(profileId: profileId)
-      let newSeq = stopped.sequenceNumber + 1
-      _ = stopped.applyUpdate(
-        isActive: false, sequenceNumber: newSeq, deviceId: "other-device", endTime: Date())
-      records[profileId] = stopped
-      return .started(sequenceNumber: newSeq)  // Mock doesn't recurse; real service retries
+      // Simulate conflict: another device won the race, session is already active
+      var winner = records[profileId] ?? ProfileSessionRecord(profileId: profileId)
+      let newSeq = winner.sequenceNumber + 1
+      _ = winner.applyUpdate(
+        isActive: true, sequenceNumber: newSeq, deviceId: "conflict-device", startTime: Date())
+      records[profileId] = winner
+      return .alreadyActive(session: winner)
     }
 
     if let existing = records[profileId], existing.isActive {
@@ -97,5 +97,9 @@ actor MockSessionSyncService {
 
   func setSimulateConflictOnce(_ value: Bool) {
     simulateConflictOnce = value
+  }
+
+  func setSimulateConflictCount(_ value: Int) {
+    simulateConflictCount = value
   }
 }
