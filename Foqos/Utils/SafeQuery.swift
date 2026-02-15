@@ -2,8 +2,8 @@
 import SwiftUI
 
 /// A property wrapper that embeds @Query and auto-filters SwiftData zombie models.
-/// Use this instead of @Query in all views — it prevents crashes from models deleted
-/// via CloudKit sync whose modelContext has become nil.
+/// Use this instead of @Query in all views — it prevents crashes from models whose
+/// `modelContext` has become nil or whose `isDeleted` flag is set after CloudKit sync.
 ///
 /// Note: `animation:` and `transaction:` parameters are intentionally omitted — no call
 /// site uses them. Add overloads here if needed in the future.
@@ -13,7 +13,7 @@ struct SafeQuery<Element: PersistentModel>: DynamicProperty {
   @Query private var elements: [Element]
 
   var wrappedValue: [Element] {
-    elements.filter { $0.modelContext != nil && !$0.isDeleted }
+    elements.valid
   }
 
   init() {

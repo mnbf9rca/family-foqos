@@ -25,7 +25,7 @@ struct SavedLocationsView: View {
     var result: [UUID: String] = [:]
     for profile in profiles {
       // Check if profile has an active session
-      let hasActiveSession = profile.sessions.contains { $0.isActive }
+      let hasActiveSession = profile.sessions.valid.contains { $0.isActive }
       guard hasActiveSession else { continue }
 
       // Get location IDs from the profile's geofence rule

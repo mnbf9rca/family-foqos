@@ -34,7 +34,8 @@ if [ -n "$STAGED_SWIFT" ]; then
       */SafeQuery.swift) continue ;;
     esac
     if grep -q '^[^/]*@Query' "$file" 2>/dev/null; then
-      RAW_QUERY_FILES="$RAW_QUERY_FILES  $file\n"
+      RAW_QUERY_FILES="$RAW_QUERY_FILES
+  $file"
     fi
   done <<QUERYEOF
 $STAGED_SWIFT
@@ -43,7 +44,7 @@ QUERYEOF
     echo "ERROR: Raw @Query usage detected. Use @SafeQuery instead."
     echo "See Foqos/Utils/SafeQuery.swift"
     echo ""
-    printf "Files:\n%s" "$RAW_QUERY_FILES"
+    echo "Files:$RAW_QUERY_FILES"
     exit 1
   fi
 fi

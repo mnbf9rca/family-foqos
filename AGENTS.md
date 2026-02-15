@@ -97,14 +97,14 @@ import WidgetKit
 - Use `@Binding` for parent-child data flow
 - Use `@Environment(\.keyPath)` for environment values
 - Use `@EnvironmentObject` for shared state managers
-- Use `@Query` for SwiftData queries
+- Use `@SafeQuery` for SwiftData queries (never raw `@Query`)
 - Prefer trailing closure syntax for view modifiers
 
 ```swift
 @State private var isPresenting = false
 @Environment(\.modelContext) private var context
 @EnvironmentObject var strategyManager: StrategyManager
-@Query(sort: \BlockedProfiles.order) private var profiles: [BlockedProfiles]
+@SafeQuery(sort: \BlockedProfiles.order) private var profiles: [BlockedProfiles]
 ```
 
 ### SwiftData Patterns
@@ -134,7 +134,7 @@ Always use `@SafeQuery` instead of `@Query` in views. `@SafeQuery` is a `Dynamic
 @Query(sort: \BlockedProfiles.order) private var profiles: [BlockedProfiles]
 ```
 
-`@SafeQuery` mirrors all `@Query` initializers. Use it the same way, including underscore-init for dynamic predicates:
+`@SafeQuery` mirrors the `@Query` initializers used in this codebase (excluding `animation:` and `transaction:` parameters). Use it the same way, including underscore-init for dynamic predicates:
 
 ```swift
 _sessions = SafeQuery(
