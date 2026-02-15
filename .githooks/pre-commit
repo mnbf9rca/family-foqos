@@ -43,7 +43,7 @@ QUERYEOF
     echo "ERROR: Raw @Query usage detected. Use @SafeQuery instead."
     echo "See Foqos/Utils/SafeQuery.swift"
     echo ""
-    printf "Files:\n$RAW_QUERY_FILES"
+    printf "Files:\n%s" "$RAW_QUERY_FILES"
     exit 1
   fi
 fi
