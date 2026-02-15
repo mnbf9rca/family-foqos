@@ -757,11 +757,19 @@ struct BlockedProfileView: View {
             )
           )
         }
-        .sheet(isPresented: $showStartSchedulePicker) {
-          ScheduleTimePicker(schedule: $triggerConfig.startSchedule, title: "Start Schedule")
+        .sheet(isPresented: $showStartSchedulePicker, onDismiss: { triggerConfig.validate() }) {
+          ScheduleTimePicker(
+            schedule: $triggerConfig.startSchedule,
+            title: "Start Schedule",
+            otherScheduleTime: triggerConfig.stopConditions.schedule ? triggerConfig.stopSchedule : nil
+          )
         }
-        .sheet(isPresented: $showStopSchedulePicker) {
-          ScheduleTimePicker(schedule: $triggerConfig.stopSchedule, title: "Stop Schedule")
+        .sheet(isPresented: $showStopSchedulePicker, onDismiss: { triggerConfig.validate() }) {
+          ScheduleTimePicker(
+            schedule: $triggerConfig.stopSchedule,
+            title: "Stop Schedule",
+            otherScheduleTime: triggerConfig.startTriggers.schedule ? triggerConfig.startSchedule : nil
+          )
         }
         .alert(item: $alertIdentifier) { alert in
           switch alert.id {

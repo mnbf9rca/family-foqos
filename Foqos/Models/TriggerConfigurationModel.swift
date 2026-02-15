@@ -57,6 +57,12 @@ final class TriggerConfigurationModel: ObservableObject {
     if stopConditions.schedule && (stopSchedule == nil || stopSchedule?.isActive != true) {
       errors.append("Configure a stop schedule")
     }
+    if startTriggers.schedule && stopConditions.schedule,
+      let start = startSchedule, let stop = stopSchedule,
+      start.hour == stop.hour && start.minute == stop.minute
+    {
+      errors.append("Start and stop times can't be the same")
+    }
 
     validationErrors = errors
     if !validationErrors.isEmpty {
