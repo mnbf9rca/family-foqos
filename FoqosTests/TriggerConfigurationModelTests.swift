@@ -86,4 +86,40 @@ final class TriggerConfigurationModelTests: XCTestCase {
       "Should have stop condition error after removing stop"
     )
   }
+
+  func testValidationErrorWhenStartAndStopScheduleTimesMatch() {
+    let model = TriggerConfigurationModel()
+    model.startTriggers.schedule = true
+    model.stopConditions.schedule = true
+    model.startSchedule = ProfileScheduleTime(
+      days: [.monday], hour: 10, minute: 0, updatedAt: Date()
+    )
+    model.stopSchedule = ProfileScheduleTime(
+      days: [.monday], hour: 10, minute: 0, updatedAt: Date()
+    )
+    model.validate()
+
+    XCTAssertTrue(
+      model.validationErrors.contains { $0.contains("can't be the same") },
+      "Should have error when start and stop schedule times are equal"
+    )
+  }
+
+  func testNoValidationErrorWhenScheduleTimesDiffer() {
+    let model = TriggerConfigurationModel()
+    model.startTriggers.schedule = true
+    model.stopConditions.schedule = true
+    model.startSchedule = ProfileScheduleTime(
+      days: [.monday], hour: 10, minute: 0, updatedAt: Date()
+    )
+    model.stopSchedule = ProfileScheduleTime(
+      days: [.monday], hour: 17, minute: 0, updatedAt: Date()
+    )
+    model.validate()
+
+    XCTAssertFalse(
+      model.validationErrors.contains { $0.contains("can't be the same") },
+      "Should not have equal-time error when times differ"
+    )
+  }
 }
