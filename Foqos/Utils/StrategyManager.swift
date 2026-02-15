@@ -38,10 +38,20 @@ class StrategyManager: ObservableObject {
   @Published var pendingStartContext: ModelContext? = nil
   @Published var geofenceWarningMessage: String = ""
 
-  @AppStorage("emergencyUnblocksRemaining") private var emergencyUnblocksRemaining: Int = 3
-  @AppStorage("emergencyUnblocksResetPeriodInWeeks") private
-    var emergencyUnblocksResetPeriodInWeeks: Int = 4
-  @AppStorage("lastEmergencyUnblocksResetDate") private var lastEmergencyUnblocksResetDateTimestamp: Double = 0
+  private var emergencyUnblocksRemaining: Int {
+    get { KeychainHelper.getInt(forKey: "family_foqos_emergency_unblocks_remaining") ?? 3 }
+    set { KeychainHelper.set(newValue, forKey: "family_foqos_emergency_unblocks_remaining") }
+  }
+
+  private var emergencyUnblocksResetPeriodInWeeks: Int {
+    get { KeychainHelper.getInt(forKey: "family_foqos_emergency_reset_period_weeks") ?? 4 }
+    set { KeychainHelper.set(newValue, forKey: "family_foqos_emergency_reset_period_weeks") }
+  }
+
+  private var lastEmergencyUnblocksResetDateTimestamp: Double {
+    get { KeychainHelper.getDouble(forKey: "family_foqos_emergency_last_reset_date") ?? 0 }
+    set { KeychainHelper.set(newValue, forKey: "family_foqos_emergency_last_reset_date") }
+  }
 
   private let liveActivityManager = LiveActivityManager.shared
   private let profileSyncManager = ProfileSyncManager.shared
@@ -804,6 +814,14 @@ class StrategyManager: ObservableObject {
   func setResetPeriodInWeeks(_ weeks: Int) {
     emergencyUnblocksResetPeriodInWeeks = weeks
     lastEmergencyUnblocksResetDateTimestamp = Date().timeIntervalSinceReferenceDate
+  }
+
+  func isEmergencySettingsLocked() -> Bool {
+    KeychainHelper.getBool(forKey: "family_foqos_emergency_settings_locked") ?? false
+  }
+
+  func setEmergencySettingsLocked(_ locked: Bool) {
+    KeychainHelper.set(locked, forKey: "family_foqos_emergency_settings_locked")
   }
 
   static func getStrategyFromId(id: String) -> BlockingStrategy {
