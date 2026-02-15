@@ -7,7 +7,7 @@ import SwiftUI
 struct ChildDashboardView: View {
   @Environment(\.modelContext) private var modelContext
   @Environment(\.dismiss) private var dismiss
-  @Query(sort: \BlockedProfiles.order) private var allProfiles: [BlockedProfiles]
+  @SafeQuery(sort: \BlockedProfiles.order) private var allProfiles: [BlockedProfiles]
 
   @ObservedObject private var appModeManager = AppModeManager.shared
   @ObservedObject private var cloudKitManager = CloudKitManager.shared
@@ -23,19 +23,14 @@ struct ChildDashboardView: View {
   @State private var showAuthorizationLostAlert = false
   @State private var isVerifyingAuthorization = false
 
-  /// Filtered profiles excluding deleted models
-  private var validProfiles: [BlockedProfiles] {
-    allProfiles.valid
-  }
-
   /// Profiles that are locked (require code to edit)
   private var lockedProfiles: [BlockedProfiles] {
-    validProfiles.filter { $0.isManaged }
+    allProfiles.filter { $0.isManaged }
   }
 
   /// Profiles that are not locked (child can freely edit)
   private var unlockedProfiles: [BlockedProfiles] {
-    validProfiles.filter { !$0.isManaged }
+    allProfiles.filter { !$0.isManaged }
   }
 
   var body: some View {
@@ -97,7 +92,7 @@ struct ChildDashboardView: View {
         )
       }
       .sheet(isPresented: $showEditLockedProfiles) {
-        EditLockedProfilesSheet(profiles: validProfiles)
+        EditLockedProfilesSheet(profiles: allProfiles)
       }
       .fullScreenCover(isPresented: $showPersonalProfiles) {
         NavigationStack {

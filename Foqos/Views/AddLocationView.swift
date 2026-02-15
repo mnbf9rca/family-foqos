@@ -14,8 +14,7 @@ struct AddLocationView: View {
   @ObservedObject private var locationManager = LocationManager.shared
   @ObservedObject private var profileSyncManager = ProfileSyncManager.shared
 
-  @Query(sort: \SavedLocation.name) private var existingLocations: [SavedLocation]
-  private var validExistingLocations: [SavedLocation] { existingLocations.valid }
+  @SafeQuery(sort: \SavedLocation.name) private var existingLocations: [SavedLocation]
 
   // If editing an existing location
   var editingLocation: SavedLocation?
@@ -63,7 +62,7 @@ struct AddLocationView: View {
 
   private var isDuplicateName: Bool {
     guard !normalizedName.isEmpty else { return false }
-    return validExistingLocations.contains { location in
+    return existingLocations.contains { location in
       // Exclude the location being edited
       if let editing = editingLocation, location.id == editing.id {
         return false

@@ -25,8 +25,7 @@ struct BlockedProfileView: View {
   @ObservedObject private var appModeManager = AppModeManager.shared
   @ObservedObject private var lockCodeManager = LockCodeManager.shared
 
-  @Query(sort: \SavedLocation.name) private var savedLocations: [SavedLocation]
-  private var validSavedLocations: [SavedLocation] { savedLocations.valid }
+  @SafeQuery(sort: \SavedLocation.name) private var savedLocations: [SavedLocation]
 
   /// If profile is nil, we're creating a new profile
   var profile: BlockedProfiles?
@@ -355,7 +354,7 @@ struct BlockedProfileView: View {
           Section {
             BlockedProfileGeofenceSelector(
               geofenceRule: $geofenceRule,
-              savedLocations: validSavedLocations,
+              savedLocations: savedLocations,
               buttonAction: { showingGeofencePicker = true },
               disabled: isBlocking
             )
@@ -671,7 +670,7 @@ struct BlockedProfileView: View {
         .sheet(isPresented: $showingGeofencePicker) {
           GeofencePicker(
             geofenceRule: $geofenceRule,
-            savedLocations: validSavedLocations
+            savedLocations: savedLocations
           )
         }
         .sheet(isPresented: $showingGeneratedQRCode) {

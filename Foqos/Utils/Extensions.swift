@@ -11,11 +11,11 @@ extension Collection {
 // MARK: - SwiftData Model Validation
 
 extension Array where Element: PersistentModel {
-  /// Filters out models that have been deleted from SwiftData but not yet removed from @Query.
-  /// When a SwiftData model is deleted, its `modelContext` becomes nil. Accessing properties
-  /// on such models causes a crash. This defensive filter handles the timing window between
-  /// SwiftData deletion and SwiftUI re-render.
+  /// Filters out zombie SwiftData models — those whose `modelContext` has become nil or whose
+  /// `isDeleted` flag is set after CloudKit sync. Accessing properties on such models causes
+  /// `EXC_BREAKPOINT`. This defensive filter handles the timing window between deletion and
+  /// SwiftUI re-render. Used by `@SafeQuery` internally and by views receiving plain arrays.
   var valid: [Element] {
-    filter { $0.modelContext != nil }
+    filter { $0.modelContext != nil && !$0.isDeleted }
   }
 }
