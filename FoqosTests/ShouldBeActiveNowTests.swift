@@ -6,7 +6,7 @@ import XCTest
 final class ShouldBeActiveNowTests: XCTestCase {
   private let calendar = Calendar.current
 
-  // Fixed reference: Wednesday 2026-06-15 (weekday 4 = Wednesday)
+  // Fixed reference: Monday 2026-06-15 (weekday 2 = Monday)
   private let referenceDate: Date = {
     var c = DateComponents()
     c.year = 2026
@@ -18,7 +18,7 @@ final class ShouldBeActiveNowTests: XCTestCase {
     return Calendar.current.date(from: c)!
   }()
 
-  /// Wednesday's weekday value (4 in Apple's Calendar)
+  /// Monday's weekday value (2 in Apple's Calendar)
   private var referenceWeekday: Int { calendar.component(.weekday, from: referenceDate) }
 
   private func date(hour: Int, minute: Int, dayOffset: Int = 0) -> Date {
@@ -88,7 +88,7 @@ final class ShouldBeActiveNowTests: XCTestCase {
   // MARK: - Day check
 
   func testNotScheduledDay_returnsFalse() {
-    // Reference is Wednesday (weekday 4). Pick a day that is NOT Wednesday.
+    // Reference is Monday (weekday 2). Pick a day that is NOT Monday.
     let otherDay = Weekday.allCases.first { $0.rawValue != referenceWeekday }!
     let start = makeSchedule(hour: 10, minute: 0, days: [otherDay])
     let now = date(hour: 14, minute: 0)
@@ -173,13 +173,13 @@ final class ShouldBeActiveNowTests: XCTestCase {
   // MARK: - Overnight day check (window started yesterday)
 
   func testOvernight_at0300_yesterdayNotScheduled_returnsFalse() {
-    // Reference is Wednesday. Schedule only for Wednesday (not Tuesday = yesterday).
-    let wednesdayDay = Weekday(rawValue: referenceWeekday)!
-    let start = makeSchedule(hour: 22, minute: 0, days: [wednesdayDay])
+    // Reference is Monday. Schedule only for Monday (not Sunday = yesterday).
+    let mondayDay = Weekday(rawValue: referenceWeekday)!
+    let start = makeSchedule(hour: 22, minute: 0, days: [mondayDay])
     let stop = makeSchedule(hour: 6, minute: 0)
     let now = date(hour: 3, minute: 0)
 
-    // At 03:00, window started yesterday (Tuesday). Tuesday is NOT in schedule days.
+    // At 03:00, window started yesterday (Sunday). Sunday is NOT in schedule days.
     XCTAssertFalse(
       start.shouldBeActiveNow(
         stopSchedule: stop, lastStoppedAt: nil, on: now, calendar: calendar)

@@ -8,7 +8,7 @@ import XCTest
 final class ScheduleSuppressionTests: XCTestCase {
   private let calendar = Calendar.current
 
-  // Fixed reference: Wednesday 2026-06-15 (weekday 4 = Wednesday)
+  // Fixed reference: Monday 2026-06-15 (weekday 2 = Monday)
   private let referenceDate: Date = {
     var c = DateComponents()
     c.year = 2026

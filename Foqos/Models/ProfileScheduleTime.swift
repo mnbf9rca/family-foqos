@@ -71,6 +71,7 @@ struct ProfileScheduleTime: Codable, Equatable {
 
   /// Returns this schedule's start time on the given date.
   /// Constructs a Date from the date's year/month/day and this schedule's hour:minute.
+  /// Does not check whether `date` falls on a scheduled day — callers are responsible for day checks.
   func scheduledStartTime(on date: Date, calendar: Calendar = .current) -> Date? {
     var components = calendar.dateComponents([.year, .month, .day], from: date)
     components.hour = hour
