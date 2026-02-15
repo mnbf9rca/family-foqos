@@ -837,7 +837,7 @@ class CloudKitManager: ObservableObject {
           guard let recordRoleString = record[FamilyMember.RecordKey.role] as? String,
             let recordRole = FamilyRole(rawValue: recordRoleString)
           else {
-            Log.warning("FamilyMember record has missing/invalid role", category: .cloudKit)
+            Log.error("FamilyMember record has missing/invalid role", category: .cloudKit)
             return
           }
 
