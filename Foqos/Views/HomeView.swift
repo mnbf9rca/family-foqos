@@ -275,6 +275,7 @@ struct HomeView: View {
         showModeSelection = false
       }
     }
+    // Watch raw @Query (not validProfiles) — SwiftUI observation requires the source property
     .onChange(of: profiles) { oldValue, newValue in
       if !newValue.isEmpty {
         loadApp()
