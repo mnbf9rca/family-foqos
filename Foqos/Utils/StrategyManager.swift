@@ -38,10 +38,11 @@ class StrategyManager: ObservableObject {
   @Published var pendingStartContext: ModelContext? = nil
   @Published var geofenceWarningMessage: String = ""
 
-  @AppStorage("emergencyUnblocksRemaining") private var emergencyUnblocksRemaining: Int = 3
-  @AppStorage("emergencyUnblocksResetPeriodInDays") private var emergencyUnblocksResetPeriodInDays: Int = 28
-  @AppStorage("lastEmergencyUnblocksResetDate") private var lastEmergencyUnblocksResetDateTimestamp: Double = 0
-  @AppStorage("emergencySettingsLocked") private var emergencySettingsLockedStorage: Bool = false
+  @Published private var emergencyUnblocksRemaining: Int = 3
+  @Published private var emergencyUnblocksResetPeriodInDays: Int = 28
+  @Published private var lastEmergencyUnblocksResetDateTimestamp: Double = 0
+  @Published private var emergencySettingsLockedStorage: Bool = false
+  private(set) var emergencySettingsVersion: Int = 0
 
   private let liveActivityManager = LiveActivityManager.shared
   private let profileSyncManager = ProfileSyncManager.shared
@@ -751,17 +752,17 @@ class StrategyManager: ObservableObject {
     self.stopTimer()
 
     // Decrement the remaining emergency unblocks
-    objectWillChange.send()
     emergencyUnblocksRemaining -= 1
+    pushEmergencySettingsToCloudKit()
 
     // Refresh widgets when emergency unblock ends session
     WidgetCenter.shared.reloadTimelines(ofKind: "ProfileControlWidget")
   }
 
   func resetEmergencyUnblocks() {
-    objectWillChange.send()
     emergencyUnblocksRemaining = 3
     lastEmergencyUnblocksResetDateTimestamp = Date().timeIntervalSinceReferenceDate
+    pushEmergencySettingsToCloudKit()
   }
 
   func checkAndResetEmergencyUnblocks() {
@@ -779,9 +780,9 @@ class StrategyManager: ObservableObject {
 
     // Check if the reset period has elapsed
     if elapsedTime >= periodInSeconds {
-      objectWillChange.send()
       emergencyUnblocksRemaining = 3
       lastEmergencyUnblocksResetDateTimestamp = Date().timeIntervalSinceReferenceDate
+      pushEmergencySettingsToCloudKit()
     }
   }
 
@@ -805,9 +806,9 @@ class StrategyManager: ObservableObject {
   }
 
   func setResetPeriodInDays(_ days: Int) {
-    objectWillChange.send()
     emergencyUnblocksResetPeriodInDays = days
     lastEmergencyUnblocksResetDateTimestamp = Date().timeIntervalSinceReferenceDate
+    pushEmergencySettingsToCloudKit()
   }
 
   func isEmergencySettingsLocked() -> Bool {
@@ -815,8 +816,42 @@ class StrategyManager: ObservableObject {
   }
 
   func setEmergencySettingsLocked(_ locked: Bool) {
-    objectWillChange.send()
     emergencySettingsLockedStorage = locked
+    pushEmergencySettingsToCloudKit()
+  }
+
+  /// Apply emergency settings received from CloudKit sync
+  func applyRemoteEmergencySettings(_ remote: SyncedEmergencySettings) {
+    emergencyUnblocksRemaining = remote.unblocksRemaining
+    emergencyUnblocksResetPeriodInDays = remote.resetPeriodInDays
+    lastEmergencyUnblocksResetDateTimestamp = remote.lastResetDate.timeIntervalSinceReferenceDate
+    emergencySettingsLockedStorage = remote.settingsLocked
+    emergencySettingsVersion = remote.version
+  }
+
+  private func pushEmergencySettingsToCloudKit() {
+    guard profileSyncManager.isEnabled else { return }
+
+    emergencySettingsVersion += 1
+    let settings = SyncedEmergencySettings(
+      unblocksRemaining: emergencyUnblocksRemaining,
+      resetPeriodInDays: emergencyUnblocksResetPeriodInDays,
+      lastResetDate: Date(
+        timeIntervalSinceReferenceDate: lastEmergencyUnblocksResetDateTimestamp),
+      settingsLocked: emergencySettingsLockedStorage,
+      version: emergencySettingsVersion,
+      lastModified: Date(),
+      originDeviceId: SharedData.deviceSyncId.uuidString
+    )
+
+    Task {
+      do {
+        try await profileSyncManager.pushEmergencySettings(settings)
+      } catch {
+        Log.error(
+          "Failed to push emergency settings: \(error.localizedDescription)", category: .sync)
+      }
+    }
   }
 
   static func getStrategyFromId(id: String) -> BlockingStrategy {

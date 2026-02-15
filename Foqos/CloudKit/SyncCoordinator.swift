@@ -76,6 +76,18 @@ class SyncCoordinator: ObservableObject {
       }
       .store(in: &cancellables)
 
+    // Observe emergency settings received from CloudKit
+    NotificationCenter.default.publisher(for: .emergencySettingsReceived)
+      .receive(on: DispatchQueue.main)
+      .sink { [weak self] notification in
+        guard
+          let settings = notification.userInfo?[SyncedEmergencySettings.settingsUserInfoKey]
+            as? SyncedEmergencySettings
+        else { return }
+        self?.handleEmergencySettings(settings)
+      }
+      .store(in: &cancellables)
+
     // Observe local data push requests (push local data to CloudKit)
     NotificationCenter.default.publisher(for: .localDataPushRequested)
       .receive(on: DispatchQueue.main)
@@ -530,6 +542,24 @@ class SyncCoordinator: ObservableObject {
     }
 
     try? context.save()
+  }
+
+  // MARK: - Emergency Settings Handling
+
+  private func handleEmergencySettings(_ remote: SyncedEmergencySettings) {
+    let strategyManager = StrategyManager.shared
+
+    // Last-write-wins: only apply if remote version is newer
+    guard remote.version > strategyManager.emergencySettingsVersion else {
+      Log.info(
+        "Ignoring emergency settings v\(remote.version) (local v\(strategyManager.emergencySettingsVersion))",
+        category: .sync
+      )
+      return
+    }
+
+    strategyManager.applyRemoteEmergencySettings(remote)
+    Log.info("Applied remote emergency settings v\(remote.version)", category: .sync)
   }
 
   // MARK: - Sync Reset Handling
