@@ -174,12 +174,13 @@ final class ConcurrentSessionTests: XCTestCase {
       return
     }
 
-    // Third call should succeed normally (conflicts exhausted, session is active from conflicts)
-    // Reset records to test fresh start after conflicts
-    await mockService.reset()
+    // Stop the conflict-winner's session so the normal path can start fresh
+    _ = await mockService.stopSession(profileId: profileId, deviceId: "conflict-device")
+
+    // Third call should succeed normally (conflicts exhausted, session stopped)
     let success = await mockService.startSession(profileId: profileId, deviceId: "device-a")
     guard case .started = success else {
-      XCTFail("Expected started after conflicts exhausted, got \(success)")
+      XCTFail("Expected started after conflicts exhausted and session stopped, got \(success)")
       return
     }
   }
