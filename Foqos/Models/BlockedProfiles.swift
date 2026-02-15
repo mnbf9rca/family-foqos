@@ -682,31 +682,6 @@ class BlockedProfiles {
     return cloned
   }
 
-  static func addDomain(to profile: BlockedProfiles, context: ModelContext, domain: String) throws {
-    guard let domains = profile.domains else {
-      return
-    }
-
-    if domains.contains(domain) {
-      return
-    }
-
-    profile.domains = domains + [domain]
-    profile.updatedAt = Date()
-    try context.save()
-  }
-
-  static func removeDomain(from profile: BlockedProfiles, context: ModelContext, domain: String)
-    throws
-  {
-    guard let domains = profile.domains else {
-      return
-    }
-
-    profile.domains = domains.filter { $0 != domain }
-    profile.updatedAt = Date()
-    try context.save()
-  }
 }
 
 // MARK: - Migration
