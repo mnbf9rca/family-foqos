@@ -6,10 +6,12 @@ struct ParentDashboardView: View {
   @ObservedObject private var cloudKitManager = CloudKitManager.shared
   @ObservedObject private var appModeManager = AppModeManager.shared
   @ObservedObject private var lockCodeManager = LockCodeManager.shared
+  @ObservedObject private var strategyManager = StrategyManager.shared
 
   @State private var showLockCodeSetup = false
   @State private var showError = false
   @State private var errorMessage = ""
+  @State private var isEmergencySettingsLocked: Bool = false
 
   // Share coordinator for direct sharing
   @StateObject private var shareCoordinator = ShareCoordinator()
@@ -35,6 +37,13 @@ struct ParentDashboardView: View {
           lockCodeSection
             .disabled(!isPageFunctional)
             .opacity(isPageFunctional ? 1.0 : 0.5)
+
+          // Emergency settings lock (only when lock code is set)
+          if lockCodeManager.hasAnyLockCode {
+            emergencyLockSection
+              .disabled(!isPageFunctional)
+              .opacity(isPageFunctional ? 1.0 : 0.5)
+          }
 
           // Co-parents section
           coParentsSection
@@ -64,6 +73,7 @@ struct ParentDashboardView: View {
       }
       .task {
         await refreshData()
+        isEmergencySettingsLocked = strategyManager.isEmergencySettingsLocked()
       }
       .sheet(isPresented: $showLockCodeSetup) {
         LockCodeSetupView(
@@ -180,6 +190,42 @@ struct ParentDashboardView: View {
           showLockCodeSetup = true
         })
       }
+    }
+  }
+
+  private var emergencyLockSection: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      Text("Emergency Settings")
+        .font(.headline)
+
+      HStack(spacing: 16) {
+        Image(systemName: isEmergencySettingsLocked ? "lock.fill" : "lock.open")
+          .font(.title2)
+          .foregroundColor(isEmergencySettingsLocked ? .orange : .secondary)
+
+        VStack(alignment: .leading, spacing: 4) {
+          Text("Lock Emergency Settings")
+            .font(.subheadline)
+            .fontWeight(.medium)
+
+          Text("Requires lock code to change reset period on children's devices")
+            .font(.caption)
+            .foregroundColor(.secondary)
+        }
+
+        Spacer()
+
+        Toggle("", isOn: $isEmergencySettingsLocked)
+          .labelsHidden()
+          .onChange(of: isEmergencySettingsLocked) { _, newValue in
+            strategyManager.setEmergencySettingsLocked(newValue)
+          }
+      }
+      .padding()
+      .background(
+        RoundedRectangle(cornerRadius: 12)
+          .fill(Color(.tertiarySystemBackground))
+      )
     }
   }
 
