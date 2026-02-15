@@ -761,14 +761,14 @@ struct BlockedProfileView: View {
           ScheduleTimePicker(
             schedule: $triggerConfig.startSchedule,
             title: "Start Schedule",
-            otherScheduleTime: triggerConfig.stopSchedule
+            otherScheduleTime: triggerConfig.stopConditions.schedule ? triggerConfig.stopSchedule : nil
           )
         }
         .sheet(isPresented: $showStopSchedulePicker, onDismiss: { triggerConfig.validate() }) {
           ScheduleTimePicker(
             schedule: $triggerConfig.stopSchedule,
             title: "Stop Schedule",
-            otherScheduleTime: triggerConfig.startSchedule
+            otherScheduleTime: triggerConfig.startTriggers.schedule ? triggerConfig.startSchedule : nil
           )
         }
         .alert(item: $alertIdentifier) { alert in
