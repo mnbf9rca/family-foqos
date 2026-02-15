@@ -1,6 +1,6 @@
 import BackgroundTasks
 import Foundation
-import UserNotifications
+@preconcurrency import UserNotifications
 
 // MARK: - Notification Constants
 
@@ -282,14 +282,14 @@ final class TimersUtil: @unchecked Sendable {  // SAFETY: Mutable state (backgro
       .removeAllPendingNotificationRequests()
     // Only remove delivered pre-activation reminders, not other notification types
     // (e.g., geofence-blocked, break/session reminders)
-    let center = UNUserNotificationCenter.current()
-    center.getDeliveredNotifications { notifications in
+    UNUserNotificationCenter.current().getDeliveredNotifications { notifications in
       let preActivationIds =
         notifications
         .map(\.request.identifier)
         .filter { $0.hasPrefix(Self.preActivationReminderPrefix) }
       if !preActivationIds.isEmpty {
-        center.removeDeliveredNotifications(withIdentifiers: preActivationIds)
+        UNUserNotificationCenter.current()
+          .removeDeliveredNotifications(withIdentifiers: preActivationIds)
       }
     }
   }
