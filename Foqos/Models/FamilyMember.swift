@@ -95,14 +95,12 @@ extension FamilyMember {
     self.enrolledAt = enrolledAt
     self.isActive = (record[RecordKey.isActive] as? Int ?? 1) == 1
 
-    // Parse role, default to child for backwards compatibility
-    if let roleString = record[RecordKey.role] as? String,
+    guard let roleString = record[RecordKey.role] as? String,
       let role = FamilyRole(rawValue: roleString)
-    {
-      self.role = role
-    } else {
-      self.role = .child
+    else {
+      return nil
     }
+    self.role = role
   }
 
   /// Convert to a CKRecord for saving to CloudKit
