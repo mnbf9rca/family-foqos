@@ -115,7 +115,7 @@ struct foqosApp: App {
           if newPhase == .active {
             // Verify child authorization when app becomes active
             verifyChildAuthorizationIfNeeded()
-            // Self-heal FamilyMember record if connected to family
+            // Enforce CloudKit FamilyMember role as local app mode
             Task { await CloudKitManager.shared.verifySelfFamilyMemberRecord() }
             // Reschedule pre-activation reminders (handles warm returns on new days)
             PreActivationReminderScheduler.rescheduleAllReminders(context: container.mainContext)
