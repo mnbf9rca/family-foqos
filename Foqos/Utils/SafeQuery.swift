@@ -42,4 +42,20 @@ struct SafeQuery<Element: PersistentModel>: DynamicProperty {
   ) {
     _elements = Query(filter: filter, sort: keyPath, order: order)
   }
+
+  // Optional-value keypath overloads (e.g. sort: \Model.endTime where endTime is Date?)
+  init<Value: Comparable>(
+    sort keyPath: KeyPath<Element, Value?>,
+    order: SortOrder = .forward
+  ) {
+    _elements = Query(sort: keyPath, order: order)
+  }
+
+  init<Value: Comparable>(
+    filter: Predicate<Element>?,
+    sort keyPath: KeyPath<Element, Value?>,
+    order: SortOrder = .forward
+  ) {
+    _elements = Query(filter: filter, sort: keyPath, order: order)
+  }
 }
