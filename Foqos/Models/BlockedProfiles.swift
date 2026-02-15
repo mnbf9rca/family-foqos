@@ -414,8 +414,9 @@ class BlockedProfiles {
       profile.schedule = newSchedule
     }
 
-    // geofenceRule can be set to nil to remove it
-    profile.geofenceRule = geofenceRule
+    if let geofenceRule {
+      profile.geofenceRule = geofenceRule
+    }
 
     if let newDisableBackgroundStops = disableBackgroundStops {
       profile.disableBackgroundStops = newDisableBackgroundStops
@@ -429,8 +430,9 @@ class BlockedProfiles {
       profile.isManaged = newIsManaged
     }
 
-    // managedByChildId can be nil when removing assignment
-    profile.managedByChildId = managedByChildId
+    if let managedByChildId {
+      profile.managedByChildId = managedByChildId
+    }
 
     // Sync fields
     if let newSyncVersion = syncVersion {
@@ -440,12 +442,19 @@ class BlockedProfiles {
       profile.needsAppSelection = newNeedsAppSelection
     }
 
-    // Values can be nil when removed
-    profile.physicalUnblockNFCTagId = physicalUnblockNFCTagId
-    profile.physicalUnblockQRCodeId = physicalUnblockQRCodeId
+    if let physicalUnblockNFCTagId {
+      profile.physicalUnblockNFCTagId = physicalUnblockNFCTagId
+    }
+    if let physicalUnblockQRCodeId {
+      profile.physicalUnblockQRCodeId = physicalUnblockQRCodeId
+    }
 
-    profile.reminderTimeInSeconds = reminderTime
-    profile.customReminderMessage = customReminderMessage
+    if let reminderTime {
+      profile.reminderTimeInSeconds = reminderTime
+    }
+    if let customReminderMessage {
+      profile.customReminderMessage = customReminderMessage
+    }
     profile.updatedAt = Date()
 
     // Update the snapshot
@@ -682,8 +691,9 @@ class BlockedProfiles {
       return
     }
 
-    let newDomains = domains + [domain]
-    _ = try updateProfile(profile, in: context, domains: newDomains)
+    profile.domains = domains + [domain]
+    profile.updatedAt = Date()
+    try context.save()
   }
 
   static func removeDomain(from profile: BlockedProfiles, context: ModelContext, domain: String)
@@ -693,8 +703,9 @@ class BlockedProfiles {
       return
     }
 
-    let newDomains = domains.filter { $0 != domain }
-    _ = try updateProfile(profile, in: context, domains: newDomains)
+    profile.domains = domains.filter { $0 != domain }
+    profile.updatedAt = Date()
+    try context.save()
   }
 }
 
