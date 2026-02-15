@@ -63,7 +63,12 @@ enum KeychainHelper {
       // Item doesn't exist, add it
       var addQuery = query
       addQuery[kSecValueData as String] = data
-      SecItemAdd(addQuery as CFDictionary, nil)
+      let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
+      if addStatus != errSecSuccess {
+        Log.error("Keychain add failed for key '\(key)': \(addStatus)", category: .app)
+      }
+    } else if updateStatus != errSecSuccess {
+      Log.error("Keychain update failed for key '\(key)': \(updateStatus)", category: .app)
     }
   }
 

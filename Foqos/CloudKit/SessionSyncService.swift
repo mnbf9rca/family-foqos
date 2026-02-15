@@ -195,7 +195,7 @@ actor SessionSyncService {
       }
 
       Log.info(
-        "Started session for \(profileId) with seq=\(newSequence)",
+        "CAS save succeeded for \(profileId) with seq=\(newSequence)",
         category: .sync
       )
       return .success

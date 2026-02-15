@@ -761,6 +761,7 @@ class StrategyManager: ObservableObject {
     self.stopTimer()
 
     // Decrement the remaining emergency unblocks
+    objectWillChange.send()
     emergencyUnblocksRemaining -= 1
 
     // Refresh widgets when emergency unblock ends session
@@ -768,6 +769,7 @@ class StrategyManager: ObservableObject {
   }
 
   func resetEmergencyUnblocks() {
+    objectWillChange.send()
     emergencyUnblocksRemaining = 3
     lastEmergencyUnblocksResetDateTimestamp = Date().timeIntervalSinceReferenceDate
   }
@@ -787,6 +789,7 @@ class StrategyManager: ObservableObject {
 
     // Check if the reset period has elapsed
     if elapsedTime >= weeksInSeconds {
+      objectWillChange.send()
       emergencyUnblocksRemaining = 3
       lastEmergencyUnblocksResetDateTimestamp = Date().timeIntervalSinceReferenceDate
     }
@@ -812,6 +815,7 @@ class StrategyManager: ObservableObject {
   }
 
   func setResetPeriodInWeeks(_ weeks: Int) {
+    objectWillChange.send()
     emergencyUnblocksResetPeriodInWeeks = weeks
     lastEmergencyUnblocksResetDateTimestamp = Date().timeIntervalSinceReferenceDate
   }
