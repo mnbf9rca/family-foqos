@@ -25,7 +25,10 @@ xcodebuild -project FamilyFoqos.xcodeproj -scheme FamilyFoqos -configuration Deb
 ```
 
 ### Running Tests
-The project has unit tests in the `FoqosTests` target. Run tests using:
+The project has unit tests in the `FoqosTests` target.
+
+**Never use device names in test destinations.** Using `-destination 'platform=iOS Simulator,name=iPhone 17'` clones a new simulator into `~/Library/Developer/XCTestDevices/` on every invocation, consuming
+  ~16GB each. Use the UUID instead - run tests using:
 ```bash
 # 1. Find and boot the simulator (do this ONCE per session)
 xcrun simctl list devices available | grep "iPhone 17"
@@ -119,27 +122,34 @@ class BlockedProfiles {
 }
 ```
 
-### SwiftData Safety with @Query
+### SwiftData Safety with @SafeQuery
 
-When iterating `@Query` results with `ForEach`, use the `.valid` extension to filter out deleted models. This prevents crashes when models are deleted via CloudKit sync while the app is in the background.
+Always use `@SafeQuery` instead of `@Query` in views. `@SafeQuery` is a `DynamicProperty` wrapper (defined in `Foqos/Utils/SafeQuery.swift`) that auto-filters deleted SwiftData models, preventing `EXC_BREAKPOINT` crashes from zombie objects.
 
 ```swift
-// CORRECT - filters out deleted models
-ForEach(profiles.valid) { profile in
-  ProfileCard(profile: profile)
-}
+// CORRECT - auto-filters deleted models
+@SafeQuery(sort: \BlockedProfiles.order) private var profiles: [BlockedProfiles]
 
-// WRONG - can crash if a model was deleted but @Query hasn't updated yet
-ForEach(profiles) { profile in
-  ProfileCard(profile: profile)
-}
+// WRONG - can crash; also rejected by pre-commit hook
+@Query(sort: \BlockedProfiles.order) private var profiles: [BlockedProfiles]
 ```
 
-**Why this matters:** When a SwiftData model is deleted, its `modelContext` becomes `nil`, but `@Query` may still hold a reference to it. Accessing properties on a deleted model causes `EXC_BREAKPOINT`. The `.valid` extension (defined in `Utils/Extensions.swift`) filters these out:
+`@SafeQuery` mirrors all `@Query` initializers. Use it the same way, including underscore-init for dynamic predicates:
 
 ```swift
-extension Array where Element: PersistentModel {
-  var valid: [Element] { filter { $0.modelContext != nil } }
+_sessions = SafeQuery(
+  filter: #Predicate<BlockedProfileSession> { $0.blockedProfile.id == profileId },
+  sort: \BlockedProfileSession.startTime,
+  order: .reverse
+)
+```
+
+**For non-query contexts** (components receiving arrays as parameters), use the `.valid` extension:
+
+```swift
+// In components that receive [PersistentModel] arrays (not @SafeQuery)
+ForEach(profiles.valid) { profile in
+  ProfileCard(profile: profile)
 }
 ```
 
