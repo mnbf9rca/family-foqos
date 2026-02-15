@@ -38,44 +38,62 @@ class StrategyManager: ObservableObject {
   @Published var pendingStartContext: ModelContext? = nil
   @Published var geofenceWarningMessage: String = ""
 
+  private enum EmergencyDefaultsKey {
+    static let unblocksRemaining = "emergencyUnblocksRemaining"
+    static let resetPeriodInDays = "emergencyUnblocksResetPeriodInDays"
+    static let lastResetDate = "lastEmergencyUnblocksResetDate"
+    static let settingsLocked = "emergencySettingsLocked"
+    static let settingsVersion = "emergencySettingsVersion"
+  }
+
   @Published private var emergencyUnblocksRemaining: Int =
-    UserDefaults.standard.object(forKey: "emergencyUnblocksRemaining") != nil
-    ? UserDefaults.standard.integer(forKey: "emergencyUnblocksRemaining")
+    UserDefaults.standard.object(forKey: EmergencyDefaultsKey.unblocksRemaining) != nil
+    ? UserDefaults.standard.integer(forKey: EmergencyDefaultsKey.unblocksRemaining)
     : 3
   {
-    didSet { UserDefaults.standard.set(emergencyUnblocksRemaining, forKey: "emergencyUnblocksRemaining") }
+    didSet {
+      UserDefaults.standard.set(emergencyUnblocksRemaining, forKey: EmergencyDefaultsKey.unblocksRemaining)
+    }
   }
 
   @Published private var emergencyUnblocksResetPeriodInDays: Int =
-    UserDefaults.standard.object(forKey: "emergencyUnblocksResetPeriodInDays") != nil
-    ? UserDefaults.standard.integer(forKey: "emergencyUnblocksResetPeriodInDays")
+    UserDefaults.standard.object(forKey: EmergencyDefaultsKey.resetPeriodInDays) != nil
+    ? UserDefaults.standard.integer(forKey: EmergencyDefaultsKey.resetPeriodInDays)
     : 28
   {
-    didSet { UserDefaults.standard.set(emergencyUnblocksResetPeriodInDays, forKey: "emergencyUnblocksResetPeriodInDays") }
+    didSet {
+      UserDefaults.standard.set(emergencyUnblocksResetPeriodInDays, forKey: EmergencyDefaultsKey.resetPeriodInDays)
+    }
   }
 
   @Published private var lastEmergencyUnblocksResetDateTimestamp: Double =
-    UserDefaults.standard.object(forKey: "lastEmergencyUnblocksResetDate") != nil
-    ? UserDefaults.standard.double(forKey: "lastEmergencyUnblocksResetDate")
+    UserDefaults.standard.object(forKey: EmergencyDefaultsKey.lastResetDate) != nil
+    ? UserDefaults.standard.double(forKey: EmergencyDefaultsKey.lastResetDate)
     : 0
   {
-    didSet { UserDefaults.standard.set(lastEmergencyUnblocksResetDateTimestamp, forKey: "lastEmergencyUnblocksResetDate") }
+    didSet {
+      UserDefaults.standard.set(lastEmergencyUnblocksResetDateTimestamp, forKey: EmergencyDefaultsKey.lastResetDate)
+    }
   }
 
   @Published private var emergencySettingsLockedStorage: Bool =
-    UserDefaults.standard.object(forKey: "emergencySettingsLocked") != nil
-    ? UserDefaults.standard.bool(forKey: "emergencySettingsLocked")
+    UserDefaults.standard.object(forKey: EmergencyDefaultsKey.settingsLocked) != nil
+    ? UserDefaults.standard.bool(forKey: EmergencyDefaultsKey.settingsLocked)
     : false
   {
-    didSet { UserDefaults.standard.set(emergencySettingsLockedStorage, forKey: "emergencySettingsLocked") }
+    didSet {
+      UserDefaults.standard.set(emergencySettingsLockedStorage, forKey: EmergencyDefaultsKey.settingsLocked)
+    }
   }
 
   private(set) var emergencySettingsVersion: Int =
-    UserDefaults.standard.object(forKey: "emergencySettingsVersion") != nil
-    ? UserDefaults.standard.integer(forKey: "emergencySettingsVersion")
+    UserDefaults.standard.object(forKey: EmergencyDefaultsKey.settingsVersion) != nil
+    ? UserDefaults.standard.integer(forKey: EmergencyDefaultsKey.settingsVersion)
     : 0
   {
-    didSet { UserDefaults.standard.set(emergencySettingsVersion, forKey: "emergencySettingsVersion") }
+    didSet {
+      UserDefaults.standard.set(emergencySettingsVersion, forKey: EmergencyDefaultsKey.settingsVersion)
+    }
   }
 
   private let liveActivityManager = LiveActivityManager.shared
