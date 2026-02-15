@@ -129,4 +129,11 @@ final class ConcurrentSessionTests: XCTestCase {
       return
     }
   }
+
+  /// Verifies that the maxRetriesExceeded error case exists and is usable
+  func testMaxRetriesExceededErrorHasDescription() {
+    let error = SessionSyncError.maxRetriesExceeded
+    XCTAssertNotNil(error.errorDescription)
+    XCTAssertTrue(error.errorDescription!.contains("retry"))
+  }
 }

@@ -14,6 +14,9 @@ actor MockSessionSyncService {
   /// Simulate CAS conflict on next operation
   var simulateConflictOnce = false
 
+  /// Number of times to simulate CAS conflicts before succeeding
+  var simulateConflictCount = 0
+
   func fetchSession(profileId: UUID) async -> SessionSyncService.FetchResult {
     if simulatedDelay > 0 {
       try? await Task.sleep(nanoseconds: simulatedDelay * 1_000_000)
@@ -40,6 +43,17 @@ actor MockSessionSyncService {
         isActive: true, sequenceNumber: 1, deviceId: "other-device", startTime: Date())
       records[profileId] = winner
       return .alreadyActive(session: winner)
+    }
+
+    if simulateConflictCount > 0 {
+      simulateConflictCount -= 1
+      // Simulate conflict: create a stopped session (so the real service would retry)
+      var stopped = records[profileId] ?? ProfileSessionRecord(profileId: profileId)
+      let newSeq = stopped.sequenceNumber + 1
+      _ = stopped.applyUpdate(
+        isActive: false, sequenceNumber: newSeq, deviceId: "other-device", endTime: Date())
+      records[profileId] = stopped
+      return .started(sequenceNumber: newSeq)  // Mock doesn't recurse; real service retries
     }
 
     if let existing = records[profileId], existing.isActive {
@@ -78,6 +92,7 @@ actor MockSessionSyncService {
   func reset() {
     records.removeAll()
     simulateConflictOnce = false
+    simulateConflictCount = 0
   }
 
   func setSimulateConflictOnce(_ value: Bool) {
