@@ -966,7 +966,7 @@ class StrategyManager: ObservableObject {
                   try currentSession.modelContext?.save()
                 } catch {
                   Log.error(
-                    "Failed to save reconciled startTime: \(error.localizedDescription)",
+                    "Failed to save reconciled startTime (syncSessionStart): \(error.localizedDescription)",
                     category: .strategy)
                 }
                 Log.info("Reconciled local startTime to \(remoteStartTime)", category: .strategy)
@@ -1384,7 +1384,7 @@ class StrategyManager: ObservableObject {
               try context.save()
             } catch {
               Log.error(
-                "Failed to save reconciled startTime: \(error.localizedDescription)",
+                "Failed to save reconciled startTime (startWithTag): \(error.localizedDescription)",
                 category: .strategy)
             }
             Log.info("Reconciled local startTime to \(remoteStartTime)", category: .strategy)
