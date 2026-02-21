@@ -850,7 +850,12 @@ struct BlockedProfileView: View {
   /// Save trigger config to profile, schedule, and push to sync.
   private func finalizeSave(_ profile: BlockedProfiles) {
     triggerConfig.saveToProfile(profile)
-    try? modelContext.save()
+    do {
+      try modelContext.save()
+    } catch {
+      Log.error(
+        "Failed to save trigger config: \(error.localizedDescription)", category: .ui)
+    }
     DeviceActivityCenterUtil.scheduleTimerActivity(for: profile)
     SyncCoordinator.shared.pushProfile(profile)
   }

@@ -483,7 +483,13 @@ struct EditLockedProfilesSheet: View {
                 get: { profile.isManaged },
                 set: { newValue in
                   profile.isManaged = newValue
-                  try? modelContext.save()
+                  do {
+                    try modelContext.save()
+                  } catch {
+                    Log.error(
+                      "Failed to save managed toggle: \(error.localizedDescription)",
+                      category: .ui)
+                  }
                 }
               )
             ) {
