@@ -962,7 +962,13 @@ class StrategyManager: ObservableObject {
                 currentSession.startTime != remoteStartTime
               {
                 currentSession.startTime = remoteStartTime
-                try? currentSession.modelContext?.save()
+                do {
+                  try currentSession.modelContext?.save()
+                } catch {
+                  Log.error(
+                    "Failed to save reconciled startTime: \(error.localizedDescription)",
+                    category: .strategy)
+                }
                 Log.info("Reconciled local startTime to \(remoteStartTime)", category: .strategy)
               }
             case .error(let error):
@@ -994,7 +1000,13 @@ class StrategyManager: ObservableObject {
         if endedProfile.needsMigration {
           endedProfile.migrateToV2IfNeeded()
           if !endedProfile.needsMigration, let context = endedProfile.modelContext {
-            try? context.save()
+            do {
+              try context.save()
+            } catch {
+              Log.error(
+                "Failed to save deferred profile migration: \(error.localizedDescription)",
+                category: .strategy)
+            }
             Log.info(
               "Migrated deferred profile '\(endedProfile.name)' on session end", category: .app)
             DeviceActivityCenterUtil.scheduleTimerActivity(for: endedProfile)
@@ -1144,7 +1156,13 @@ class StrategyManager: ObservableObject {
               currentSession.startTime != remoteStartTime
             {
               currentSession.startTime = remoteStartTime
-              try? context.save()
+              do {
+                try context.save()
+              } catch {
+                Log.error(
+                  "Failed to save reconciled scheduled session startTime: \(error.localizedDescription)",
+                  category: .strategy)
+              }
               Log.info(
                 "Reconciled scheduled session startTime to \(remoteStartTime)", category: .strategy)
             }
@@ -1362,7 +1380,13 @@ class StrategyManager: ObservableObject {
             currentSession.startTime != remoteStartTime
           {
             currentSession.startTime = remoteStartTime
-            try? context.save()
+            do {
+              try context.save()
+            } catch {
+              Log.error(
+                "Failed to save reconciled startTime: \(error.localizedDescription)",
+                category: .strategy)
+            }
             Log.info("Reconciled local startTime to \(remoteStartTime)", category: .strategy)
           }
         case .error(let error):
