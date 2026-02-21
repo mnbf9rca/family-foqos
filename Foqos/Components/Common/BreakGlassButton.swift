@@ -285,11 +285,11 @@ private func triggerSuccessHaptic() {
     BreakGlassButton(
       tapsToShatter: 3,
       onUnlocked: {
-        print("Unlocked 1")
+        Log.debug("Unlocked 1", category: .ui)
       }
     ) {
       // Your own button/content
-      Button(action: { print("Primary action") }) {
+      Button(action: { Log.debug("Primary action", category: .ui) }) {
         HStack(spacing: 8) {
           Image(systemName: "lock.open")
           Text("Protected Action")
@@ -309,8 +309,8 @@ private func triggerSuccessHaptic() {
     }
     .frame(height: 56)
 
-    BreakGlassButton(tapsToShatter: 3, onUnlocked: { print("Glass shattered: ready") }) {
-      Button("Begin Session") { print("Begin Session tapped") }
+    BreakGlassButton(tapsToShatter: 3, onUnlocked: { Log.debug("Glass shattered: ready", category: .ui) }) {
+      Button("Begin Session") { Log.debug("Begin Session tapped", category: .ui) }
         .padding(.vertical, 12)
         .padding(.horizontal, 20)
         .background(

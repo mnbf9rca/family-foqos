@@ -90,7 +90,7 @@ private struct GlassProminentIfAvailable: ViewModifier {
   VStack(spacing: 20) {
     // Basic button
     ActionButton(title: "Save") {
-      print("Save tapped")
+      Log.debug("Save tapped", category: .ui)
     }
 
     // Button with icon
@@ -98,7 +98,7 @@ private struct GlassProminentIfAvailable: ViewModifier {
       title: "Download",
       iconName: "arrow.down.circle"
     ) {
-      print("Download tapped")
+      Log.debug("Download tapped", category: .ui)
     }
 
     // Loading state
@@ -106,7 +106,7 @@ private struct GlassProminentIfAvailable: ViewModifier {
       title: "Saving...",
       isLoading: true
     ) {
-      print("This won't execute while loading")
+      Log.debug("This won't execute while loading", category: .ui)
     }
 
     // Custom background with icon
@@ -115,7 +115,7 @@ private struct GlassProminentIfAvailable: ViewModifier {
       backgroundColor: .red,
       iconName: "trash"
     ) {
-      print("Delete tapped")
+      Log.debug("Delete tapped", category: .ui)
     }
 
     // Success button with icon
@@ -124,7 +124,7 @@ private struct GlassProminentIfAvailable: ViewModifier {
       backgroundColor: .green,
       iconName: "checkmark.circle"
     ) {
-      print("Complete tapped")
+      Log.debug("Complete tapped", category: .ui)
     }
 
     // Custom icon color example
@@ -134,7 +134,7 @@ private struct GlassProminentIfAvailable: ViewModifier {
       iconName: "heart.fill",
       iconColor: .red
     ) {
-      print("Favorite tapped")
+      Log.debug("Favorite tapped", category: .ui)
     }
 
     // Loading with custom color
@@ -143,7 +143,7 @@ private struct GlassProminentIfAvailable: ViewModifier {
       backgroundColor: .orange,
       isLoading: true
     ) {
-      print("Processing")
+      Log.debug("Processing", category: .ui)
     }
 
     // Warning button
@@ -152,7 +152,7 @@ private struct GlassProminentIfAvailable: ViewModifier {
       backgroundColor: .yellow,
       iconName: "cloud.fill"
     ) {
-      print("Backup tapped")
+      Log.debug("Backup tapped", category: .ui)
     }
 
     // Icon only style (short title)
@@ -161,7 +161,7 @@ private struct GlassProminentIfAvailable: ViewModifier {
       backgroundColor: .blue,
       iconName: "square.and.arrow.up"
     ) {
-      print("Share tapped")
+      Log.debug("Share tapped", category: .ui)
     }
 
     // Disabled state
@@ -171,7 +171,7 @@ private struct GlassProminentIfAvailable: ViewModifier {
       iconName: "lock.fill",
       isDisabled: true
     ) {
-      print("Should not tap")
+      Log.debug("Should not tap", category: .ui)
     }
   }
   .padding()

@@ -107,8 +107,8 @@ struct IntroStepper: View {
     IntroStepper(
       currentStep: 0,
       totalSteps: 3,
-      onNext: { print("Next") },
-      onBack: { print("Back") },
+      onNext: { Log.debug("Next", category: .ui) },
+      onBack: { Log.debug("Back", category: .ui) },
       nextButtonTitle: "Next",
       showBackButton: true
     )

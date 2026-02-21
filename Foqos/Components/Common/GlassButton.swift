@@ -89,7 +89,7 @@ private struct PressableButtonStyle: ButtonStyle {
       title: "Regular Button",
       icon: "play.fill"
     ) {
-      print("Regular button tapped")
+      Log.debug("Regular button tapped", category: .ui)
     }
 
     GlassButton(
@@ -97,7 +97,7 @@ private struct PressableButtonStyle: ButtonStyle {
       icon: "star.fill",
       color: .blue
     ) {
-      print("Blue button tapped")
+      Log.debug("Blue button tapped", category: .ui)
     }
 
     GlassButton(
@@ -106,7 +106,7 @@ private struct PressableButtonStyle: ButtonStyle {
       longPressEnabled: true,
       color: .green
     ) {
-      print("Long press completed")
+      Log.debug("Long press completed", category: .ui)
     }
   }
   .padding()

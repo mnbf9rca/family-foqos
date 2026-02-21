@@ -161,9 +161,9 @@ struct LabeledCodeScannerView: View {
   ) { result in
     switch result {
     case .success(let result):
-      print("Preview Scanned code: \(result.string)")
+      Log.debug("Preview scanned code: \(result.string)", category: .ui)
     case .failure(let error):
-      print("Preview Scanning failed: \(error.localizedDescription)")
+      Log.debug("Preview scanning failed: \(error.localizedDescription)", category: .ui)
     }
   }
 }

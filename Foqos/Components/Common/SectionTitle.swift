@@ -41,22 +41,22 @@ struct SectionTitle: View {
     SectionTitle(
       "Your Focus Sessions",
       buttonText: "See All",
-      buttonAction: { print("See All tapped") })
+      buttonAction: { Log.debug("See All tapped", category: .ui) })
 
     SectionTitle(
       "Weekly Insights",
       buttonText: "View Report",
-      buttonAction: { print("View Report tapped") })
+      buttonAction: { Log.debug("View Report tapped", category: .ui) })
 
     SectionTitle(
       "Achievements",
       buttonText: "Manage",
-      buttonAction: { print("Manage tapped") })
+      buttonAction: { Log.debug("Manage tapped", category: .ui) })
 
     SectionTitle(
       "App Usage",
       buttonText: "Settings",
-      buttonAction: { print("Settings tapped") })
+      buttonAction: { Log.debug("Settings tapped", category: .ui) })
   }
   .padding(20)
 }

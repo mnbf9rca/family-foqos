@@ -200,7 +200,7 @@ struct TimerDurationPreviewSheetHost: View {
           TimerDurationView(
             profileName: "Work Focus",
             onDurationSelected: { timerData in
-              print("Selected duration: \(timerData.durationInMinutes) minutes")
+              Log.debug("Selected duration: \(timerData.durationInMinutes) minutes", category: .ui)
             }
           )
         }

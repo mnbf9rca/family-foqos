@@ -86,7 +86,7 @@ struct ScaleButtonStyle: ButtonStyle {
     Color.gray.opacity(0.1).ignoresSafeArea()
 
     Welcome(onTap: {
-      print("Card tapped")
+      Log.debug("Card tapped", category: .ui)
     })
     .padding(.horizontal)
     .environmentObject(ThemeManager.shared)

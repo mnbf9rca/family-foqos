@@ -43,7 +43,7 @@ struct ScheduleWarningPrompt: View {
 #Preview {
   Form {
     ScheduleWarningPrompt(
-      onApply: { print("Apply tapped") },
+      onApply: { Log.debug("Apply tapped", category: .ui) },
       disabled: false
     )
   }
@@ -52,7 +52,7 @@ struct ScheduleWarningPrompt: View {
 #Preview("Disabled") {
   Form {
     ScheduleWarningPrompt(
-      onApply: { print("Apply tapped") },
+      onApply: { Log.debug("Apply tapped", category: .ui) },
       disabled: true
     )
   }

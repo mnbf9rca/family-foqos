@@ -141,6 +141,6 @@ struct SetupStepRow: View {
 
 #Preview {
   ChildAuthorizationRequiredView {
-    print("Dismissed")
+    Log.debug("Dismissed", category: .ui)
   }
 }

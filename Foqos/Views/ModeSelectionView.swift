@@ -223,7 +223,7 @@ struct SimplifiedModeCard: View {
 
 #Preview {
   ModeSelectionView { mode in
-    print("Selected mode: \(mode)")
+    Log.debug("Selected mode: \(mode)", category: .ui)
   }
   .environmentObject(RequestAuthorizer())
 }

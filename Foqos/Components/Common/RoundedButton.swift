@@ -91,24 +91,24 @@ private struct GlassBackgroundModifier: ViewModifier {
 #Preview {
   VStack(spacing: 16) {
     RoundedButton("See All") {
-      print("See All tapped")
+      Log.debug("See All tapped", category: .ui)
     }
 
     RoundedButton(
       "View Report",
-      action: { print("View Report tapped") },
+      action: { Log.debug("View Report tapped", category: .ui) },
       iconName: "chart.bar")
 
     RoundedButton(
       "Custom Style",
-      action: { print("Custom tapped") },
+      action: { Log.debug("Custom tapped", category: .ui) },
       backgroundColor: .blue,
       textColor: .white,
       iconName: "star.fill")
 
     RoundedButton(
       "Large Button",
-      action: { print("Large tapped") },
+      action: { Log.debug("Large tapped", category: .ui) },
       backgroundColor: .green.opacity(0.2),
       textColor: .green,
       font: .title3,
@@ -117,7 +117,7 @@ private struct GlassBackgroundModifier: ViewModifier {
 
     RoundedButton(
       "Settings",
-      action: { print("Settings tapped") },
+      action: { Log.debug("Settings tapped", category: .ui) },
       iconName: "gear")
   }
   .padding(20)

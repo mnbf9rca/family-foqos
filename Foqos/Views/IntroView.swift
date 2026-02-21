@@ -12,6 +12,6 @@ struct IntroView: View {
 
 #Preview {
   IntroView {
-    print("Request authorization tapped")
+    Log.debug("Request authorization tapped", category: .ui)
   }
 }
