@@ -962,11 +962,17 @@ class StrategyManager: ObservableObject {
                 currentSession.startTime != remoteStartTime
               {
                 currentSession.startTime = remoteStartTime
-                do {
-                  try currentSession.modelContext?.save()
-                } catch {
-                  Log.error(
-                    "Failed to save reconciled startTime (syncSessionStart): \(error.localizedDescription)",
+                if let ctx = currentSession.modelContext {
+                  do {
+                    try ctx.save()
+                  } catch {
+                    Log.error(
+                      "Failed to save reconciled startTime (syncSessionStart): \(error.localizedDescription)",
+                      category: .strategy)
+                  }
+                } else {
+                  Log.warning(
+                    "No modelContext on active session; reconciled startTime not persisted",
                     category: .strategy)
                 }
                 Log.info("Reconciled local startTime to \(remoteStartTime)", category: .strategy)
