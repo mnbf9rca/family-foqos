@@ -1,7 +1,5 @@
 import DeviceActivity
-import OSLog
-
-private let log: Logger = Logger(subsystem: "com.cynexia.family-foqos.monitor", category: StrategyTimerActivity.id)
+import Foundation
 
 class StrategyTimerActivity: TimerActivity {
   static let id: String = "StrategyTimerActivity"
@@ -19,13 +17,14 @@ class StrategyTimerActivity: TimerActivity {
   func start(for profile: SharedData.ProfileSnapshot) {
     let profileId = profile.id.uuidString
 
-    log.info("Start strategy timer activity for \(profileId), profile: \(profileId)")
+    Log.info("Start strategy timer activity for \(profileId), profile: \(profileId)", category: .timer)
 
     if let activeSession = SharedData.getActiveSharedSession(),
       activeSession.blockedProfileId != profile.id
     {
-      log.info(
-        "Start strategy timer activity for \(profileId), active session profile does not match device activity profile, not continuing"
+      Log.info(
+        "Start strategy timer activity for \(profileId), active session profile does not match device activity profile, not continuing",
+        category: .timer
       )
       return
     }
@@ -39,14 +38,15 @@ class StrategyTimerActivity: TimerActivity {
     let profileId = profile.id.uuidString
 
     guard let activeSession = SharedData.getActiveSharedSession() else {
-      log.info("Stop strategy timer activity for \(profileId), no active session found")
+      Log.info("Stop strategy timer activity for \(profileId), no active session found", category: .timer)
       return
     }
 
     // Check to make sure the active session is the same as the profile before disabling restrictions
     if activeSession.blockedProfileId != profile.id {
-      log.info(
-        "Stop strategy timer activity for \(profileId), active session profile does not match device activity profile"
+      Log.info(
+        "Stop strategy timer activity for \(profileId), active session profile does not match device activity profile",
+        category: .timer
       )
       return
     }
@@ -56,7 +56,7 @@ class StrategyTimerActivity: TimerActivity {
     let isScheduleStarted = (activeSession.tag == profileId)
     if isScheduleStarted {
       let now = Date()
-      log.info("Stop strategy timer for \(profileId), recording stop at \(now)")
+      Log.info("Stop strategy timer for \(profileId), recording stop at \(now)", category: .timer)
       SharedData.setLastStoppedAt(for: profileId, at: now)
     }
 
