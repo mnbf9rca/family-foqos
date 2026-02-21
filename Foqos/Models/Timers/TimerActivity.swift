@@ -1,5 +1,4 @@
 import DeviceActivity
-import OSLog
 
 protocol TimerActivity {
   static var id: String { get }
