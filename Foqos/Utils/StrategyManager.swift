@@ -35,7 +35,6 @@ class StrategyManager: ObservableObject {
     true
   @Published var showGeofenceStartWarning: Bool = false
   @Published var pendingStartProfile: BlockedProfiles? = nil
-  @Published var pendingStartContext: ModelContext? = nil
   @Published var geofenceWarningMessage: String = ""
 
   private enum EmergencyDefaultsKey {
@@ -322,7 +321,6 @@ class StrategyManager: ObservableObject {
       } else {
         // User is NOT at location, show warning
         self.pendingStartProfile = profile
-        self.pendingStartContext = context
         self.geofenceWarningMessage = self.buildStartWarningMessage(
           rule: ruleToCheck,
           savedLocations: savedLocationsSnapshot
@@ -355,8 +353,8 @@ class StrategyManager: ObservableObject {
   }
 
   /// Called when user confirms starting despite geofence warning
-  func confirmGeofenceStart() {
-    guard let profile = pendingStartProfile, let context = pendingStartContext else {
+  func confirmGeofenceStart(context: ModelContext) {
+    guard let profile = pendingStartProfile else {
       cancelGeofenceStart()
       return
     }
@@ -368,7 +366,6 @@ class StrategyManager: ObservableObject {
   /// Called when user cancels starting due to geofence warning
   func cancelGeofenceStart() {
     pendingStartProfile = nil
-    pendingStartContext = nil
     geofenceWarningMessage = ""
     showGeofenceStartWarning = false
   }
