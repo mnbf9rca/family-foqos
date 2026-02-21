@@ -648,6 +648,7 @@ class SyncCoordinator: ObservableObject {
       Log.error(
         "Failed to save profile version increment before push: \(error.localizedDescription)",
         category: .sync)
+      return
     }
 
     Task {
