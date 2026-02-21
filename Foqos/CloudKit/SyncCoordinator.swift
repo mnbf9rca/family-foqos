@@ -131,7 +131,7 @@ class SyncCoordinator: ObservableObject {
         "Pushing \(syncedProfiles.count) profiles and \(syncedLocations.count) locations to CloudKit",
         category: .sync)
 
-      Task.detached {
+      Task {
         // Push synced profiles
         for syncedProfile in syncedProfiles {
           try? await ProfileSyncManager.shared.pushSyncedProfile(syncedProfile)
