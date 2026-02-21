@@ -8,7 +8,7 @@ final class SharedDataLockTests: XCTestCase {
     super.setUp()
     // Clean slate for each test
     SharedData.flushActiveSession()
-    SharedData.flushCompletedSessionsForSchedular()
+    _ = SharedData.getAndFlushCompletedSessionsForSchedular()
   }
 
   func testSequentialSnapshotOperationsDoNotDeadlock() {
@@ -78,12 +78,31 @@ final class SharedDataLockTests: XCTestCase {
 
     // Then: session moved to completed, active is nil
     XCTAssertNil(SharedData.getActiveSharedSession())
-    let completed = SharedData.getCompletedSessionsForSchedular()
+    let completed = SharedData.getAndFlushCompletedSessionsForSchedular()
     XCTAssertEqual(completed.count, 1)
     XCTAssertEqual(completed.first?.blockedProfileId, profileId)
+  }
 
-    // Cleanup
-    SharedData.flushCompletedSessionsForSchedular()
+  func testGetAndFlushCompletedSessionsIsAtomic() {
+    // Given: two completed sessions
+    let profileId1 = UUID()
+    let profileId2 = UUID()
+    SharedData.createSessionForSchedular(for: profileId1)
+    SharedData.endActiveSharedSession()
+    SharedData.createSessionForSchedular(for: profileId2)
+    SharedData.endActiveSharedSession()
+
+    // When: atomic get-and-flush
+    let flushed = SharedData.getAndFlushCompletedSessionsForSchedular()
+
+    // Then: returns both sessions and clears storage
+    XCTAssertEqual(flushed.count, 2)
+    guard flushed.count == 2 else {
+      return
+    }
+    XCTAssertEqual(flushed[0].blockedProfileId, profileId1)
+    XCTAssertEqual(flushed[1].blockedProfileId, profileId2)
+    XCTAssertTrue(SharedData.getAndFlushCompletedSessionsForSchedular().isEmpty)
   }
 
   // MARK: - Helpers

@@ -157,7 +157,7 @@ enum SharedData {
   }
 
   static func snapshot(for profileID: String) -> ProfileSnapshot? {
-    profileSnapshots[profileID]
+    withLock { profileSnapshots[profileID] }
   }
 
   static func setSnapshot(_ snapshot: ProfileSnapshot, for profileID: String) {
@@ -227,7 +227,7 @@ enum SharedData {
   }
 
   static func getActiveSharedSession() -> SessionSnapshot? {
-    activeSharedSession
+    withLock { activeSharedSession }
   }
 
   static func endActiveSharedSession() {
@@ -259,13 +259,14 @@ enum SharedData {
     }
   }
 
-  static func getCompletedSessionsForSchedular() -> [SessionSnapshot] {
-    completedSessionsInSchedular
-  }
-
-  static func flushCompletedSessionsForSchedular() {
+  /// Atomically reads and clears completed scheduled sessions.
+  /// Use this in production instead of separate get + flush calls
+  /// to prevent TOCTOU races with concurrent endActiveSharedSession() writes.
+  static func getAndFlushCompletedSessionsForSchedular() -> [SessionSnapshot] {
     withLock {
+      let sessions = completedSessionsInSchedular
       completedSessionsInSchedular = []
+      return sessions
     }
   }
 
