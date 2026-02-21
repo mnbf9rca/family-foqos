@@ -177,7 +177,13 @@ class BlockedProfileSession: BreakDurationCalculable {
       existingSession.oneMoreMinuteStartTime = snapshot.oneMoreMinuteStartTime
 
       // manually save to ensure changes are persisted
-      try? context.save()
+      do {
+        try context.save()
+      } catch {
+        Log.error(
+          "Failed to save session snapshot update: \(error.localizedDescription)",
+          category: .session)
+      }
       return
     }
 

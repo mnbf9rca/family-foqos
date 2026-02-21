@@ -35,7 +35,6 @@ class StrategyManager: ObservableObject {
     true
   @Published var showGeofenceStartWarning: Bool = false
   @Published var pendingStartProfile: BlockedProfiles? = nil
-  @Published var pendingStartContext: ModelContext? = nil
   @Published var geofenceWarningMessage: String = ""
 
   private enum EmergencyDefaultsKey {
@@ -322,7 +321,6 @@ class StrategyManager: ObservableObject {
       } else {
         // User is NOT at location, show warning
         self.pendingStartProfile = profile
-        self.pendingStartContext = context
         self.geofenceWarningMessage = self.buildStartWarningMessage(
           rule: ruleToCheck,
           savedLocations: savedLocationsSnapshot
@@ -355,8 +353,8 @@ class StrategyManager: ObservableObject {
   }
 
   /// Called when user confirms starting despite geofence warning
-  func confirmGeofenceStart() {
-    guard let profile = pendingStartProfile, let context = pendingStartContext else {
+  func confirmGeofenceStart(context: ModelContext) {
+    guard let profile = pendingStartProfile else {
       cancelGeofenceStart()
       return
     }
@@ -368,7 +366,6 @@ class StrategyManager: ObservableObject {
   /// Called when user cancels starting due to geofence warning
   func cancelGeofenceStart() {
     pendingStartProfile = nil
-    pendingStartContext = nil
     geofenceWarningMessage = ""
     showGeofenceStartWarning = false
   }
@@ -965,7 +962,19 @@ class StrategyManager: ObservableObject {
                 currentSession.startTime != remoteStartTime
               {
                 currentSession.startTime = remoteStartTime
-                try? currentSession.modelContext?.save()
+                if let ctx = currentSession.modelContext {
+                  do {
+                    try ctx.save()
+                  } catch {
+                    Log.error(
+                      "Failed to save reconciled startTime (syncSessionStart): \(error.localizedDescription)",
+                      category: .strategy)
+                  }
+                } else {
+                  Log.warning(
+                    "No modelContext on active session; reconciled startTime not persisted",
+                    category: .strategy)
+                }
                 Log.info("Reconciled local startTime to \(remoteStartTime)", category: .strategy)
               }
             case .error(let error):
@@ -997,7 +1006,13 @@ class StrategyManager: ObservableObject {
         if endedProfile.needsMigration {
           endedProfile.migrateToV2IfNeeded()
           if !endedProfile.needsMigration, let context = endedProfile.modelContext {
-            try? context.save()
+            do {
+              try context.save()
+            } catch {
+              Log.error(
+                "Failed to save deferred profile migration: \(error.localizedDescription)",
+                category: .strategy)
+            }
             Log.info(
               "Migrated deferred profile '\(endedProfile.name)' on session end", category: .app)
             DeviceActivityCenterUtil.scheduleTimerActivity(for: endedProfile)
@@ -1147,7 +1162,13 @@ class StrategyManager: ObservableObject {
               currentSession.startTime != remoteStartTime
             {
               currentSession.startTime = remoteStartTime
-              try? context.save()
+              do {
+                try context.save()
+              } catch {
+                Log.error(
+                  "Failed to save reconciled scheduled session startTime: \(error.localizedDescription)",
+                  category: .strategy)
+              }
               Log.info(
                 "Reconciled scheduled session startTime to \(remoteStartTime)", category: .strategy)
             }
@@ -1365,7 +1386,13 @@ class StrategyManager: ObservableObject {
             currentSession.startTime != remoteStartTime
           {
             currentSession.startTime = remoteStartTime
-            try? context.save()
+            do {
+              try context.save()
+            } catch {
+              Log.error(
+                "Failed to save reconciled startTime (startWithTag): \(error.localizedDescription)",
+                category: .strategy)
+            }
             Log.info("Reconciled local startTime to \(remoteStartTime)", category: .strategy)
           }
         case .error(let error):

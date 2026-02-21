@@ -345,7 +345,7 @@ struct HomeView: View {
     }
     .alert("Location Warning", isPresented: $strategyManager.showGeofenceStartWarning) {
       Button("Start Anyway") {
-        strategyManager.confirmGeofenceStart()
+        strategyManager.confirmGeofenceStart(context: context)
       }
       Button("Cancel", role: .cancel) {
         strategyManager.cancelGeofenceStart()

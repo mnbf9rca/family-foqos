@@ -48,7 +48,11 @@ class ManualBlockingStrategy: BlockingStrategy {
     session: BlockedProfileSession
   ) -> (any View)? {
     session.endSession()
-    try? context.save()
+    do {
+      try context.save()
+    } catch {
+      Log.error("Failed to save session end: \(error.localizedDescription)", category: .strategy)
+    }
     self.appBlocker.deactivateRestrictions()
 
     self.onSessionCreation?(.ended(session.blockedProfile))

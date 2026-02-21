@@ -248,7 +248,12 @@ class SyncCoordinator: ObservableObject {
       }
     }
 
-    try? context.save()
+    do {
+      try context.save()
+    } catch {
+      Log.error(
+        "Failed to save synced profiles: \(error.localizedDescription)", category: .sync)
+    }
   }
 
   private func updateLocalProfile(
@@ -541,7 +546,12 @@ class SyncCoordinator: ObservableObject {
       }
     }
 
-    try? context.save()
+    do {
+      try context.save()
+    } catch {
+      Log.error(
+        "Failed to save synced locations: \(error.localizedDescription)", category: .sync)
+    }
   }
 
   // MARK: - Emergency Settings Handling
@@ -632,7 +642,14 @@ class SyncCoordinator: ObservableObject {
 
     // Increment version before pushing and persist
     profile.syncVersion += 1
-    try? context.save()
+    do {
+      try context.save()
+    } catch {
+      Log.error(
+        "Failed to save profile version increment before push: \(error.localizedDescription)",
+        category: .sync)
+      return
+    }
 
     Task {
       try? await ProfileSyncManager.shared.pushProfile(profile)
