@@ -80,7 +80,8 @@ struct BlockedProfileSchedule: Codable, Equatable {
   }
 
   var totalDurationInSeconds: Int {
-    return (endHour - startHour) * 3600 + (endMinute - startMinute) * 60
+    let raw = (endHour - startHour) * 3600 + (endMinute - startMinute) * 60
+    return raw >= 0 ? raw : raw + 86400
   }
 
   var summaryText: String {
