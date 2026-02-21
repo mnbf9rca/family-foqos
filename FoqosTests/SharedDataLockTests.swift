@@ -86,6 +86,25 @@ final class SharedDataLockTests: XCTestCase {
     SharedData.flushCompletedSessionsForSchedular()
   }
 
+  func testGetAndFlushCompletedSessionsIsAtomic() {
+    // Given: two completed sessions
+    let profileId1 = UUID()
+    let profileId2 = UUID()
+    SharedData.createSessionForSchedular(for: profileId1)
+    SharedData.endActiveSharedSession()
+    SharedData.createSessionForSchedular(for: profileId2)
+    SharedData.endActiveSharedSession()
+
+    // When: atomic get-and-flush
+    let flushed = SharedData.getAndFlushCompletedSessionsForSchedular()
+
+    // Then: returns both sessions and clears storage
+    XCTAssertEqual(flushed.count, 2)
+    XCTAssertEqual(flushed[0].blockedProfileId, profileId1)
+    XCTAssertEqual(flushed[1].blockedProfileId, profileId2)
+    XCTAssertTrue(SharedData.getCompletedSessionsForSchedular().isEmpty)
+  }
+
   // MARK: - Helpers
 
   private func makeSnapshot(id: UUID, name: String) -> SharedData.ProfileSnapshot {
