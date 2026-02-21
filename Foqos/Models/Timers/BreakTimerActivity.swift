@@ -1,7 +1,5 @@
 import DeviceActivity
-import OSLog
-
-private let log = Logger(subsystem: "com.cynexia.family-foqos.monitor", category: BreakTimerActivity.id)
+import Foundation
 
 class BreakTimerActivity: TimerActivity {
   static let id: String = "BreakScheduleActivity"
@@ -20,15 +18,17 @@ class BreakTimerActivity: TimerActivity {
     let profileId = profile.id.uuidString
 
     guard let activeSession = SharedData.getActiveSharedSession() else {
-      log.info(
-        "Start break timer activity for \(profileId), no active session found to start break")
+      Log.info(
+        "Start break timer activity for \(profileId), no active session found to start break",
+        category: .timer)
       return
     }
 
     // Check to make sure the active session is the same as the profile before starting break
     if activeSession.blockedProfileId != profile.id {
-      log.info(
-        "Start break timer activity for \(profileId), active session profile does not match profile to start break"
+      Log.info(
+        "Start break timer activity for \(profileId), active session profile does not match profile to start break",
+        category: .timer
       )
       return
     }
@@ -45,15 +45,17 @@ class BreakTimerActivity: TimerActivity {
     let profileId = profile.id.uuidString
 
     guard let activeSession = SharedData.getActiveSharedSession() else {
-      log.info(
-        "Stop break timer activity for \(profileId), no active session found to stop break")
+      Log.info(
+        "Stop break timer activity for \(profileId), no active session found to stop break",
+        category: .timer)
       return
     }
 
     // Check to make sure the active session is the same as the profile before stopping the break
     if activeSession.blockedProfileId != profile.id {
-      log.info(
-        "Stop break timer activity for \(profileId), active session profile does not match profile to start break"
+      Log.info(
+        "Stop break timer activity for \(profileId), active session profile does not match profile to start break",
+        category: .timer
       )
       return
     }
