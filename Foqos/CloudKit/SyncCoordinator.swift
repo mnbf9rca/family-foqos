@@ -134,12 +134,24 @@ class SyncCoordinator: ObservableObject {
       Task {
         // Push synced profiles
         for syncedProfile in syncedProfiles {
-          try? await ProfileSyncManager.shared.pushSyncedProfile(syncedProfile)
+          do {
+            try await ProfileSyncManager.shared.pushSyncedProfile(syncedProfile)
+          } catch {
+            Log.error(
+              "Failed to push profile '\(syncedProfile.name)': \(error.localizedDescription)",
+              category: .sync)
+          }
         }
 
         // Push all locations
         for syncedLocation in syncedLocations {
-          try? await ProfileSyncManager.shared.pushSyncedLocation(syncedLocation)
+          do {
+            try await ProfileSyncManager.shared.pushSyncedLocation(syncedLocation)
+          } catch {
+            Log.error(
+              "Failed to push location '\(syncedLocation.name)': \(error.localizedDescription)",
+              category: .sync)
+          }
         }
       }
     } catch {
@@ -611,15 +623,27 @@ class SyncCoordinator: ObservableObject {
       // Re-push all profiles
       let profiles = try BlockedProfiles.fetchProfiles(in: context)
       for profile in profiles where !profile.isNewerSchemaVersion {
-        try? await ProfileSyncManager.shared.pushProfile(profile)
-        Log.info("Re-pushed profile '\(profile.name)' after reset", category: .sync)
+        do {
+          try await ProfileSyncManager.shared.pushProfile(profile)
+          Log.info("Re-pushed profile '\(profile.name)' after reset", category: .sync)
+        } catch {
+          Log.error(
+            "Failed to re-push profile '\(profile.name)' after reset: \(error.localizedDescription)",
+            category: .sync)
+        }
       }
 
       // Re-push all locations
       let locations = try SavedLocation.fetchAll(in: context)
       for location in locations {
-        try? await ProfileSyncManager.shared.pushLocation(location)
-        Log.info("Re-pushed location '\(location.name)' after reset", category: .sync)
+        do {
+          try await ProfileSyncManager.shared.pushLocation(location)
+          Log.info("Re-pushed location '\(location.name)' after reset", category: .sync)
+        } catch {
+          Log.error(
+            "Failed to re-push location '\(location.name)' after reset: \(error.localizedDescription)",
+            category: .sync)
+        }
       }
     } catch {
       Log.info("Error re-pushing data after reset - \(error)", category: .sync)
@@ -652,7 +676,13 @@ class SyncCoordinator: ObservableObject {
     }
 
     Task {
-      try? await ProfileSyncManager.shared.pushProfile(profile)
+      do {
+        try await ProfileSyncManager.shared.pushProfile(profile)
+      } catch {
+        Log.error(
+          "Failed to push profile '\(profile.name)' after version increment: \(error.localizedDescription)",
+          category: .sync)
+      }
     }
   }
 
@@ -661,7 +691,13 @@ class SyncCoordinator: ObservableObject {
     guard ProfileSyncManager.shared.isEnabled else { return }
 
     Task {
-      try? await ProfileSyncManager.shared.deleteProfile(profileId)
+      do {
+        try await ProfileSyncManager.shared.deleteProfile(profileId)
+      } catch {
+        Log.error(
+          "Failed to delete profile \(profileId) from CloudKit: \(error.localizedDescription)",
+          category: .sync)
+      }
     }
   }
 }
