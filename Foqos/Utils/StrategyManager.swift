@@ -1159,7 +1159,7 @@ class StrategyManager: ObservableObject {
     }
 
     // Process any completed scheduled sessions
-    let completedScheduleSessions = SharedData.getCompletedSessionsForSchedular()
+    let completedScheduleSessions = SharedData.getAndFlushCompletedSessionsForSchedular()
     for completedScheduleSession in completedScheduleSessions {
       BlockedProfileSession.upsertSessionFromSnapshot(
         in: context,
@@ -1186,8 +1186,6 @@ class StrategyManager: ObservableObject {
       }
     }
 
-    // Flush completed scheduled sessions
-    SharedData.flushCompletedSessionsForSchedular()
   }
 
   /// Start blocking for the given profile.
