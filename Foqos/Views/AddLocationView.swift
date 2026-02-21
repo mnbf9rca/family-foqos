@@ -496,7 +496,13 @@ struct AddLocationView: View {
       // Sync location to other devices if sync is enabled
       if profileSyncManager.isEnabled {
         Task {
-          try? await profileSyncManager.pushLocation(savedLocation)
+          do {
+            try await profileSyncManager.pushLocation(savedLocation)
+          } catch {
+            Log.error(
+              "Failed to sync new location '\(savedLocation.name)': \(error.localizedDescription)",
+              category: .sync)
+          }
         }
       }
 

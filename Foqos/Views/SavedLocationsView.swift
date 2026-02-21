@@ -175,7 +175,15 @@ struct SavedLocationsView: View {
       // Sync deletion to other devices if sync is enabled
       if profileSyncManager.isEnabled {
         Task {
-          try? await profileSyncManager.deleteLocation(locationId)
+          do {
+            try await profileSyncManager.deleteLocation(locationId)
+          } catch {
+            Log.error(
+              "Failed to sync location deletion: \(error.localizedDescription)",
+              category: .sync)
+            errorMessage =
+              "Location deleted locally but failed to sync to other devices."
+          }
         }
       }
     } catch {
