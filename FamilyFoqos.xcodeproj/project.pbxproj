@@ -118,6 +118,7 @@
 				Models/Schedule.swift,
 				Models/Shared.swift,
 				Utils/AppBlockerUtil.swift,
+				Utils/Log.swift,
 			);
 			target = 80FF388C2D80DB540032BC5E /* FoqosWidgetExtension */;
 		};
@@ -143,6 +144,7 @@
 				Models/Timers/TimerActivity.swift,
 				Models/Timers/TimerActivityUtil.swift,
 				Utils/AppBlockerUtil.swift,
+				Utils/Log.swift,
 			);
 			target = 801713092DE6C78C00B77FE1 /* FoqosDeviceMonitor */;
 		};

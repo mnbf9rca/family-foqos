@@ -1,8 +1,4 @@
 import DeviceActivity
-import OSLog
-
-private let log = Logger(
-  subsystem: "com.cynexia.family-foqos.monitor", category: OneMoreMinuteTimerActivity.id)
 
 class OneMoreMinuteTimerActivity: TimerActivity {
   static let id: String = "OneMoreMinuteActivity"
@@ -25,23 +21,25 @@ class OneMoreMinuteTimerActivity: TimerActivity {
     // intervalDidStart fires immediately (since intervalStart is 00:00:00)
     // but the work is already done. We only need intervalDidEnd to fire.
     let profileId = profile.id.uuidString
-    log.info("One more minute intervalDidStart for \(profileId) - no-op (main process handled start)")
+    Log.info("One more minute intervalDidStart for \(profileId) - no-op (main process handled start)", category: .timer)
   }
 
   func stop(for profile: SharedData.ProfileSnapshot) {
     let profileId = profile.id.uuidString
 
     guard let activeSession = SharedData.getActiveSharedSession() else {
-      log.info(
-        "Stop one more minute activity for \(profileId), no active session found to stop one more minute"
+      Log.info(
+        "Stop one more minute activity for \(profileId), no active session found to stop one more minute",
+        category: .timer
       )
       return
     }
 
     // Check to make sure the active session is the same as the profile before stopping one more minute
     if activeSession.blockedProfileId != profile.id {
-      log.info(
-        "Stop one more minute activity for \(profileId), active session profile does not match profile to stop one more minute"
+      Log.info(
+        "Stop one more minute activity for \(profileId), active session profile does not match profile to stop one more minute",
+        category: .timer
       )
       return
     }

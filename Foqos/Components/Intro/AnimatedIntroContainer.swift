@@ -75,7 +75,7 @@ struct AnimatedIntroContainer: View {
 #Preview {
   AnimatedIntroContainer(
     onRequestAuthorization: {
-      print("Request authorization")
+      Log.debug("Request authorization", category: .ui)
     }
   )
 }

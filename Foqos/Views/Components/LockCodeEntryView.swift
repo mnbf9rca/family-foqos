@@ -415,7 +415,7 @@ struct LockCodeSetupView: View {
       code == "1234"
     },
     onSuccess: {
-      print("Success!")
+      Log.debug("Success!", category: .ui)
     }
   )
 }
@@ -424,7 +424,7 @@ struct LockCodeSetupView: View {
   LockCodeSetupView(
     title: "Set Lock Code",
     onSave: { code in
-      print("Code saved: \(code)")
+      Log.debug("Code saved", category: .ui)
     }
   )
 }

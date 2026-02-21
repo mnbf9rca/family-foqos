@@ -1,10 +1,4 @@
 import DeviceActivity
-import OSLog
-
-private let log: Logger = Logger(
-  subsystem: "com.cynexia.family-foqos.monitor",
-  category: StopScheduleTimerActivity.id
-)
 
 /// Handles stop-only scheduling for profiles that start manually but stop on schedule.
 /// `intervalDidStart` is a no-op. `intervalDidEnd` stops the active session.
@@ -20,31 +14,31 @@ class StopScheduleTimerActivity: TimerActivity {
   func start(for profile: SharedData.ProfileSnapshot) {
     // No-op: this activity only handles stop timing.
     // intervalDidStart fires at midnight but we don't want to start a session.
-    log.info("StopScheduleTimerActivity.start called for \(profile.id.uuidString) - no-op")
+    Log.info("StopScheduleTimerActivity.start called for \(profile.id.uuidString) - no-op", category: .timer)
   }
 
   func stop(for profile: SharedData.ProfileSnapshot) {
     let profileId = profile.id.uuidString
 
     guard let activeSession = SharedData.getActiveSharedSession() else {
-      log.info("Stop schedule timer for \(profileId), no active session found")
+      Log.info("Stop schedule timer for \(profileId), no active session found", category: .timer)
       return
     }
 
     if activeSession.blockedProfileId != profile.id {
-      log.info("Stop schedule timer for \(profileId), active session profile does not match")
+      Log.info("Stop schedule timer for \(profileId), active session profile does not match", category: .timer)
       return
     }
 
     // Check if today is a scheduled stop day
     if let stopSchedule = profile.stopSchedule {
       if !stopSchedule.isTodayScheduled() {
-        log.info("Stop schedule timer for \(profileId), not scheduled for today")
+        Log.info("Stop schedule timer for \(profileId), not scheduled for today", category: .timer)
         return
       }
     }
 
-    log.info("Stop schedule timer firing for \(profileId), ending session")
+    Log.info("Stop schedule timer firing for \(profileId), ending session", category: .timer)
 
     appBlocker.deactivateRestrictions()
     SharedData.endActiveSharedSession()

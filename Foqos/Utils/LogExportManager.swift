@@ -114,8 +114,7 @@ final class LogExportManager {
         try fileManager.copyItem(at: zipURL, to: archiveURL)
         copySucceeded = true
       } catch {
-        // Cannot use Log here as we're off the main actor
-        print("LogExportManager: Failed to copy zip file: \(error.localizedDescription)")
+        Log.error("Failed to copy zip file: \(error.localizedDescription)", category: .app)
       }
     }
 
@@ -123,8 +122,9 @@ final class LogExportManager {
       // Fallback: create combined text file if zip fails
       let txtURL = try createCombinedLogFileSync(
         from: sourceDir, to: archiveURL, fileManager: fileManager)
-      print(
-        "LogExportManager: Zip creation failed, using combined text fallback: \(coordinatorError?.localizedDescription ?? "copy failed")"
+      Log.warning(
+        "Zip creation failed, using combined text fallback: \(coordinatorError?.localizedDescription ?? "copy failed")",
+        category: .app
       )
       return txtURL
     }

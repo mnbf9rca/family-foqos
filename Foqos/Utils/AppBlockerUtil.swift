@@ -7,7 +7,7 @@ class AppBlockerUtil {
   )
 
   func activateRestrictions(for profile: SharedData.ProfileSnapshot) {
-    print("Starting restrictions...")
+    Log.info("Starting restrictions", category: .familyControls)
 
     let selection = profile.selectedActivity
     let allowOnlyApps = profile.enableAllowMode
@@ -48,7 +48,7 @@ class AppBlockerUtil {
   }
 
   func deactivateRestrictions() {
-    print("Stoping restrictions...")
+    Log.info("Stopping restrictions", category: .familyControls)
 
     store.shield.applications = nil
     store.shield.applicationCategories = nil
