@@ -259,10 +259,6 @@ enum SharedData {
     }
   }
 
-  static func getCompletedSessionsForSchedular() -> [SessionSnapshot] {
-    withLock { completedSessionsInSchedular }
-  }
-
   /// Atomically reads and clears completed scheduled sessions.
   /// Use this in production instead of separate get + flush calls
   /// to prevent TOCTOU races with concurrent endActiveSharedSession() writes.
@@ -271,12 +267,6 @@ enum SharedData {
       let sessions = completedSessionsInSchedular
       completedSessionsInSchedular = []
       return sessions
-    }
-  }
-
-  static func flushCompletedSessionsForSchedular() {
-    withLock {
-      completedSessionsInSchedular = []
     }
   }
 
