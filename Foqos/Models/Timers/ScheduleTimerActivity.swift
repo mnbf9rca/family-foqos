@@ -1,8 +1,5 @@
 import DeviceActivity
-import OSLog
 import UserNotifications
-
-private let log: Logger = Logger(subsystem: "com.cynexia.family-foqos.monitor", category: ScheduleTimerActivity.id)
 
 class ScheduleTimerActivity: TimerActivity {
   static let id: String = "ScheduleTimerActivity"
@@ -50,31 +47,31 @@ class ScheduleTimerActivity: TimerActivity {
         stopSchedule: activeStopSchedule,
         lastStoppedAt: profile.scheduleLastStoppedAt)
       {
-        log.info("Start schedule timer activity for \(profileId), should not be active now")
+        Log.info("Start schedule timer activity for \(profileId), should not be active now", category: .timer)
         return
       }
     } else if let schedule = profile.schedule {
       guard schedule.isTodayScheduled() else {
-        log.info("Start schedule timer activity for \(profileId), not scheduled for today")
+        Log.info("Start schedule timer activity for \(profileId), not scheduled for today", category: .timer)
         return
       }
       guard schedule.olderThanOneMinute() else {
-        log.info("Start schedule timer activity for \(profileId), schedule is too new")
+        Log.info("Start schedule timer activity for \(profileId), schedule is too new", category: .timer)
         return
       }
     } else {
-      log.info("Start schedule timer activity for \(profileId), no schedule found")
+      Log.info("Start schedule timer activity for \(profileId), no schedule found", category: .timer)
       return
     }
 
-    log.info("Start schedule timer activity for \(profileId)")
+    Log.info("Start schedule timer activity for \(profileId)", category: .timer)
 
     if let existingSession = SharedData.getActiveSharedSession() {
       if existingSession.blockedProfileId == profile.id {
-        log.info("Start schedule timer for \(profileId), continuing active session")
+        Log.info("Start schedule timer for \(profileId), continuing active session", category: .timer)
         return
       } else {
-        log.info("Start schedule timer for \(profileId), ending different active session")
+        Log.info("Start schedule timer for \(profileId), ending different active session", category: .timer)
         SharedData.endActiveSharedSession()
       }
     }
@@ -87,14 +84,15 @@ class ScheduleTimerActivity: TimerActivity {
     let profileId = profile.id.uuidString
 
     guard let activeSession = SharedData.getActiveSharedSession() else {
-      log.info("Stop schedule timer activity for \(profileId), no active session found")
+      Log.info("Stop schedule timer activity for \(profileId), no active session found", category: .timer)
       return
     }
 
     // Check to make sure the active session is the same as the profile before disabling restrictions
     if activeSession.blockedProfileId != profile.id {
-      log.info(
-        "Stop schedule timer activity for \(profileId), active session profile does not match device activity profile"
+      Log.info(
+        "Stop schedule timer activity for \(profileId), active session profile does not match device activity profile",
+        category: .timer
       )
       return
     }
