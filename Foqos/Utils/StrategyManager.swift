@@ -897,7 +897,7 @@ class StrategyManager: ObservableObject {
   private func syncSessionStart(session: BlockedProfileSession, context: ModelContext) {
     guard shouldSyncSessionChange else { return }
 
-    Task {
+    Task { @MainActor in
       let result = await SessionSyncService.shared.startSession(
         profileId: session.blockedProfile.id,
         startTime: session.startTime
@@ -912,8 +912,10 @@ class StrategyManager: ObservableObject {
           category: .strategy
         )
         // Reconcile local startTime to match authoritative remote startTime
+        // Verify session identity — activeSession may have changed during async call
         if let remoteStartTime = existing.startTime,
           let currentSession = self.activeSession,
+          currentSession.id == session.id,
           currentSession.startTime != remoteStartTime
         {
           currentSession.startTime = remoteStartTime
@@ -973,13 +975,13 @@ class StrategyManager: ObservableObject {
     strategy.onSessionCreation = { session in
       self.dismissView()
 
-      // Remove any timers and notifications that were scheduled
-      self.timersUtil.cancelAll()
-
       switch session {
       case .started(let session):
         self.activateSession(session)
       case .ended(let endedProfile):
+        // Cancel stale reminders/notifications from the ended session
+        self.timersUtil.cancelAll()
+
         self.activeSession = nil
         self.liveActivityManager.endSessionActivity()
         self.scheduleReminder(profile: endedProfile)
