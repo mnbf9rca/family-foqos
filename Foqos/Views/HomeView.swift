@@ -474,7 +474,7 @@ struct HomeView: View {
   }
 
   private func handleStartTap(_ profile: BlockedProfiles) {
-    let action = StrategyManager.determineStartAction(
+    let action = StartStopActionResolver.determineStartAction(
       for: profile.startTriggers,
       stopConditions: profile.stopConditions
     )
@@ -509,7 +509,7 @@ struct HomeView: View {
   }
 
   private func handleStopTap(_ profile: BlockedProfiles) {
-    let action = StrategyManager.determineStopAction(
+    let action = StartStopActionResolver.determineStopAction(
       for: profile.stopConditions
     )
 

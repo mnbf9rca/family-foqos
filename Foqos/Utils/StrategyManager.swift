@@ -9,17 +9,6 @@ class StrategyManager: ObservableObject {
 
   private let locationManager = LocationManager.shared
 
-  static let availableStrategies: [BlockingStrategy] = [
-    ManualBlockingStrategy(),
-    NFCBlockingStrategy(),
-    NFCManualBlockingStrategy(),
-    NFCTimerBlockingStrategy(),
-    QRCodeBlockingStrategy(),
-    QRManualBlockingStrategy(),
-    QRTimerBlockingStrategy(),
-    ShortcutTimerBlockingStrategy(),
-  ]
-
   @Published var elapsedTime: TimeInterval = 0
   @Published var timer: Timer?
   @Published var activeSession: BlockedProfileSession?
@@ -496,7 +485,7 @@ class StrategyManager: ObservableObject {
           }
         }
 
-        let stopResult = StrategyManager.canStop(
+        let stopResult = StartStopActionResolver.canStop(
           with: .deepLink,
           conditions: localActiveSession.blockedProfile.stopConditions,
           sessionTag: localActiveSession.tag,
@@ -904,85 +893,95 @@ class StrategyManager: ObservableObject {
     }
   }
 
-  static func getStrategyFromId(id: String) -> BlockingStrategy {
-    if let strategy = availableStrategies.first(
-      where: {
-        $0.getIdentifier() == id
-      })
-    {
-      return strategy
+  /// Sync a session start to CloudKit via CAS. Uses passed context for persistence.
+  private func syncSessionStart(session: BlockedProfileSession, context: ModelContext) {
+    guard shouldSyncSessionChange else { return }
+
+    Task { @MainActor in
+      let result = await SessionSyncService.shared.startSession(
+        profileId: session.blockedProfile.id,
+        startTime: session.startTime
+      )
+
+      switch result {
+      case .started(let seq):
+        Log.info("Session synced with seq=\(seq)", category: .strategy)
+      case .alreadyActive(let existing):
+        Log.info(
+          "Joined existing session from \(existing.sessionOriginDevice ?? "unknown")",
+          category: .strategy
+        )
+        // Reconcile local startTime to match authoritative remote startTime
+        // Verify session identity — activeSession may have changed during async call
+        if let remoteStartTime = existing.startTime,
+          let currentSession = self.activeSession,
+          currentSession.id == session.id,
+          currentSession.startTime != remoteStartTime
+        {
+          currentSession.startTime = remoteStartTime
+          do {
+            try context.save()
+          } catch {
+            Log.error(
+              "Failed to save reconciled startTime: \(error.localizedDescription)",
+              category: .strategy)
+          }
+          Log.info("Reconciled local startTime to \(remoteStartTime)", category: .strategy)
+        }
+      case .error(let error):
+        Log.info("Failed to sync session start - \(error)", category: .strategy)
+      }
+    }
+  }
+
+  /// Single source of truth for session activation — all start paths converge here.
+  /// Handles state updates, timer, live activity, stop scheduling, widget refresh, and CAS sync.
+  private func activateSession(
+    _ session: BlockedProfileSession,
+    context: ModelContext? = nil
+  ) {
+    // Cancel stale reminders/notifications from previous sessions
+    timersUtil.cancelAll()
+
+    // Update profile snapshot in case settings changed
+    BlockedProfiles.updateSnapshot(for: session.blockedProfile)
+
+    errorMessage = nil
+    activeSession = session
+    startTimer()
+    liveActivityManager.startSessionActivity(session: session)
+
+    // Schedule stop activity if configured
+    DeviceActivityCenterUtil.scheduleStopActivity(for: session.blockedProfile)
+
+    // Cancel pre-activation reminders now that profile is active
+    TimersUtil.cancelAllPreActivationReminders(for: session.blockedProfile.id)
+
+    // Refresh widgets
+    WidgetCenter.shared.reloadTimelines(ofKind: "ProfileControlWidget")
+
+    // Sync session start via CAS
+    // Use passed context if available, fall back to session's modelContext
+    if let ctx = context ?? session.modelContext {
+      syncSessionStart(session: session, context: ctx)
     } else {
-      return NFCBlockingStrategy()
+      Log.warning("No ModelContext available for session sync", category: .strategy)
     }
   }
 
   func getStrategy(id: String) -> BlockingStrategy {
-    var strategy = StrategyManager.getStrategyFromId(id: id)
+    var strategy = StartStopActionResolver.getStrategyFromId(id: id)
 
     strategy.onSessionCreation = { session in
       self.dismissView()
 
-      // Remove any timers and notifications that were scheduled
-      self.timersUtil.cancelAll()
-
       switch session {
       case .started(let session):
-        // Update the snapshot of the profile in case some settings were changed
-        BlockedProfiles.updateSnapshot(for: session.blockedProfile)
-
-        self.errorMessage = nil
-
-        self.activeSession = session
-        self.startTimer()
-        self.liveActivityManager
-          .startSessionActivity(session: session)
-
-        // Refresh widgets when session starts
-        WidgetCenter.shared.reloadTimelines(ofKind: "ProfileControlWidget")
-
-        // Sync session start using CAS (if global sync is enabled)
-        if self.shouldSyncSessionChange {
-          Task {
-            let result = await SessionSyncService.shared.startSession(
-              profileId: session.blockedProfile.id,
-              startTime: session.startTime
-            )
-
-            switch result {
-            case .started(let seq):
-              Log.info("Session synced with seq=\(seq)", category: .strategy)
-            case .alreadyActive(let existing):
-              Log.info(
-                "Joined existing session from \(existing.sessionOriginDevice ?? "unknown")",
-                category: .strategy
-              )
-              // Reconcile local startTime to match authoritative remote startTime
-              if let remoteStartTime = existing.startTime,
-                let currentSession = self.activeSession,
-                currentSession.startTime != remoteStartTime
-              {
-                currentSession.startTime = remoteStartTime
-                if let ctx = currentSession.modelContext {
-                  do {
-                    try ctx.save()
-                  } catch {
-                    Log.error(
-                      "Failed to save reconciled startTime (syncSessionStart): \(error.localizedDescription)",
-                      category: .strategy)
-                  }
-                } else {
-                  Log.warning(
-                    "No modelContext on active session; reconciled startTime not persisted",
-                    category: .strategy)
-                }
-                Log.info("Reconciled local startTime to \(remoteStartTime)", category: .strategy)
-              }
-            case .error(let error):
-              Log.info("Failed to sync session start - \(error)", category: .strategy)
-            }
-          }
-        }
+        self.activateSession(session)
       case .ended(let endedProfile):
+        // Cancel stale reminders/notifications from the ended session
+        self.timersUtil.cancelAll()
+
         self.activeSession = nil
         self.liveActivityManager.endSessionActivity()
         self.scheduleReminder(profile: endedProfile)
@@ -1245,11 +1244,6 @@ class StrategyManager: ObservableObject {
         customStrategyView = customView
       }
     }
-
-    DeviceActivityCenterUtil.scheduleStopActivity(for: definedProfile)
-
-    // Cancel any pending pre-activation reminders now that the profile is active
-    TimersUtil.cancelAllPreActivationReminders(for: definedProfile.id)
   }
 
   /// Start blocking with a pre-scanned NFC tag (for trigger-based start)
@@ -1285,7 +1279,7 @@ class StrategyManager: ObservableObject {
       return
     }
 
-    let validation = Self.canStop(
+    let validation = StartStopActionResolver.canStop(
       with: .nfc(tag: tagId),
       conditions: session.blockedProfile.stopConditions,
       sessionTag: session.tag,
@@ -1314,7 +1308,7 @@ class StrategyManager: ObservableObject {
       return
     }
 
-    let validation = Self.canStop(
+    let validation = StartStopActionResolver.canStop(
       with: .qr(code: codeValue),
       conditions: session.blockedProfile.stopConditions,
       sessionTag: session.tag,
@@ -1347,59 +1341,7 @@ class StrategyManager: ObservableObject {
       forceStart: false
     )
 
-    // Update the snapshot of the profile in case some settings were changed
-    BlockedProfiles.updateSnapshot(for: session.blockedProfile)
-
-    errorMessage = nil
-    activeSession = session
-    startTimer()
-    liveActivityManager.startSessionActivity(session: session)
-
-    // Register stop schedule if configured
-    DeviceActivityCenterUtil.scheduleStopActivity(for: profile)
-
-    // Cancel any pending pre-activation reminders now that the profile is active
-    TimersUtil.cancelAllPreActivationReminders(for: profile.id)
-
-    // Refresh widgets when session starts
-    WidgetCenter.shared.reloadTimelines(ofKind: "ProfileControlWidget")
-
-    // Sync session start using CAS (if global sync is enabled)
-    if shouldSyncSessionChange {
-      Task {
-        let result = await SessionSyncService.shared.startSession(
-          profileId: session.blockedProfile.id,
-          startTime: session.startTime
-        )
-
-        switch result {
-        case .started(let seq):
-          Log.info("Session synced with seq=\(seq)", category: .strategy)
-        case .alreadyActive(let existing):
-          Log.info(
-            "Joined existing session from \(existing.sessionOriginDevice ?? "unknown")",
-            category: .strategy
-          )
-          // Reconcile local startTime to match authoritative remote startTime
-          if let remoteStartTime = existing.startTime,
-            let currentSession = self.activeSession,
-            currentSession.startTime != remoteStartTime
-          {
-            currentSession.startTime = remoteStartTime
-            do {
-              try context.save()
-            } catch {
-              Log.error(
-                "Failed to save reconciled startTime (startWithTag): \(error.localizedDescription)",
-                category: .strategy)
-            }
-            Log.info("Reconciled local startTime to \(remoteStartTime)", category: .strategy)
-          }
-        case .error(let error):
-          Log.info("Failed to sync session start - \(error)", category: .strategy)
-        }
-      }
-    }
+    activateSession(session, context: context)
 
     Log.info("Started session for profile '\(profile.name)' with tag", category: .strategy)
   }
@@ -1647,229 +1589,4 @@ class StrategyManager: ObservableObject {
 extension Notification.Name {
   static let remoteSessionStartRequested = Notification.Name("remoteSessionStartRequested")
   static let remoteSessionStopRequested = Notification.Name("remoteSessionStopRequested")
-}
-
-// MARK: - Start Action Determination
-
-/// Action to take when user taps Start button
-enum StartAction: Equatable, Hashable {
-  case startImmediately
-  case scanNFC
-  case scanQR
-  case waitForSchedule
-  case deepLinkOnly
-  case cannotStart(reason: String)
-  indirect case showPicker(options: [StartAction])
-}
-
-/// Action to take when user taps Stop button
-enum StopAction: Equatable, Hashable {
-  case stopImmediately
-  case scanNFC
-  case scanQR
-  case cannotStop(reason: String)
-  indirect case showPicker(options: [StopAction])
-}
-
-extension StrategyManager {
-  /// Determines what action to take based on enabled start triggers.
-  /// - Parameters:
-  ///   - triggers: The profile's start triggers.
-  ///   - stopConditions: The profile's stop conditions. Pass `nil` to skip
-  ///     stop-condition validation (e.g., in tests). An empty `ProfileStopConditions()`
-  ///     with no conditions enabled will return `.cannotStart`.
-  static func determineStartAction(
-    for triggers: ProfileStartTriggers,
-    stopConditions: ProfileStopConditions? = nil
-  ) -> StartAction {
-    // Guard: don't allow starting if stop conditions are missing
-    if let stop = stopConditions, !stop.isValid {
-      return .cannotStart(reason: "No stop conditions configured. Edit the profile to add one.")
-    }
-
-    var manualOptions: [StartAction] = []
-
-    if triggers.manual {
-      manualOptions.append(.startImmediately)
-    }
-    if triggers.hasNFC {
-      manualOptions.append(.scanNFC)
-    }
-    if triggers.hasQR {
-      manualOptions.append(.scanQR)
-    }
-
-    // If no manual options but has schedule/deeplink only
-    if manualOptions.isEmpty {
-      if triggers.schedule {
-        return .waitForSchedule
-      }
-      if triggers.deepLink {
-        return .deepLinkOnly
-      }
-      return .cannotStart(reason: "No start triggers configured. Edit the profile to add one.")
-    }
-
-    // Single option - do it directly
-    if manualOptions.count == 1 {
-      return manualOptions[0]
-    }
-
-    // Multiple options - show picker
-    return .showPicker(options: manualOptions)
-  }
-
-  /// Determines the appropriate stop action based on the profile's stop conditions.
-  /// Priority: manual (immediate) > single scan method > picker for multiple scan methods.
-  static func determineStopAction(
-    for conditions: ProfileStopConditions
-  ) -> StopAction {
-    if conditions.manual {
-      return .stopImmediately
-    }
-
-    var scanOptions: [StopAction] = []
-    if conditions.hasNFC {
-      scanOptions.append(.scanNFC)
-    }
-    if conditions.hasQR {
-      scanOptions.append(.scanQR)
-    }
-
-    if scanOptions.isEmpty {
-      if conditions.timer && conditions.schedule {
-        return .cannotStop(reason: "This profile stops on a timer or at its scheduled time")
-      } else if conditions.timer {
-        return .cannotStop(reason: "This profile can only be stopped when the timer runs out")
-      } else if conditions.schedule {
-        return .cannotStop(reason: "This profile stops at its scheduled time")
-      } else if conditions.deepLink {
-        return .cannotStop(
-          reason: "This profile can only be stopped via a programmed NFC tag or QR code")
-      }
-      return .cannotStop(reason: "This profile has no manual stop method configured")
-    }
-    if scanOptions.count == 1 {
-      return scanOptions[0]
-    }
-    return .showPicker(options: scanOptions)
-  }
-}
-
-// MARK: - Stop Validation
-
-/// How a stop was triggered
-enum StopMethod {
-  case manual
-  case timer
-  case nfc(tag: String)
-  case qr(code: String)
-  case schedule
-  case deepLink
-}
-
-/// Result of stop validation
-struct StopValidationResult {
-  let allowed: Bool
-  let errorMessage: String?
-
-  static func allowed() -> StopValidationResult {
-    StopValidationResult(allowed: true, errorMessage: nil)
-  }
-
-  static func denied(_ message: String) -> StopValidationResult {
-    StopValidationResult(allowed: false, errorMessage: message)
-  }
-}
-
-extension StrategyManager {
-  /// Validates whether a stop method is allowed given profile configuration
-  static func canStop(
-    with method: StopMethod,
-    conditions: ProfileStopConditions,
-    sessionTag: String?,
-    stopNFCTagId: String?,
-    stopQRCodeId: String?
-  ) -> StopValidationResult {
-
-    switch method {
-    case .manual:
-      if conditions.manual {
-        return .allowed()
-      }
-      return .denied("Manual stop is not enabled for this profile")
-
-    case .timer:
-      if conditions.timer {
-        return .allowed()
-      }
-      return .denied("Timer stop is not enabled for this profile")
-
-    case .nfc(let scannedTag):
-      // Check specific NFC first (highest priority)
-      if conditions.specificNFC {
-        if let requiredTag = stopNFCTagId, scannedTag == requiredTag {
-          return .allowed()
-        }
-        return .denied("Scan the correct NFC tag to stop")
-      }
-
-      // Check same NFC (match session tag - must be NFC type)
-      if conditions.sameNFC {
-        if let sessionStartTag = sessionTag,
-          sessionStartTag.hasPrefix("nfc:"),
-          scannedTag == String(sessionStartTag.dropFirst(4))
-        {
-          return .allowed()
-        }
-        return .denied("Scan the same NFC tag you used to start")
-      }
-
-      // Check any NFC
-      if conditions.anyNFC {
-        return .allowed()
-      }
-
-      return .denied("NFC stop is not enabled for this profile")
-
-    case .qr(let scannedCode):
-      // Check specific QR first
-      if conditions.specificQR {
-        if let requiredCode = stopQRCodeId, scannedCode == requiredCode {
-          return .allowed()
-        }
-        return .denied("Scan the correct QR code to stop")
-      }
-
-      // Check same QR (match session tag - must be QR type)
-      if conditions.sameQR {
-        if let sessionStartCode = sessionTag,
-          sessionStartCode.hasPrefix("qr:"),
-          scannedCode == String(sessionStartCode.dropFirst(3))
-        {
-          return .allowed()
-        }
-        return .denied("Scan the same QR code you used to start")
-      }
-
-      // Check any QR
-      if conditions.anyQR {
-        return .allowed()
-      }
-
-      return .denied("QR code stop is not enabled for this profile")
-
-    case .schedule:
-      if conditions.schedule {
-        return .allowed()
-      }
-      return .denied("Scheduled stop is not enabled for this profile")
-
-    case .deepLink:
-      if conditions.deepLink {
-        return .allowed()
-      }
-      return .denied("Deep link stop is not enabled for this profile")
-    }
-  }
 }

@@ -8,7 +8,7 @@ struct StrategyInfoView: View {
   // Get blocking strategy name
   private var blockingStrategyName: String {
     guard let strategyId = strategyId else { return "None" }
-    return StrategyManager.getStrategyFromId(id: strategyId).name
+    return StartStopActionResolver.getStrategyFromId(id: strategyId).name
   }
 
   // Get blocking strategy icon
@@ -16,7 +16,7 @@ struct StrategyInfoView: View {
     guard let strategyId = strategyId else {
       return "questionmark.circle.fill"
     }
-    return StrategyManager.getStrategyFromId(id: strategyId).iconType
+    return StartStopActionResolver.getStrategyFromId(id: strategyId).iconType
   }
 
   // Get blocking strategy color
@@ -24,7 +24,7 @@ struct StrategyInfoView: View {
     guard let strategyId = strategyId else {
       return .gray
     }
-    return StrategyManager.getStrategyFromId(id: strategyId).color
+    return StartStopActionResolver.getStrategyFromId(id: strategyId).color
   }
 
   var body: some View {

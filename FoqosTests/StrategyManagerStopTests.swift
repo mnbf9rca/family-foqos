@@ -10,7 +10,7 @@ final class StrategyManagerStopTests: XCTestCase {
     var stop = ProfileStopConditions()
     stop.manual = true
 
-    let result = StrategyManager.canStop(
+    let result = StartStopActionResolver.canStop(
       with: .manual,
       conditions: stop,
       sessionTag: nil,
@@ -25,7 +25,7 @@ final class StrategyManagerStopTests: XCTestCase {
     var stop = ProfileStopConditions()
     stop.timer = true
 
-    let result = StrategyManager.canStop(
+    let result = StartStopActionResolver.canStop(
       with: .manual,
       conditions: stop,
       sessionTag: nil,
@@ -40,7 +40,7 @@ final class StrategyManagerStopTests: XCTestCase {
     var stop = ProfileStopConditions()
     stop.anyNFC = true
 
-    let result = StrategyManager.canStop(
+    let result = StartStopActionResolver.canStop(
       with: .nfc(tag: "any-tag"),
       conditions: stop,
       sessionTag: nil,
@@ -55,7 +55,7 @@ final class StrategyManagerStopTests: XCTestCase {
     var stop = ProfileStopConditions()
     stop.specificNFC = true
 
-    let result = StrategyManager.canStop(
+    let result = StartStopActionResolver.canStop(
       with: .nfc(tag: "required-tag"),
       conditions: stop,
       sessionTag: nil,
@@ -70,7 +70,7 @@ final class StrategyManagerStopTests: XCTestCase {
     var stop = ProfileStopConditions()
     stop.specificNFC = true
 
-    let result = StrategyManager.canStop(
+    let result = StartStopActionResolver.canStop(
       with: .nfc(tag: "wrong-tag"),
       conditions: stop,
       sessionTag: nil,
@@ -87,7 +87,7 @@ final class StrategyManagerStopTests: XCTestCase {
     stop.sameNFC = true
 
     // Session tags are stored with "nfc:" prefix in production (via startWithNFCTag)
-    let result = StrategyManager.canStop(
+    let result = StartStopActionResolver.canStop(
       with: .nfc(tag: "session-tag"),
       conditions: stop,
       sessionTag: "nfc:session-tag",
@@ -102,7 +102,7 @@ final class StrategyManagerStopTests: XCTestCase {
     var stop = ProfileStopConditions()
     stop.sameNFC = true
 
-    let result = StrategyManager.canStop(
+    let result = StartStopActionResolver.canStop(
       with: .nfc(tag: "different-tag"),
       conditions: stop,
       sessionTag: "nfc:original-tag",
@@ -121,7 +121,7 @@ final class StrategyManagerStopTests: XCTestCase {
     conditions.manual = true
     conditions.anyNFC = true  // Even with NFC, manual wins
 
-    let action = StrategyManager.determineStopAction(for: conditions)
+    let action = StartStopActionResolver.determineStopAction(for: conditions)
 
     XCTAssertEqual(action, .stopImmediately)
   }
@@ -130,7 +130,7 @@ final class StrategyManagerStopTests: XCTestCase {
     var conditions = ProfileStopConditions()
     conditions.anyNFC = true
 
-    let action = StrategyManager.determineStopAction(for: conditions)
+    let action = StartStopActionResolver.determineStopAction(for: conditions)
 
     XCTAssertEqual(action, .scanNFC)
   }
@@ -139,7 +139,7 @@ final class StrategyManagerStopTests: XCTestCase {
     var conditions = ProfileStopConditions()
     conditions.sameNFC = true
 
-    let action = StrategyManager.determineStopAction(for: conditions)
+    let action = StartStopActionResolver.determineStopAction(for: conditions)
 
     XCTAssertEqual(action, .scanNFC)
   }
@@ -148,7 +148,7 @@ final class StrategyManagerStopTests: XCTestCase {
     var conditions = ProfileStopConditions()
     conditions.specificNFC = true
 
-    let action = StrategyManager.determineStopAction(for: conditions)
+    let action = StartStopActionResolver.determineStopAction(for: conditions)
 
     XCTAssertEqual(action, .scanNFC)
   }
@@ -157,7 +157,7 @@ final class StrategyManagerStopTests: XCTestCase {
     var conditions = ProfileStopConditions()
     conditions.anyQR = true
 
-    let action = StrategyManager.determineStopAction(for: conditions)
+    let action = StartStopActionResolver.determineStopAction(for: conditions)
 
     XCTAssertEqual(action, .scanQR)
   }
@@ -166,7 +166,7 @@ final class StrategyManagerStopTests: XCTestCase {
     var conditions = ProfileStopConditions()
     conditions.sameQR = true
 
-    let action = StrategyManager.determineStopAction(for: conditions)
+    let action = StartStopActionResolver.determineStopAction(for: conditions)
 
     XCTAssertEqual(action, .scanQR)
   }
@@ -175,7 +175,7 @@ final class StrategyManagerStopTests: XCTestCase {
     var conditions = ProfileStopConditions()
     conditions.specificQR = true
 
-    let action = StrategyManager.determineStopAction(for: conditions)
+    let action = StartStopActionResolver.determineStopAction(for: conditions)
 
     XCTAssertEqual(action, .scanQR)
   }
@@ -185,7 +185,7 @@ final class StrategyManagerStopTests: XCTestCase {
     conditions.anyNFC = true
     conditions.anyQR = true
 
-    let action = StrategyManager.determineStopAction(for: conditions)
+    let action = StartStopActionResolver.determineStopAction(for: conditions)
 
     XCTAssertEqual(action, .showPicker(options: [.scanNFC, .scanQR]))
   }
@@ -194,7 +194,7 @@ final class StrategyManagerStopTests: XCTestCase {
     var conditions = ProfileStopConditions()
     conditions.timer = true
 
-    let action = StrategyManager.determineStopAction(for: conditions)
+    let action = StartStopActionResolver.determineStopAction(for: conditions)
 
     if case .cannotStop = action {
       // pass
@@ -207,7 +207,7 @@ final class StrategyManagerStopTests: XCTestCase {
     var conditions = ProfileStopConditions()
     conditions.schedule = true
 
-    let action = StrategyManager.determineStopAction(for: conditions)
+    let action = StartStopActionResolver.determineStopAction(for: conditions)
 
     if case .cannotStop = action {
       // pass
@@ -219,7 +219,7 @@ final class StrategyManagerStopTests: XCTestCase {
   func testDetermineStopActionEmptyConditionsReturnsCannotStop() {
     let conditions = ProfileStopConditions()
 
-    let action = StrategyManager.determineStopAction(for: conditions)
+    let action = StartStopActionResolver.determineStopAction(for: conditions)
 
     if case .cannotStop = action {
       // pass
@@ -236,7 +236,7 @@ final class StrategyManagerStopTests: XCTestCase {
     conditions.timer = true
     conditions.schedule = true
 
-    let action = StrategyManager.determineStopAction(for: conditions)
+    let action = StartStopActionResolver.determineStopAction(for: conditions)
 
     XCTAssertEqual(action, .stopImmediately)
   }
