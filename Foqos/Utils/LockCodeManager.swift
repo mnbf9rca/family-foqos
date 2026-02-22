@@ -34,6 +34,7 @@ class LockCodeManager: ObservableObject {
     self.cloudKitManager = cloudKitManager
     self.appModeManager = appModeManager
     setupBindings()
+    loadThrottleState()
   }
 
   // MARK: - Setup
@@ -299,6 +300,95 @@ class LockCodeManager: ObservableObject {
   /// Revoke temporary unlock (called when profile view is dismissed)
   func revokeUnlock() {
     unlockedProfileId = nil
+  }
+
+  // MARK: - PIN Throttling
+
+  /// UserDefaults keys for throttle persistence
+  private enum ThrottleKey {
+    static let failedAttempts = "family_foqos_lock_code_failed_attempts"
+    static let lockoutExpiresAt = "family_foqos_lock_code_lockout_expires_at"
+  }
+
+  /// Throttle schedule: failed attempts -> lockout duration in seconds
+  private static let throttleSchedule: [(threshold: Int, duration: TimeInterval)] = [
+    (3, 30),  // 30 seconds after 3 failures
+    (5, 120),  // 2 minutes after 5 failures
+    (7, 300),  // 5 minutes after 7 failures
+    (10, 900),  // 15 minutes after 10+ failures
+  ]
+
+  private var throttleDefaults: UserDefaults = .standard
+
+  /// Number of consecutive failed PIN attempts
+  @Published private(set) var failedAttempts: Int = 0
+
+  /// When the current lockout expires (nil = not locked out)
+  @Published private(set) var lockoutExpiresAt: Date?
+
+  /// Whether the PIN pad is currently locked out (convenience for current time)
+  var isLockedOut: Bool {
+    isLockedOut(now: Date())
+  }
+
+  /// Whether the PIN pad is currently locked out at the given time
+  func isLockedOut(now: Date) -> Bool {
+    guard let expiresAt = lockoutExpiresAt else { return false }
+    return now < expiresAt
+  }
+
+  /// Seconds remaining in the current lockout (0 if not locked out)
+  func lockoutRemaining(now: Date = Date()) -> TimeInterval {
+    guard let expiresAt = lockoutExpiresAt else { return 0 }
+    return max(0, expiresAt.timeIntervalSince(now))
+  }
+
+  /// Record a failed PIN attempt and apply lockout if threshold reached
+  func recordFailedAttempt(now: Date = Date()) {
+    failedAttempts += 1
+    persistThrottleState(now: now)
+  }
+
+  /// Clear failed attempts and lockout (called on success or remote reset)
+  func resetThrottle(defaults: UserDefaults? = nil) {
+    if let defaults = defaults {
+      throttleDefaults = defaults
+    }
+    failedAttempts = 0
+    lockoutExpiresAt = nil
+    throttleDefaults.removeObject(forKey: ThrottleKey.failedAttempts)
+    throttleDefaults.removeObject(forKey: ThrottleKey.lockoutExpiresAt)
+  }
+
+  /// Override UserDefaults instance (for testing)
+  func overrideDefaults(_ defaults: UserDefaults?) {
+    throttleDefaults = defaults ?? .standard
+    loadThrottleState()
+  }
+
+  /// Load throttle state from UserDefaults
+  func loadThrottleState() {
+    failedAttempts = throttleDefaults.integer(forKey: ThrottleKey.failedAttempts)
+    let timestamp = throttleDefaults.double(forKey: ThrottleKey.lockoutExpiresAt)
+    lockoutExpiresAt = timestamp > 0 ? Date(timeIntervalSinceReferenceDate: timestamp) : nil
+  }
+
+  /// Persist throttle state and compute lockout from schedule
+  private func persistThrottleState(now: Date) {
+    throttleDefaults.set(failedAttempts, forKey: ThrottleKey.failedAttempts)
+
+    // Find the highest matching threshold
+    let matchingDuration = Self.throttleSchedule
+      .last { failedAttempts >= $0.threshold }?
+      .duration
+
+    if let duration = matchingDuration {
+      lockoutExpiresAt = now.addingTimeInterval(duration)
+      throttleDefaults.set(
+        lockoutExpiresAt!.timeIntervalSinceReferenceDate,
+        forKey: ThrottleKey.lockoutExpiresAt
+      )
+    }
   }
 }
 
