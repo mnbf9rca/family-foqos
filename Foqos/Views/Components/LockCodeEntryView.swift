@@ -3,6 +3,7 @@ import SwiftUI
 /// A view for entering a lock code (PIN) to unlock managed profiles
 struct LockCodeEntryView: View {
   @Environment(\.dismiss) private var dismiss
+  @ObservedObject private var lockCodeManager = LockCodeManager.shared
 
   let title: String
   let subtitle: String?
@@ -12,8 +13,19 @@ struct LockCodeEntryView: View {
   @State private var code: String = ""
   @State private var showError: Bool = false
   @State private var isVerifying: Bool = false
+  @State private var lockoutSecondsRemaining: Int = 0
+  @State private var lockoutTimer: Timer?
 
   private let codeLength = 4
+
+  private var lockoutTimeString: String {
+    let minutes = lockoutSecondsRemaining / 60
+    let seconds = lockoutSecondsRemaining % 60
+    if minutes > 0 {
+      return String(format: "%d:%02d", minutes, seconds)
+    }
+    return "\(seconds)s"
+  }
 
   init(
     title: String = "Enter Lock Code",
@@ -63,8 +75,13 @@ struct LockCodeEntryView: View {
         .padding(.vertical, 8)
         .modifier(ShakeEffect(shakeNumber: showError ? 3 : 0))
 
-        // Error message
-        if showError {
+        // Error / lockout message
+        if lockoutSecondsRemaining > 0 {
+          Text("Too many attempts. Try again in \(lockoutTimeString).")
+            .font(.caption)
+            .foregroundColor(.red)
+            .transition(.opacity)
+        } else if showError {
           Text("Incorrect code. Please try again.")
             .font(.caption)
             .foregroundColor(.red)
@@ -101,8 +118,17 @@ struct LockCodeEntryView: View {
             }
           }
         }
+        .disabled(lockoutSecondsRemaining > 0)
+        .opacity(lockoutSecondsRemaining > 0 ? 0.4 : 1.0)
 
         Spacer()
+      }
+      .onAppear {
+        startLockoutTimerIfNeeded()
+      }
+      .onDisappear {
+        lockoutTimer?.invalidate()
+        lockoutTimer = nil
       }
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
@@ -117,6 +143,7 @@ struct LockCodeEntryView: View {
 
   private func addDigit(_ digit: String) {
     guard code.count < codeLength else { return }
+    guard lockoutSecondsRemaining == 0 else { return }
 
     withAnimation(.easeInOut(duration: 0.1)) {
       showError = false
@@ -141,9 +168,11 @@ struct LockCodeEntryView: View {
     // Small delay for UX
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
       if onVerify(code) {
+        lockCodeManager.resetThrottle()
         onSuccess()
         dismiss()
       } else {
+        lockCodeManager.recordFailedAttempt()
         withAnimation(.easeInOut) {
           showError = true
         }
@@ -151,8 +180,33 @@ struct LockCodeEntryView: View {
         // Haptic feedback for error
         let generator = UINotificationFeedbackGenerator()
         generator.notificationOccurred(.error)
+        // Start lockout timer if we just hit a threshold
+        startLockoutTimerIfNeeded()
       }
       isVerifying = false
+    }
+  }
+
+  private func startLockoutTimerIfNeeded() {
+    let remaining = lockCodeManager.lockoutRemaining()
+    guard remaining > 0 else {
+      lockoutSecondsRemaining = 0
+      return
+    }
+
+    lockoutSecondsRemaining = Int(ceil(remaining))
+    lockoutTimer?.invalidate()
+    lockoutTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [self] _ in
+      MainActor.assumeIsolated {
+        let remaining = lockCodeManager.lockoutRemaining()
+        if remaining <= 0 {
+          lockoutSecondsRemaining = 0
+          lockoutTimer?.invalidate()
+          lockoutTimer = nil
+        } else {
+          lockoutSecondsRemaining = Int(ceil(remaining))
+        }
+      }
     }
   }
 }
