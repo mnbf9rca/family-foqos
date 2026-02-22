@@ -10,7 +10,7 @@ final class StrategyManagerStartTests: XCTestCase {
     var start = ProfileStartTriggers()
     start.manual = true
 
-    let action = StrategyManager.determineStartAction(for: start)
+    let action = StartStopActionResolver.determineStartAction(for: start)
 
     XCTAssertEqual(action, .startImmediately)
   }
@@ -19,7 +19,7 @@ final class StrategyManagerStartTests: XCTestCase {
     var start = ProfileStartTriggers()
     start.anyNFC = true
 
-    let action = StrategyManager.determineStartAction(for: start)
+    let action = StartStopActionResolver.determineStartAction(for: start)
 
     XCTAssertEqual(action, .scanNFC)
   }
@@ -28,7 +28,7 @@ final class StrategyManagerStartTests: XCTestCase {
     var start = ProfileStartTriggers()
     start.anyQR = true
 
-    let action = StrategyManager.determineStartAction(for: start)
+    let action = StartStopActionResolver.determineStartAction(for: start)
 
     XCTAssertEqual(action, .scanQR)
   }
@@ -37,7 +37,7 @@ final class StrategyManagerStartTests: XCTestCase {
     var start = ProfileStartTriggers()
     start.schedule = true
 
-    let action = StrategyManager.determineStartAction(for: start)
+    let action = StartStopActionResolver.determineStartAction(for: start)
 
     XCTAssertEqual(action, .waitForSchedule)
   }
@@ -46,7 +46,7 @@ final class StrategyManagerStartTests: XCTestCase {
     var start = ProfileStartTriggers()
     start.deepLink = true
 
-    let action = StrategyManager.determineStartAction(for: start)
+    let action = StartStopActionResolver.determineStartAction(for: start)
 
     XCTAssertEqual(action, .deepLinkOnly)
   }
@@ -56,7 +56,7 @@ final class StrategyManagerStartTests: XCTestCase {
     start.manual = true
     start.anyNFC = true
 
-    let action = StrategyManager.determineStartAction(for: start)
+    let action = StartStopActionResolver.determineStartAction(for: start)
 
     XCTAssertEqual(action, .showPicker(options: [.startImmediately, .scanNFC]))
   }
@@ -66,7 +66,7 @@ final class StrategyManagerStartTests: XCTestCase {
     start.anyNFC = true
     start.anyQR = true
 
-    let action = StrategyManager.determineStartAction(for: start)
+    let action = StartStopActionResolver.determineStartAction(for: start)
 
     XCTAssertEqual(action, .showPicker(options: [.scanNFC, .scanQR]))
   }
@@ -77,7 +77,7 @@ final class StrategyManagerStartTests: XCTestCase {
     start.anyNFC = true
     start.anyQR = true
 
-    let action = StrategyManager.determineStartAction(for: start)
+    let action = StartStopActionResolver.determineStartAction(for: start)
 
     XCTAssertEqual(action, .showPicker(options: [.startImmediately, .scanNFC, .scanQR]))
   }
@@ -85,7 +85,7 @@ final class StrategyManagerStartTests: XCTestCase {
   func testDetermineStartActionForNoTriggers() {
     let start = ProfileStartTriggers()
 
-    let action = StrategyManager.determineStartAction(for: start)
+    let action = StartStopActionResolver.determineStartAction(for: start)
 
     if case .cannotStart = action {
       // expected
@@ -99,7 +99,7 @@ final class StrategyManagerStartTests: XCTestCase {
     start.manual = true
     let stop = ProfileStopConditions()  // all false — invalid
 
-    let action = StrategyManager.determineStartAction(for: start, stopConditions: stop)
+    let action = StartStopActionResolver.determineStartAction(for: start, stopConditions: stop)
 
     if case .cannotStart = action {
       // expected
@@ -114,7 +114,7 @@ final class StrategyManagerStartTests: XCTestCase {
     var stop = ProfileStopConditions()
     stop.manual = true
 
-    let action = StrategyManager.determineStartAction(for: start, stopConditions: stop)
+    let action = StartStopActionResolver.determineStartAction(for: start, stopConditions: stop)
 
     XCTAssertEqual(action, .startImmediately)
   }

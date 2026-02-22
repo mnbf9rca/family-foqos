@@ -50,7 +50,7 @@ struct StrategyManagerDebugCard: View {
           .font(.caption)
           .foregroundColor(.secondary)
 
-        ForEach(Array(StrategyManager.availableStrategies.enumerated()), id: \.offset) {
+        ForEach(Array(StartStopActionResolver.availableStrategies.enumerated()), id: \.offset) {
           _, strategy in
           Text("• \(strategy.getIdentifier())")
             .font(.caption)
