@@ -893,6 +893,45 @@ class StrategyManager: ObservableObject {
     }
   }
 
+  /// Sync a session start to CloudKit via CAS. Uses passed context for persistence.
+  private func syncSessionStart(session: BlockedProfileSession, context: ModelContext) {
+    guard shouldSyncSessionChange else { return }
+
+    Task {
+      let result = await SessionSyncService.shared.startSession(
+        profileId: session.blockedProfile.id,
+        startTime: session.startTime
+      )
+
+      switch result {
+      case .started(let seq):
+        Log.info("Session synced with seq=\(seq)", category: .strategy)
+      case .alreadyActive(let existing):
+        Log.info(
+          "Joined existing session from \(existing.sessionOriginDevice ?? "unknown")",
+          category: .strategy
+        )
+        // Reconcile local startTime to match authoritative remote startTime
+        if let remoteStartTime = existing.startTime,
+          let currentSession = self.activeSession,
+          currentSession.startTime != remoteStartTime
+        {
+          currentSession.startTime = remoteStartTime
+          do {
+            try context.save()
+          } catch {
+            Log.error(
+              "Failed to save reconciled startTime: \(error.localizedDescription)",
+              category: .strategy)
+          }
+          Log.info("Reconciled local startTime to \(remoteStartTime)", category: .strategy)
+        }
+      case .error(let error):
+        Log.info("Failed to sync session start - \(error)", category: .strategy)
+      }
+    }
+  }
+
   func getStrategy(id: String) -> BlockingStrategy {
     var strategy = StartStopActionResolver.getStrategyFromId(id: id)
 
