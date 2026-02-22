@@ -590,6 +590,7 @@ struct FamilyMemberCard: View {
 
   @State private var showRemoveConfirmation = false
   @State private var isResettingEmergency = false
+  @State private var isResettingThrottle = false
   @State private var showResetSuccess = false
   @State private var showResetError = false
   @State private var resetErrorMessage = ""
@@ -635,6 +636,13 @@ struct FamilyMemberCard: View {
             Label("Reset Emergency Count", systemImage: "arrow.counterclockwise")
           }
           .disabled(isResettingEmergency)
+
+          Button {
+            resetLockCodeThrottle()
+          } label: {
+            Label("Reset PIN Attempts", systemImage: "lock.rotation")
+          }
+          .disabled(isResettingThrottle)
         }
 
         Button(role: .destructive) {
@@ -643,7 +651,7 @@ struct FamilyMemberCard: View {
           Label("Remove", systemImage: "trash")
         }
       } label: {
-        if isResettingEmergency {
+        if isResettingEmergency || isResettingThrottle {
           ProgressView()
             .scaleEffect(0.8)
         } else if showResetSuccess {
@@ -712,6 +720,46 @@ struct FamilyMemberCard: View {
       } catch {
         await MainActor.run {
           isResettingEmergency = false
+          resetErrorMessage = error.localizedDescription
+          showResetError = true
+        }
+      }
+    }
+  }
+
+  private func resetLockCodeThrottle() {
+    guard member.role == .child else { return }
+
+    guard let currentUserRecordName = CloudKitManager.shared.currentUserRecordID?.recordName else {
+      resetErrorMessage = "Not signed in to iCloud"
+      showResetError = true
+      return
+    }
+
+    isResettingThrottle = true
+
+    Task {
+      do {
+        let command = FamilyCommand(
+          commandType: .resetLockCodeThrottle,
+          targetChildId: member.userRecordName,
+          createdBy: currentUserRecordName
+        )
+        try await CloudKitManager.shared.sendCommand(command)
+
+        await MainActor.run {
+          isResettingThrottle = false
+          showResetSuccess = true
+        }
+
+        // Auto-dismiss success after 2 seconds
+        try? await Task.sleep(nanoseconds: 2_000_000_000)
+        await MainActor.run {
+          showResetSuccess = false
+        }
+      } catch {
+        await MainActor.run {
+          isResettingThrottle = false
           resetErrorMessage = error.localizedDescription
           showResetError = true
         }
