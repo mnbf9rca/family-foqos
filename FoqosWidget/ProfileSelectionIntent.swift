@@ -47,7 +47,14 @@ struct WidgetProfileQuery: EntityQuery {
   }
 
   func defaultResult() async -> WidgetProfileEntity? {
-    return try? await suggestedEntities().first
+    do {
+      return try await suggestedEntities().first
+    } catch {
+      Log.error(
+        "Failed to fetch default widget profile: \(error.localizedDescription)",
+        category: .app)
+      return nil
+    }
   }
 }
 

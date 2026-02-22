@@ -56,6 +56,13 @@ struct BlockedProfilesQuery: EntityQuery {
   }
 
   func defaultResult() async -> BlockedProfileEntity? {
-    try? await suggestedEntities().first
+    do {
+      return try await suggestedEntities().first
+    } catch {
+      Log.error(
+        "Failed to fetch default profile entity: \(error.localizedDescription)",
+        category: .app)
+      return nil
+    }
   }
 }

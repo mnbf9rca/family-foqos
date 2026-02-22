@@ -261,7 +261,13 @@ class ProfileSyncManager: ObservableObject {
   /// Returns true if legacy records were found and deleted (should show notice).
   private func cleanupLegacySessionsIfNeeded() async -> Bool {
     // Get user record name to track cleanup per account
-    guard let userRecordID = try? await container.userRecordID() else {
+    let userRecordID: CKRecord.ID
+    do {
+      userRecordID = try await container.userRecordID()
+    } catch {
+      Log.error(
+        "Failed to fetch user record ID for legacy cleanup: \(error.localizedDescription)",
+        category: .sync)
       return false
     }
     let userRecordName = userRecordID.recordName
@@ -391,7 +397,13 @@ class ProfileSyncManager: ObservableObject {
           )
 
           // Delete the processed reset request
-          _ = try? await privateDatabase.deleteRecord(withID: recordID)
+          do {
+            try await privateDatabase.deleteRecord(withID: recordID)
+          } catch {
+            Log.error(
+              "Failed to delete processed reset request: \(error.localizedDescription)",
+              category: .sync)
+          }
         }
       }
     } catch let error as CKError {
@@ -421,7 +433,17 @@ class ProfileSyncManager: ObservableObject {
 
     do {
       // Try to fetch existing record first
-      let existingRecord = try? await privateDatabase.record(for: recordID)
+      let existingRecord: CKRecord?
+      do {
+        existingRecord = try await privateDatabase.record(for: recordID)
+      } catch let error as CKError where error.code == .unknownItem {
+        existingRecord = nil
+      } catch {
+        Log.error(
+          "Failed to fetch existing profile record: \(error.localizedDescription)",
+          category: .sync)
+        throw SyncError.fetchFailed(error)
+      }
 
       let record: CKRecord
       if let existing = existingRecord {
@@ -620,7 +642,17 @@ class ProfileSyncManager: ObservableObject {
 
     do {
       // Try to fetch existing record first
-      let existingRecord = try? await privateDatabase.record(for: recordID)
+      let existingRecord: CKRecord?
+      do {
+        existingRecord = try await privateDatabase.record(for: recordID)
+      } catch let error as CKError where error.code == .unknownItem {
+        existingRecord = nil
+      } catch {
+        Log.error(
+          "Failed to fetch existing location record: \(error.localizedDescription)",
+          category: .sync)
+        throw SyncError.fetchFailed(error)
+      }
 
       let record: CKRecord
       if let existing = existingRecord {
@@ -780,7 +812,17 @@ class ProfileSyncManager: ObservableObject {
       zoneID: syncZoneID
     )
 
-    let existingRecord = try? await privateDatabase.record(for: recordID)
+    let existingRecord: CKRecord?
+    do {
+      existingRecord = try await privateDatabase.record(for: recordID)
+    } catch let error as CKError where error.code == .unknownItem {
+      existingRecord = nil
+    } catch {
+      Log.error(
+        "Failed to fetch existing emergency settings record: \(error.localizedDescription)",
+        category: .sync)
+      throw SyncError.fetchFailed(error)
+    }
     let record = existingRecord ?? settings.toCKRecord(in: syncZoneID)
     if existingRecord != nil {
       settings.updateCKRecord(record)

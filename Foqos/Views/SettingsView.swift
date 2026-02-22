@@ -20,6 +20,7 @@ struct SettingsView: View {
   @State private var showChildDashboard = false
   @State private var showSavedLocations = false
   @State private var showDebugView = false
+  @State private var syncErrorMessage: String?
 
   @AppStorage("warnWhenActivatingAwayFromLocation") private var warnWhenActivatingAwayFromLocation =
     true
@@ -390,16 +391,45 @@ struct SettingsView: View {
         Button("Cancel", role: .cancel) {}
         Button("Keep App Selections") {
           Task {
-            try? await profileSyncManager.resetSync(clearRemoteAppSelections: false)
+            do {
+              try await profileSyncManager.resetSync(clearRemoteAppSelections: false)
+            } catch {
+              Log.error(
+                "Failed to reset sync (keep selections): \(error.localizedDescription)",
+                category: .sync)
+              syncErrorMessage =
+                "Sync reset failed: \(error.localizedDescription)"
+            }
           }
         }
         Button("Clear App Selections", role: .destructive) {
           Task {
-            try? await profileSyncManager.resetSync(clearRemoteAppSelections: true)
+            do {
+              try await profileSyncManager.resetSync(clearRemoteAppSelections: true)
+            } catch {
+              Log.error(
+                "Failed to reset sync (clear selections): \(error.localizedDescription)",
+                category: .sync)
+              syncErrorMessage =
+                "Sync reset failed: \(error.localizedDescription)"
+            }
           }
         }
       } message: {
         Text("This will re-sync from this device. Choose how other devices should respond:\n\n• Keep app selections: Other devices keep their blocked apps\n• Clear app selections: Other devices must re-select apps")
+      }
+      .alert(
+        "Sync Error",
+        isPresented: .init(
+          get: { syncErrorMessage != nil },
+          set: { if !$0 { syncErrorMessage = nil } }
+        )
+      ) {
+        Button("OK", role: .cancel) {}
+      } message: {
+        if let message = syncErrorMessage {
+          Text(message)
+        }
       }
       .sheet(isPresented: $showSavedLocations) {
         SavedLocationsView()
