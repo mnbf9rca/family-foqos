@@ -353,10 +353,7 @@ class LockCodeManager: ObservableObject {
   }
 
   /// Clear failed attempts and lockout (called on success or remote reset)
-  func resetThrottle(defaults: UserDefaults? = nil) {
-    if let defaults = defaults {
-      throttleDefaults = defaults
-    }
+  func resetThrottle() {
     failedAttempts = 0
     lockoutExpiresAt = nil
     throttleDefaults.removeObject(forKey: ThrottleKey.failedAttempts)

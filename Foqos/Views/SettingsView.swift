@@ -17,6 +17,7 @@ struct SettingsView: View {
   @State private var showResetBlockingStateAlert = false
   @State private var showResetSyncAlert = false
   @State private var showParentDashboard = false
+  @State private var showChildDashboard = false
   @State private var showSavedLocations = false
   @State private var showDebugView = false
   @State private var syncErrorMessage: String?
@@ -233,6 +234,24 @@ struct SettingsView: View {
             }
           }
 
+          // Child Dashboard access (for child mode — shows locked/unlocked profiles on this device)
+          if appModeManager.currentMode == .child {
+            Button {
+              showChildDashboard = true
+            } label: {
+              HStack {
+                Image(systemName: "lock.shield.fill")
+                  .foregroundColor(themeManager.themeColor)
+                Text("Parental Controls")
+                  .foregroundColor(.primary)
+                Spacer()
+                Image(systemName: "chevron.right")
+                  .foregroundColor(.secondary)
+                  .font(.caption)
+              }
+            }
+          }
+
         } header: {
           Text("Family Controls")
         } footer: {
@@ -415,6 +434,18 @@ struct SettingsView: View {
       }
       .sheet(isPresented: $showParentDashboard) {
         ParentDashboardView()
+      }
+      .sheet(isPresented: $showChildDashboard) {
+        NavigationStack {
+          ChildDashboardView()
+            .toolbar {
+              ToolbarItem(placement: .navigationBarTrailing) {
+                Button("Done") {
+                  showChildDashboard = false
+                }
+              }
+            }
+        }
       }
       .sheet(isPresented: $showDebugView) {
         DebugView()

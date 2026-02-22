@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 
 /// A view for entering a lock code (PIN) to unlock managed profiles
@@ -14,7 +15,6 @@ struct LockCodeEntryView: View {
   @State private var showError: Bool = false
   @State private var isVerifying: Bool = false
   @State private var lockoutSecondsRemaining: Int = 0
-  @State private var lockoutTimer: Timer?
 
   private let codeLength = 4
 
@@ -124,11 +124,11 @@ struct LockCodeEntryView: View {
         Spacer()
       }
       .onAppear {
-        startLockoutTimerIfNeeded()
+        updateLockoutRemaining()
       }
-      .onDisappear {
-        lockoutTimer?.invalidate()
-        lockoutTimer = nil
+      .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
+        guard lockoutSecondsRemaining > 0 else { return }
+        updateLockoutRemaining()
       }
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
@@ -180,34 +180,16 @@ struct LockCodeEntryView: View {
         // Haptic feedback for error
         let generator = UINotificationFeedbackGenerator()
         generator.notificationOccurred(.error)
-        // Start lockout timer if we just hit a threshold
-        startLockoutTimerIfNeeded()
+        // Update lockout display if we just hit a threshold
+        updateLockoutRemaining()
       }
       isVerifying = false
     }
   }
 
-  private func startLockoutTimerIfNeeded() {
+  private func updateLockoutRemaining() {
     let remaining = lockCodeManager.lockoutRemaining()
-    guard remaining > 0 else {
-      lockoutSecondsRemaining = 0
-      return
-    }
-
-    lockoutSecondsRemaining = Int(ceil(remaining))
-    lockoutTimer?.invalidate()
-    lockoutTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [self] _ in
-      MainActor.assumeIsolated {
-        let remaining = lockCodeManager.lockoutRemaining()
-        if remaining <= 0 {
-          lockoutSecondsRemaining = 0
-          lockoutTimer?.invalidate()
-          lockoutTimer = nil
-        } else {
-          lockoutSecondsRemaining = Int(ceil(remaining))
-        }
-      }
-    }
+    lockoutSecondsRemaining = remaining > 0 ? Int(ceil(remaining)) : 0
   }
 }
 

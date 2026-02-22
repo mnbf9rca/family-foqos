@@ -8,11 +8,10 @@ final class LockCodeThrottleTests: XCTestCase {
   override func setUp() {
     super.setUp()
     MainActor.assumeIsolated {
-      // Use a dedicated suite so tests don't pollute real UserDefaults
       let defaults = UserDefaults(suiteName: "LockCodeThrottleTests")!
       defaults.removePersistentDomain(forName: "LockCodeThrottleTests")
-      LockCodeManager.shared.resetThrottle(defaults: defaults)
       LockCodeManager.shared.overrideDefaults(defaults)
+      LockCodeManager.shared.resetThrottle()
     }
   }
 
