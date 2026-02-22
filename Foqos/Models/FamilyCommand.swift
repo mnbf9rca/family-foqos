@@ -4,6 +4,7 @@ import Foundation
 /// Command types that can be sent from parent to child
 enum FamilyCommandType: String, Codable {
   case resetEmergencyCount
+  case resetLockCodeThrottle
 }
 
 /// Represents a command from parent to child device via CloudKit
