@@ -2,6 +2,20 @@ import CloudKit
 import SwiftUI
 
 /// Main dashboard view for parents to manage lock codes and family members
+///
+/// ## Child Mode Access Model (ADR 2026-02-22)
+///
+/// When a child opens this dashboard, controls follow a three-tier model:
+///
+/// | Tier | Interactivity | Computed property | Examples |
+/// |------|---------------|-------------------|----------|
+/// | 1. Read-only | Never interactive | N/A (always visible) | Info cards, member lists |
+/// | 2. Device-local | Enabled after PIN | `deviceSettingsEnabled` | Emergency settings toggle |
+/// | 3. CloudKit ops | Never interactive | `parentOperationsEnabled` | Set lock code, add/remove members |
+///
+/// The child sees the full dashboard — nothing is hidden. Only interactivity differs.
+/// Principle: device-local settings (tier 2) can be changed with PIN; CloudKit parent
+/// operations (tier 3) require parent authorization and cannot be performed by a child.
 struct ParentDashboardView: View {
   @ObservedObject private var cloudKitManager = CloudKitManager.shared
   @ObservedObject private var appModeManager = AppModeManager.shared
@@ -11,12 +25,32 @@ struct ParentDashboardView: View {
   @State private var showLockCodeSetup = false
   @State private var showError = false
   @State private var errorMessage = ""
+  @State private var isDashboardUnlocked = false
+  @State private var showLockCodeEntry = false
   // Share coordinator for direct sharing
   @StateObject private var shareCoordinator = ShareCoordinator()
 
   /// Whether the page is functional (iCloud signed in and available)
   private var isPageFunctional: Bool {
     cloudKitManager.isSignedIn
+  }
+
+  /// Whether the current user is in child mode
+  private var isChildMode: Bool {
+    appModeManager.currentMode == .child
+  }
+
+  /// Tier 2: device-local settings enabled after PIN unlock
+  /// Controls like emergency settings toggle that are configured on this device
+  /// Independent of iCloud — PIN verification uses cached lock codes that work offline
+  private var deviceSettingsEnabled: Bool {
+    !isChildMode || isDashboardUnlocked
+  }
+
+  /// Tier 3: CloudKit parent operations — always disabled for child
+  /// Controls like set/change lock code, add/remove family members
+  private var parentOperationsEnabled: Bool {
+    isPageFunctional && !isChildMode
   }
 
   var body: some View {
@@ -26,6 +60,11 @@ struct ParentDashboardView: View {
           // Header
           headerSection
 
+          // Child mode unlock banner
+          if isChildMode {
+            childUnlockBanner
+          }
+
           // iCloud status
           if !cloudKitManager.isSignedIn {
             iCloudWarning
@@ -33,31 +72,31 @@ struct ParentDashboardView: View {
 
           // Lock code management section
           lockCodeSection
-            .disabled(!isPageFunctional)
-            .opacity(isPageFunctional ? 1.0 : 0.5)
+            .disabled(!parentOperationsEnabled)
+            .opacity(parentOperationsEnabled ? 1.0 : 0.5)
 
           // Emergency settings lock (only when lock code is set)
-          if lockCodeManager.hasAnyLockCode {
+          if lockCodeManager.hasAnyLockCode || lockCodeManager.canVerifyCode {
             emergencyLockSection
-              .disabled(!isPageFunctional)
-              .opacity(isPageFunctional ? 1.0 : 0.5)
+              .disabled(!deviceSettingsEnabled)
+              .opacity(deviceSettingsEnabled ? 1.0 : 0.5)
           }
 
           // Co-parents section
           coParentsSection
-            .disabled(!isPageFunctional)
-            .opacity(isPageFunctional ? 1.0 : 0.5)
+            .disabled(!parentOperationsEnabled)
+            .opacity(parentOperationsEnabled ? 1.0 : 0.5)
 
           // Children section
           childrenSection
-            .disabled(!isPageFunctional)
-            .opacity(isPageFunctional ? 1.0 : 0.5)
+            .disabled(!parentOperationsEnabled)
+            .opacity(parentOperationsEnabled ? 1.0 : 0.5)
 
           // Pending members section (accepted share but haven't opened the app yet)
           if !cloudKitManager.pendingParticipants.isEmpty {
             pendingMembersSection
-              .disabled(!isPageFunctional)
-              .opacity(isPageFunctional ? 1.0 : 0.5)
+              .disabled(!parentOperationsEnabled)
+              .opacity(parentOperationsEnabled ? 1.0 : 0.5)
           }
 
           // How to use section
@@ -89,6 +128,18 @@ struct ParentDashboardView: View {
           }
         )
       }
+      .sheet(isPresented: $showLockCodeEntry) {
+        LockCodeEntryView(
+          title: "Enter Lock Code",
+          subtitle: "Enter the parent lock code to change device settings",
+          onVerify: { code in
+            lockCodeManager.validateCode(code)
+          },
+          onSuccess: {
+            isDashboardUnlocked = true
+          }
+        )
+      }
       .enrollFamilyMemberSheet(coordinator: shareCoordinator)
       .alert("Error", isPresented: $showError) {
         Button("OK", role: .cancel) {}
@@ -116,6 +167,54 @@ struct ParentDashboardView: View {
         .font(.subheadline)
         .foregroundColor(.secondary)
     }
+  }
+
+  private var childUnlockBanner: some View {
+    VStack(spacing: 12) {
+      HStack(spacing: 12) {
+        Image(systemName: isDashboardUnlocked ? "lock.open.fill" : "lock.fill")
+          .font(.title2)
+          .foregroundColor(isDashboardUnlocked ? .green : .accentColor)
+
+        VStack(alignment: .leading, spacing: 4) {
+          Text(isDashboardUnlocked ? "Dashboard Unlocked" : "Dashboard Locked")
+            .font(.headline)
+          Text(
+            isDashboardUnlocked
+              ? "You can now change device settings."
+              : "Enter the lock code to change device settings."
+          )
+          .font(.caption)
+          .foregroundColor(.secondary)
+        }
+
+        Spacer()
+      }
+
+      if !isDashboardUnlocked {
+        Button {
+          showLockCodeEntry = true
+        } label: {
+          HStack {
+            Image(systemName: "lock.open")
+            Text("Unlock")
+          }
+          .font(.subheadline)
+          .fontWeight(.medium)
+        }
+        .buttonStyle(.bordered)
+        .tint(.accentColor)
+      }
+    }
+    .padding()
+    .background(
+      RoundedRectangle(cornerRadius: 12)
+        .fill(Color.accentColor.opacity(0.1))
+        .overlay(
+          RoundedRectangle(cornerRadius: 12)
+            .stroke(Color.accentColor.opacity(0.2), lineWidth: 1)
+        )
+    )
   }
 
   private var iCloudWarning: some View {
@@ -590,6 +689,7 @@ struct FamilyMemberCard: View {
 
   @State private var showRemoveConfirmation = false
   @State private var isResettingEmergency = false
+  @State private var isResettingThrottle = false
   @State private var showResetSuccess = false
   @State private var showResetError = false
   @State private var resetErrorMessage = ""
@@ -635,6 +735,13 @@ struct FamilyMemberCard: View {
             Label("Reset Emergency Count", systemImage: "arrow.counterclockwise")
           }
           .disabled(isResettingEmergency)
+
+          Button {
+            resetLockCodeThrottle()
+          } label: {
+            Label("Reset PIN Attempts", systemImage: "lock.rotation")
+          }
+          .disabled(isResettingThrottle)
         }
 
         Button(role: .destructive) {
@@ -643,7 +750,7 @@ struct FamilyMemberCard: View {
           Label("Remove", systemImage: "trash")
         }
       } label: {
-        if isResettingEmergency {
+        if isResettingEmergency || isResettingThrottle {
           ProgressView()
             .scaleEffect(0.8)
         } else if showResetSuccess {
@@ -712,6 +819,46 @@ struct FamilyMemberCard: View {
       } catch {
         await MainActor.run {
           isResettingEmergency = false
+          resetErrorMessage = error.localizedDescription
+          showResetError = true
+        }
+      }
+    }
+  }
+
+  private func resetLockCodeThrottle() {
+    guard member.role == .child else { return }
+
+    guard let currentUserRecordName = CloudKitManager.shared.currentUserRecordID?.recordName else {
+      resetErrorMessage = "Not signed in to iCloud"
+      showResetError = true
+      return
+    }
+
+    isResettingThrottle = true
+
+    Task {
+      do {
+        let command = FamilyCommand(
+          commandType: .resetLockCodeThrottle,
+          targetChildId: member.userRecordName,
+          createdBy: currentUserRecordName
+        )
+        try await CloudKitManager.shared.sendCommand(command)
+
+        await MainActor.run {
+          isResettingThrottle = false
+          showResetSuccess = true
+        }
+
+        // Auto-dismiss success after 2 seconds
+        try? await Task.sleep(nanoseconds: 2_000_000_000)
+        await MainActor.run {
+          showResetSuccess = false
+        }
+      } catch {
+        await MainActor.run {
+          isResettingThrottle = false
           resetErrorMessage = error.localizedDescription
           showResetError = true
         }

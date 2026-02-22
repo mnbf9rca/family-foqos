@@ -218,25 +218,23 @@ struct SettingsView: View {
           }
           .padding(.vertical, 4)
 
-          // Parent Dashboard access (for individual or parent mode)
-          if appModeManager.currentMode != .child {
-            Button {
-              showParentDashboard = true
-            } label: {
-              HStack {
-                Image(systemName: "person.2.fill")
-                  .foregroundColor(themeManager.themeColor)
-                Text("Family Controls Dashboard")
-                  .foregroundColor(.primary)
-                Spacer()
-                Image(systemName: "chevron.right")
-                  .foregroundColor(.secondary)
-                  .font(.caption)
-              }
+          // Family Dashboard access (all modes)
+          Button {
+            showParentDashboard = true
+          } label: {
+            HStack {
+              Image(systemName: "person.2.fill")
+                .foregroundColor(themeManager.themeColor)
+              Text("Family Controls Dashboard")
+                .foregroundColor(.primary)
+              Spacer()
+              Image(systemName: "chevron.right")
+                .foregroundColor(.secondary)
+                .font(.caption)
             }
           }
 
-          // Child Dashboard access (for child mode)
+          // Child Dashboard access (for child mode — shows locked/unlocked profiles on this device)
           if appModeManager.currentMode == .child {
             Button {
               showChildDashboard = true
@@ -262,7 +260,7 @@ struct SettingsView: View {
           } else if appModeManager.currentMode == .parent {
             Text("You can still use personal profiles in Parent Mode via the Family Controls Dashboard.")
           } else {
-            Text("Your screen time is managed by your parent.")
+            Text("Your screen time is managed by your parent. Access the Family Controls Dashboard to view family settings.")
           }
         }
 
