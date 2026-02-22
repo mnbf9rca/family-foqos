@@ -17,7 +17,6 @@ struct SettingsView: View {
   @State private var showResetBlockingStateAlert = false
   @State private var showResetSyncAlert = false
   @State private var showParentDashboard = false
-  @State private var showChildDashboard = false
   @State private var showSavedLocations = false
   @State private var showDebugView = false
   @State private var syncErrorMessage: String?
@@ -218,39 +217,19 @@ struct SettingsView: View {
           }
           .padding(.vertical, 4)
 
-          // Parent Dashboard access (for individual or parent mode)
-          if appModeManager.currentMode != .child {
-            Button {
-              showParentDashboard = true
-            } label: {
-              HStack {
-                Image(systemName: "person.2.fill")
-                  .foregroundColor(themeManager.themeColor)
-                Text("Family Controls Dashboard")
-                  .foregroundColor(.primary)
-                Spacer()
-                Image(systemName: "chevron.right")
-                  .foregroundColor(.secondary)
-                  .font(.caption)
-              }
-            }
-          }
-
-          // Child Dashboard access (for child mode)
-          if appModeManager.currentMode == .child {
-            Button {
-              showChildDashboard = true
-            } label: {
-              HStack {
-                Image(systemName: "lock.shield.fill")
-                  .foregroundColor(themeManager.themeColor)
-                Text("Parental Controls")
-                  .foregroundColor(.primary)
-                Spacer()
-                Image(systemName: "chevron.right")
-                  .foregroundColor(.secondary)
-                  .font(.caption)
-              }
+          // Family Dashboard access (all modes)
+          Button {
+            showParentDashboard = true
+          } label: {
+            HStack {
+              Image(systemName: "person.2.fill")
+                .foregroundColor(themeManager.themeColor)
+              Text("Family Controls Dashboard")
+                .foregroundColor(.primary)
+              Spacer()
+              Image(systemName: "chevron.right")
+                .foregroundColor(.secondary)
+                .font(.caption)
             }
           }
 
@@ -262,7 +241,7 @@ struct SettingsView: View {
           } else if appModeManager.currentMode == .parent {
             Text("You can still use personal profiles in Parent Mode via the Family Controls Dashboard.")
           } else {
-            Text("Your screen time is managed by your parent.")
+            Text("Your screen time is managed by your parent. Access the Family Controls Dashboard to view family settings.")
           }
         }
 
@@ -436,18 +415,6 @@ struct SettingsView: View {
       }
       .sheet(isPresented: $showParentDashboard) {
         ParentDashboardView()
-      }
-      .sheet(isPresented: $showChildDashboard) {
-        NavigationStack {
-          ChildDashboardView()
-            .toolbar {
-              ToolbarItem(placement: .navigationBarTrailing) {
-                Button("Done") {
-                  showChildDashboard = false
-                }
-              }
-            }
-        }
       }
       .sheet(isPresented: $showDebugView) {
         DebugView()
