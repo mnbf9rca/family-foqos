@@ -1,3 +1,4 @@
+import Combine
 import FamilyControls
 import SwiftData
 import SwiftUI
@@ -380,6 +381,21 @@ struct LockCodeEntrySheet: View {
   @ObservedObject private var lockCodeManager = LockCodeManager.shared
   @State private var enteredCode = ""
   @State private var errorMessage: String?
+  @State private var lockoutSecondsRemaining: Int = 0
+
+  private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+
+  private var isLockedOut: Bool {
+    lockoutSecondsRemaining > 0
+  }
+
+  private var lockoutTimeString: String {
+    let minutes = lockoutSecondsRemaining / 60
+    let seconds = lockoutSecondsRemaining % 60
+    return minutes > 0
+      ? String(format: "%d:%02d", minutes, seconds)
+      : "\(seconds)s"
+  }
 
   let onSuccess: () -> Void
   let onCancel: () -> Void
@@ -415,6 +431,8 @@ struct LockCodeEntrySheet: View {
             RoundedRectangle(cornerRadius: 12)
               .fill(Color(.secondarySystemBackground))
           )
+          .disabled(isLockedOut)
+          .opacity(isLockedOut ? 0.5 : 1.0)
           .onChange(of: enteredCode) { _, newValue in
             // Limit to 4 digits
             if newValue.count > 4 {
@@ -426,7 +444,17 @@ struct LockCodeEntrySheet: View {
             }
           }
 
-        if let error = errorMessage {
+        if isLockedOut {
+          VStack(spacing: 4) {
+            Text("Too many attempts")
+              .font(.caption)
+              .foregroundColor(.red)
+              .fontWeight(.semibold)
+            Text("Try again in \(lockoutTimeString)")
+              .font(.caption2)
+              .foregroundColor(.secondary)
+          }
+        } else if let error = errorMessage {
           Text(error)
             .font(.caption)
             .foregroundColor(.red)
@@ -445,12 +473,18 @@ struct LockCodeEntrySheet: View {
             .foregroundColor(.white)
             .cornerRadius(12)
         }
-        .disabled(enteredCode.count != 4)
+        .disabled(enteredCode.count != 4 || isLockedOut)
         .padding(.horizontal)
         .padding(.bottom, 32)
       }
       .navigationTitle("Lock Code")
       .navigationBarTitleDisplayMode(.inline)
+      .onAppear {
+        updateLockoutRemaining()
+      }
+      .onReceive(timer) { _ in
+        updateLockoutRemaining()
+      }
       .toolbar {
         ToolbarItem(placement: .navigationBarLeading) {
           Button("Cancel") {
@@ -462,12 +496,22 @@ struct LockCodeEntrySheet: View {
   }
 
   private func validateCode() {
+    guard !lockCodeManager.isLockedOut else { return }
+
     if lockCodeManager.validateCode(enteredCode) {
+      lockCodeManager.resetThrottle()
       onSuccess()
     } else {
-      errorMessage = "Incorrect code. Try again."
+      lockCodeManager.recordFailedAttempt()
+      updateLockoutRemaining()
+      errorMessage = lockCodeManager.isLockedOut ? nil : "Incorrect code. Try again."
       enteredCode = ""
     }
+  }
+
+  private func updateLockoutRemaining() {
+    let remaining = lockCodeManager.lockoutRemaining()
+    lockoutSecondsRemaining = remaining > 0 ? Int(ceil(remaining)) : 0
   }
 }
 
