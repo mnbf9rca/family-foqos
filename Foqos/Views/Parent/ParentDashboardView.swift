@@ -42,8 +42,9 @@ struct ParentDashboardView: View {
 
   /// Tier 2: device-local settings enabled after PIN unlock
   /// Controls like emergency settings toggle that are configured on this device
+  /// Independent of iCloud — PIN verification uses cached lock codes that work offline
   private var deviceSettingsEnabled: Bool {
-    isPageFunctional && (!isChildMode || isDashboardUnlocked)
+    !isChildMode || isDashboardUnlocked
   }
 
   /// Tier 3: CloudKit parent operations — always disabled for child
@@ -203,7 +204,6 @@ struct ParentDashboardView: View {
         }
         .buttonStyle(.bordered)
         .tint(.accentColor)
-        .disabled(!isPageFunctional)
       }
     }
     .padding()
