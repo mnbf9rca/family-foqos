@@ -932,6 +932,41 @@ class StrategyManager: ObservableObject {
     }
   }
 
+  /// Single source of truth for session activation — all start paths converge here.
+  /// Handles state updates, timer, live activity, stop scheduling, widget refresh, and CAS sync.
+  private func activateSession(
+    _ session: BlockedProfileSession,
+    context: ModelContext? = nil
+  ) {
+    // Cancel stale reminders/notifications from previous sessions
+    timersUtil.cancelAll()
+
+    // Update profile snapshot in case settings changed
+    BlockedProfiles.updateSnapshot(for: session.blockedProfile)
+
+    errorMessage = nil
+    activeSession = session
+    startTimer()
+    liveActivityManager.startSessionActivity(session: session)
+
+    // Schedule stop activity if configured
+    DeviceActivityCenterUtil.scheduleStopActivity(for: session.blockedProfile)
+
+    // Cancel pre-activation reminders now that profile is active
+    TimersUtil.cancelAllPreActivationReminders(for: session.blockedProfile.id)
+
+    // Refresh widgets
+    WidgetCenter.shared.reloadTimelines(ofKind: "ProfileControlWidget")
+
+    // Sync session start via CAS
+    // Use passed context if available, fall back to session's modelContext
+    if let ctx = context ?? session.modelContext {
+      syncSessionStart(session: session, context: ctx)
+    } else {
+      Log.warning("No ModelContext available for session sync", category: .strategy)
+    }
+  }
+
   func getStrategy(id: String) -> BlockingStrategy {
     var strategy = StartStopActionResolver.getStrategyFromId(id: id)
 
@@ -943,61 +978,7 @@ class StrategyManager: ObservableObject {
 
       switch session {
       case .started(let session):
-        // Update the snapshot of the profile in case some settings were changed
-        BlockedProfiles.updateSnapshot(for: session.blockedProfile)
-
-        self.errorMessage = nil
-
-        self.activeSession = session
-        self.startTimer()
-        self.liveActivityManager
-          .startSessionActivity(session: session)
-
-        // Refresh widgets when session starts
-        WidgetCenter.shared.reloadTimelines(ofKind: "ProfileControlWidget")
-
-        // Sync session start using CAS (if global sync is enabled)
-        if self.shouldSyncSessionChange {
-          Task {
-            let result = await SessionSyncService.shared.startSession(
-              profileId: session.blockedProfile.id,
-              startTime: session.startTime
-            )
-
-            switch result {
-            case .started(let seq):
-              Log.info("Session synced with seq=\(seq)", category: .strategy)
-            case .alreadyActive(let existing):
-              Log.info(
-                "Joined existing session from \(existing.sessionOriginDevice ?? "unknown")",
-                category: .strategy
-              )
-              // Reconcile local startTime to match authoritative remote startTime
-              if let remoteStartTime = existing.startTime,
-                let currentSession = self.activeSession,
-                currentSession.startTime != remoteStartTime
-              {
-                currentSession.startTime = remoteStartTime
-                if let ctx = currentSession.modelContext {
-                  do {
-                    try ctx.save()
-                  } catch {
-                    Log.error(
-                      "Failed to save reconciled startTime (syncSessionStart): \(error.localizedDescription)",
-                      category: .strategy)
-                  }
-                } else {
-                  Log.warning(
-                    "No modelContext on active session; reconciled startTime not persisted",
-                    category: .strategy)
-                }
-                Log.info("Reconciled local startTime to \(remoteStartTime)", category: .strategy)
-              }
-            case .error(let error):
-              Log.info("Failed to sync session start - \(error)", category: .strategy)
-            }
-          }
-        }
+        self.activateSession(session)
       case .ended(let endedProfile):
         self.activeSession = nil
         self.liveActivityManager.endSessionActivity()
@@ -1261,11 +1242,6 @@ class StrategyManager: ObservableObject {
         customStrategyView = customView
       }
     }
-
-    DeviceActivityCenterUtil.scheduleStopActivity(for: definedProfile)
-
-    // Cancel any pending pre-activation reminders now that the profile is active
-    TimersUtil.cancelAllPreActivationReminders(for: definedProfile.id)
   }
 
   /// Start blocking with a pre-scanned NFC tag (for trigger-based start)
@@ -1363,59 +1339,7 @@ class StrategyManager: ObservableObject {
       forceStart: false
     )
 
-    // Update the snapshot of the profile in case some settings were changed
-    BlockedProfiles.updateSnapshot(for: session.blockedProfile)
-
-    errorMessage = nil
-    activeSession = session
-    startTimer()
-    liveActivityManager.startSessionActivity(session: session)
-
-    // Register stop schedule if configured
-    DeviceActivityCenterUtil.scheduleStopActivity(for: profile)
-
-    // Cancel any pending pre-activation reminders now that the profile is active
-    TimersUtil.cancelAllPreActivationReminders(for: profile.id)
-
-    // Refresh widgets when session starts
-    WidgetCenter.shared.reloadTimelines(ofKind: "ProfileControlWidget")
-
-    // Sync session start using CAS (if global sync is enabled)
-    if shouldSyncSessionChange {
-      Task {
-        let result = await SessionSyncService.shared.startSession(
-          profileId: session.blockedProfile.id,
-          startTime: session.startTime
-        )
-
-        switch result {
-        case .started(let seq):
-          Log.info("Session synced with seq=\(seq)", category: .strategy)
-        case .alreadyActive(let existing):
-          Log.info(
-            "Joined existing session from \(existing.sessionOriginDevice ?? "unknown")",
-            category: .strategy
-          )
-          // Reconcile local startTime to match authoritative remote startTime
-          if let remoteStartTime = existing.startTime,
-            let currentSession = self.activeSession,
-            currentSession.startTime != remoteStartTime
-          {
-            currentSession.startTime = remoteStartTime
-            do {
-              try context.save()
-            } catch {
-              Log.error(
-                "Failed to save reconciled startTime (startWithTag): \(error.localizedDescription)",
-                category: .strategy)
-            }
-            Log.info("Reconciled local startTime to \(remoteStartTime)", category: .strategy)
-          }
-        case .error(let error):
-          Log.info("Failed to sync session start - \(error)", category: .strategy)
-        }
-      }
-    }
+    activateSession(session, context: context)
 
     Log.info("Started session for profile '\(profile.name)' with tag", category: .strategy)
   }
