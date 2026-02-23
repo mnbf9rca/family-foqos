@@ -250,7 +250,7 @@ struct EmergencyPreviewSheetHost: View {
 
 #Preview {
   EmergencyPreviewSheetHost()
-    .environmentObject(StrategyManager())
+    .environmentObject(StrategyManager.shared)
     .environmentObject(EmergencyUnblockManager.shared)
     .defaultAppStorage(UserDefaults(suiteName: "preview")!)
 }

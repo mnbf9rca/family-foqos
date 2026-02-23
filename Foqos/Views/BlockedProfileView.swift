@@ -958,7 +958,7 @@ struct BlockedProfileView: View {
 #Preview {
   BlockedProfileView()
     .environmentObject(NFCWriter())
-    .environmentObject(StrategyManager())
+    .environmentObject(StrategyManager.shared)
     .modelContainer(for: BlockedProfiles.self, inMemory: true)
 }
 
@@ -971,6 +971,6 @@ struct BlockedProfileView: View {
 
   BlockedProfileView(profile: previewProfile)
     .environmentObject(NFCWriter())
-    .environmentObject(StrategyManager())
+    .environmentObject(StrategyManager.shared)
     .modelContainer(for: BlockedProfiles.self, inMemory: true)
 }
