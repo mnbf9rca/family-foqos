@@ -7,6 +7,7 @@
 
 import AppIntents
 import FamilyControls
+import FoqosShared
 import SwiftUI
 import WidgetKit
 

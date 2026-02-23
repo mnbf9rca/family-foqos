@@ -5,6 +5,7 @@
 //  Created by Ali Waseem on 2025-03-11.
 //
 
+import FoqosShared
 import Foundation
 import WidgetKit
 

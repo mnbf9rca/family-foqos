@@ -6,6 +6,7 @@
 //
 
 import AppIntents
+import FoqosShared
 import Foundation
 import WidgetKit
 

@@ -1,4 +1,5 @@
 import ActivityKit
+import FoqosShared
 import SwiftUI
 import WidgetKit
 
