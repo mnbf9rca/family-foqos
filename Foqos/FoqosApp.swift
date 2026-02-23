@@ -209,6 +209,9 @@ struct FoqosApp: App {
         .onAppear {
           // Set up sync coordinator with model context
           syncCoordinator.setModelContext(container.mainContext)
+          // Migrate UserDefaults keys to family_foqos_ prefix
+          UserDefaultsMigration.migrateIfNeeded()
+          UserDefaultsMigration.migrateAppGroupIfNeeded()
           // Migrate profiles to V2 trigger system if needed
           ProfileMigrationUtil.migrateProfilesIfNeeded(context: container.mainContext)
           // Initialize sync if enabled
