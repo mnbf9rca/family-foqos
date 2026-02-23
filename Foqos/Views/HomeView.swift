@@ -10,6 +10,7 @@ struct HomeView: View {
 
   @EnvironmentObject var requestAuthorizer: RequestAuthorizer
   @EnvironmentObject var strategyManager: StrategyManager
+  @EnvironmentObject var geofenceEvaluator: GeofenceEvaluator
   @EnvironmentObject var navigationManager: NavigationManager
   @EnvironmentObject var ratingManager: RatingManager
 
@@ -288,6 +289,12 @@ struct HomeView: View {
         showErrorAlert(message: message)
       }
     }
+    .onReceive(geofenceEvaluator.$errorMessage) { errorMessage in
+      if let message = errorMessage {
+        showErrorAlert(message: message)
+        geofenceEvaluator.errorMessage = nil
+      }
+    }
     .onAppear {
       onAppearApp()
     }
@@ -343,15 +350,15 @@ struct HomeView: View {
     } message: {
       Text(alertMessage)
     }
-    .alert("Location Warning", isPresented: $strategyManager.showGeofenceStartWarning) {
+    .alert("Location Warning", isPresented: $geofenceEvaluator.showGeofenceStartWarning) {
       Button("Start Anyway") {
-        strategyManager.confirmGeofenceStart(context: context)
+        geofenceEvaluator.confirmGeofenceStart(context: context)
       }
       Button("Cancel", role: .cancel) {
-        strategyManager.cancelGeofenceStart()
+        geofenceEvaluator.cancelGeofenceStart()
       }
     } message: {
-      Text(strategyManager.geofenceWarningMessage)
+      Text(geofenceEvaluator.geofenceWarningMessage)
     }
     .confirmationDialog("Start by...", isPresented: $showStartPicker, titleVisibility: .visible) {
       ForEach(startOptions, id: \.self) { option in
@@ -647,8 +654,10 @@ struct HomeView: View {
 #Preview {
   HomeView()
     .environmentObject(RequestAuthorizer())
+    .environmentObject(GeofenceEvaluator.shared)
     .environmentObject(NavigationManager())
     .environmentObject(StrategyManager())
+    .environmentObject(RatingManager())
     .defaultAppStorage(UserDefaults(suiteName: "preview")!)
     .onAppear {
       let defaults = UserDefaults(suiteName: "preview")!

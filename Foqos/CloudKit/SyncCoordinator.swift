@@ -569,18 +569,18 @@ class SyncCoordinator: ObservableObject {
   // MARK: - Emergency Settings Handling
 
   private func handleEmergencySettings(_ remote: SyncedEmergencySettings) {
-    let strategyManager = StrategyManager.shared
+    let emergencyManager = EmergencyUnblockManager.shared
 
     // Last-write-wins: only apply if remote version is newer
-    guard remote.version > strategyManager.emergencySettingsVersion else {
+    guard remote.version > emergencyManager.emergencySettingsVersion else {
       Log.info(
-        "Ignoring emergency settings v\(remote.version) (local v\(strategyManager.emergencySettingsVersion))",
+        "Ignoring emergency settings v\(remote.version) (local v\(emergencyManager.emergencySettingsVersion))",
         category: .sync
       )
       return
     }
 
-    strategyManager.applyRemoteEmergencySettings(remote)
+    emergencyManager.applyRemoteEmergencySettings(remote)
     Log.info("Applied remote emergency settings v\(remote.version)", category: .sync)
   }
 

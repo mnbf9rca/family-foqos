@@ -5,14 +5,15 @@ struct EmergencyView: View {
   @Environment(\.dismiss) private var dismiss
 
   @EnvironmentObject var strategyManager: StrategyManager
+  @EnvironmentObject var emergencyManager: EmergencyUnblockManager
   @ObservedObject private var appModeManager = AppModeManager.shared
   @ObservedObject private var lockCodeManager = LockCodeManager.shared
 
-  private var emergencyUnblocksRemaining: Int { strategyManager.getRemainingEmergencyUnblocks() }
-  private var hasRemaining: Bool { strategyManager.getRemainingEmergencyUnblocks() > 0 }
+  private var emergencyUnblocksRemaining: Int { emergencyManager.getRemainingEmergencyUnblocks() }
+  private var hasRemaining: Bool { emergencyManager.getRemainingEmergencyUnblocks() > 0 }
 
   private var isGearLocked: Bool {
-    strategyManager.isEmergencySettingsLocked()
+    emergencyManager.isEmergencySettingsLocked()
       && appModeManager.currentMode == .child
       && !lockCodeVerified
   }
@@ -30,7 +31,7 @@ struct EmergencyView: View {
       .padding()
     }
     .onAppear {
-      strategyManager.checkAndResetEmergencyUnblocks()
+      emergencyManager.checkAndResetEmergencyUnblocks()
     }
     .sheet(isPresented: $showingLockCodeEntry) {
       LockCodeEntryView(
@@ -61,7 +62,7 @@ struct EmergencyView: View {
               .foregroundColor(.secondary)
 
             Group {
-              if let nextResetDate = strategyManager.getNextResetDate() {
+              if let nextResetDate = emergencyManager.getNextResetDate() {
                 let timeUntilReset = nextResetDate.timeIntervalSinceNow
                 if timeUntilReset <= 24 * 60 * 60 {  // Less than 24 hours
                   let hoursRemaining = max(1, Int(ceil(timeUntilReset / 3600)))
@@ -92,10 +93,10 @@ struct EmergencyView: View {
             }
           } else {
             Menu {
-              let currentPeriod = strategyManager.getResetPeriodInDays()
+              let currentPeriod = emergencyManager.getResetPeriodInDays()
 
               Button {
-                strategyManager.setResetPeriodInDays(14)
+                emergencyManager.setResetPeriodInDays(14)
               } label: {
                 if currentPeriod == 14 {
                   Label("2 weeks", systemImage: "checkmark")
@@ -105,7 +106,7 @@ struct EmergencyView: View {
               }
 
               Button {
-                strategyManager.setResetPeriodInDays(28)
+                emergencyManager.setResetPeriodInDays(28)
               } label: {
                 if currentPeriod == 28 {
                   Label("4 weeks", systemImage: "checkmark")
@@ -115,7 +116,7 @@ struct EmergencyView: View {
               }
 
               Button {
-                strategyManager.setResetPeriodInDays(42)
+                emergencyManager.setResetPeriodInDays(42)
               } label: {
                 if currentPeriod == 42 {
                   Label("6 weeks", systemImage: "checkmark")
@@ -125,7 +126,7 @@ struct EmergencyView: View {
               }
 
               Button {
-                strategyManager.setResetPeriodInDays(56)
+                emergencyManager.setResetPeriodInDays(56)
               } label: {
                 if currentPeriod == 56 {
                   Label("8 weeks", systemImage: "checkmark")
@@ -233,5 +234,6 @@ struct EmergencyPreviewSheetHost: View {
 #Preview {
   EmergencyPreviewSheetHost()
     .environmentObject(StrategyManager())
+    .environmentObject(EmergencyUnblockManager.shared)
     .defaultAppStorage(UserDefaults(suiteName: "preview")!)
 }

@@ -2,6 +2,7 @@ import SwiftUI
 
 struct StrategyManagerDebugCard: View {
   @ObservedObject var strategyManager: StrategyManager
+  @ObservedObject private var emergencyManager = EmergencyUnblockManager.shared
 
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
@@ -39,7 +40,7 @@ struct StrategyManagerDebugCard: View {
       // Emergency Unblocks
       DebugRow(
         label: "Emergency Unblocks Remaining",
-        value: "\(strategyManager.getRemainingEmergencyUnblocks())"
+        value: "\(emergencyManager.getRemainingEmergencyUnblocks())"
       )
 
       Divider()

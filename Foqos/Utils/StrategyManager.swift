@@ -1,13 +1,13 @@
 import SwiftData
 import SwiftUI
-import UserNotifications
 import WidgetKit
 
 @MainActor
 class StrategyManager: ObservableObject {
   static let shared = StrategyManager()
 
-  private let locationManager = LocationManager.shared
+  private let geofenceEvaluator = GeofenceEvaluator.shared
+  private let emergencyUnblockManager = EmergencyUnblockManager.shared
 
   @Published var elapsedTime: TimeInterval = 0
   @Published var timer: Timer?
@@ -17,72 +17,6 @@ class StrategyManager: ObservableObject {
   @Published var customStrategyView: (any View)? = nil
 
   @Published var errorMessage: String?
-  @Published var isCheckingGeofence: Bool = false
-
-  // Geofence start warning state
-  @AppStorage("warnWhenActivatingAwayFromLocation") private var warnWhenActivatingAwayFromLocation =
-    true
-  @Published var showGeofenceStartWarning: Bool = false
-  @Published var pendingStartProfile: BlockedProfiles? = nil
-  @Published var geofenceWarningMessage: String = ""
-
-  private enum EmergencyDefaultsKey {
-    static let unblocksRemaining = "emergencyUnblocksRemaining"
-    static let resetPeriodInDays = "emergencyUnblocksResetPeriodInDays"
-    static let lastResetDate = "lastEmergencyUnblocksResetDate"
-    static let settingsLocked = "emergencySettingsLocked"
-    static let settingsVersion = "emergencySettingsVersion"
-  }
-
-  @Published private var emergencyUnblocksRemaining: Int =
-    UserDefaults.standard.object(forKey: EmergencyDefaultsKey.unblocksRemaining) != nil
-    ? UserDefaults.standard.integer(forKey: EmergencyDefaultsKey.unblocksRemaining)
-    : 3
-  {
-    didSet {
-      UserDefaults.standard.set(emergencyUnblocksRemaining, forKey: EmergencyDefaultsKey.unblocksRemaining)
-    }
-  }
-
-  @Published private var emergencyUnblocksResetPeriodInDays: Int =
-    UserDefaults.standard.object(forKey: EmergencyDefaultsKey.resetPeriodInDays) != nil
-    ? UserDefaults.standard.integer(forKey: EmergencyDefaultsKey.resetPeriodInDays)
-    : 28
-  {
-    didSet {
-      UserDefaults.standard.set(emergencyUnblocksResetPeriodInDays, forKey: EmergencyDefaultsKey.resetPeriodInDays)
-    }
-  }
-
-  @Published private var lastEmergencyUnblocksResetDateTimestamp: Double =
-    UserDefaults.standard.object(forKey: EmergencyDefaultsKey.lastResetDate) != nil
-    ? UserDefaults.standard.double(forKey: EmergencyDefaultsKey.lastResetDate)
-    : 0
-  {
-    didSet {
-      UserDefaults.standard.set(lastEmergencyUnblocksResetDateTimestamp, forKey: EmergencyDefaultsKey.lastResetDate)
-    }
-  }
-
-  @Published private var emergencySettingsLockedStorage: Bool =
-    UserDefaults.standard.object(forKey: EmergencyDefaultsKey.settingsLocked) != nil
-    ? UserDefaults.standard.bool(forKey: EmergencyDefaultsKey.settingsLocked)
-    : false
-  {
-    didSet {
-      UserDefaults.standard.set(emergencySettingsLockedStorage, forKey: EmergencyDefaultsKey.settingsLocked)
-    }
-  }
-
-  private(set) var emergencySettingsVersion: Int =
-    UserDefaults.standard.object(forKey: EmergencyDefaultsKey.settingsVersion) != nil
-    ? UserDefaults.standard.integer(forKey: EmergencyDefaultsKey.settingsVersion)
-    : 0
-  {
-    didSet {
-      UserDefaults.standard.set(emergencySettingsVersion, forKey: EmergencyDefaultsKey.settingsVersion)
-    }
-  }
 
   private let liveActivityManager = LiveActivityManager.shared
   private let profileSyncManager = ProfileSyncManager.shared
@@ -164,205 +98,19 @@ class StrategyManager: ObservableObject {
         let geofenceRule = session.blockedProfile.geofenceRule,
         geofenceRule.hasLocations
       {
-        checkGeofenceAndStop(context: context, profile: session.blockedProfile)
+        geofenceEvaluator.checkGeofenceAndStop(context: context, profile: session.blockedProfile) {
+          self.stopBlocking(context: context, bypassStrategy: true)
+        }
         return
       }
 
       stopBlocking(context: context, bypassStrategy: true)
     } else {
-      checkGeofenceAndStart(context: context, activeProfile: activeProfile)
-    }
-  }
-
-  /// Evaluate geofence rule for a profile stop.
-  /// Returns `nil` when no geofence exists (stop is allowed),
-  /// or a `GeofenceCheckResult` indicating whether the stop should proceed.
-  /// Returns `.failed` with a message when location can't be determined (fail-closed).
-  private func evaluateGeofenceForStop(
-    profile: BlockedProfiles,
-    context: ModelContext
-  ) async -> GeofenceCheckResult? {
-    guard let geofenceRule = profile.geofenceRule,
-      geofenceRule.hasLocations
-    else {
-      return nil  // No geofence rule — stop is allowed
-    }
-
-    // If location permission is not determined or denied, fail-closed
-    if locationManager.isNotDetermined || locationManager.isDenied {
-      return .failed(
-        message: "Could not verify your location. Open the app to stop this profile."
-      )
-    }
-
-    let savedLocationsSnapshot: [SavedLocation]
-    do {
-      savedLocationsSnapshot = try SavedLocation.fetchAll(in: context)
-    } catch {
-      return .failed(message: "Unable to load saved locations. Please try again.")
-    }
-
-    return await locationManager.checkGeofenceRule(
-      rule: geofenceRule,
-      savedLocations: savedLocationsSnapshot
-    )
-  }
-
-  /// Check geofence rule and stop blocking if satisfied (foreground UI path)
-  private func checkGeofenceAndStop(context: ModelContext, profile: BlockedProfiles) {
-    // Foreground-specific: request permission with user-facing prompt
-    if locationManager.isNotDetermined {
-      locationManager.requestAuthorization()
-      errorMessage = "Please allow location access to stop this profile, then try again."
-      return
-    }
-
-    if locationManager.isDenied {
-      errorMessage =
-        "Location access is denied. Enable location services in Settings to use location-based restrictions."
-      return
-    }
-
-    isCheckingGeofence = true
-
-    // Capture Sendable snapshots before entering the Task to avoid capturing
-    // non-Sendable SwiftData models (profile) across the concurrency boundary
-    guard let geofenceRule = profile.geofenceRule else {
-      isCheckingGeofence = false
-      stopBlocking(context: context, bypassStrategy: true)
-      return
-    }
-    let ruleToCheck = geofenceRule
-    let savedLocationsSnapshot: [SavedLocation]
-    do {
-      savedLocationsSnapshot = try SavedLocation.fetchAll(in: context)
-    } catch {
-      self.isCheckingGeofence = false
-      self.errorMessage = "Unable to load saved locations. Please try again."
-      return
-    }
-
-    Task { @MainActor in
-      let result = await self.locationManager.checkGeofenceRule(
-        rule: ruleToCheck,
-        savedLocations: savedLocationsSnapshot
-      )
-
-      self.isCheckingGeofence = false
-
-      if result.isSatisfied {
-        self.stopBlocking(context: context, bypassStrategy: true)
-      } else {
-        self.errorMessage = result.failureMessage ?? "Location restriction not met."
+      geofenceEvaluator.checkGeofenceAndStart(context: context, activeProfile: activeProfile) {
+        ctx, profile in
+        self.startBlocking(context: ctx, activeProfile: profile, bypassStrategy: true)
       }
     }
-  }
-
-  /// Check geofence rule before starting and show warning if user is not at location
-  private func checkGeofenceAndStart(context: ModelContext, activeProfile: BlockedProfiles?) {
-    guard let profile = activeProfile else {
-      startBlocking(context: context, activeProfile: activeProfile, bypassStrategy: true)
-      return
-    }
-
-    // Fast path: if setting is off, skip check
-    guard warnWhenActivatingAwayFromLocation else {
-      startBlocking(context: context, activeProfile: profile, bypassStrategy: true)
-      return
-    }
-
-    // Fast path: if profile has no geofence rule, skip check
-    guard let geofenceRule = profile.geofenceRule, geofenceRule.hasLocations else {
-      startBlocking(context: context, activeProfile: profile, bypassStrategy: true)
-      return
-    }
-
-    // If location permission not granted, proceed without warning (don't block activation)
-    if locationManager.isNotDetermined || locationManager.isDenied {
-      startBlocking(context: context, activeProfile: profile, bypassStrategy: true)
-      return
-    }
-
-    isCheckingGeofence = true
-
-    // Capture saved locations before entering the Task to avoid Sendable warnings
-    let ruleToCheck = geofenceRule
-    let savedLocationsSnapshot: [SavedLocation]
-    do {
-      savedLocationsSnapshot = try SavedLocation.fetchAll(in: context)
-    } catch {
-      self.isCheckingGeofence = false
-      self.errorMessage = "Unable to load saved locations. Please try again."
-      return
-    }
-
-    Task { @MainActor in
-      let result = await locationManager.checkGeofenceRule(
-        rule: ruleToCheck,
-        savedLocations: savedLocationsSnapshot
-      )
-
-      self.isCheckingGeofence = false
-
-      if result.isSatisfied {
-        // User is at location, proceed without warning
-        self.startBlocking(context: context, activeProfile: profile, bypassStrategy: true)
-      } else {
-        // User is NOT at location, show warning
-        self.pendingStartProfile = profile
-        self.geofenceWarningMessage = self.buildStartWarningMessage(
-          rule: ruleToCheck,
-          savedLocations: savedLocationsSnapshot
-        )
-        self.showGeofenceStartWarning = true
-      }
-    }
-  }
-
-  /// Build user-friendly warning message for starting away from location
-  private func buildStartWarningMessage(
-    rule: ProfileGeofenceRule,
-    savedLocations: [SavedLocation]
-  ) -> String {
-    let locationNames = rule.locationReferences.compactMap { ref in
-      savedLocations.first { $0.id == ref.savedLocationId }?.name
-    }
-
-    if locationNames.isEmpty {
-      return
-        "This profile has location restrictions. You won't be able to stop it until you're at the required location."
-    } else if locationNames.count == 1 {
-      return
-        "This profile can only be stopped at \"\(locationNames[0])\". You're not currently at that location."
-    } else {
-      let locationList = locationNames.joined(separator: ", ")
-      return
-        "This profile can only be stopped at one of these locations: \(locationList). You're not currently at any of them."
-    }
-  }
-
-  /// Called when user confirms starting despite geofence warning
-  func confirmGeofenceStart(context: ModelContext) {
-    guard let profile = pendingStartProfile else {
-      cancelGeofenceStart()
-      return
-    }
-
-    startBlocking(context: context, activeProfile: profile, bypassStrategy: true)
-    cancelGeofenceStart()
-  }
-
-  /// Called when user cancels starting due to geofence warning
-  func cancelGeofenceStart() {
-    pendingStartProfile = nil
-    geofenceWarningMessage = ""
-    showGeofenceStartWarning = false
-  }
-
-  /// Check if the profile has geofence restrictions
-  func hasGeofenceRestrictions() -> Bool {
-    guard let session = activeSession else { return false }
-    return session.blockedProfile.geofenceRule?.hasLocations == true
   }
 
   func toggleBreak(context: ModelContext) {
@@ -503,6 +251,7 @@ class StrategyManager: ObservableObject {
         if let geofenceRule = localActiveSession.blockedProfile.geofenceRule,
           geofenceRule.hasLocations
         {
+          let locationManager = LocationManager.shared
           if locationManager.isNotDetermined {
             locationManager.requestAuthorization()
             self.errorMessage =
@@ -516,7 +265,7 @@ class StrategyManager: ObservableObject {
           }
         }
 
-        let geofenceResult = await evaluateGeofenceForStop(
+        let geofenceResult = await geofenceEvaluator.evaluateGeofenceForStop(
           profile: localActiveSession.blockedProfile,
           context: context
         )
@@ -667,7 +416,7 @@ class StrategyManager: ObservableObject {
       }
 
       // Check geofence rule — fail-closed if location can't be determined
-      let geofenceResult = await evaluateGeofenceForStop(
+      let geofenceResult = await geofenceEvaluator.evaluateGeofenceForStop(
         profile: profile,
         context: context
       )
@@ -676,7 +425,7 @@ class StrategyManager: ObservableObject {
         Log.info(
           "Geofence blocked background stop for profile: \(profile.name) — \(reason)",
           category: .strategy)
-        postGeofenceBlockedNotification(
+        geofenceEvaluator.postGeofenceBlockedNotification(
           profileId: profile.id, profileName: profile.name, reason: reason)
         self.errorMessage = "Cannot stop — \(reason)"
         throw IntentError.geofenceBlocked(reason: reason)
@@ -699,197 +448,19 @@ class StrategyManager: ObservableObject {
     }
   }
 
-  func getRemainingEmergencyUnblocks() -> Int {
-    return emergencyUnblocksRemaining
-  }
-
+  /// Delegate emergency unblock to EmergencyUnblockManager, providing session stop logic
   func emergencyUnblock(context: ModelContext) {
-    // Do not allow emergency unblocks if there are no remaining
-    if emergencyUnblocksRemaining == 0 {
-      return
-    }
-
-    // Do not allow emergency unblocks if there is no active session
-    guard let activeSession = try? getActiveSession(context: context) else {
-      return
-    }
-
-    // Check geofence rule if one exists and emergency override is not allowed
-    if let geofenceRule = activeSession.blockedProfile.geofenceRule,
-      geofenceRule.hasLocations,
-      !geofenceRule.allowEmergencyOverride
-    {
-      checkGeofenceAndEmergencyUnblock(context: context, rule: geofenceRule, session: activeSession)
-      return
-    }
-
-    performEmergencyUnblock(context: context, session: activeSession)
-  }
-
-  /// Check geofence rule and perform emergency unblock if satisfied
-  private func checkGeofenceAndEmergencyUnblock(
-    context: ModelContext,
-    rule: ProfileGeofenceRule,
-    session: BlockedProfileSession
-  ) {
-    // Request permission if not determined
-    if locationManager.isNotDetermined {
-      locationManager.requestAuthorization()
-      errorMessage = "Please allow location access to use emergency unblock, then try again."
-      return
-    }
-
-    // Check if permission is denied
-    if locationManager.isDenied {
-      errorMessage =
-        "Location access is denied. Enable location services in Settings to use emergency unblock."
-      return
-    }
-
-    isCheckingGeofence = true
-
-    // Capture saved locations before entering the Task to avoid Sendable warnings
-    let ruleToCheck = rule
-    let savedLocationsSnapshot: [SavedLocation]
-    do {
-      savedLocationsSnapshot = try SavedLocation.fetchAll(in: context)
-    } catch {
-      self.isCheckingGeofence = false
-      self.errorMessage = "Unable to load saved locations. Please try again."
-      return
-    }
-
-    Task { @MainActor in
-      let result = await locationManager.checkGeofenceRule(
-        rule: ruleToCheck,
-        savedLocations: savedLocationsSnapshot
-      )
-
-      self.isCheckingGeofence = false
-
-      if result.isSatisfied {
-        self.performEmergencyUnblock(context: context, session: session)
-      } else {
-        self.errorMessage = result.failureMessage ?? "Location restriction not met."
-      }
-    }
-  }
-
-  /// Actually perform the emergency unblock (called after all checks pass)
-  private func performEmergencyUnblock(context: ModelContext, session: BlockedProfileSession) {
-    // Stop the active session using the manual strategy, bypasses any other strategy in view
-    let manualStrategy = getStrategy(id: ManualBlockingStrategy.id)
-    _ = manualStrategy.stopBlocking(
+    let session = try? getActiveSession(context: context)
+    emergencyUnblockManager.emergencyUnblock(
       context: context,
-      session: session
-    )
-
-    // Do end sections for the profile
-    self.liveActivityManager.endSessionActivity()
-    self.scheduleReminder(profile: session.blockedProfile)
-    self.stopTimer()
-
-    // Decrement the remaining emergency unblocks
-    emergencyUnblocksRemaining -= 1
-    pushEmergencySettingsToCloudKit()
-
-    // Refresh widgets when emergency unblock ends session
-    WidgetCenter.shared.reloadTimelines(ofKind: "ProfileControlWidget")
-  }
-
-  func resetEmergencyUnblocks() {
-    emergencyUnblocksRemaining = 3
-    lastEmergencyUnblocksResetDateTimestamp = Date().timeIntervalSinceReferenceDate
-    pushEmergencySettingsToCloudKit()
-  }
-
-  func checkAndResetEmergencyUnblocks() {
-    // Initialize the last reset date if it hasn't been set
-    if lastEmergencyUnblocksResetDateTimestamp == 0 {
-      lastEmergencyUnblocksResetDateTimestamp = Date().timeIntervalSinceReferenceDate
-      return
-    }
-
-    let lastResetDate = Date(
-      timeIntervalSinceReferenceDate: lastEmergencyUnblocksResetDateTimestamp)
-    let periodInSeconds: TimeInterval = TimeInterval(
-      emergencyUnblocksResetPeriodInDays * 24 * 60 * 60)
-    let elapsedTime = Date().timeIntervalSince(lastResetDate)
-
-    // Check if the reset period has elapsed
-    if elapsedTime >= periodInSeconds {
-      emergencyUnblocksRemaining = 3
-      lastEmergencyUnblocksResetDateTimestamp = Date().timeIntervalSinceReferenceDate
-      pushEmergencySettingsToCloudKit()
-    }
-  }
-
-  func getNextResetDate() -> Date? {
-    guard lastEmergencyUnblocksResetDateTimestamp > 0 else {
-      return nil
-    }
-
-    let lastResetDate = Date(
-      timeIntervalSinceReferenceDate: lastEmergencyUnblocksResetDateTimestamp)
-    let calendar = Calendar.current
-    return calendar.date(
-      byAdding: .day,
-      value: emergencyUnblocksResetPeriodInDays,
-      to: lastResetDate
-    )
-  }
-
-  func getResetPeriodInDays() -> Int {
-    return emergencyUnblocksResetPeriodInDays
-  }
-
-  func setResetPeriodInDays(_ days: Int) {
-    emergencyUnblocksResetPeriodInDays = days
-    lastEmergencyUnblocksResetDateTimestamp = Date().timeIntervalSinceReferenceDate
-    pushEmergencySettingsToCloudKit()
-  }
-
-  func isEmergencySettingsLocked() -> Bool {
-    emergencySettingsLockedStorage
-  }
-
-  func setEmergencySettingsLocked(_ locked: Bool) {
-    emergencySettingsLockedStorage = locked
-    pushEmergencySettingsToCloudKit()
-  }
-
-  /// Apply emergency settings received from CloudKit sync
-  func applyRemoteEmergencySettings(_ remote: SyncedEmergencySettings) {
-    emergencyUnblocksRemaining = remote.unblocksRemaining
-    emergencyUnblocksResetPeriodInDays = remote.resetPeriodInDays
-    lastEmergencyUnblocksResetDateTimestamp = remote.lastResetDate.timeIntervalSinceReferenceDate
-    emergencySettingsLockedStorage = remote.settingsLocked
-    emergencySettingsVersion = remote.version
-  }
-
-  private func pushEmergencySettingsToCloudKit() {
-    guard profileSyncManager.isEnabled else { return }
-
-    let nextVersion = emergencySettingsVersion + 1
-    let settings = SyncedEmergencySettings(
-      unblocksRemaining: emergencyUnblocksRemaining,
-      resetPeriodInDays: emergencyUnblocksResetPeriodInDays,
-      lastResetDate: Date(
-        timeIntervalSinceReferenceDate: lastEmergencyUnblocksResetDateTimestamp),
-      settingsLocked: emergencySettingsLockedStorage,
-      version: nextVersion,
-      lastModified: Date(),
-      originDeviceId: SharedData.deviceSyncId.uuidString
-    )
-
-    Task {
-      do {
-        try await profileSyncManager.pushEmergencySettings(settings)
-        await MainActor.run { self.emergencySettingsVersion = nextVersion }
-      } catch {
-        Log.error(
-          "Failed to push emergency settings: \(error.localizedDescription)", category: .sync)
-      }
+      activeSession: session
+    ) { [weak self] ctx, sess in
+      guard let self else { return }
+      let manualStrategy = self.getStrategy(id: ManualBlockingStrategy.id)
+      _ = manualStrategy.stopBlocking(context: ctx, session: sess)
+      self.liveActivityManager.endSessionActivity()
+      self.scheduleReminder(profile: sess.blockedProfile)
+      self.stopTimer()
     }
   }
 
@@ -1292,7 +863,9 @@ class StrategyManager: ObservableObject {
       if let geofenceRule = session.blockedProfile.geofenceRule,
         geofenceRule.hasLocations
       {
-        checkGeofenceAndStop(context: context, profile: session.blockedProfile)
+        geofenceEvaluator.checkGeofenceAndStop(context: context, profile: session.blockedProfile) {
+          self.stopBlocking(context: context, bypassStrategy: true)
+        }
       } else {
         stopBlocking(context: context, bypassStrategy: true)
       }
@@ -1321,7 +894,9 @@ class StrategyManager: ObservableObject {
       if let geofenceRule = session.blockedProfile.geofenceRule,
         geofenceRule.hasLocations
       {
-        checkGeofenceAndStop(context: context, profile: session.blockedProfile)
+        geofenceEvaluator.checkGeofenceAndStop(context: context, profile: session.blockedProfile) {
+          self.stopBlocking(context: context, bypassStrategy: true)
+        }
       } else {
         stopBlocking(context: context, bypassStrategy: true)
       }
@@ -1406,32 +981,6 @@ class StrategyManager: ObservableObject {
       message: "Hope you enjoyed your break, starting " + profileName + " in 1 minute.",
       seconds: TimeInterval(breakNotificationTimeInSeconds)
     )
-  }
-
-  /// Post a local notification when a background stop is blocked by geofence
-  private func postGeofenceBlockedNotification(
-    profileId: UUID,
-    profileName: String,
-    reason: String
-  ) {
-    let content = UNMutableNotificationContent()
-    content.title = "Profile couldn't be stopped"
-    content.body = "\(profileName): \(reason)"
-    content.sound = .default
-
-    // Stable per-profile identifier so repeated blocked stops replace the previous notification
-    let request = UNNotificationRequest(
-      identifier: "geofence-blocked-\(profileId.uuidString)",
-      content: content,
-      trigger: nil
-    )
-    UNUserNotificationCenter.current().add(request) { error in
-      if let error {
-        Log.warning(
-          "Failed to post geofence blocked notification: \(error.localizedDescription)",
-          category: .location)
-      }
-    }
   }
 
   func cleanUpGhostSchedules(context: ModelContext) {
