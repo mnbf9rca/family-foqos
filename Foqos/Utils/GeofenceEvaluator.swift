@@ -10,7 +10,13 @@ import UserNotifications
 class GeofenceEvaluator: ObservableObject {
   static let shared = GeofenceEvaluator()
 
-  private let locationManager = LocationManager.shared
+  private let locationManager: LocationManager
+
+  private init(
+    locationManager: LocationManager = .shared
+  ) {
+    self.locationManager = locationManager
+  }
 
   @Published var isCheckingGeofence: Bool = false
   @Published var errorMessage: String?
