@@ -292,6 +292,7 @@ struct HomeView: View {
     .onReceive(geofenceEvaluator.$errorMessage) { errorMessage in
       if let message = errorMessage {
         showErrorAlert(message: message)
+        geofenceEvaluator.errorMessage = nil
       }
     }
     .onAppear {

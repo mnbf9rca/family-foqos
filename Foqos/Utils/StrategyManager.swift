@@ -308,13 +308,14 @@ class StrategyManager: ObservableObject {
         if let geofenceRule = localActiveSession.blockedProfile.geofenceRule,
           geofenceRule.hasLocations
         {
-          if geofenceEvaluator.locationManager.isNotDetermined {
-            geofenceEvaluator.locationManager.requestAuthorization()
+          let locationManager = LocationManager.shared
+          if locationManager.isNotDetermined {
+            locationManager.requestAuthorization()
             self.errorMessage =
               "Please allow location access to stop this profile, then try again."
             return
           }
-          if geofenceEvaluator.locationManager.isDenied {
+          if locationManager.isDenied {
             self.errorMessage =
               "Location access is denied. Enable location services in Settings to use location-based restrictions."
             return
