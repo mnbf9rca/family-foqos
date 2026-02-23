@@ -1,8 +1,5 @@
 import SwiftUI
 
-let THREADS_URL = "https://www.threads.com/@softwarecuddler"
-let TWITTER_URL = "https://x.com/softwarecuddler"
-
 struct SupportView: View {
   @EnvironmentObject var themeManager: ThemeManager
 
