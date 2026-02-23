@@ -55,7 +55,11 @@ struct DataExporter {
     return lines.joined(separator: "\n")
   }
 
-  private static func escapeCSVField(_ field: String) -> String {
+  static func escapeCSVField(_ field: String) -> String {
+    var field = field
+    if let first = field.first, "=+-@".contains(first) {
+      field = "\t" + field
+    }
     if field.contains(",") || field.contains("\"") || field.contains("\n") {
       let escaped = field.replacingOccurrences(of: "\"", with: "\"\"")
       return "\"\(escaped)\""
