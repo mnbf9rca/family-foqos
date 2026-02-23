@@ -70,6 +70,32 @@ enum SharedData {
     case deviceSyncEnabled = "family_foqos_device_sync_enabled"
   }
 
+  /// Old key names used before migration. Extensions may read these
+  /// if they run before the main app has migrated post-update.
+  private enum LegacyKey: String {
+    case profileSnapshots
+    case activeScheduleSession
+    case completedScheduleSessions
+    case deviceSyncId
+    case deviceSyncEnabled
+  }
+
+  /// Read from suite with fallback to legacy key name (for pre-migration extension reads).
+  private static func data(forKey key: Key, legacyKey: LegacyKey) -> Data? {
+    suite.data(forKey: key.rawValue) ?? suite.data(forKey: legacyKey.rawValue)
+  }
+
+  private static func string(forKey key: Key, legacyKey: LegacyKey) -> String? {
+    suite.string(forKey: key.rawValue) ?? suite.string(forKey: legacyKey.rawValue)
+  }
+
+  private static func bool(forKey key: Key, legacyKey: LegacyKey) -> Bool {
+    if suite.object(forKey: key.rawValue) != nil {
+      return suite.bool(forKey: key.rawValue)
+    }
+    return suite.bool(forKey: legacyKey.rawValue)
+  }
+
   // MARK: – Serializable snapshot of a profile (no sessions)
 
   struct ProfileSnapshot: Codable, Equatable {
@@ -144,7 +170,7 @@ enum SharedData {
 
   static var profileSnapshots: [String: ProfileSnapshot] {
     get {
-      guard let data = suite.data(forKey: Key.profileSnapshots.rawValue) else { return [:] }
+      guard let data = data(forKey: .profileSnapshots, legacyKey: .profileSnapshots) else { return [:] }
       return (try? JSONDecoder().decode([String: ProfileSnapshot].self, from: data)) ?? [:]
     }
     set {
@@ -180,7 +206,7 @@ enum SharedData {
 
   static var completedSessionsInScheduler: [SessionSnapshot] {
     get {
-      guard let data = suite.data(forKey: Key.completedScheduleSessions.rawValue) else { return [] }
+      guard let data = data(forKey: .completedScheduleSessions, legacyKey: .completedScheduleSessions) else { return [] }
       return (try? JSONDecoder().decode([SessionSnapshot].self, from: data)) ?? []
     }
     set {
@@ -196,7 +222,7 @@ enum SharedData {
 
   static var activeSharedSession: SessionSnapshot? {
     get {
-      guard let data = suite.data(forKey: Key.activeScheduleSession.rawValue) else { return nil }
+      guard let data = data(forKey: .activeScheduleSession, legacyKey: .activeScheduleSession) else { return nil }
       return (try? JSONDecoder().decode(SessionSnapshot.self, from: data)) ?? nil
     }
     set {
@@ -312,7 +338,7 @@ enum SharedData {
   static var deviceSyncId: UUID {
     get {
       withLock {
-        if let idString = suite.string(forKey: Key.deviceSyncId.rawValue),
+        if let idString = string(forKey: .deviceSyncId, legacyKey: .deviceSyncId),
           let uuid = UUID(uuidString: idString)
         {
           return uuid
@@ -333,7 +359,7 @@ enum SharedData {
   /// Whether device sync is enabled for this device.
   static var deviceSyncEnabled: Bool {
     get {
-      return suite.bool(forKey: Key.deviceSyncEnabled.rawValue)
+      return bool(forKey: .deviceSyncEnabled, legacyKey: .deviceSyncEnabled)
     }
     set {
       suite.set(newValue, forKey: Key.deviceSyncEnabled.rawValue)
