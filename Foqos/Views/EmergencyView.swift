@@ -21,6 +21,7 @@ struct EmergencyView: View {
   @State private var isPerformingEmergencyUnblock: Bool = false
   @State private var showingLockCodeEntry: Bool = false
   @State private var lockCodeVerified: Bool = false
+  @State private var errorMessage: String?
 
   var body: some View {
     ScrollView {
@@ -44,6 +45,17 @@ struct EmergencyView: View {
           lockCodeVerified = true
         }
       )
+    }
+    .alert(
+      "Emergency Unblock Failed",
+      isPresented: .init(
+        get: { errorMessage != nil },
+        set: { if !$0 { errorMessage = nil } }
+      )
+    ) {
+      Button("OK") { errorMessage = nil }
+    } message: {
+      Text(errorMessage ?? "")
     }
   }
 
@@ -210,10 +222,15 @@ struct EmergencyView: View {
   private func performEmergencyUnblock() {
     isPerformingEmergencyUnblock = true
 
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-      strategyManager.emergencyUnblock(context: context)
+    Task {
+      try? await Task.sleep(for: .milliseconds(600))
+      do {
+        try await strategyManager.emergencyUnblock(context: context)
+        dismiss()
+      } catch {
+        errorMessage = error.localizedDescription
+      }
       isPerformingEmergencyUnblock = false
-      dismiss()
     }
   }
 }
