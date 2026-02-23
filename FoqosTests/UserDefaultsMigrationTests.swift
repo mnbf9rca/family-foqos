@@ -138,4 +138,9 @@ final class UserDefaultsMigrationTests: XCTestCase {
 
     XCTAssertEqual(defaults.string(forKey: "family_foqos_theme_color_name"), "Slate Stone")
   }
+
+  func testGivenNilSuite_WhenMigrateAppGroup_ThenNoOp() {
+    UserDefaultsMigration.migrateAppGroupIfNeeded(defaults: nil)
+    // Should not crash or set any flags — just returns early
+  }
 }

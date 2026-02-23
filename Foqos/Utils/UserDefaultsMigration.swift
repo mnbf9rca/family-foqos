@@ -44,9 +44,14 @@ enum UserDefaultsMigration {
   }
 
   static func migrateAppGroupIfNeeded(
-    defaults: UserDefaults = UserDefaults(suiteName: "group.com.cynexia.family-foqos")
-      ?? .standard
+    defaults: UserDefaults? = UserDefaults(suiteName: "group.com.cynexia.family-foqos")
   ) {
+    guard let defaults = defaults else {
+      Log.warning(
+        "Failed to create app group suite; skipping app group migration",
+        category: .app)
+      return
+    }
     guard !defaults.bool(forKey: appGroupMigrationFlag) else { return }
 
     for (old, new) in appGroupKeyMapping {
