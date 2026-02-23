@@ -32,11 +32,10 @@ class QRCodeBlockingStrategy: BlockingStrategy {
       subtitle: "Point your camera at a QR code to activate a profile."
     ) { result in
       switch result {
-      case .success(let result):
+      case .success(let hashedCode):
         self.appBlocker.activateRestrictions(for: BlockedProfiles.getSnapshot(for: profile))
 
-        let codeValue = result.string
-        let prefixedTag = "qr:\(codeValue)"
+        let prefixedTag = "qr:\(hashedCode)"
         let activeSession =
           BlockedProfileSession
           .createSession(
@@ -61,14 +60,13 @@ class QRCodeBlockingStrategy: BlockingStrategy {
       subtitle: "Point your camera at a QR code to deactivate a profile."
     ) { result in
       switch result {
-      case .success(let result):
-        let codeValue = result.string
-        let prefixedTag = "qr:\(codeValue)"
+      case .success(let hashedCode):
+        let prefixedTag = "qr:\(hashedCode)"
 
         // Validate the scanned QR code for unblocking
         if let physicalUnblockQRCodeId = session.blockedProfile.physicalUnblockQRCodeId {
           // Physical unblock QR code is set - only this specific code can unblock
-          if physicalUnblockQRCodeId != codeValue {
+          if physicalUnblockQRCodeId != hashedCode {
             self.onErrorMessage?(
               "This QR code is not allowed to unblock this profile. Physical unblock setting is on for this profile"
             )

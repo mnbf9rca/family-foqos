@@ -47,7 +47,7 @@ class ShareCoordinator: NSObject, ObservableObject {
 
   /// Get the CloudKit container
   func getContainer() -> CKContainer {
-    return CKContainer(identifier: "iCloud.com.cynexia.family-foqos")
+    return CKContainer(identifier: CloudKitConstants.containerIdentifier)
   }
 
   // MARK: - Leave Share (Child)

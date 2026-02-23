@@ -26,8 +26,8 @@ class PhysicalReader {
       subtitle: "Point your camera at a QR/Barcode code to set a physical unblock."
     ) { result in
       switch result {
-      case .success(let scanResult):
-        onSuccess(scanResult.string)
+      case .success(let hashedCode):
+        onSuccess(hashedCode)
       case .failure(let error):
         onFailure(error.localizedDescription)
       }

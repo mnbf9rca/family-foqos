@@ -6,7 +6,7 @@ struct LabeledCodeScannerView: View {
   let heading: String
   let subtitle: String
   let simulatedData: String?
-  let onScanResult: (Result<ScanResult, ScanError>) -> Void
+  let onScanResult: (Result<String, ScanError>) -> Void
 
   @State private var isShowingScanner = true
   @State private var errorMessage: String? = nil
@@ -17,7 +17,7 @@ struct LabeledCodeScannerView: View {
     heading: String,
     subtitle: String,
     simulatedData: String? = nil,
-    onScanResult: @escaping (Result<ScanResult, ScanError>) -> Void
+    onScanResult: @escaping (Result<String, ScanError>) -> Void
   ) {
     self.heading = heading
     self.subtitle = subtitle
@@ -137,7 +137,10 @@ struct LabeledCodeScannerView: View {
       isShowingScanner = false
       errorMessage = nil
       scanError = nil
-      onScanResult(.success(scanResult))
+      // Hash at the scan choke point so all callers receive opaque digests.
+      // V1 profiles with active QR sessions store plaintext physicalUnblockQRCodeId;
+      // those sessions will mismatch until ended (Emergency Unblock) and migrated to V2.
+      onScanResult(.success(QRCodeHasher.hash(scanResult.string)))
     case .failure(let error):
       if case ScanError.permissionDenied = error {
         isShowingScanner = false
@@ -160,8 +163,8 @@ struct LabeledCodeScannerView: View {
     simulatedData: "Simulated QR Code Data for Preview"  // For preview purposes
   ) { result in
     switch result {
-    case .success(let result):
-      Log.debug("Preview scanned code: \(result.string)", category: .ui)
+    case .success(let hashedCode):
+      Log.debug("Preview scanned code: \(hashedCode)", category: .ui)
     case .failure(let error):
       Log.debug("Preview scanning failed: \(error.localizedDescription)", category: .ui)
     }

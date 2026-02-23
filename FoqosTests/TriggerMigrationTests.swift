@@ -159,7 +159,7 @@ final class TriggerMigrationTests: XCTestCase {
 
     XCTAssertTrue(newStop.specificQR)
     XCTAssertFalse(newStop.anyQR)  // Replaced by specific
-    XCTAssertEqual(newStopCodeId, "qr-code-456")
+    XCTAssertEqual(newStopCodeId, QRCodeHasher.hash("qr-code-456"))
   }
 
   func testMigratePhysicalUnlockQRClearsSameQR() {

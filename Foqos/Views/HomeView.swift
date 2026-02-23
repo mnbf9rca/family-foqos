@@ -394,10 +394,10 @@ struct HomeView: View {
             subtitle: "Scan a QR code to start \(profile.name)"
           ) { result in
             switch result {
-            case .success(let scanResult):
+            case .success(let hashedCode):
               showStartQRScanner = false
               strategyManager.startWithQRCode(
-                context: context, profile: profile, codeValue: scanResult.string)
+                context: context, profile: profile, codeValue: hashedCode)
               scannerProfile = nil
             case .failure:
               showStartQRScanner = false
@@ -415,10 +415,10 @@ struct HomeView: View {
             subtitle: "Scan a QR code to stop \(profile.name)"
           ) { result in
             switch result {
-            case .success(let scanResult):
+            case .success(let hashedCode):
               showStopQRScanner = false
               strategyManager.stopWithQRCode(
-                context: context, codeValue: scanResult.string)
+                context: context, codeValue: hashedCode)
               scannerProfile = nil
             case .failure:
               showStopQRScanner = false
