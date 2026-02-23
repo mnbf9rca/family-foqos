@@ -1134,6 +1134,10 @@ class StrategyManager: ObservableObject {
   }
 }
 
+// MARK: - SessionController Conformance
+
+extension StrategyManager: SessionController {}
+
 // MARK: - Remote Session Notification Names
 
 extension Notification.Name {
