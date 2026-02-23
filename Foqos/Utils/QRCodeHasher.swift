@@ -2,7 +2,9 @@
 import CryptoKit
 import Foundation
 
-/// Hashes QR code values using SHA-256 so they're stored as opaque identifiers
+/// Hashes QR code values using SHA-256 to normalize arbitrary-length scanned data
+/// to a fixed 64-character hex string for storage and comparison across devices.
+/// This is NOT a security measure — it's a size constraint (QR payloads can be large).
 enum QRCodeHasher {
   static func hash(_ value: String) -> String {
     let data = Data(value.utf8)

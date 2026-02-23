@@ -104,13 +104,13 @@ struct StartTriggerSelector: View {
   @ViewBuilder
   private func scanRow(tagId: String?, onScan: @escaping () -> Void, label: String) -> some View {
     HStack {
-      if tagId != nil {
+      if let tagId, !tagId.isEmpty {
         Text("\(label) set")
           .font(.caption)
           .foregroundStyle(.secondary)
       }
       Spacer()
-      Button(tagId == nil ? "Scan" : "Change") {
+      Button(tagId == nil || tagId?.isEmpty == true ? "Scan" : "Change") {
         onScan()
       }
       .buttonStyle(.bordered)
