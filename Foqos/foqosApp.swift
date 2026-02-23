@@ -69,6 +69,7 @@ struct foqosApp: App {
   // Singletons for shared functionality
   @StateObject private var strategyManager = StrategyManager.shared
   @StateObject private var geofenceEvaluator = GeofenceEvaluator.shared
+  @StateObject private var emergencyManager = EmergencyUnblockManager.shared
   @StateObject private var liveActivityManager = LiveActivityManager.shared
   @StateObject private var themeManager = ThemeManager.shared
 
@@ -196,6 +197,7 @@ struct foqosApp: App {
         .environmentObject(requestAuthorizer)
         .environmentObject(strategyManager)
         .environmentObject(geofenceEvaluator)
+        .environmentObject(emergencyManager)
         .environmentObject(navigationManager)
         .environmentObject(nfcWriter)
         .environmentObject(ratingManager)

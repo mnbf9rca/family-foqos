@@ -39,7 +39,7 @@ struct StrategyManagerDebugCard: View {
       // Emergency Unblocks
       DebugRow(
         label: "Emergency Unblocks Remaining",
-        value: "\(strategyManager.getRemainingEmergencyUnblocks())"
+        value: "\(EmergencyUnblockManager.shared.getRemainingEmergencyUnblocks())"
       )
 
       Divider()

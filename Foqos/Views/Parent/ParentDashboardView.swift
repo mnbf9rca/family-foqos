@@ -21,6 +21,7 @@ struct ParentDashboardView: View {
   @ObservedObject private var appModeManager = AppModeManager.shared
   @ObservedObject private var lockCodeManager = LockCodeManager.shared
   @ObservedObject private var strategyManager = StrategyManager.shared
+  @ObservedObject private var emergencyManager = EmergencyUnblockManager.shared
 
   @State private var showLockCodeSetup = false
   @State private var showError = false
@@ -295,9 +296,9 @@ struct ParentDashboardView: View {
         .font(.headline)
 
       HStack(spacing: 16) {
-        Image(systemName: strategyManager.isEmergencySettingsLocked() ? "lock.fill" : "lock.open")
+        Image(systemName: emergencyManager.isEmergencySettingsLocked() ? "lock.fill" : "lock.open")
           .font(.title2)
-          .foregroundColor(strategyManager.isEmergencySettingsLocked() ? .orange : .secondary)
+          .foregroundColor(emergencyManager.isEmergencySettingsLocked() ? .orange : .secondary)
 
         VStack(alignment: .leading, spacing: 4) {
           Text("Lock Emergency Settings")
@@ -314,8 +315,8 @@ struct ParentDashboardView: View {
         Toggle(
           "",
           isOn: Binding(
-            get: { strategyManager.isEmergencySettingsLocked() },
-            set: { strategyManager.setEmergencySettingsLocked($0) }
+            get: { emergencyManager.isEmergencySettingsLocked() },
+            set: { emergencyManager.setEmergencySettingsLocked($0) }
           )
         )
         .labelsHidden()

@@ -269,7 +269,7 @@ class LockCodeManager: ObservableObject {
 
     switch command.commandType {
     case .resetEmergencyCount:
-      StrategyManager.shared.resetEmergencyUnblocks()
+      EmergencyUnblockManager.shared.resetEmergencyUnblocks()
       Log.info("Emergency count reset by parent", category: .cloudKit)
     case .resetLockCodeThrottle:
       resetThrottle()
