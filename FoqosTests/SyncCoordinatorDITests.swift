@@ -5,21 +5,29 @@ import XCTest
 @MainActor
 final class SyncCoordinatorDITests: XCTestCase {
 
-  func testGivenMockSessionController_WhenInitialized_ThenAcceptsMock() {
-    let mock = MockSessionController()
-    let coordinator = SyncCoordinator(sessionController: mock)
+  private var previousDelegate: SyncEventDelegate?
 
-    // Verify coordinator was created with injected mock (no crash, no StrategyManager.shared)
-    XCTAssertNotNil(coordinator)
+  override func setUp() async throws {
+    try await super.setUp()
+    previousDelegate = ProfileSyncManager.shared.syncEventDelegate
   }
 
-  func testGivenMockSyncManager_WhenInitialized_ThenSetsDelegate() {
+  override func tearDown() async throws {
+    ProfileSyncManager.shared.syncEventDelegate = previousDelegate
+    try await super.tearDown()
+  }
+
+  func testGivenMockSessionController_WhenInitialized_ThenAcceptsMock() {
+    // Verifies init doesn't crash with mock injection (no StrategyManager.shared needed)
+    let mock = MockSessionController()
+    _ = SyncCoordinator(sessionController: mock)
+  }
+
+  func testGivenSharedSyncManager_WhenInitialized_ThenSetsDelegate() {
     let syncManager = ProfileSyncManager.shared
     let mock = MockSessionController()
     let coordinator = SyncCoordinator(sessionController: mock, syncManager: syncManager)
 
-    // Verify coordinator set itself as delegate
-    XCTAssertNotNil(coordinator)
     XCTAssertTrue(syncManager.syncEventDelegate === coordinator)
   }
 }
