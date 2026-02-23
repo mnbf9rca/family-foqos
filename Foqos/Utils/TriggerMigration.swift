@@ -76,7 +76,7 @@ enum TriggerMigration {
       stop.anyQR = false
       stop.sameQR = false
       stop.specificQR = true
-      stopTagId = qrCodeId
+      stopTagId = QRCodeHasher.hash(qrCodeId)
     }
 
     return (stop, stopTagId)
