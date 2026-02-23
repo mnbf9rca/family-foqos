@@ -25,7 +25,7 @@ class StrategyManager: ObservableObject {
   private let timersUtil = TimersUtil()
   private let appBlocker = AppBlockerUtil()
 
-  private init(
+  init(
     geofenceEvaluator: GeofenceEvaluator = .shared,
     emergencyUnblockManager: EmergencyUnblockManager = .shared,
     liveActivityManager: LiveActivityManager = .shared,

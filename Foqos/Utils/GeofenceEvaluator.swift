@@ -12,7 +12,7 @@ class GeofenceEvaluator: ObservableObject {
 
   private let locationManager: LocationManager
 
-  private init(
+  init(
     locationManager: LocationManager = .shared
   ) {
     self.locationManager = locationManager

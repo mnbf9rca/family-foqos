@@ -42,7 +42,7 @@ class EmergencyUnblockManager: ObservableObject {
   private let geofenceEvaluator: GeofenceEvaluator
   private let profileSyncManager: ProfileSyncManager
 
-  private init(
+  init(
     geofenceEvaluator: GeofenceEvaluator = .shared,
     profileSyncManager: ProfileSyncManager = .shared
   ) {
