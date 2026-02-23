@@ -448,10 +448,11 @@ class StrategyManager: ObservableObject {
     }
   }
 
-  /// Delegate emergency unblock to EmergencyUnblockManager, providing session stop logic
-  func emergencyUnblock(context: ModelContext) {
+  /// Delegate emergency unblock to EmergencyUnblockManager, providing session stop logic.
+  /// Throws EmergencyUnblockError if unblock is not allowed (no remaining, geofence blocked, etc.).
+  func emergencyUnblock(context: ModelContext) async throws(EmergencyUnblockError) {
     let session = try? getActiveSession(context: context)
-    emergencyUnblockManager.emergencyUnblock(
+    try await emergencyUnblockManager.emergencyUnblock(
       context: context,
       activeSession: session
     ) { [weak self] ctx, sess in

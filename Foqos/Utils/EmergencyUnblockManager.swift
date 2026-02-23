@@ -3,6 +3,35 @@ import SwiftData
 import SwiftUI
 import WidgetKit
 
+/// Typed errors for the emergency unblock flow.
+/// Covers all failure modes: no unblocks remaining, no active session, and geofence restrictions.
+enum EmergencyUnblockError: LocalizedError {
+  case noUnblocksRemaining
+  case noActiveSession
+  case locationPermissionNeeded
+  case locationPermissionDenied
+  case geofenceBlocked(String)
+  case locationLoadFailed
+
+  var errorDescription: String? {
+    switch self {
+    case .noUnblocksRemaining:
+      return "No emergency unblocks remaining."
+    case .noActiveSession:
+      return "No active session to unblock."
+    case .locationPermissionNeeded:
+      return "Please allow location access to use emergency unblock, then try again."
+    case .locationPermissionDenied:
+      return
+        "Location access is denied. Enable location services in Settings to use emergency unblock."
+    case .geofenceBlocked(let message):
+      return message
+    case .locationLoadFailed:
+      return "Unable to load saved locations. Please try again."
+    }
+  }
+}
+
 /// Manages emergency unblock state (UserDefaults-backed counters, reset periods,
 /// lock settings) and logic (unblock, reset, CloudKit sync).
 /// Uses completion closures for session stop to avoid circular dependency with StrategyManager.
@@ -145,20 +174,19 @@ class EmergencyUnblockManager: ObservableObject {
   // MARK: - Emergency Unblock
 
   /// Perform an emergency unblock if allowed. Checks remaining count and geofence rules.
-  /// Calls `onUnblock` closure to delegate the actual session stop to StrategyManager.
+  /// Throws EmergencyUnblockError on failure. Calls `onUnblock` closure on success to delegate
+  /// the actual session stop to StrategyManager.
   func emergencyUnblock(
     context: ModelContext,
     activeSession: BlockedProfileSession?,
     onUnblock: @escaping (ModelContext, BlockedProfileSession) -> Void
-  ) {
-    // Do not allow emergency unblocks if there are no remaining
-    if emergencyUnblocksRemaining == 0 {
-      return
+  ) async throws(EmergencyUnblockError) {
+    guard emergencyUnblocksRemaining > 0 else {
+      throw .noUnblocksRemaining
     }
 
-    // Do not allow emergency unblocks if there is no active session
     guard let activeSession else {
-      return
+      throw .noActiveSession
     }
 
     // Check geofence rule if one exists and emergency override is not allowed
@@ -166,12 +194,9 @@ class EmergencyUnblockManager: ObservableObject {
       geofenceRule.hasLocations,
       !geofenceRule.allowEmergencyOverride
     {
-      geofenceEvaluator.checkGeofenceAndEmergencyUnblock(
-        context: context, rule: geofenceRule, session: activeSession
-      ) { ctx, sess in
-        self.performEmergencyUnblock(context: ctx, session: sess, onUnblock: onUnblock)
-      }
-      return
+      try await geofenceEvaluator.checkGeofenceForEmergencyUnblock(
+        context: context, rule: geofenceRule
+      )
     }
 
     performEmergencyUnblock(context: context, session: activeSession, onUnblock: onUnblock)
