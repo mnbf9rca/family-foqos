@@ -70,14 +70,15 @@ enum SharedData {
     case deviceSyncEnabled = "family_foqos_device_sync_enabled"
   }
 
-  /// Old key names used before migration. Extensions may read these
+  /// Old key names used before migration. Must match the `old` column in
+  /// `UserDefaultsMigration.appGroupKeyMapping`. Extensions may read these
   /// if they run before the main app has migrated post-update.
   private enum LegacyKey: String {
-    case profileSnapshots
-    case activeScheduleSession
-    case completedScheduleSessions
-    case deviceSyncId
-    case deviceSyncEnabled
+    case profileSnapshots = "profileSnapshots"
+    case activeScheduleSession = "activeScheduleSession"
+    case completedScheduleSessions = "completedScheduleSessions"
+    case deviceSyncId = "deviceSyncId"
+    case deviceSyncEnabled = "deviceSyncEnabled"
   }
 
   /// Read from suite with fallback to legacy key name (for pre-migration extension reads).
