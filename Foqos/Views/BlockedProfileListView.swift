@@ -42,7 +42,7 @@ struct BlockedProfileListView: View {
   @ViewBuilder
   private var contentView: some View {
     if profiles.isEmpty {
-      EmptyView(
+      EmptyStateView(
         iconName: "person.crop.circle.badge.plus",
         headingText:
           "Group and switch between sets of blocked restrictions with customizable profiles"

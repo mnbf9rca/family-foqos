@@ -39,8 +39,16 @@ enum EmergencyUnblockError: LocalizedError {
 class EmergencyUnblockManager: ObservableObject {
   static let shared = EmergencyUnblockManager()
 
-  private let geofenceEvaluator = GeofenceEvaluator.shared
-  private let profileSyncManager = ProfileSyncManager.shared
+  private let geofenceEvaluator: GeofenceEvaluator
+  private let profileSyncManager: ProfileSyncManager
+
+  init(
+    geofenceEvaluator: GeofenceEvaluator = .shared,
+    profileSyncManager: ProfileSyncManager = .shared
+  ) {
+    self.geofenceEvaluator = geofenceEvaluator
+    self.profileSyncManager = profileSyncManager
+  }
 
   private enum DefaultsKey {
     static let unblocksRemaining = "emergencyUnblocksRemaining"

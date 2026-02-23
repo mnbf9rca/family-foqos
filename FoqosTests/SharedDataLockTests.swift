@@ -8,7 +8,7 @@ final class SharedDataLockTests: XCTestCase {
     super.setUp()
     // Clean slate for each test
     SharedData.flushActiveSession()
-    _ = SharedData.getAndFlushCompletedSessionsForSchedular()
+    _ = SharedData.getAndFlushCompletedSessionsForScheduler()
   }
 
   func testSequentialSnapshotOperationsDoNotDeadlock() {
@@ -70,7 +70,7 @@ final class SharedDataLockTests: XCTestCase {
   func testEndActiveSharedSessionIsAtomic() {
     // Given: an active session
     let profileId = UUID()
-    SharedData.createSessionForSchedular(for: profileId)
+    SharedData.createSessionForScheduler(for: profileId)
     XCTAssertNotNil(SharedData.getActiveSharedSession())
 
     // When: end the session
@@ -78,7 +78,7 @@ final class SharedDataLockTests: XCTestCase {
 
     // Then: session moved to completed, active is nil
     XCTAssertNil(SharedData.getActiveSharedSession())
-    let completed = SharedData.getAndFlushCompletedSessionsForSchedular()
+    let completed = SharedData.getAndFlushCompletedSessionsForScheduler()
     XCTAssertEqual(completed.count, 1)
     XCTAssertEqual(completed.first?.blockedProfileId, profileId)
   }
@@ -87,13 +87,13 @@ final class SharedDataLockTests: XCTestCase {
     // Given: two completed sessions
     let profileId1 = UUID()
     let profileId2 = UUID()
-    SharedData.createSessionForSchedular(for: profileId1)
+    SharedData.createSessionForScheduler(for: profileId1)
     SharedData.endActiveSharedSession()
-    SharedData.createSessionForSchedular(for: profileId2)
+    SharedData.createSessionForScheduler(for: profileId2)
     SharedData.endActiveSharedSession()
 
     // When: atomic get-and-flush
-    let flushed = SharedData.getAndFlushCompletedSessionsForSchedular()
+    let flushed = SharedData.getAndFlushCompletedSessionsForScheduler()
 
     // Then: returns both sessions and clears storage
     XCTAssertEqual(flushed.count, 2)
@@ -102,7 +102,7 @@ final class SharedDataLockTests: XCTestCase {
     }
     XCTAssertEqual(flushed[0].blockedProfileId, profileId1)
     XCTAssertEqual(flushed[1].blockedProfileId, profileId2)
-    XCTAssertTrue(SharedData.getAndFlushCompletedSessionsForSchedular().isEmpty)
+    XCTAssertTrue(SharedData.getAndFlushCompletedSessionsForScheduler().isEmpty)
   }
 
   // MARK: - Helpers

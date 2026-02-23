@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct EmptyView: View {
+struct EmptyStateView: View {
   let iconName: String
   let headingText: String
 
@@ -26,5 +26,5 @@ struct EmptyView: View {
 }
 
 #Preview {
-  EmptyView(iconName: "tray", headingText: "No items in your list")
+  EmptyStateView(iconName: "tray", headingText: "No items in your list")
 }

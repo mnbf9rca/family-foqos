@@ -6,8 +6,12 @@ import WidgetKit
 class StrategyManager: ObservableObject {
   static let shared = StrategyManager()
 
-  private let geofenceEvaluator = GeofenceEvaluator.shared
-  private let emergencyUnblockManager = EmergencyUnblockManager.shared
+  private let geofenceEvaluator: GeofenceEvaluator
+  private let emergencyUnblockManager: EmergencyUnblockManager
+  private let liveActivityManager: LiveActivityManager
+  private let profileSyncManager: ProfileSyncManager
+  private let sessionSyncService: SessionSyncService
+  private let locationManager: LocationManager
 
   @Published var elapsedTime: TimeInterval = 0
   @Published var timer: Timer?
@@ -18,11 +22,24 @@ class StrategyManager: ObservableObject {
 
   @Published var errorMessage: String?
 
-  private let liveActivityManager = LiveActivityManager.shared
-  private let profileSyncManager = ProfileSyncManager.shared
-
   private let timersUtil = TimersUtil()
   private let appBlocker = AppBlockerUtil()
+
+  init(
+    geofenceEvaluator: GeofenceEvaluator = .shared,
+    emergencyUnblockManager: EmergencyUnblockManager = .shared,
+    liveActivityManager: LiveActivityManager = .shared,
+    profileSyncManager: ProfileSyncManager = .shared,
+    sessionSyncService: SessionSyncService = .shared,
+    locationManager: LocationManager = .shared
+  ) {
+    self.geofenceEvaluator = geofenceEvaluator
+    self.emergencyUnblockManager = emergencyUnblockManager
+    self.liveActivityManager = liveActivityManager
+    self.profileSyncManager = profileSyncManager
+    self.sessionSyncService = sessionSyncService
+    self.locationManager = locationManager
+  }
 
   // Track if we're currently processing a remote session change
   private var processingRemoteChange = false
@@ -251,7 +268,7 @@ class StrategyManager: ObservableObject {
         if let geofenceRule = localActiveSession.blockedProfile.geofenceRule,
           geofenceRule.hasLocations
         {
-          let locationManager = LocationManager.shared
+          let locationManager = self.locationManager
           if locationManager.isNotDetermined {
             locationManager.requestAuthorization()
             self.errorMessage =
@@ -470,7 +487,7 @@ class StrategyManager: ObservableObject {
     guard shouldSyncSessionChange else { return }
 
     Task { @MainActor in
-      let result = await SessionSyncService.shared.startSession(
+      let result = await sessionSyncService.startSession(
         profileId: session.blockedProfile.id,
         startTime: session.startTime
       )
@@ -593,7 +610,7 @@ class StrategyManager: ObservableObject {
         // Sync session stop using CAS (if global sync is enabled)
         if self.shouldSyncSessionChange {
           Task {
-            let result = await SessionSyncService.shared.stopSession(
+            let result = await self.sessionSyncService.stopSession(
               profileId: endedProfile.id
             )
 
@@ -605,7 +622,7 @@ class StrategyManager: ObservableObject {
             case .conflict(let current):
               Log.info("Stop conflict, current seq=\(current.sequenceNumber)", category: .strategy)
               // Retry stop once
-              let retryResult = await SessionSyncService.shared.stopSession(
+              let retryResult = await self.sessionSyncService.stopSession(
                 profileId: endedProfile.id)
               switch retryResult {
               case .stopped(let seq):
@@ -714,7 +731,7 @@ class StrategyManager: ObservableObject {
       // This ensures multi-device coordination for scheduled profile activations
       if profileSyncManager.isEnabled {
         Task {
-          let result = await SessionSyncService.shared.startSession(
+          let result = await sessionSyncService.startSession(
             profileId: activeScheduledSession.blockedProfileId,
             startTime: activeScheduledSession.startTime
           )
@@ -751,7 +768,7 @@ class StrategyManager: ObservableObject {
     }
 
     // Process any completed scheduled sessions
-    let completedScheduleSessions = SharedData.getAndFlushCompletedSessionsForSchedular()
+    let completedScheduleSessions = SharedData.getAndFlushCompletedSessionsForScheduler()
     for completedScheduleSession in completedScheduleSessions {
       BlockedProfileSession.upsertSessionFromSnapshot(
         in: context,
@@ -761,7 +778,7 @@ class StrategyManager: ObservableObject {
       // Sync scheduled session end using CAS (if global sync is enabled)
       if profileSyncManager.isEnabled, let endTime = completedScheduleSession.endTime {
         Task {
-          let result = await SessionSyncService.shared.stopSession(
+          let result = await sessionSyncService.stopSession(
             profileId: completedScheduleSession.blockedProfileId,
             endTime: endTime
           )

@@ -4,6 +4,8 @@ import SwiftUI
 class ThemeManager: ObservableObject {
   static let shared = ThemeManager()
 
+  private init() {}
+
   // Single source of truth for all theme colors
   // nonisolated: Safe because it's immutable data accessed by Shield extension
   nonisolated static let availableColors: [(name: String, color: Color)] = [

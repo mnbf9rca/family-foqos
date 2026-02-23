@@ -96,7 +96,7 @@ class BlockedProfileSession: BreakDurationCalculable {
 
     // If this was a schedule-started session, record when it stopped.
     // The reader in ScheduleTimerActivity compares this against today's start time.
-    // Schedule-started sessions have tag == profile UUID (set by createSessionForSchedular).
+    // Schedule-started sessions have tag == profile UUID (set by createSessionForScheduler).
     let isScheduleStarted = (tag == blockedProfile.id.uuidString)
     if isScheduleStarted, modelContext != nil {
       blockedProfile.scheduleLastStoppedAt = endTime

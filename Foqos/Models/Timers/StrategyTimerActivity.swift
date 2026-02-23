@@ -52,7 +52,7 @@ class StrategyTimerActivity: TimerActivity {
     }
 
     // If this was a schedule-started session, record when it stopped.
-    // Schedule-started sessions have tag == profile UUID (set by createSessionForSchedular).
+    // Schedule-started sessions have tag == profile UUID (set by createSessionForScheduler).
     let isScheduleStarted = (activeSession.tag == profileId)
     if isScheduleStarted {
       let now = Date()
