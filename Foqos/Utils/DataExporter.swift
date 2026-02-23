@@ -60,7 +60,11 @@ struct DataExporter {
     if let first = field.first, "=+-@".contains(first) {
       field = "\t" + field
     }
-    if field.contains(",") || field.contains("\"") || field.contains("\n") {
+    // Swift treats \r\n as a single grapheme cluster, so contains("\n") misses CRLF pairs.
+    // All three checks are needed: \n (standalone LF), \r\n (CRLF pair), \r (standalone CR).
+    if field.contains(",") || field.contains("\"") || field.contains("\n")
+      || field.contains("\r\n") || field.contains("\r")
+    {
       let escaped = field.replacingOccurrences(of: "\"", with: "\"\"")
       return "\"\(escaped)\""
     }

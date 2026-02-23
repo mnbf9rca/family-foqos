@@ -45,4 +45,21 @@ final class DataExporterTests: XCTestCase {
   func testGivenEmptyField_WhenEscaping_ThenReturnsEmpty() {
     XCTAssertEqual(DataExporter.escapeCSVField(""), "")
   }
+
+  // MARK: - CSV Quoting Regression
+
+  func testGivenFieldWithQuotes_WhenEscaping_ThenDoubledAndWrapped() {
+    let result = DataExporter.escapeCSVField("he said \"yes\"")
+    XCTAssertEqual(result, "\"he said \"\"yes\"\"\"")
+  }
+
+  func testGivenFieldWithCRLF_WhenEscaping_ThenQuoted() {
+    let result = DataExporter.escapeCSVField("line1\r\nline2")
+    XCTAssertEqual(result, "\"line1\r\nline2\"")
+  }
+
+  func testGivenFieldWithStandaloneCR_WhenEscaping_ThenQuoted() {
+    let result = DataExporter.escapeCSVField("line1\rline2")
+    XCTAssertEqual(result, "\"line1\rline2\"")
+  }
 }

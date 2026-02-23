@@ -137,6 +137,9 @@ struct LabeledCodeScannerView: View {
       isShowingScanner = false
       errorMessage = nil
       scanError = nil
+      // Hash at the scan choke point so all callers receive opaque digests.
+      // V1 profiles with active QR sessions store plaintext physicalUnblockQRCodeId;
+      // those sessions will mismatch until ended (Emergency Unblock) and migrated to V2.
       onScanResult(.success(QRCodeHasher.hash(scanResult.string)))
     case .failure(let error):
       if case ScanError.permissionDenied = error {
