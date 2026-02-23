@@ -21,6 +21,12 @@ class SyncCoordinator: ObservableObject {
   ) {
     self.sessionController = sessionController
     self.syncManager = syncManager
+    if let existing = syncManager.syncEventDelegate, existing !== self {
+      Log.warning(
+        "Overwriting existing syncEventDelegate — multiple SyncCoordinator instances detected",
+        category: .sync
+      )
+    }
     syncManager.syncEventDelegate = self
   }
 
