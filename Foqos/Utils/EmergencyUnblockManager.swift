@@ -3,6 +3,35 @@ import SwiftData
 import SwiftUI
 import WidgetKit
 
+/// Typed errors for the emergency unblock flow.
+/// Covers all failure modes: no unblocks remaining, no active session, and geofence restrictions.
+enum EmergencyUnblockError: LocalizedError {
+  case noUnblocksRemaining
+  case noActiveSession
+  case locationPermissionNeeded
+  case locationPermissionDenied
+  case geofenceBlocked(String)
+  case locationLoadFailed
+
+  var errorDescription: String? {
+    switch self {
+    case .noUnblocksRemaining:
+      return "No emergency unblocks remaining."
+    case .noActiveSession:
+      return "No active session to unblock."
+    case .locationPermissionNeeded:
+      return "Please allow location access to use emergency unblock, then try again."
+    case .locationPermissionDenied:
+      return
+        "Location access is denied. Enable location services in Settings to use emergency unblock."
+    case .geofenceBlocked(let message):
+      return message
+    case .locationLoadFailed:
+      return "Unable to load saved locations. Please try again."
+    }
+  }
+}
+
 /// Manages emergency unblock state (UserDefaults-backed counters, reset periods,
 /// lock settings) and logic (unblock, reset, CloudKit sync).
 /// Uses completion closures for session stop to avoid circular dependency with StrategyManager.
