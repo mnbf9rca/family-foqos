@@ -44,9 +44,6 @@ struct ProfileSessionRecord: Codable, Equatable, Sendable {
 
   static let recordType = "ProfileSession"
 
-  /// Key used in NotificationCenter userInfo for session records
-  static let sessionsUserInfoKey = "sessions"
-
   enum FieldKey: String {
     case profileId
     case isActive

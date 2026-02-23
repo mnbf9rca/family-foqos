@@ -34,6 +34,9 @@ class ProfileSyncManager: ObservableObject {
   /// Set to true when legacy records were cleaned up and user should be notified
   @Published var shouldShowSyncUpgradeNotice = false
 
+  /// Typed delegate for sync events (replaces NotificationCenter notifications)
+  weak var syncEventDelegate: SyncEventDelegate?
+
   // MARK: - Private State
 
   private var syncZoneVerified = false
@@ -348,7 +351,7 @@ class ProfileSyncManager: ObservableObject {
       try await pullEmergencySettings()
 
       // Request push of local data (SyncCoordinator will handle this)
-      NotificationCenter.default.post(name: .localDataPushRequested, object: nil)
+      syncEventDelegate?.didRequestLocalDataPush()
 
       self.isSyncing = false
       self.syncStatus = .idle
@@ -390,10 +393,8 @@ class ProfileSyncManager: ObservableObject {
             category: .sync)
 
           // Notify coordinator to handle the reset
-          NotificationCenter.default.post(
-            name: .syncResetRequested,
-            object: nil,
-            userInfo: ["clearAppSelections": resetRequest.clearRemoteAppSelections]
+          syncEventDelegate?.didReceiveSyncReset(
+            clearAppSelections: resetRequest.clearRemoteAppSelections
           )
 
           // Delete the processed reset request
@@ -528,13 +529,9 @@ class ProfileSyncManager: ObservableObject {
 
       // Notify about received profiles, including full remote ID set
       // so deletion reconciliation doesn't treat decode failures as deletions
-      NotificationCenter.default.post(
-        name: .syncedProfilesReceived,
-        object: nil,
-        userInfo: [
-          "profiles": syncedProfiles,
-          "remoteProfileIds": allRemoteProfileIds,
-        ]
+      syncEventDelegate?.didReceiveSyncedProfiles(
+        syncedProfiles,
+        remoteProfileIds: allRemoteProfileIds
       )
     } catch let error as CKError {
       if error.code == .zoneNotFound || error.code == .unknownItem {
@@ -610,11 +607,7 @@ class ProfileSyncManager: ObservableObject {
       }
 
       // Notify coordinator about sessions
-      NotificationCenter.default.post(
-        name: .profileSessionRecordsReceived,
-        object: nil,
-        userInfo: [ProfileSessionRecord.sessionsUserInfoKey: sessions]
-      )
+      syncEventDelegate?.didReceiveSessionRecords(sessions)
     } catch let error as CKError {
       if error.code == .zoneNotFound || error.code == .unknownItem {
         Log.info("No session records found in CloudKit", category: .sync)
@@ -737,13 +730,9 @@ class ProfileSyncManager: ObservableObject {
 
       // Notify about received locations, including full remote ID set
       // so deletion reconciliation doesn't treat decode failures as deletions
-      NotificationCenter.default.post(
-        name: .syncedLocationsReceived,
-        object: nil,
-        userInfo: [
-          "locations": syncedLocations,
-          "remoteLocationIds": allRemoteLocationIds,
-        ]
+      syncEventDelegate?.didReceiveSyncedLocations(
+        syncedLocations,
+        remoteLocationIds: allRemoteLocationIds
       )
     } catch let error as CKError {
       if error.code == .zoneNotFound || error.code == .unknownItem {
@@ -787,11 +776,7 @@ class ProfileSyncManager: ObservableObject {
         return
       }
 
-      NotificationCenter.default.post(
-        name: .emergencySettingsReceived,
-        object: nil,
-        userInfo: [SyncedEmergencySettings.settingsUserInfoKey: settings]
-      )
+      syncEventDelegate?.didReceiveEmergencySettings(settings)
 
       Log.info("Pulled emergency settings v\(settings.version)", category: .sync)
     } catch let error as CKError {
@@ -860,11 +845,7 @@ class ProfileSyncManager: ObservableObject {
       Log.info("Reset sync complete", category: .sync)
 
       // Notify to re-push local profiles
-      NotificationCenter.default.post(
-        name: .syncResetRequested,
-        object: nil,
-        userInfo: ["clearAppSelections": clearRemoteAppSelections]
-      )
+      syncEventDelegate?.didReceiveSyncReset(clearAppSelections: clearRemoteAppSelections)
     } catch {
       Log.info("Reset sync failed - \(error)", category: .sync)
       self.isSyncing = false
@@ -917,15 +898,4 @@ class ProfileSyncManager: ObservableObject {
     Log.info("Handling remote notification", category: .sync)
     await performFullSync()
   }
-}
-
-// MARK: - Notification Names
-
-extension Notification.Name {
-  static let syncedProfilesReceived = Notification.Name("syncedProfilesReceived")
-  static let syncedLocationsReceived = Notification.Name("syncedLocationsReceived")
-  static let syncResetRequested = Notification.Name("syncResetRequested")
-  static let localDataPushRequested = Notification.Name("localDataPushRequested")
-  static let profileSessionRecordsReceived = Notification.Name("profileSessionRecordsReceived")
-  static let emergencySettingsReceived = Notification.Name("emergencySettingsReceived")
 }

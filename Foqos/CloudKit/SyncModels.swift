@@ -453,8 +453,6 @@ struct SyncedEmergencySettings: Codable, Equatable {
   static let recordType = "EmergencySettings"
   static let recordName = "emergency-settings"
 
-  static let settingsUserInfoKey = "emergencySettings"
-
   // MARK: - CloudKit Field Keys
 
   enum FieldKey: String {
