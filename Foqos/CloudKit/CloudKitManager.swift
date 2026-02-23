@@ -6,15 +6,12 @@ import Foundation
 class CloudKitManager: ObservableObject {
   static let shared = CloudKitManager()
 
-  // CloudKit container identifier (must match entitlements)
-  private let containerIdentifier = "iCloud.com.cynexia.family-foqos"
-
   // Custom zone for family policies (enables sharing)
   private let policyZoneName = "FamilyPolicies"
 
   // CloudKit container and databases
   private lazy var container: CKContainer = {
-    CKContainer(identifier: containerIdentifier)
+    CKContainer(identifier: CloudKitConstants.containerIdentifier)
   }()
 
   private var privateDatabase: CKDatabase {
