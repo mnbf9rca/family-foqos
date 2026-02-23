@@ -222,7 +222,7 @@ struct EmergencyView: View {
   private func performEmergencyUnblock() {
     isPerformingEmergencyUnblock = true
 
-    Task {
+    Task { @MainActor in
       try? await Task.sleep(for: .milliseconds(600))
       do {
         try await strategyManager.emergencyUnblock(context: context)
