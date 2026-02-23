@@ -22,7 +22,7 @@ class GeofenceEvaluator: ObservableObject {
   @Published var errorMessage: String?
 
   // Geofence start warning state
-  @AppStorage("warnWhenActivatingAwayFromLocation") private var warnWhenActivatingAwayFromLocation =
+  @AppStorage("family_foqos_warn_when_activating_away_from_location") private var warnWhenActivatingAwayFromLocation =
     true
   @Published var showGeofenceStartWarning: Bool = false
   @Published var pendingStartProfile: BlockedProfiles? = nil

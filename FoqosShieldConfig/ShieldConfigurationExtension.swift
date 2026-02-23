@@ -41,9 +41,11 @@ class ShieldConfigurationExtension: ShieldConfigurationDataSource {
   {
     // Get user's selected theme color directly from UserDefaults
     // (Extension runs in separate process, can't use @MainActor ThemeManager.shared)
+    let appGroupDefaults = UserDefaults(suiteName: "group.com.cynexia.family-foqos")
     let colorName =
-      UserDefaults(suiteName: "group.com.cynexia.family-foqos")?
-      .string(forKey: "familyFoqosThemeColorName") ?? "Grimace Purple"
+      appGroupDefaults?.string(forKey: "family_foqos_theme_color_name")
+      ?? appGroupDefaults?.string(forKey: "familyFoqosThemeColorName")
+      ?? "Grimace Purple"
     let themeColor =
       ThemeManager.availableColors.first { $0.name == colorName }?.color
       ?? ThemeManager.availableColors.first!.color

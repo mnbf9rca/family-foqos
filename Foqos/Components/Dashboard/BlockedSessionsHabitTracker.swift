@@ -9,7 +9,7 @@ struct BlockedSessionsHabitTracker: View {
   @State private var selectedDate: Date?
   @State private var selectedSessions: [BlockedProfileSession] = []
   @State private var showingSessionDetails = false
-  @AppStorage("showHabitTracker") private var showHabitTracker = true
+  @AppStorage("family_foqos_show_habit_tracker") private var showHabitTracker = true
 
   // Number of days to show in the tracker
   private let daysToShow = 28  // 4 weeks (7 days x 4)

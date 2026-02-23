@@ -61,14 +61,14 @@ struct HomeView: View {
   @State private var alertMessage = ""
 
   // Intro sheet
-  @AppStorage("showIntroScreen") private var showIntroScreen = true
+  @AppStorage("family_foqos_show_intro_screen") private var showIntroScreen = true
 
   // Mode selection
   @ObservedObject private var appModeManager = AppModeManager.shared
-  @AppStorage("showModeSelection") private var showModeSelection = false
+  @AppStorage("family_foqos_show_mode_selection") private var showModeSelection = false
 
   // Onboarding completion — persists across launches, cleared on app delete
-  @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
+  @AppStorage("family_foqos_has_completed_onboarding") private var hasCompletedOnboarding = false
 
   // Sync conflict manager
   @ObservedObject private var syncConflictManager = SyncConflictManager.shared
@@ -661,7 +661,7 @@ struct HomeView: View {
     .defaultAppStorage(UserDefaults(suiteName: "preview")!)
     .onAppear {
       let defaults = UserDefaults(suiteName: "preview")!
-      defaults.set(false, forKey: "showIntroScreen")
-      defaults.set(true, forKey: "hasCompletedOnboarding")
+      defaults.set(false, forKey: "family_foqos_show_intro_screen")
+      defaults.set(true, forKey: "family_foqos_has_completed_onboarding")
     }
 }

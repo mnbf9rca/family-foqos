@@ -27,7 +27,7 @@ final class TimersUtil: @unchecked Sendable {  // SAFETY: Mutable state (backgro
   /// Constants for background task identifiers
   static let backgroundProcessingTaskIdentifier =
     "com.cynexia.family-foqos.backgroundprocessing"
-  static let backgroundTaskUserDefaultsKey = "com.cynexia.family-foqos.backgroundtasks"
+  static let backgroundTaskUserDefaultsKey = "family_foqos_background_tasks"
 
   /// Pre-activation reminder notification identifier prefix
   static let preActivationReminderPrefix = "pre-activation-reminder-"

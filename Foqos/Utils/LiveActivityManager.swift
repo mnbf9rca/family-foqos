@@ -8,7 +8,7 @@ class LiveActivityManager: ObservableObject {
   @Published var currentActivity: Activity<FoqosWidgetAttributes>?
 
   // Use AppStorage for persisting the activity ID across app launches
-  @AppStorage("com.cynexia.family-foqos.currentActivityId") private var storedActivityId: String = ""
+  @AppStorage("family_foqos_current_activity_id") private var storedActivityId: String = ""
 
   static let shared = LiveActivityManager()
 

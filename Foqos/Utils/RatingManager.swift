@@ -7,8 +7,8 @@ class RatingManager: ObservableObject {
 
   private init() {}
 
-  @AppStorage("launchCount") private var launchCount = 0
-  @AppStorage("lastVersionPromptedForReview") private var lastVersionPromptedForReview: String?
+  @AppStorage("family_foqos_launch_count") private var launchCount = 0
+  @AppStorage("family_foqos_last_version_prompted_for_review") private var lastVersionPromptedForReview: String?
   @Published var shouldRequestReview = false
 
   func incrementLaunchCount() {
