@@ -9,13 +9,15 @@ class SyncCoordinator: ObservableObject {
   static let shared = SyncCoordinator()
 
   private var cancellables = Set<AnyCancellable>()
+  private let sessionController: SessionController
   private var modelContext: ModelContext?
 
   /// Tracks profile IDs that have active sessions started via remote trigger.
   /// Used to determine which sessions should be auto-stopped when remote ends.
   private var remoteTriggeredProfileIds: Set<UUID> = []
 
-  private init() {
+  init(sessionController: SessionController = StrategyManager.shared) {
+    self.sessionController = sessionController
     setupNotificationObservers()
   }
 
@@ -413,11 +415,11 @@ class SyncCoordinator: ObservableObject {
 
     case .notFound:
       // No session record - ensure local is stopped
-      if let active = StrategyManager.shared.activeSession,
+      if let active = sessionController.activeSession,
         active.blockedProfile.id == profileId
       {
         Log.info("No remote session, stopping local", category: .sync)
-        StrategyManager.shared.stopRemoteSession(context: context, profileId: profileId)
+        sessionController.stopRemoteSession(context: context, profileId: profileId)
       }
 
     case .error(let error):
@@ -439,14 +441,14 @@ class SyncCoordinator: ObservableObject {
       return
     }
 
-    let localActive = StrategyManager.shared.activeSession?.blockedProfile.id == profileId
+    let localActive = sessionController.activeSession?.blockedProfile.id == profileId
 
     if session.isActive && !localActive {
       // Remote is active, local is not - start locally
       Log.info("Remote session active, starting locally", category: .sync)
 
       if let startTime = session.startTime {
-        StrategyManager.shared.startRemoteSession(
+        sessionController.startRemoteSession(
           context: context,
           profileId: profileId,
           sessionId: UUID(),  // Local tracking only
@@ -459,7 +461,7 @@ class SyncCoordinator: ObservableObject {
       // Remote is stopped, local is active - stop locally
       // In the single-record model, the CloudKit record is authoritative
       Log.info("Remote session stopped, stopping locally", category: .sync)
-      StrategyManager.shared.stopRemoteSession(context: context, profileId: profileId)
+      sessionController.stopRemoteSession(context: context, profileId: profileId)
       remoteTriggeredProfileIds.remove(profileId)
     }
   }
