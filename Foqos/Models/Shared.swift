@@ -63,11 +63,11 @@ enum SharedData {
   // MARK: – Keys
 
   private enum Key: String {
-    case profileSnapshots
-    case activeScheduleSession
-    case completedScheduleSessions
-    case deviceSyncId
-    case deviceSyncEnabled
+    case profileSnapshots = "family_foqos_profile_snapshots"
+    case activeScheduleSession = "family_foqos_active_schedule_session"
+    case completedScheduleSessions = "family_foqos_completed_schedule_sessions"
+    case deviceSyncId = "family_foqos_device_sync_id"
+    case deviceSyncEnabled = "family_foqos_device_sync_enabled"
   }
 
   // MARK: – Serializable snapshot of a profile (no sessions)
