@@ -235,53 +235,39 @@ class GeofenceEvaluator: ObservableObject {
 
   // MARK: - Emergency Unblock Geofence Check
 
-  /// Check geofence rule and perform emergency unblock if satisfied
-  func checkGeofenceAndEmergencyUnblock(
+  /// Evaluate geofence rule for emergency unblock. Throws on failure.
+  /// Caller awaits the result — no fire-and-forget Task, no closure callback.
+  func checkGeofenceForEmergencyUnblock(
     context: ModelContext,
-    rule: ProfileGeofenceRule,
-    session: BlockedProfileSession,
-    onUnblock: @escaping (ModelContext, BlockedProfileSession) -> Void
-  ) {
-    // Request permission if not determined
+    rule: ProfileGeofenceRule
+  ) async throws(EmergencyUnblockError) {
     if locationManager.isNotDetermined {
       locationManager.requestAuthorization()
-      errorMessage = "Please allow location access to use emergency unblock, then try again."
-      return
+      throw .locationPermissionNeeded
     }
 
-    // Check if permission is denied
     if locationManager.isDenied {
-      errorMessage =
-        "Location access is denied. Enable location services in Settings to use emergency unblock."
-      return
+      throw .locationPermissionDenied
     }
 
     isCheckingGeofence = true
+    defer { isCheckingGeofence = false }
 
-    // Capture saved locations before entering the Task to avoid Sendable warnings
     let ruleToCheck = rule
     let savedLocationsSnapshot: [SavedLocation]
     do {
       savedLocationsSnapshot = try SavedLocation.fetchAll(in: context)
     } catch {
-      self.isCheckingGeofence = false
-      self.errorMessage = "Unable to load saved locations. Please try again."
-      return
+      throw .locationLoadFailed
     }
 
-    Task { @MainActor in
-      let result = await locationManager.checkGeofenceRule(
-        rule: ruleToCheck,
-        savedLocations: savedLocationsSnapshot
-      )
+    let result = await locationManager.checkGeofenceRule(
+      rule: ruleToCheck,
+      savedLocations: savedLocationsSnapshot
+    )
 
-      self.isCheckingGeofence = false
-
-      if result.isSatisfied {
-        onUnblock(context, session)
-      } else {
-        self.errorMessage = result.failureMessage ?? "Location restriction not met."
-      }
+    if !result.isSatisfied {
+      throw .geofenceBlocked(result.failureMessage ?? "Location restriction not met.")
     }
   }
 
