@@ -657,6 +657,7 @@ struct HomeView: View {
     .environmentObject(GeofenceEvaluator.shared)
     .environmentObject(NavigationManager())
     .environmentObject(StrategyManager())
+    .environmentObject(RatingManager())
     .defaultAppStorage(UserDefaults(suiteName: "preview")!)
     .onAppear {
       let defaults = UserDefaults(suiteName: "preview")!
