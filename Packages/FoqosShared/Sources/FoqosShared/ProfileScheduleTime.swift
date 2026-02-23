@@ -1,4 +1,3 @@
-// Foqos/Models/ProfileScheduleTime.swift
 import Foundation
 
 /// A time-of-day schedule for starting or stopping a profile.
