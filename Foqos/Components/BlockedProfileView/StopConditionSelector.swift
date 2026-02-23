@@ -131,8 +131,8 @@ struct StopConditionSelector: View {
   @ViewBuilder
   private func scanRow(tagId: String?, onScan: @escaping () -> Void, label: String) -> some View {
     HStack {
-      if let tagId {
-        Text("\(label): \(tagId)")
+      if tagId != nil {
+        Text("\(label) set")
           .font(.caption)
           .foregroundStyle(.secondary)
       }
