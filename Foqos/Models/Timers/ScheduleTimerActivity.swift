@@ -76,7 +76,7 @@ class ScheduleTimerActivity: TimerActivity {
       }
     }
 
-    SharedData.createSessionForSchedular(for: profile.id)
+    SharedData.createSessionForScheduler(for: profile.id)
     appBlocker.activateRestrictions(for: profile)
   }
 

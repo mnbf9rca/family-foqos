@@ -178,7 +178,7 @@ enum SharedData {
 
   // MARK: – Persisted array of scheduled sessions
 
-  static var completedSessionsInSchedular: [SessionSnapshot] {
+  static var completedSessionsInScheduler: [SessionSnapshot] {
     get {
       guard let data = suite.data(forKey: Key.completedScheduleSessions.rawValue) else { return [] }
       return (try? JSONDecoder().decode([SessionSnapshot].self, from: data)) ?? []
@@ -208,7 +208,7 @@ enum SharedData {
     }
   }
 
-  static func createSessionForSchedular(for profileID: UUID) {
+  static func createSessionForScheduler(for profileID: UUID) {
     withLock {
       activeSharedSession = SessionSnapshot(
         id: UUID().uuidString,
@@ -235,7 +235,7 @@ enum SharedData {
       guard var existingScheduledSession = activeSharedSession else { return }
 
       existingScheduledSession.endTime = Date()
-      completedSessionsInSchedular.append(existingScheduledSession)
+      completedSessionsInScheduler.append(existingScheduledSession)
 
       activeSharedSession = nil
     }
@@ -262,10 +262,10 @@ enum SharedData {
   /// Atomically reads and clears completed scheduled sessions.
   /// Use this in production instead of separate get + flush calls
   /// to prevent TOCTOU races with concurrent endActiveSharedSession() writes.
-  static func getAndFlushCompletedSessionsForSchedular() -> [SessionSnapshot] {
+  static func getAndFlushCompletedSessionsForScheduler() -> [SessionSnapshot] {
     withLock {
-      let sessions = completedSessionsInSchedular
-      completedSessionsInSchedular = []
+      let sessions = completedSessionsInScheduler
+      completedSessionsInScheduler = []
       return sessions
     }
   }

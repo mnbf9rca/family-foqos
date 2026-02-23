@@ -768,7 +768,7 @@ class StrategyManager: ObservableObject {
     }
 
     // Process any completed scheduled sessions
-    let completedScheduleSessions = SharedData.getAndFlushCompletedSessionsForSchedular()
+    let completedScheduleSessions = SharedData.getAndFlushCompletedSessionsForScheduler()
     for completedScheduleSession in completedScheduleSessions {
       BlockedProfileSession.upsertSessionFromSnapshot(
         in: context,
