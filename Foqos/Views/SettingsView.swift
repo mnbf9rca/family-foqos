@@ -22,7 +22,7 @@ struct SettingsView: View {
   @State private var showDebugView = false
   @State private var syncErrorMessage: String?
 
-  @AppStorage("warnWhenActivatingAwayFromLocation") private var warnWhenActivatingAwayFromLocation =
+  @AppStorage("family_foqos_warn_when_activating_away_from_location") private var warnWhenActivatingAwayFromLocation =
     true
 
   private var appVersion: String {
