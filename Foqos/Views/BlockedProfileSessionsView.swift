@@ -231,7 +231,7 @@ struct BlockedProfileSessionsView: View {
 
     var body: some View {
       BlockedProfileSessionsView(profile: profile)
-        .environmentObject(ThemeManager())
+        .environmentObject(ThemeManager.shared)
         .modelContainer(container)
     }
   }

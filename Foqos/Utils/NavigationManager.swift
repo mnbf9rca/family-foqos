@@ -2,6 +2,10 @@ import SwiftUI
 
 @MainActor
 class NavigationManager: ObservableObject {
+  static let shared = NavigationManager()
+
+  private init() {}
+
   @Published var profileId: String? = nil
   @Published var link: URL? = nil
 

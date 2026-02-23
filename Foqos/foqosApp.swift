@@ -62,9 +62,9 @@ class PendingShareAcceptance: ObservableObject {
 @main
 struct foqosApp: App {
   @StateObject private var requestAuthorizer = RequestAuthorizer()
-  @StateObject private var navigationManager = NavigationManager()
+  @StateObject private var navigationManager = NavigationManager.shared
   @StateObject private var nfcWriter = NFCWriter()
-  @StateObject private var ratingManager = RatingManager()
+  @StateObject private var ratingManager = RatingManager.shared
 
   // Singletons for shared functionality
   @StateObject private var strategyManager = StrategyManager.shared

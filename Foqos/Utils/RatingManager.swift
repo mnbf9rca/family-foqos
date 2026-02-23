@@ -3,6 +3,10 @@ import SwiftUI
 
 @MainActor
 class RatingManager: ObservableObject {
+  static let shared = RatingManager()
+
+  private init() {}
+
   @AppStorage("launchCount") private var launchCount = 0
   @AppStorage("lastVersionPromptedForReview") private var lastVersionPromptedForReview: String?
   @Published var shouldRequestReview = false
