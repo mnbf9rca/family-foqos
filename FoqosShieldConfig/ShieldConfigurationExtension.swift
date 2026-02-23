@@ -43,7 +43,7 @@ class ShieldConfigurationExtension: ShieldConfigurationDataSource {
     // (Extension runs in separate process, can't use @MainActor ThemeManager.shared)
     let colorName =
       UserDefaults(suiteName: "group.com.cynexia.family-foqos")?
-      .string(forKey: "familyFoqosThemeColorName") ?? "Grimace Purple"
+      .string(forKey: "family_foqos_theme_color_name") ?? "Grimace Purple"
     let themeColor =
       ThemeManager.availableColors.first { $0.name == colorName }?.color
       ?? ThemeManager.availableColors.first!.color
