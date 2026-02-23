@@ -1,24 +1,27 @@
-import Combine
 import Foundation
 import SwiftData
 
-/// Coordinates between ProfileSyncManager notifications and local SwiftData storage.
-/// Handles incoming synced profiles, sessions, and locations from other devices.
+/// Coordinates between ProfileSyncManager sync events and local SwiftData storage.
+/// Implements SyncEventDelegate to handle profiles, sessions, and locations from other devices.
 @MainActor
 class SyncCoordinator: ObservableObject {
   static let shared = SyncCoordinator()
 
-  private var cancellables = Set<AnyCancellable>()
   private let sessionController: SessionController
+  private let syncManager: ProfileSyncManager
   private var modelContext: ModelContext?
 
   /// Tracks profile IDs that have active sessions started via remote trigger.
   /// Used to determine which sessions should be auto-stopped when remote ends.
   private var remoteTriggeredProfileIds: Set<UUID> = []
 
-  init(sessionController: SessionController = StrategyManager.shared) {
+  init(
+    sessionController: SessionController = StrategyManager.shared,
+    syncManager: ProfileSyncManager = .shared
+  ) {
     self.sessionController = sessionController
-    setupNotificationObservers()
+    self.syncManager = syncManager
+    syncManager.syncEventDelegate = self
   }
 
   // MARK: - Setup
@@ -28,86 +31,12 @@ class SyncCoordinator: ObservableObject {
     self.modelContext = context
   }
 
-  private func setupNotificationObservers() {
-    // Observe synced profiles
-    NotificationCenter.default.publisher(for: .syncedProfilesReceived)
-      .receive(on: DispatchQueue.main)
-      .sink { [weak self] notification in
-        guard let profiles = notification.userInfo?["profiles"] as? [SyncedProfile] else { return }
-        let remoteProfileIds =
-          notification.userInfo?["remoteProfileIds"] as? Set<UUID> ?? Set()
-        self?.handleSyncedProfiles(profiles, remoteProfileIds: remoteProfileIds)
-      }
-      .store(in: &cancellables)
-
-    // Observe ProfileSessionRecord notifications (CAS-based session sync)
-    NotificationCenter.default.publisher(for: .profileSessionRecordsReceived)
-      .receive(on: DispatchQueue.main)
-      .sink { [weak self] notification in
-        guard
-          let sessions = notification.userInfo?[ProfileSessionRecord.sessionsUserInfoKey]
-            as? [ProfileSessionRecord]
-        else {
-          return
-        }
-        self?.handleProfileSessionRecords(sessions)
-      }
-      .store(in: &cancellables)
-
-    // Observe synced locations
-    NotificationCenter.default.publisher(for: .syncedLocationsReceived)
-      .receive(on: DispatchQueue.main)
-      .sink { [weak self] notification in
-        guard let locations = notification.userInfo?["locations"] as? [SyncedLocation] else {
-          return
-        }
-        let remoteLocationIds =
-          notification.userInfo?["remoteLocationIds"] as? Set<UUID> ?? Set()
-        self?.handleSyncedLocations(locations, remoteLocationIds: remoteLocationIds)
-      }
-      .store(in: &cancellables)
-
-    // Observe sync reset requests
-    NotificationCenter.default.publisher(for: .syncResetRequested)
-      .receive(on: DispatchQueue.main)
-      .sink { [weak self] notification in
-        guard
-          let clearAppSelections = notification.userInfo?["clearAppSelections"] as? Bool
-        else { return }
-        self?.handleSyncReset(clearAppSelections: clearAppSelections)
-      }
-      .store(in: &cancellables)
-
-    // Observe emergency settings received from CloudKit
-    NotificationCenter.default.publisher(for: .emergencySettingsReceived)
-      .receive(on: DispatchQueue.main)
-      .sink { [weak self] notification in
-        guard
-          let settings = notification.userInfo?[SyncedEmergencySettings.settingsUserInfoKey]
-            as? SyncedEmergencySettings
-        else { return }
-        self?.handleEmergencySettings(settings)
-      }
-      .store(in: &cancellables)
-
-    // Observe local data push requests (push local data to CloudKit)
-    NotificationCenter.default.publisher(for: .localDataPushRequested)
-      .receive(on: DispatchQueue.main)
-      .sink { [weak self] _ in
-        Task { @MainActor in
-          self?.pushLocalData()
-        }
-      }
-      .store(in: &cancellables)
-
-  }
-
   // MARK: - Local Data Push
 
   /// Push all local profiles and locations to CloudKit (when global sync is enabled)
   @MainActor
   private func pushLocalData() {
-    guard ProfileSyncManager.shared.isEnabled else {
+    guard syncManager.isEnabled else {
       Log.info("Global sync disabled, skipping push", category: .sync)
       return
     }
@@ -137,7 +66,7 @@ class SyncCoordinator: ObservableObject {
         // Push synced profiles
         for syncedProfile in syncedProfiles {
           do {
-            try await ProfileSyncManager.shared.pushSyncedProfile(syncedProfile)
+            try await syncManager.pushSyncedProfile(syncedProfile)
           } catch {
             Log.error(
               "Failed to push profile '\(syncedProfile.name)': \(error.localizedDescription)",
@@ -148,7 +77,7 @@ class SyncCoordinator: ObservableObject {
         // Push all locations
         for syncedLocation in syncedLocations {
           do {
-            try await ProfileSyncManager.shared.pushSyncedLocation(syncedLocation)
+            try await syncManager.pushSyncedLocation(syncedLocation)
           } catch {
             Log.error(
               "Failed to push location '\(syncedLocation.name)': \(error.localizedDescription)",
@@ -615,7 +544,7 @@ class SyncCoordinator: ObservableObject {
       await rePushLocalSyncedData(context: context)
 
       // Then trigger a full sync to get any data from other devices
-      await ProfileSyncManager.shared.performFullSync()
+      await syncManager.performFullSync()
     }
   }
 
@@ -626,7 +555,7 @@ class SyncCoordinator: ObservableObject {
       let profiles = try BlockedProfiles.fetchProfiles(in: context)
       for profile in profiles where !profile.isNewerSchemaVersion {
         do {
-          try await ProfileSyncManager.shared.pushProfile(profile)
+          try await syncManager.pushProfile(profile)
           Log.info("Re-pushed profile '\(profile.name)' after reset", category: .sync)
         } catch {
           Log.error(
@@ -639,7 +568,7 @@ class SyncCoordinator: ObservableObject {
       let locations = try SavedLocation.fetchAll(in: context)
       for location in locations {
         do {
-          try await ProfileSyncManager.shared.pushLocation(location)
+          try await syncManager.pushLocation(location)
           Log.info("Re-pushed location '\(location.name)' after reset", category: .sync)
         } catch {
           Log.error(
@@ -656,7 +585,7 @@ class SyncCoordinator: ObservableObject {
 
   /// Push a profile to CloudKit when global sync is enabled
   func pushProfile(_ profile: BlockedProfiles) {
-    guard ProfileSyncManager.shared.isEnabled else { return }
+    guard syncManager.isEnabled else { return }
     guard !profile.isNewerSchemaVersion else {
       Log.info("Skipping push for newer schema profile '\(profile.name)'", category: .sync)
       return
@@ -679,7 +608,7 @@ class SyncCoordinator: ObservableObject {
 
     Task {
       do {
-        try await ProfileSyncManager.shared.pushProfile(profile)
+        try await syncManager.pushProfile(profile)
       } catch {
         Log.error(
           "Failed to push profile '\(profile.name)' after version increment: \(error.localizedDescription)",
@@ -690,16 +619,44 @@ class SyncCoordinator: ObservableObject {
 
   /// Delete a profile from CloudKit when it's deleted locally (if global sync is enabled)
   func deleteProfileFromSync(_ profileId: UUID) {
-    guard ProfileSyncManager.shared.isEnabled else { return }
+    guard syncManager.isEnabled else { return }
 
     Task {
       do {
-        try await ProfileSyncManager.shared.deleteProfile(profileId)
+        try await syncManager.deleteProfile(profileId)
       } catch {
         Log.error(
           "Failed to delete profile \(profileId) from CloudKit: \(error.localizedDescription)",
           category: .sync)
       }
     }
+  }
+}
+
+// MARK: - SyncEventDelegate Conformance
+
+extension SyncCoordinator: SyncEventDelegate {
+  func didReceiveSyncedProfiles(_ profiles: [SyncedProfile], remoteProfileIds: Set<UUID>) {
+    handleSyncedProfiles(profiles, remoteProfileIds: remoteProfileIds)
+  }
+
+  func didReceiveSessionRecords(_ sessions: [ProfileSessionRecord]) {
+    handleProfileSessionRecords(sessions)
+  }
+
+  func didReceiveSyncedLocations(_ locations: [SyncedLocation], remoteLocationIds: Set<UUID>) {
+    handleSyncedLocations(locations, remoteLocationIds: remoteLocationIds)
+  }
+
+  func didReceiveSyncReset(clearAppSelections: Bool) {
+    handleSyncReset(clearAppSelections: clearAppSelections)
+  }
+
+  func didReceiveEmergencySettings(_ settings: SyncedEmergencySettings) {
+    handleEmergencySettings(settings)
+  }
+
+  func didRequestLocalDataPush() {
+    pushLocalData()
   }
 }
