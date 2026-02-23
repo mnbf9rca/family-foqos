@@ -2,7 +2,7 @@ import FamilyControls
 import SwiftData
 import SwiftUI
 
-let AMZN_STORE_LINK = "https://amzn.to/4fbMuTM"
+let amznStoreLink = "https://amzn.to/4fbMuTM"
 
 struct SettingsView: View {
   @Environment(\.dismiss) private var dismiss
@@ -298,7 +298,7 @@ struct SettingsView: View {
         }
 
         Section("Buy NFC Tags") {
-          Link(destination: URL(string: AMZN_STORE_LINK)!) {
+          Link(destination: URL(string: amznStoreLink)!) {
             HStack {
               Text("Amazon (original author affiliate link)")
                 .foregroundColor(.primary)

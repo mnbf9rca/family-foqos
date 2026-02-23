@@ -18,7 +18,7 @@ struct DebugView: View {
   }
 
   var body: some View {
-    NavigationView {
+    NavigationStack {
       ScrollView {
         VStack(alignment: .leading, spacing: 20) {
           if let session = strategyManager.activeSession,

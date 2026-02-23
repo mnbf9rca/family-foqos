@@ -3,7 +3,7 @@ import SwiftUI
 
 struct NFCResult: Equatable {
   var id: String
-  var DateScanned: Date
+  var dateScanned: Date
 }
 
 @MainActor
@@ -220,7 +220,7 @@ extension NFCScannerUtil: NFCTagReaderSessionDelegate {
   }
 
   nonisolated private func completeTagScan(id: String, sessionBox: ScannerSessionBox) {
-    let result = NFCResult(id: id, DateScanned: Date())
+    let result = NFCResult(id: id, dateScanned: Date())
     Task { @MainActor in
       self.scanCompleted = true
       self.onTagScanned?(result)
