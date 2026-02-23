@@ -51,11 +51,11 @@ class EmergencyUnblockManager: ObservableObject {
   }
 
   private enum DefaultsKey {
-    static let unblocksRemaining = "emergencyUnblocksRemaining"
-    static let resetPeriodInDays = "emergencyUnblocksResetPeriodInDays"
-    static let lastResetDate = "lastEmergencyUnblocksResetDate"
-    static let settingsLocked = "emergencySettingsLocked"
-    static let settingsVersion = "emergencySettingsVersion"
+    static let unblocksRemaining = "family_foqos_emergency_unblocks_remaining"
+    static let resetPeriodInDays = "family_foqos_emergency_unblocks_reset_period_in_days"
+    static let lastResetDate = "family_foqos_last_emergency_unblocks_reset_date"
+    static let settingsLocked = "family_foqos_emergency_settings_locked"
+    static let settingsVersion = "family_foqos_emergency_settings_version"
   }
 
   @Published private var emergencyUnblocksRemaining: Int =
