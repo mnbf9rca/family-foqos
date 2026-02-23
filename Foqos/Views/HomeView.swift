@@ -308,7 +308,7 @@ struct HomeView: View {
       ModeSelectionView { selectedMode in
         showModeSelection = false
         // Note: The app will route to the appropriate view based on mode
-        // If parent or child mode is selected, the root view in foqosApp will handle routing
+        // If parent or child mode is selected, the root view in FoqosApp will handle routing
       }
       .interactiveDismissDisabled()
     }
