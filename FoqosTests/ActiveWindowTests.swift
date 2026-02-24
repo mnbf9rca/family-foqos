@@ -36,7 +36,7 @@ final class ActiveWindowTests: XCTestCase {
 
   // MARK: - Start-only (no stop schedule)
 
-  func testStartOnly_pastStart_returnsToday() {
+  func testGivenStartOnlySchedulePastStart_WhenCheckingActiveWindow_ThenReturnsTodayStart() {
     let start = makeSchedule(hour: 10, minute: 0)
     let now = date(hour: 14, minute: 0)
 
@@ -48,7 +48,7 @@ final class ActiveWindowTests: XCTestCase {
     XCTAssertEqual(c.minute, 0)
   }
 
-  func testStartOnly_beforeStart_returnsNil() {
+  func testGivenStartOnlyScheduleBeforeStart_WhenCheckingActiveWindow_ThenReturnsNil() {
     let start = makeSchedule(hour: 14, minute: 0)
     let now = date(hour: 9, minute: 0)
 
@@ -57,7 +57,7 @@ final class ActiveWindowTests: XCTestCase {
 
   // MARK: - Same-day (start < stop)
 
-  func testSameDay_insideWindow_returnsTodayStart() {
+  func testGivenSameDayScheduleInsideWindow_WhenCheckingActiveWindow_ThenReturnsTodayStart() {
     let start = makeSchedule(hour: 10, minute: 0)
     let stop = makeSchedule(hour: 17, minute: 0)
     let now = date(hour: 14, minute: 0)
@@ -70,7 +70,7 @@ final class ActiveWindowTests: XCTestCase {
     XCTAssertEqual(c.minute, 0)
   }
 
-  func testSameDay_afterStop_returnsNil() {
+  func testGivenSameDayScheduleAfterStop_WhenCheckingActiveWindow_ThenReturnsNil() {
     let start = makeSchedule(hour: 10, minute: 0)
     let stop = makeSchedule(hour: 17, minute: 0)
     let now = date(hour: 18, minute: 0)
@@ -78,7 +78,7 @@ final class ActiveWindowTests: XCTestCase {
     XCTAssertNil(start.activeWindowStart(on: now, stopSchedule: stop, calendar: calendar))
   }
 
-  func testSameDay_beforeStart_returnsNil() {
+  func testGivenSameDayScheduleBeforeStart_WhenCheckingActiveWindow_ThenReturnsNil() {
     let start = makeSchedule(hour: 10, minute: 0)
     let stop = makeSchedule(hour: 17, minute: 0)
     let now = date(hour: 9, minute: 0)
@@ -88,7 +88,7 @@ final class ActiveWindowTests: XCTestCase {
 
   // MARK: - Overnight (start >= stop)
 
-  func testOvernight_afterStart_returnsTodayStart() {
+  func testGivenOvernightScheduleAfterStart_WhenCheckingActiveWindow_ThenReturnsTodayStart() {
     let start = makeSchedule(hour: 22, minute: 0)
     let stop = makeSchedule(hour: 6, minute: 0)
     let now = date(hour: 23, minute: 0)
@@ -101,7 +101,7 @@ final class ActiveWindowTests: XCTestCase {
     XCTAssertEqual(c.minute, 0)
   }
 
-  func testOvernight_earlyMorning_returnsYesterdayStart() {
+  func testGivenOvernightScheduleEarlyMorning_WhenCheckingActiveWindow_ThenReturnsYesterdayStart() {
     let start = makeSchedule(hour: 22, minute: 0)
     let stop = makeSchedule(hour: 6, minute: 0)
     let now = date(hour: 3, minute: 0)
@@ -120,7 +120,7 @@ final class ActiveWindowTests: XCTestCase {
     XCTAssertEqual(c.minute, 0)
   }
 
-  func testOvernight_betweenWindows_returnsNil() {
+  func testGivenOvernightScheduleBetweenWindows_WhenCheckingActiveWindow_ThenReturnsNil() {
     let start = makeSchedule(hour: 22, minute: 0)
     let stop = makeSchedule(hour: 6, minute: 0)
     let now = date(hour: 12, minute: 0)
@@ -128,7 +128,7 @@ final class ActiveWindowTests: XCTestCase {
     XCTAssertNil(start.activeWindowStart(on: now, stopSchedule: stop, calendar: calendar))
   }
 
-  func testOvernight_exactlyAtStop_returnsNil() {
+  func testGivenOvernightScheduleExactlyAtStop_WhenCheckingActiveWindow_ThenReturnsNil() {
     let start = makeSchedule(hour: 22, minute: 0)
     let stop = makeSchedule(hour: 6, minute: 0)
     let now = date(hour: 6, minute: 0)

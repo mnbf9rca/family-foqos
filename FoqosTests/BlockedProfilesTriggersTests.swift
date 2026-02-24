@@ -5,20 +5,20 @@ import XCTest
 
 final class BlockedProfilesTriggersTests: XCTestCase {
 
-  func testNewProfileHasSchemaVersion2() {
+  func testGivenNewProfile_WhenCheckingSchema_ThenReturnsVersion2() {
     let profile = BlockedProfiles(name: "Test")
 
     XCTAssertEqual(profile.profileSchemaVersion, 2)
   }
 
-  func testNewProfileHasEmptyTriggers() {
+  func testGivenNewProfile_WhenCheckingTriggers_ThenBothAreInvalid() {
     let profile = BlockedProfiles(name: "Test")
 
     XCTAssertFalse(profile.startTriggers.isValid)
     XCTAssertFalse(profile.stopConditions.isValid)
   }
 
-  func testCanSetStartTriggers() {
+  func testGivenNewProfile_WhenSettingStartTriggers_ThenTriggersAreStored() {
     let profile = BlockedProfiles(name: "Test")
     var triggers = profile.startTriggers
     triggers.manual = true
@@ -30,7 +30,7 @@ final class BlockedProfilesTriggersTests: XCTestCase {
     XCTAssertTrue(profile.startTriggers.isValid)
   }
 
-  func testCanSetStopConditions() {
+  func testGivenNewProfile_WhenSettingStopConditions_ThenConditionsAreStored() {
     let profile = BlockedProfiles(name: "Test")
     var conditions = profile.stopConditions
     conditions.manual = true
@@ -42,31 +42,31 @@ final class BlockedProfilesTriggersTests: XCTestCase {
     XCTAssertTrue(profile.stopConditions.isValid)
   }
 
-  func testCanSetStartNFCTagId() {
+  func testGivenNewProfile_WhenSettingStartNFCTagId_ThenIdIsStored() {
     let profile = BlockedProfiles(name: "Test")
     profile.startNFCTagId = "tag-123"
     XCTAssertEqual(profile.startNFCTagId, "tag-123")
   }
 
-  func testCanSetStopNFCTagId() {
+  func testGivenNewProfile_WhenSettingStopNFCTagId_ThenIdIsStored() {
     let profile = BlockedProfiles(name: "Test")
     profile.stopNFCTagId = "tag-456"
     XCTAssertEqual(profile.stopNFCTagId, "tag-456")
   }
 
-  func testCanSetStartQRCodeId() {
+  func testGivenNewProfile_WhenSettingStartQRCodeId_ThenIdIsStored() {
     let profile = BlockedProfiles(name: "Test")
     profile.startQRCodeId = "qr-123"
     XCTAssertEqual(profile.startQRCodeId, "qr-123")
   }
 
-  func testCanSetStopQRCodeId() {
+  func testGivenNewProfile_WhenSettingStopQRCodeId_ThenIdIsStored() {
     let profile = BlockedProfiles(name: "Test")
     profile.stopQRCodeId = "qr-456"
     XCTAssertEqual(profile.stopQRCodeId, "qr-456")
   }
 
-  func testCanSetStartSchedule() {
+  func testGivenNewProfile_WhenSettingStartSchedule_ThenScheduleIsStored() {
     let profile = BlockedProfiles(name: "Test")
     let schedule = ProfileScheduleTime(
       days: [.monday, .friday],
@@ -80,7 +80,7 @@ final class BlockedProfilesTriggersTests: XCTestCase {
     XCTAssertEqual(profile.startSchedule?.hour, 9)
   }
 
-  func testCanSetStopSchedule() {
+  func testGivenNewProfile_WhenSettingStopSchedule_ThenScheduleIsStored() {
     let profile = BlockedProfiles(name: "Test")
     let schedule = ProfileScheduleTime(
       days: [.monday, .friday],
@@ -94,7 +94,7 @@ final class BlockedProfilesTriggersTests: XCTestCase {
     XCTAssertEqual(profile.stopSchedule?.hour, 17)
   }
 
-  func testCloneProfileCopiesV2TriggerData() {
+  func testGivenProfileWithV2Triggers_WhenCloning_ThenAllTriggerDataIsCopied() {
     let source = BlockedProfiles(name: "Source")
 
     // Set V2 trigger data on source

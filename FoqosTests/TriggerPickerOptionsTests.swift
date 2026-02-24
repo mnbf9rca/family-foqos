@@ -7,24 +7,24 @@ final class TriggerPickerOptionsTests: XCTestCase {
 
   // MARK: - NFCStartOption from triggers
 
-  func testNFCStartOptionNoneWhenBothFalse() {
+  func testGivenBothNFCFlagsFalse_WhenGettingNFCStartOption_ThenReturnsNone() {
     let triggers = ProfileStartTriggers()
     XCTAssertEqual(NFCStartOption.from(triggers), .none)
   }
 
-  func testNFCStartOptionAnyWhenAnyNFC() {
+  func testGivenAnyNFCTrue_WhenGettingNFCStartOption_ThenReturnsAny() {
     var triggers = ProfileStartTriggers()
     triggers.anyNFC = true
     XCTAssertEqual(NFCStartOption.from(triggers), .any)
   }
 
-  func testNFCStartOptionSpecificWhenSpecificNFC() {
+  func testGivenSpecificNFCTrue_WhenGettingNFCStartOption_ThenReturnsSpecific() {
     var triggers = ProfileStartTriggers()
     triggers.specificNFC = true
     XCTAssertEqual(NFCStartOption.from(triggers), .specific)
   }
 
-  func testNFCStartOptionAnyWinsBothTrue() {
+  func testGivenBothNFCFlagsTrue_WhenGettingNFCStartOption_ThenAnyWins() {
     var triggers = ProfileStartTriggers()
     triggers.anyNFC = true
     triggers.specificNFC = true
@@ -33,7 +33,7 @@ final class TriggerPickerOptionsTests: XCTestCase {
 
   // MARK: - NFCStartOption apply to triggers
 
-  func testNFCStartOptionNoneApply() {
+  func testGivenNFCStartOptionNone_WhenApplying_ThenClearsBothFlags() {
     var triggers = ProfileStartTriggers()
     triggers.anyNFC = true
     NFCStartOption.none.apply(to: &triggers)
@@ -41,14 +41,14 @@ final class TriggerPickerOptionsTests: XCTestCase {
     XCTAssertFalse(triggers.specificNFC)
   }
 
-  func testNFCStartOptionAnyApply() {
+  func testGivenNFCStartOptionAny_WhenApplying_ThenSetsAnyNFCTrue() {
     var triggers = ProfileStartTriggers()
     NFCStartOption.any.apply(to: &triggers)
     XCTAssertTrue(triggers.anyNFC)
     XCTAssertFalse(triggers.specificNFC)
   }
 
-  func testNFCStartOptionSpecificApply() {
+  func testGivenNFCStartOptionSpecific_WhenApplying_ThenSetsSpecificNFCTrue() {
     var triggers = ProfileStartTriggers()
     NFCStartOption.specific.apply(to: &triggers)
     XCTAssertFalse(triggers.anyNFC)
@@ -57,24 +57,24 @@ final class TriggerPickerOptionsTests: XCTestCase {
 
   // MARK: - QRStartOption from triggers
 
-  func testQRStartOptionNoneWhenBothFalse() {
+  func testGivenBothQRFlagsFalse_WhenGettingQRStartOption_ThenReturnsNone() {
     let triggers = ProfileStartTriggers()
     XCTAssertEqual(QRStartOption.from(triggers), .none)
   }
 
-  func testQRStartOptionAnyWhenAnyQR() {
+  func testGivenAnyQRTrue_WhenGettingQRStartOption_ThenReturnsAny() {
     var triggers = ProfileStartTriggers()
     triggers.anyQR = true
     XCTAssertEqual(QRStartOption.from(triggers), .any)
   }
 
-  func testQRStartOptionSpecificWhenSpecificQR() {
+  func testGivenSpecificQRTrue_WhenGettingQRStartOption_ThenReturnsSpecific() {
     var triggers = ProfileStartTriggers()
     triggers.specificQR = true
     XCTAssertEqual(QRStartOption.from(triggers), .specific)
   }
 
-  func testQRStartOptionAnyWinsBothTrue() {
+  func testGivenBothQRFlagsTrue_WhenGettingQRStartOption_ThenAnyWins() {
     var triggers = ProfileStartTriggers()
     triggers.anyQR = true
     triggers.specificQR = true
@@ -83,7 +83,7 @@ final class TriggerPickerOptionsTests: XCTestCase {
 
   // MARK: - QRStartOption apply to triggers
 
-  func testQRStartOptionNoneApply() {
+  func testGivenQRStartOptionNone_WhenApplying_ThenClearsBothFlags() {
     var triggers = ProfileStartTriggers()
     triggers.anyQR = true
     QRStartOption.none.apply(to: &triggers)
@@ -91,14 +91,14 @@ final class TriggerPickerOptionsTests: XCTestCase {
     XCTAssertFalse(triggers.specificQR)
   }
 
-  func testQRStartOptionAnyApply() {
+  func testGivenQRStartOptionAny_WhenApplying_ThenSetsAnyQRTrue() {
     var triggers = ProfileStartTriggers()
     QRStartOption.any.apply(to: &triggers)
     XCTAssertTrue(triggers.anyQR)
     XCTAssertFalse(triggers.specificQR)
   }
 
-  func testQRStartOptionSpecificApply() {
+  func testGivenQRStartOptionSpecific_WhenApplying_ThenSetsSpecificQRTrue() {
     var triggers = ProfileStartTriggers()
     QRStartOption.specific.apply(to: &triggers)
     XCTAssertFalse(triggers.anyQR)
@@ -107,30 +107,30 @@ final class TriggerPickerOptionsTests: XCTestCase {
 
   // MARK: - NFCStopOption from conditions
 
-  func testNFCStopOptionNoneWhenAllFalse() {
+  func testGivenAllNFCStopFlagsFalse_WhenGettingNFCStopOption_ThenReturnsNone() {
     let conditions = ProfileStopConditions()
     XCTAssertEqual(NFCStopOption.from(conditions), .none)
   }
 
-  func testNFCStopOptionAnyWhenAnyNFC() {
+  func testGivenAnyNFCStopTrue_WhenGettingNFCStopOption_ThenReturnsAny() {
     var conditions = ProfileStopConditions()
     conditions.anyNFC = true
     XCTAssertEqual(NFCStopOption.from(conditions), .any)
   }
 
-  func testNFCStopOptionSameWhenSameNFC() {
+  func testGivenSameNFCTrue_WhenGettingNFCStopOption_ThenReturnsSame() {
     var conditions = ProfileStopConditions()
     conditions.sameNFC = true
     XCTAssertEqual(NFCStopOption.from(conditions), .same)
   }
 
-  func testNFCStopOptionSpecificWhenSpecificNFC() {
+  func testGivenSpecificNFCStopTrue_WhenGettingNFCStopOption_ThenReturnsSpecific() {
     var conditions = ProfileStopConditions()
     conditions.specificNFC = true
     XCTAssertEqual(NFCStopOption.from(conditions), .specific)
   }
 
-  func testNFCStopOptionSameWinsOverAny() {
+  func testGivenSameAndAnyNFCTrue_WhenGettingNFCStopOption_ThenSameWins() {
     // same is more specific than any, matching canStop precedence
     var conditions = ProfileStopConditions()
     conditions.anyNFC = true
@@ -138,7 +138,7 @@ final class TriggerPickerOptionsTests: XCTestCase {
     XCTAssertEqual(NFCStopOption.from(conditions), .same)
   }
 
-  func testNFCStopOptionSpecificWinsOverSame() {
+  func testGivenSpecificAndSameNFCTrue_WhenGettingNFCStopOption_ThenSpecificWins() {
     // specific is highest priority, matching canStop precedence
     var conditions = ProfileStopConditions()
     conditions.sameNFC = true
@@ -148,7 +148,7 @@ final class TriggerPickerOptionsTests: XCTestCase {
 
   // MARK: - NFCStopOption apply to conditions
 
-  func testNFCStopOptionNoneApply() {
+  func testGivenNFCStopOptionNone_WhenApplying_ThenClearsAllFlags() {
     var conditions = ProfileStopConditions()
     conditions.anyNFC = true
     NFCStopOption.none.apply(to: &conditions)
@@ -157,7 +157,7 @@ final class TriggerPickerOptionsTests: XCTestCase {
     XCTAssertFalse(conditions.specificNFC)
   }
 
-  func testNFCStopOptionAnyApply() {
+  func testGivenNFCStopOptionAny_WhenApplying_ThenSetsAnyNFCTrue() {
     var conditions = ProfileStopConditions()
     NFCStopOption.any.apply(to: &conditions)
     XCTAssertTrue(conditions.anyNFC)
@@ -165,7 +165,7 @@ final class TriggerPickerOptionsTests: XCTestCase {
     XCTAssertFalse(conditions.specificNFC)
   }
 
-  func testNFCStopOptionSameApply() {
+  func testGivenNFCStopOptionSame_WhenApplying_ThenSetsSameNFCTrue() {
     var conditions = ProfileStopConditions()
     NFCStopOption.same.apply(to: &conditions)
     XCTAssertFalse(conditions.anyNFC)
@@ -173,7 +173,7 @@ final class TriggerPickerOptionsTests: XCTestCase {
     XCTAssertFalse(conditions.specificNFC)
   }
 
-  func testNFCStopOptionSpecificApply() {
+  func testGivenNFCStopOptionSpecific_WhenApplying_ThenSetsSpecificNFCTrue() {
     var conditions = ProfileStopConditions()
     NFCStopOption.specific.apply(to: &conditions)
     XCTAssertFalse(conditions.anyNFC)
@@ -183,30 +183,30 @@ final class TriggerPickerOptionsTests: XCTestCase {
 
   // MARK: - QRStopOption from conditions
 
-  func testQRStopOptionNoneWhenAllFalse() {
+  func testGivenAllQRStopFlagsFalse_WhenGettingQRStopOption_ThenReturnsNone() {
     let conditions = ProfileStopConditions()
     XCTAssertEqual(QRStopOption.from(conditions), .none)
   }
 
-  func testQRStopOptionAnyWhenAnyQR() {
+  func testGivenAnyQRStopTrue_WhenGettingQRStopOption_ThenReturnsAny() {
     var conditions = ProfileStopConditions()
     conditions.anyQR = true
     XCTAssertEqual(QRStopOption.from(conditions), .any)
   }
 
-  func testQRStopOptionSameWhenSameQR() {
+  func testGivenSameQRTrue_WhenGettingQRStopOption_ThenReturnsSame() {
     var conditions = ProfileStopConditions()
     conditions.sameQR = true
     XCTAssertEqual(QRStopOption.from(conditions), .same)
   }
 
-  func testQRStopOptionSpecificWhenSpecificQR() {
+  func testGivenSpecificQRStopTrue_WhenGettingQRStopOption_ThenReturnsSpecific() {
     var conditions = ProfileStopConditions()
     conditions.specificQR = true
     XCTAssertEqual(QRStopOption.from(conditions), .specific)
   }
 
-  func testQRStopOptionSameWinsOverAny() {
+  func testGivenSameAndAnyQRTrue_WhenGettingQRStopOption_ThenSameWins() {
     // same is more specific than any, matching canStop precedence
     var conditions = ProfileStopConditions()
     conditions.anyQR = true
@@ -214,7 +214,7 @@ final class TriggerPickerOptionsTests: XCTestCase {
     XCTAssertEqual(QRStopOption.from(conditions), .same)
   }
 
-  func testQRStopOptionSpecificWinsOverSame() {
+  func testGivenSpecificAndSameQRTrue_WhenGettingQRStopOption_ThenSpecificWins() {
     // specific is highest priority, matching canStop precedence
     var conditions = ProfileStopConditions()
     conditions.sameQR = true
@@ -224,7 +224,7 @@ final class TriggerPickerOptionsTests: XCTestCase {
 
   // MARK: - QRStopOption apply to conditions
 
-  func testQRStopOptionNoneApply() {
+  func testGivenQRStopOptionNone_WhenApplying_ThenClearsAllFlags() {
     var conditions = ProfileStopConditions()
     conditions.anyQR = true
     QRStopOption.none.apply(to: &conditions)
@@ -233,7 +233,7 @@ final class TriggerPickerOptionsTests: XCTestCase {
     XCTAssertFalse(conditions.specificQR)
   }
 
-  func testQRStopOptionAnyApply() {
+  func testGivenQRStopOptionAny_WhenApplying_ThenSetsAnyQRTrue() {
     var conditions = ProfileStopConditions()
     QRStopOption.any.apply(to: &conditions)
     XCTAssertTrue(conditions.anyQR)
@@ -241,7 +241,7 @@ final class TriggerPickerOptionsTests: XCTestCase {
     XCTAssertFalse(conditions.specificQR)
   }
 
-  func testQRStopOptionSameApply() {
+  func testGivenQRStopOptionSame_WhenApplying_ThenSetsSameQRTrue() {
     var conditions = ProfileStopConditions()
     QRStopOption.same.apply(to: &conditions)
     XCTAssertFalse(conditions.anyQR)
@@ -249,7 +249,7 @@ final class TriggerPickerOptionsTests: XCTestCase {
     XCTAssertFalse(conditions.specificQR)
   }
 
-  func testQRStopOptionSpecificApply() {
+  func testGivenQRStopOptionSpecific_WhenApplying_ThenSetsSpecificQRTrue() {
     var conditions = ProfileStopConditions()
     QRStopOption.specific.apply(to: &conditions)
     XCTAssertFalse(conditions.anyQR)
@@ -259,21 +259,21 @@ final class TriggerPickerOptionsTests: XCTestCase {
 
   // MARK: - NFCStopOption available options
 
-  func testNFCStopAvailableOptionsWithNoNFCStart() {
+  func testGivenNoNFCStart_WhenGettingAvailableNFCStopOptions_ThenExcludesSame() {
     let start = ProfileStartTriggers()
     let options = NFCStopOption.availableOptions(forStart: start)
     XCTAssertEqual(options, [.none, .any, .specific])
     XCTAssertFalse(options.contains(.same))
   }
 
-  func testNFCStopAvailableOptionsWithAnyNFCStart() {
+  func testGivenAnyNFCStart_WhenGettingAvailableNFCStopOptions_ThenIncludesSame() {
     var start = ProfileStartTriggers()
     start.anyNFC = true
     let options = NFCStopOption.availableOptions(forStart: start)
     XCTAssertEqual(options, [.none, .any, .same, .specific])
   }
 
-  func testNFCStopAvailableOptionsWithSpecificNFCStart() {
+  func testGivenSpecificNFCStart_WhenGettingAvailableNFCStopOptions_ThenIncludesSame() {
     var start = ProfileStartTriggers()
     start.specificNFC = true
     let options = NFCStopOption.availableOptions(forStart: start)
@@ -282,20 +282,20 @@ final class TriggerPickerOptionsTests: XCTestCase {
 
   // MARK: - QRStopOption available options
 
-  func testQRStopAvailableOptionsWithNoQRStart() {
+  func testGivenNoQRStart_WhenGettingAvailableQRStopOptions_ThenExcludesSame() {
     let start = ProfileStartTriggers()
     let options = QRStopOption.availableOptions(forStart: start)
     XCTAssertEqual(options, [.none, .any, .specific])
   }
 
-  func testQRStopAvailableOptionsWithAnyQRStart() {
+  func testGivenAnyQRStart_WhenGettingAvailableQRStopOptions_ThenIncludesSame() {
     var start = ProfileStartTriggers()
     start.anyQR = true
     let options = QRStopOption.availableOptions(forStart: start)
     XCTAssertEqual(options, [.none, .any, .same, .specific])
   }
 
-  func testQRStopAvailableOptionsWithSpecificQRStart() {
+  func testGivenSpecificQRStart_WhenGettingAvailableQRStopOptions_ThenIncludesSame() {
     var start = ProfileStartTriggers()
     start.specificQR = true
     let options = QRStopOption.availableOptions(forStart: start)
@@ -304,26 +304,26 @@ final class TriggerPickerOptionsTests: XCTestCase {
 
   // MARK: - Display labels
 
-  func testNFCStartOptionLabels() {
+  func testGivenNFCStartOptions_WhenGettingLabels_ThenReturnsExpectedStrings() {
     XCTAssertEqual(NFCStartOption.none.label, "None")
     XCTAssertEqual(NFCStartOption.any.label, "Any tag")
     XCTAssertEqual(NFCStartOption.specific.label, "Specific tag")
   }
 
-  func testNFCStopOptionLabels() {
+  func testGivenNFCStopOptions_WhenGettingLabels_ThenReturnsExpectedStrings() {
     XCTAssertEqual(NFCStopOption.none.label, "None")
     XCTAssertEqual(NFCStopOption.any.label, "Any tag")
     XCTAssertEqual(NFCStopOption.same.label, "Same tag")
     XCTAssertEqual(NFCStopOption.specific.label, "Specific tag")
   }
 
-  func testQRStartOptionLabels() {
+  func testGivenQRStartOptions_WhenGettingLabels_ThenReturnsExpectedStrings() {
     XCTAssertEqual(QRStartOption.none.label, "None")
     XCTAssertEqual(QRStartOption.any.label, "Any code")
     XCTAssertEqual(QRStartOption.specific.label, "Specific code")
   }
 
-  func testQRStopOptionLabels() {
+  func testGivenQRStopOptions_WhenGettingLabels_ThenReturnsExpectedStrings() {
     XCTAssertEqual(QRStopOption.none.label, "None")
     XCTAssertEqual(QRStopOption.any.label, "Any code")
     XCTAssertEqual(QRStopOption.same.label, "Same code")

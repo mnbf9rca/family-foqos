@@ -6,7 +6,7 @@ import XCTest
 @MainActor
 final class StrategyManagerStartTests: XCTestCase {
 
-  func testDetermineStartActionForManualOnly() {
+  func testGivenManualTriggerOnly_WhenDeterminingStartAction_ThenReturnsStartImmediately() {
     var start = ProfileStartTriggers()
     start.manual = true
 
@@ -15,7 +15,7 @@ final class StrategyManagerStartTests: XCTestCase {
     XCTAssertEqual(action, .startImmediately)
   }
 
-  func testDetermineStartActionForNFCOnly() {
+  func testGivenNFCTriggerOnly_WhenDeterminingStartAction_ThenReturnsScanNFC() {
     var start = ProfileStartTriggers()
     start.anyNFC = true
 
@@ -24,7 +24,7 @@ final class StrategyManagerStartTests: XCTestCase {
     XCTAssertEqual(action, .scanNFC)
   }
 
-  func testDetermineStartActionForQROnly() {
+  func testGivenQRTriggerOnly_WhenDeterminingStartAction_ThenReturnsScanQR() {
     var start = ProfileStartTriggers()
     start.anyQR = true
 
@@ -33,7 +33,7 @@ final class StrategyManagerStartTests: XCTestCase {
     XCTAssertEqual(action, .scanQR)
   }
 
-  func testDetermineStartActionForScheduleOnly() {
+  func testGivenScheduleTriggerOnly_WhenDeterminingStartAction_ThenReturnsWaitForSchedule() {
     var start = ProfileStartTriggers()
     start.schedule = true
 
@@ -42,7 +42,7 @@ final class StrategyManagerStartTests: XCTestCase {
     XCTAssertEqual(action, .waitForSchedule)
   }
 
-  func testDetermineStartActionForDeepLinkOnly() {
+  func testGivenDeepLinkTriggerOnly_WhenDeterminingStartAction_ThenReturnsDeepLinkOnly() {
     var start = ProfileStartTriggers()
     start.deepLink = true
 
@@ -51,7 +51,7 @@ final class StrategyManagerStartTests: XCTestCase {
     XCTAssertEqual(action, .deepLinkOnly)
   }
 
-  func testDetermineStartActionForManualPlusNFC() {
+  func testGivenManualAndNFCTriggers_WhenDeterminingStartAction_ThenShowsPicker() {
     var start = ProfileStartTriggers()
     start.manual = true
     start.anyNFC = true
@@ -61,7 +61,7 @@ final class StrategyManagerStartTests: XCTestCase {
     XCTAssertEqual(action, .showPicker(options: [.startImmediately, .scanNFC]))
   }
 
-  func testDetermineStartActionForNFCPlusQR() {
+  func testGivenNFCAndQRTriggers_WhenDeterminingStartAction_ThenShowsPicker() {
     var start = ProfileStartTriggers()
     start.anyNFC = true
     start.anyQR = true
@@ -71,7 +71,7 @@ final class StrategyManagerStartTests: XCTestCase {
     XCTAssertEqual(action, .showPicker(options: [.scanNFC, .scanQR]))
   }
 
-  func testDetermineStartActionForAllManualOptions() {
+  func testGivenManualNFCAndQRTriggers_WhenDeterminingStartAction_ThenShowsPickerWithAll() {
     var start = ProfileStartTriggers()
     start.manual = true
     start.anyNFC = true
@@ -82,7 +82,7 @@ final class StrategyManagerStartTests: XCTestCase {
     XCTAssertEqual(action, .showPicker(options: [.startImmediately, .scanNFC, .scanQR]))
   }
 
-  func testDetermineStartActionForNoTriggers() {
+  func testGivenNoTriggers_WhenDeterminingStartAction_ThenReturnsCannotStart() {
     let start = ProfileStartTriggers()
 
     let action = StartStopActionResolver.determineStartAction(for: start)
@@ -94,7 +94,7 @@ final class StrategyManagerStartTests: XCTestCase {
     }
   }
 
-  func testDetermineStartActionBlockedByInvalidStopConditions() {
+  func testGivenManualStartWithInvalidStop_WhenDeterminingStartAction_ThenReturnsCannotStart() {
     var start = ProfileStartTriggers()
     start.manual = true
     let stop = ProfileStopConditions()  // all false — invalid
@@ -108,7 +108,7 @@ final class StrategyManagerStartTests: XCTestCase {
     }
   }
 
-  func testDetermineStartActionAllowedWithValidStopConditions() {
+  func testGivenManualStartWithValidStop_WhenDeterminingStartAction_ThenReturnsStartImmediately() {
     var start = ProfileStartTriggers()
     start.manual = true
     var stop = ProfileStopConditions()

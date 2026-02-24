@@ -6,7 +6,7 @@ import XCTest
 
 final class BlockedProfilesMigrationTests: XCTestCase {
 
-  func testMigrateV1ToV2SetsSchemaVersion() {
+  func testGivenV1Profile_WhenMigrating_ThenSetsSchemaVersionToV2() {
     let profile = BlockedProfiles(name: "Test")
     profile.profileSchemaVersion = 1
     profile.blockingStrategyId = "ManualBlockingStrategy"
@@ -16,7 +16,7 @@ final class BlockedProfilesMigrationTests: XCTestCase {
     XCTAssertEqual(profile.profileSchemaVersion, 2)
   }
 
-  func testMigrateV1ToV2SetsTriggers() {
+  func testGivenV1NFCProfile_WhenMigrating_ThenSetsNFCTriggers() {
     let profile = BlockedProfiles(name: "Test")
     profile.profileSchemaVersion = 1
     profile.blockingStrategyId = "NFCBlockingStrategy"
@@ -27,7 +27,7 @@ final class BlockedProfilesMigrationTests: XCTestCase {
     XCTAssertTrue(profile.stopConditions.sameNFC)
   }
 
-  func testMigrateV1ToV2MigratesPhysicalUnlock() {
+  func testGivenV1PhysicalUnlockProfile_WhenMigrating_ThenSetsSpecificNFCStop() {
     let profile = BlockedProfiles(name: "Test")
     profile.profileSchemaVersion = 1
     profile.blockingStrategyId = "NFCManualBlockingStrategy"
@@ -40,7 +40,7 @@ final class BlockedProfilesMigrationTests: XCTestCase {
     XCTAssertEqual(profile.stopNFCTagId, "tag-123")
   }
 
-  func testMigrateV1ToV2MigratesSchedule() {
+  func testGivenV1ScheduledProfile_WhenMigrating_ThenSetsStartAndStopSchedules() {
     let profile = BlockedProfiles(name: "Test")
     profile.profileSchemaVersion = 1
     profile.blockingStrategyId = "ManualBlockingStrategy"
@@ -59,7 +59,7 @@ final class BlockedProfilesMigrationTests: XCTestCase {
     XCTAssertEqual(profile.stopSchedule?.hour, 17)
   }
 
-  func testMigrateV2DoesNothing() {
+  func testGivenV2Profile_WhenMigrating_ThenDoesNothing() {
     let profile = BlockedProfiles(name: "Test")
     profile.profileSchemaVersion = 2
     var triggers = profile.startTriggers
@@ -73,19 +73,19 @@ final class BlockedProfilesMigrationTests: XCTestCase {
     XCTAssertTrue(profile.startTriggers.manual)
   }
 
-  func testNeedsMigrationForV1() {
+  func testGivenV1Profile_WhenCheckingNeedsMigration_ThenReturnsTrue() {
     let profile = BlockedProfiles(name: "Test")
     profile.profileSchemaVersion = 1
     XCTAssertTrue(profile.needsMigration)
   }
 
-  func testNeedsMigrationFalseForV2() {
+  func testGivenV2Profile_WhenCheckingNeedsMigration_ThenReturnsFalse() {
     let profile = BlockedProfiles(name: "Test")
     profile.profileSchemaVersion = 2
     XCTAssertFalse(profile.needsMigration)
   }
 
-  func testMigrateSkipsProfileWithActiveSession() {
+  func testGivenActiveSession_WhenMigrating_ThenSkipsProfile() {
     let profile = BlockedProfiles(name: "Active")
     profile.profileSchemaVersion = 1
     profile.blockingStrategyId = "ManualBlockingStrategy"
@@ -96,7 +96,7 @@ final class BlockedProfilesMigrationTests: XCTestCase {
     XCTAssertEqual(profile.profileSchemaVersion, 1)  // Still V1
   }
 
-  func testMigrateV1ScheduleSetsTriggerFlags() {
+  func testGivenV1ScheduledProfile_WhenMigrating_ThenSetsTriggerFlags() {
     let profile = BlockedProfiles(name: "Scheduled")
     profile.profileSchemaVersion = 1
     profile.blockingStrategyId = "ManualBlockingStrategy"
@@ -115,25 +115,25 @@ final class BlockedProfilesMigrationTests: XCTestCase {
     XCTAssertEqual(profile.stopSchedule?.hour, 17)
   }
 
-  func testIsNewerSchemaVersionFalseForCurrentVersion() {
+  func testGivenCurrentSchemaVersion_WhenCheckingIsNewer_ThenReturnsFalse() {
     let profile = BlockedProfiles(name: "Current")
     profile.profileSchemaVersion = 2
     XCTAssertFalse(profile.isNewerSchemaVersion)
   }
 
-  func testIsNewerSchemaVersionFalseForOlderVersion() {
+  func testGivenOlderSchemaVersion_WhenCheckingIsNewer_ThenReturnsFalse() {
     let profile = BlockedProfiles(name: "Old")
     profile.profileSchemaVersion = 1
     XCTAssertFalse(profile.isNewerSchemaVersion)
   }
 
-  func testIsNewerSchemaVersionTrueForFutureVersion() {
+  func testGivenFutureSchemaVersion_WhenCheckingIsNewer_ThenReturnsTrue() {
     let profile = BlockedProfiles(name: "Future")
     profile.profileSchemaVersion = 3
     XCTAssertTrue(profile.isNewerSchemaVersion)
   }
 
-  func testIsNewerSchemaVersionUsesConstant() {
+  func testGivenSchemaVersionConstant_WhenCheckingIsNewer_ThenUsesCurrentSchemaVersion() {
     // Verify the threshold is based on currentSchemaVersion, not a hardcoded value
     let profile = BlockedProfiles(name: "Test")
     profile.profileSchemaVersion = BlockedProfiles.currentSchemaVersion
@@ -143,7 +143,7 @@ final class BlockedProfilesMigrationTests: XCTestCase {
     XCTAssertTrue(profile.isNewerSchemaVersion, "Version above current should be 'newer'")
   }
 
-  func testMigrateRunsWhenNoActiveSession() {
+  func testGivenNoActiveSession_WhenMigrating_ThenMigratesSuccessfully() {
     let profile = BlockedProfiles(name: "Inactive")
     profile.profileSchemaVersion = 1
     profile.blockingStrategyId = "ManualBlockingStrategy"

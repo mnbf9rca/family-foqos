@@ -6,7 +6,7 @@ final class OneMoreMinuteTests: XCTestCase {
 
   // MARK: - SessionSnapshot Tests
 
-  func testSessionSnapshotDefaultValues() {
+  func testGivenNewSnapshot_WhenCheckingDefaults_ThenOneMoreMinuteFieldsAreEmpty() {
     // Test that default values are correct for one-more-minute fields
     let snapshot = SharedData.SessionSnapshot(
       id: "test-id",
@@ -20,7 +20,7 @@ final class OneMoreMinuteTests: XCTestCase {
     XCTAssertNil(snapshot.oneMoreMinuteStartTime)
   }
 
-  func testSessionSnapshotWithOneMoreMinuteFields() {
+  func testGivenSnapshotWithOneMoreMinute_WhenCheckingFields_ThenValuesAreSet() {
     let now = Date()
     let snapshot = SharedData.SessionSnapshot(
       id: "test-id",
@@ -36,7 +36,7 @@ final class OneMoreMinuteTests: XCTestCase {
     XCTAssertEqual(snapshot.oneMoreMinuteStartTime, now)
   }
 
-  func testSessionSnapshotEquality() {
+  func testGivenIdenticalSnapshots_WhenComparing_ThenTheyAreEqual() {
     let profileId = UUID()
     let now = Date()
 
@@ -63,7 +63,7 @@ final class OneMoreMinuteTests: XCTestCase {
     XCTAssertEqual(snapshot1, snapshot2)
   }
 
-  func testSessionSnapshotInequalityOnOneMoreMinuteUsed() {
+  func testGivenDifferentOneMoreMinuteUsed_WhenComparing_ThenTheyAreNotEqual() {
     let profileId = UUID()
     let now = Date()
 
@@ -204,7 +204,7 @@ final class OneMoreMinuteTests: XCTestCase {
 
   // MARK: - Time Remaining Calculation Tests
 
-  func testTimeRemainingCalculation() {
+  func testGivenActiveOneMoreMinute_WhenCalculatingRemaining_ThenReturnsCorrectSeconds() {
     let now = Date()
     let startTime = now.addingTimeInterval(-30)
     let elapsed = now.timeIntervalSince(startTime)
@@ -213,7 +213,7 @@ final class OneMoreMinuteTests: XCTestCase {
     XCTAssertEqual(remaining, 30, accuracy: 0.001)
   }
 
-  func testTimeRemainingZeroWhenExpired() {
+  func testGivenExpiredOneMoreMinute_WhenCalculatingRemaining_ThenReturnsZero() {
     let now = Date()
     let startTime = now.addingTimeInterval(-65)
     let elapsed = now.timeIntervalSince(startTime)
@@ -224,14 +224,14 @@ final class OneMoreMinuteTests: XCTestCase {
 
   // MARK: - Content State Widget Tests
 
-  func testContentStateDefaultOneMoreMinuteValues() {
+  func testGivenDefaultContentState_WhenCheckingOneMoreMinute_ThenFieldsAreEmpty() {
     let state = FoqosWidgetAttributes.ContentState(startTime: Date())
 
     XCTAssertFalse(state.isOneMoreMinuteActive)
     XCTAssertNil(state.oneMoreMinuteStartTime)
   }
 
-  func testContentStateWithOneMoreMinuteActive() {
+  func testGivenContentStateWithOneMoreMinute_WhenCheckingActive_ThenReturnsTrue() {
     let now = Date()
     let state = FoqosWidgetAttributes.ContentState(
       startTime: now,
@@ -248,7 +248,7 @@ final class OneMoreMinuteTests: XCTestCase {
 
   // MARK: - SharedData Sync Tests
 
-  func testSetOneMoreMinuteStartTimeSyncsToSharedData() {
+  func testGivenActiveSession_WhenSettingOneMoreMinuteStartTime_ThenSyncsToSharedData() {
     // Setup: Create an active session in SharedData
     let profileId = UUID()
     let initialSnapshot = SharedData.SessionSnapshot(
@@ -280,7 +280,7 @@ final class OneMoreMinuteTests: XCTestCase {
     SharedData.flushActiveSession()
   }
 
-  func testSetOneMoreMinuteStartTimeNoOpWhenNoActiveSession() {
+  func testGivenNoActiveSession_WhenSettingOneMoreMinuteStartTime_ThenNoOp() {
     // Ensure no active session
     SharedData.flushActiveSession()
     XCTAssertNil(SharedData.getActiveSharedSession())

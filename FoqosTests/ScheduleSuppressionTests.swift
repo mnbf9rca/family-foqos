@@ -117,7 +117,7 @@ final class ScheduleSuppressionTests: XCTestCase {
 
   /// Stopped at 22:30 yesterday, now 03:00 today. Overnight window started yesterday at 22:00.
   /// Window start (yesterday 22:00) <= stoppedAt (yesterday 22:30) -> suppressed.
-  func testOvernight_stoppedYesterday_earlyMorningToday_suppresses() {
+  func testGivenOvernightStoppedYesterday_WhenEarlyMorningToday_ThenSuppresses() {
     let now = date(hour: 3, minute: 0)
     let stoppedAt = date(hour: 22, minute: 30, dayOffset: -1)
     let start = makeSchedule(hour: 22, minute: 0)
@@ -130,7 +130,7 @@ final class ScheduleSuppressionTests: XCTestCase {
   }
 
   /// Overnight: not stopped, at 03:00. Window started yesterday at 22:00. Should be active.
-  func testOvernight_notStopped_earlyMorningToday_isActive() {
+  func testGivenOvernightNotStopped_WhenEarlyMorningToday_ThenIsActive() {
     let now = date(hour: 3, minute: 0)
     let start = makeSchedule(hour: 22, minute: 0)
     let stop = makeSchedule(hour: 6, minute: 0)

@@ -8,49 +8,49 @@ final class TriggerValidatorTests: XCTestCase {
 
   // MARK: - Stop Availability
 
-  func testSameNFCAvailableWhenAnyNFCStart() {
+  func testGivenAnyNFCStart_WhenCheckingSameNFCAvailable_ThenReturnsTrue() {
     var start = ProfileStartTriggers()
     start.anyNFC = true
     XCTAssertTrue(validator.isStopAvailable(.sameNFC, forStart: start))
   }
 
-  func testSameNFCAvailableWhenSpecificNFCStart() {
+  func testGivenSpecificNFCStart_WhenCheckingSameNFCAvailable_ThenReturnsTrue() {
     var start = ProfileStartTriggers()
     start.specificNFC = true
     XCTAssertTrue(validator.isStopAvailable(.sameNFC, forStart: start))
   }
 
-  func testSameNFCNotAvailableWhenNoNFCStart() {
+  func testGivenNoNFCStart_WhenCheckingSameNFCAvailable_ThenReturnsFalse() {
     var start = ProfileStartTriggers()
     start.manual = true
     XCTAssertFalse(validator.isStopAvailable(.sameNFC, forStart: start))
   }
 
-  func testSameQRAvailableWhenAnyQRStart() {
+  func testGivenAnyQRStart_WhenCheckingSameQRAvailable_ThenReturnsTrue() {
     var start = ProfileStartTriggers()
     start.anyQR = true
     XCTAssertTrue(validator.isStopAvailable(.sameQR, forStart: start))
   }
 
-  func testSameQRNotAvailableWhenNoQRStart() {
+  func testGivenNoQRStart_WhenCheckingSameQRAvailable_ThenReturnsFalse() {
     var start = ProfileStartTriggers()
     start.manual = true
     XCTAssertFalse(validator.isStopAvailable(.sameQR, forStart: start))
   }
 
-  func testManualStopAlwaysAvailable() {
+  func testGivenAnyStartTrigger_WhenCheckingManualStopAvailable_ThenReturnsTrue() {
     let start = ProfileStartTriggers()
     XCTAssertTrue(validator.isStopAvailable(.manual, forStart: start))
   }
 
-  func testTimerStopAlwaysAvailable() {
+  func testGivenAnyStartTrigger_WhenCheckingTimerStopAvailable_ThenReturnsTrue() {
     let start = ProfileStartTriggers()
     XCTAssertTrue(validator.isStopAvailable(.timer, forStart: start))
   }
 
   // MARK: - Unavailability Reasons
 
-  func testSameNFCUnavailabilityReason() {
+  func testGivenNoNFCStart_WhenGettingSameNFCReason_ThenMentionsNFC() {
     var start = ProfileStartTriggers()
     start.manual = true
     let reason = validator.unavailabilityReason(.sameNFC, forStart: start)
@@ -58,7 +58,7 @@ final class TriggerValidatorTests: XCTestCase {
     XCTAssertTrue(reason!.contains("NFC"))
   }
 
-  func testSameQRUnavailabilityReason() {
+  func testGivenNoQRStart_WhenGettingSameQRReason_ThenMentionsQR() {
     var start = ProfileStartTriggers()
     start.manual = true
     let reason = validator.unavailabilityReason(.sameQR, forStart: start)
@@ -66,7 +66,7 @@ final class TriggerValidatorTests: XCTestCase {
     XCTAssertTrue(reason!.contains("QR"))
   }
 
-  func testNoReasonWhenAvailable() {
+  func testGivenNFCStartEnabled_WhenGettingSameNFCReason_ThenReturnsNil() {
     var start = ProfileStartTriggers()
     start.anyNFC = true
     XCTAssertNil(validator.unavailabilityReason(.sameNFC, forStart: start))
@@ -74,7 +74,7 @@ final class TriggerValidatorTests: XCTestCase {
 
   // MARK: - Auto-Fix
 
-  func testAutoFixRemovesSameNFCWhenNoNFCStart() {
+  func testGivenNoNFCStart_WhenAutoFixing_ThenRemovesSameNFC() {
     var start = ProfileStartTriggers()
     start.manual = true
     var stop = ProfileStopConditions()
@@ -85,7 +85,7 @@ final class TriggerValidatorTests: XCTestCase {
     XCTAssertFalse(stop.sameNFC)
   }
 
-  func testAutoFixRemovesSameQRWhenNoQRStart() {
+  func testGivenNoQRStart_WhenAutoFixing_ThenRemovesSameQR() {
     var start = ProfileStartTriggers()
     start.manual = true
     var stop = ProfileStopConditions()
@@ -96,7 +96,7 @@ final class TriggerValidatorTests: XCTestCase {
     XCTAssertFalse(stop.sameQR)
   }
 
-  func testAutoFixPreservesSameNFCWhenNFCStart() {
+  func testGivenNFCStartEnabled_WhenAutoFixing_ThenPreservesSameNFC() {
     var start = ProfileStartTriggers()
     start.anyNFC = true
     var stop = ProfileStopConditions()
@@ -109,7 +109,7 @@ final class TriggerValidatorTests: XCTestCase {
 
   // MARK: - Validation Errors
 
-  func testValidateReturnsErrorWhenNoStartTrigger() {
+  func testGivenNoStartTrigger_WhenValidating_ThenReturnsStartError() {
     let start = ProfileStartTriggers()
     var stop = ProfileStopConditions()
     stop.manual = true
@@ -119,7 +119,7 @@ final class TriggerValidatorTests: XCTestCase {
     XCTAssertTrue(errors.contains { $0.contains("start trigger") })
   }
 
-  func testValidateReturnsErrorWhenNoStopCondition() {
+  func testGivenNoStopCondition_WhenValidating_ThenReturnsStopError() {
     var start = ProfileStartTriggers()
     start.manual = true
     let stop = ProfileStopConditions()
@@ -129,7 +129,7 @@ final class TriggerValidatorTests: XCTestCase {
     XCTAssertTrue(errors.contains { $0.contains("stop condition") })
   }
 
-  func testValidateReturnsNoErrorsWhenValid() {
+  func testGivenValidStartAndStop_WhenValidating_ThenReturnsNoErrors() {
     var start = ProfileStartTriggers()
     start.manual = true
     var stop = ProfileStopConditions()

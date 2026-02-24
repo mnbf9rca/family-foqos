@@ -4,7 +4,7 @@ import XCTest
 
 final class LogTailTests: XCTestCase {
 
-  func testGetLogContentTailReturnsLastNLines() {
+  func testGivenLogContent_WhenGettingTail_ThenReturnsAtMostNLines() {
     // Given: Log has content
     _ = Log.shared.getLogContent()
 
@@ -16,7 +16,7 @@ final class LogTailTests: XCTestCase {
     XCTAssertLessThanOrEqual(lineCount, 10)
   }
 
-  func testGetLogContentTailPreservesNewestEntries() {
+  func testGivenRecentLogEntry_WhenGettingTail_ThenPreservesNewestEntries() {
     // Given: We add a unique log entry
     let uniqueMarker = "TAIL_TEST_\(UUID().uuidString)"
     Log.info(uniqueMarker, category: .app)
@@ -28,13 +28,13 @@ final class LogTailTests: XCTestCase {
     XCTAssertTrue(tailedContent.contains(uniqueMarker))
   }
 
-  func testGetLogContentTailWithZeroLinesReturnsEmpty() {
+  func testGivenZeroMaxLines_WhenGettingTail_ThenReturnsEmpty() {
     // Edge case: requesting zero lines should return empty string
     let tailedContent = Log.shared.getLogContentTail(maxLines: 0)
     XCTAssertEqual(tailedContent, "")
   }
 
-  func testGetLogContentTailPreservesChronologicalOrder() {
+  func testGivenMultipleLogEntries_WhenGettingTail_ThenPreservesChronologicalOrder() {
     // Given: We log multiple entries with identifiable order
     let marker1 = "ORDER_TEST_FIRST_\(UUID().uuidString)"
     let marker2 = "ORDER_TEST_SECOND_\(UUID().uuidString)"
@@ -60,7 +60,7 @@ final class LogTailTests: XCTestCase {
     XCTAssertLessThan(pos2, pos3, "Second entry should appear before third entry")
   }
 
-  func testGetLogFileURLsReturnsNonEmptyAfterLogging() {
+  func testGivenLoggedEntry_WhenGettingFileURLs_ThenReturnsNonEmpty() {
     // Given: We log something to ensure a file exists
     let marker = "FILE_URL_TEST_\(UUID().uuidString)"
     Log.info(marker, category: .app)
@@ -77,7 +77,7 @@ final class LogTailTests: XCTestCase {
     }
   }
 
-  func testGetTotalLogSizeReturnsPositiveAfterLogging() {
+  func testGivenLoggedEntry_WhenGettingTotalSize_ThenReturnsPositive() {
     // Given: We log something to ensure files have content
     let marker = "SIZE_TEST_\(UUID().uuidString)"
     Log.info(marker, category: .app)
@@ -89,7 +89,7 @@ final class LogTailTests: XCTestCase {
     XCTAssertGreaterThan(size, 0, "Total log size should be positive after logging")
   }
 
-  func testCopyLogFilesToStagingDirectoryCopiesAllFiles() throws {
+  func testGivenLogFiles_WhenCopyingToStaging_ThenCopiesAllFiles() throws {
     // Given: We log something to ensure files exist
     let marker = "COPY_TEST_\(UUID().uuidString)"
     Log.info(marker, category: .app)
