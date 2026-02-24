@@ -90,97 +90,132 @@ final class OneMoreMinuteTests: XCTestCase {
     XCTAssertNotEqual(snapshot1, snapshot2)
   }
 
-  // MARK: - One More Minute Availability Logic Tests
+  // MARK: - isOneMoreMinuteActive Tests
 
-  func testOneMoreMinuteAvailableWhenNotUsedAndNotOnBreak() {
-    // When oneMoreMinuteUsed is false and not on break, should be available
-    // This tests the logic: !oneMoreMinuteUsed && !isBreakActive
+  func testGivenNoStartTime_WhenCheckingActive_ThenReturnsFalse() {
+    let profile = BlockedProfiles(name: "Test")
+    let session = BlockedProfileSession(tag: "test", blockedProfile: profile)
 
-    let oneMoreMinuteUsed = false
-    let isBreakActive = false
-    let isAvailable = !oneMoreMinuteUsed && !isBreakActive
-
-    XCTAssertTrue(isAvailable)
+    XCTAssertFalse(session.isOneMoreMinuteActive())
   }
 
-  func testOneMoreMinuteNotAvailableWhenAlreadyUsed() {
-    // When oneMoreMinuteUsed is true, should not be available
-    let oneMoreMinuteUsed = true
-    let isBreakActive = false
-    let isAvailable = !oneMoreMinuteUsed && !isBreakActive
-
-    XCTAssertFalse(isAvailable)
-  }
-
-  func testOneMoreMinuteNotAvailableWhenOnBreak() {
-    // When on break, should not be available (even if not used)
-    let oneMoreMinuteUsed = false
-    let isBreakActive = true
-    let isAvailable = !oneMoreMinuteUsed && !isBreakActive
-
-    XCTAssertFalse(isAvailable)
-  }
-
-  func testOneMoreMinuteNotAvailableWhenUsedAndOnBreak() {
-    // When both used and on break, should not be available
-    let oneMoreMinuteUsed = true
-    let isBreakActive = true
-    let isAvailable = !oneMoreMinuteUsed && !isBreakActive
-
-    XCTAssertFalse(isAvailable)
-  }
-
-  // MARK: - One More Minute Active Logic Tests
-
-  func testOneMoreMinuteActiveWhenStartTimeWithin60Seconds() {
-    // When start time is within 60 seconds, should be active
+  func testGivenStartTimeWithin60Seconds_WhenCheckingActive_ThenReturnsTrue() {
     let now = Date()
-    let startTime = now
-    let timeSinceStart = now.timeIntervalSince(startTime)
-    let isActive = timeSinceStart < 60
+    let profile = BlockedProfiles(name: "Test")
+    let session = BlockedProfileSession(tag: "test", blockedProfile: profile)
+    session.oneMoreMinuteStartTime = now.addingTimeInterval(-30)
 
-    XCTAssertTrue(isActive)
+    XCTAssertTrue(session.isOneMoreMinuteActive(now: now))
   }
 
-  func testOneMoreMinuteNotActiveWhenStartTimeOver60Seconds() {
-    // When start time is over 60 seconds ago, should not be active
+  func testGivenStartTimeOver60Seconds_WhenCheckingActive_ThenReturnsFalse() {
     let now = Date()
-    let startTime = now.addingTimeInterval(-61)  // 61 seconds ago
-    let timeSinceStart = now.timeIntervalSince(startTime)
-    let isActive = timeSinceStart < 60
+    let profile = BlockedProfiles(name: "Test")
+    let session = BlockedProfileSession(tag: "test", blockedProfile: profile)
+    session.oneMoreMinuteStartTime = now.addingTimeInterval(-61)
 
-    XCTAssertFalse(isActive)
+    XCTAssertFalse(session.isOneMoreMinuteActive(now: now))
   }
 
-  func testOneMoreMinuteNotActiveWhenNoStartTime() {
-    // When start time is nil, should not be active
-    let now = Date()
-    let startTime: Date? = nil
-    let isActive: Bool
-    if let start = startTime {
-      isActive = now.timeIntervalSince(start) < 60
-    } else {
-      isActive = false
-    }
+  // MARK: - isOneMoreMinuteAvailable Tests
 
-    XCTAssertFalse(isActive)
+  func testGivenNotUsedAndNotOnBreak_WhenCheckingAvailable_ThenReturnsTrue() {
+    let profile = BlockedProfiles(name: "Test")
+    let session = BlockedProfileSession(tag: "test", blockedProfile: profile)
+
+    XCTAssertTrue(session.isOneMoreMinuteAvailable)
+  }
+
+  func testGivenAlreadyUsed_WhenCheckingAvailable_ThenReturnsFalse() {
+    let profile = BlockedProfiles(name: "Test")
+    let session = BlockedProfileSession(tag: "test", blockedProfile: profile)
+    session.oneMoreMinuteUsed = true
+
+    XCTAssertFalse(session.isOneMoreMinuteAvailable)
+  }
+
+  func testGivenOnBreak_WhenCheckingAvailable_ThenReturnsFalse() {
+    let profile = BlockedProfiles(name: "Test", enableBreaks: true)
+    let session = BlockedProfileSession(tag: "test", blockedProfile: profile)
+    session.breakStartTime = Date()
+
+    XCTAssertFalse(session.isOneMoreMinuteAvailable)
+  }
+
+  // MARK: - duration Tests
+
+  func testGivenEndedSession_WhenCheckingDuration_ThenReturnsStartToEnd() {
+    let now = Date()
+    let profile = BlockedProfiles(name: "Test")
+    let session = BlockedProfileSession(
+      tag: "test", blockedProfile: profile, startTime: now.addingTimeInterval(-300)
+    )
+    session.endTime = now
+
+    XCTAssertEqual(session.duration(), 300, accuracy: 0.001)
+  }
+
+  func testGivenActiveSession_WhenCheckingDuration_ThenReturnsStartToNow() {
+    let now = Date()
+    let profile = BlockedProfiles(name: "Test")
+    let session = BlockedProfileSession(
+      tag: "test", blockedProfile: profile, startTime: now.addingTimeInterval(-120)
+    )
+
+    XCTAssertEqual(session.duration(now: now), 120, accuracy: 0.001)
+  }
+
+  // MARK: - startOneMoreMinute Tests
+
+  func testGivenSession_WhenStartOneMoreMinute_ThenSetsUsedAndStartTime() {
+    let now = Date()
+    let profile = BlockedProfiles(name: "Test")
+    let session = BlockedProfileSession(tag: "test", blockedProfile: profile)
+
+    session.startOneMoreMinute(now: now)
+
+    XCTAssertTrue(session.oneMoreMinuteUsed)
+    XCTAssertEqual(session.oneMoreMinuteStartTime, now)
+  }
+
+  // MARK: - startBreak Tests
+
+  func testGivenSession_WhenStartBreak_ThenSetsBreakStartTime() {
+    let now = Date()
+    let profile = BlockedProfiles(name: "Test")
+    let session = BlockedProfileSession(tag: "test", blockedProfile: profile)
+
+    session.startBreak(now: now)
+
+    XCTAssertEqual(session.breakStartTime, now)
+  }
+
+  // MARK: - endSession Tests
+
+  func testGivenSession_WhenEndSession_ThenSetsEndTime() {
+    let now = Date()
+    let profile = BlockedProfiles(name: "Test")
+    let session = BlockedProfileSession(tag: "test", blockedProfile: profile)
+
+    session.endSession(now: now)
+
+    XCTAssertEqual(session.endTime, now)
   }
 
   // MARK: - Time Remaining Calculation Tests
 
   func testTimeRemainingCalculation() {
     let now = Date()
-    let startTime = now.addingTimeInterval(-30)  // Started 30 seconds ago
+    let startTime = now.addingTimeInterval(-30)
     let elapsed = now.timeIntervalSince(startTime)
     let remaining = max(0, 60 - elapsed)
 
-    // Exactly 30 seconds remaining (deterministic with pinned time)
     XCTAssertEqual(remaining, 30, accuracy: 0.001)
   }
 
   func testTimeRemainingZeroWhenExpired() {
     let now = Date()
-    let startTime = now.addingTimeInterval(-65)  // Started 65 seconds ago
+    let startTime = now.addingTimeInterval(-65)
     let elapsed = now.timeIntervalSince(startTime)
     let remaining = max(0, 60 - elapsed)
 
