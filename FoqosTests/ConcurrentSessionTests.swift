@@ -13,9 +13,12 @@ final class ConcurrentSessionTests: XCTestCase {
 
   /// Simulates the original bug: stale start after stop
   func testStaleStartAfterStopIsRejected() async {
+    let now = Date()
+
     // Device A starts
     let startResult = await mockService.startSession(
       profileId: profileId,
+      startTime: now,
       deviceId: "device-a"
     )
     guard case .started(let seq1) = startResult else {
@@ -27,6 +30,7 @@ final class ConcurrentSessionTests: XCTestCase {
     // Device A stops
     let stopResult = await mockService.stopSession(
       profileId: profileId,
+      endTime: now,
       deviceId: "device-a"
     )
     guard case .stopped(let seq2) = stopResult else {
@@ -51,6 +55,8 @@ final class ConcurrentSessionTests: XCTestCase {
 
   /// Simulates concurrent schedule triggers
   func testConcurrentScheduleTriggersFirstWins() async {
+    let now = Date()
+
     // Simulate Device A winning the race (Device B gets conflict)
     await mockService.reset()
     await mockService.setSimulateConflictOnce(true)
@@ -58,6 +64,7 @@ final class ConcurrentSessionTests: XCTestCase {
     // Device B tries to start (but A already won)
     let resultB = await mockService.startSession(
       profileId: profileId,
+      startTime: now,
       deviceId: "device-b"
     )
 
@@ -73,25 +80,31 @@ final class ConcurrentSessionTests: XCTestCase {
 
   /// Simulates multiple devices starting and stopping
   func testMultiDeviceStartStop() async {
+    let now = Date()
+
     // Device A starts
-    _ = await mockService.startSession(profileId: profileId, deviceId: "device-a")
+    _ = await mockService.startSession(
+      profileId: profileId, startTime: now, deviceId: "device-a")
 
     // Device B tries to start - should join A's session
-    let resultB = await mockService.startSession(profileId: profileId, deviceId: "device-b")
+    let resultB = await mockService.startSession(
+      profileId: profileId, startTime: now, deviceId: "device-b")
     guard case .alreadyActive = resultB else {
       XCTFail("B should join A's session")
       return
     }
 
     // Device C tries to start - should also join
-    let resultC = await mockService.startSession(profileId: profileId, deviceId: "device-c")
+    let resultC = await mockService.startSession(
+      profileId: profileId, startTime: now, deviceId: "device-c")
     guard case .alreadyActive = resultC else {
       XCTFail("C should join A's session")
       return
     }
 
     // Device B stops
-    let stopResult = await mockService.stopSession(profileId: profileId, deviceId: "device-b")
+    let stopResult = await mockService.stopSession(
+      profileId: profileId, endTime: now, deviceId: "device-b")
     guard case .stopped(let seq) = stopResult else {
       XCTFail("Should stop")
       return
@@ -109,12 +122,17 @@ final class ConcurrentSessionTests: XCTestCase {
 
   /// Tests that stopping an already stopped session returns alreadyStopped
   func testStopAlreadyStoppedSession() async {
+    let now = Date()
+
     // Start and stop
-    _ = await mockService.startSession(profileId: profileId, deviceId: "device-a")
-    _ = await mockService.stopSession(profileId: profileId, deviceId: "device-a")
+    _ = await mockService.startSession(
+      profileId: profileId, startTime: now, deviceId: "device-a")
+    _ = await mockService.stopSession(
+      profileId: profileId, endTime: now, deviceId: "device-a")
 
     // Try to stop again
-    let result = await mockService.stopSession(profileId: profileId, deviceId: "device-b")
+    let result = await mockService.stopSession(
+      profileId: profileId, endTime: now, deviceId: "device-b")
     guard case .alreadyStopped = result else {
       XCTFail("Should be alreadyStopped")
       return
@@ -123,7 +141,10 @@ final class ConcurrentSessionTests: XCTestCase {
 
   /// Tests that stopping a non-existent session returns alreadyStopped
   func testStopNonExistentSession() async {
-    let result = await mockService.stopSession(profileId: UUID(), deviceId: "device-a")
+    let now = Date()
+
+    let result = await mockService.stopSession(
+      profileId: UUID(), endTime: now, deviceId: "device-a")
     guard case .alreadyStopped = result else {
       XCTFail("Should be alreadyStopped for non-existent session")
       return
@@ -140,11 +161,14 @@ final class ConcurrentSessionTests: XCTestCase {
   /// Verifies that simulated CAS conflicts return alreadyActive
   /// to match real-world behavior when another device wins the race
   func testSimulatedConflictReturnsAlreadyActive() async {
+    let now = Date()
+
     await mockService.reset()
     await mockService.setSimulateConflictCount(1)
 
     let result = await mockService.startSession(
       profileId: profileId,
+      startTime: now,
       deviceId: "device-a"
     )
 
@@ -158,27 +182,33 @@ final class ConcurrentSessionTests: XCTestCase {
 
   /// Verifies that after conflicts are exhausted, normal behavior resumes
   func testStartSucceedsAfterConflictsExhausted() async {
+    let now = Date()
+
     await mockService.reset()
     await mockService.setSimulateConflictCount(2)
 
     // First two calls return alreadyActive (conflict)
-    let conflict1 = await mockService.startSession(profileId: profileId, deviceId: "device-a")
+    let conflict1 = await mockService.startSession(
+      profileId: profileId, startTime: now, deviceId: "device-a")
     guard case .alreadyActive = conflict1 else {
       XCTFail("Expected alreadyActive on first conflict")
       return
     }
 
-    let conflict2 = await mockService.startSession(profileId: profileId, deviceId: "device-a")
+    let conflict2 = await mockService.startSession(
+      profileId: profileId, startTime: now, deviceId: "device-a")
     guard case .alreadyActive = conflict2 else {
       XCTFail("Expected alreadyActive on second conflict")
       return
     }
 
     // Stop the conflict-winner's session so the normal path can start fresh
-    _ = await mockService.stopSession(profileId: profileId, deviceId: "conflict-device")
+    _ = await mockService.stopSession(
+      profileId: profileId, endTime: now, deviceId: "conflict-device")
 
     // Third call should succeed normally (conflicts exhausted, session stopped)
-    let success = await mockService.startSession(profileId: profileId, deviceId: "device-a")
+    let success = await mockService.startSession(
+      profileId: profileId, startTime: now, deviceId: "device-a")
     guard case .started = success else {
       XCTFail("Expected started after conflicts exhausted and session stopped, got \(success)")
       return

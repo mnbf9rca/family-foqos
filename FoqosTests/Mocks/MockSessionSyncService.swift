@@ -28,7 +28,7 @@ actor MockSessionSyncService {
     return .notFound
   }
 
-  func startSession(profileId: UUID, startTime: Date = Date(), deviceId: String) async
+  func startSession(profileId: UUID, startTime: Date, deviceId: String) async
     -> SessionSyncService.StartResult
   {
     if simulatedDelay > 0 {
@@ -40,7 +40,7 @@ actor MockSessionSyncService {
       // Simulate another device winning
       var winner = ProfileSessionRecord(profileId: profileId)
       _ = winner.applyUpdate(
-        isActive: true, sequenceNumber: 1, deviceId: "other-device", startTime: Date())
+        isActive: true, sequenceNumber: 1, deviceId: "other-device", startTime: startTime)
       records[profileId] = winner
       return .alreadyActive(session: winner)
     }
@@ -51,7 +51,7 @@ actor MockSessionSyncService {
       var winner = records[profileId] ?? ProfileSessionRecord(profileId: profileId)
       let newSeq = winner.sequenceNumber + 1
       _ = winner.applyUpdate(
-        isActive: true, sequenceNumber: newSeq, deviceId: "conflict-device", startTime: Date())
+        isActive: true, sequenceNumber: newSeq, deviceId: "conflict-device", startTime: startTime)
       records[profileId] = winner
       return .alreadyActive(session: winner)
     }
@@ -70,7 +70,7 @@ actor MockSessionSyncService {
     return .started(sequenceNumber: newSeq)
   }
 
-  func stopSession(profileId: UUID, endTime: Date = Date(), deviceId: String) async
+  func stopSession(profileId: UUID, endTime: Date, deviceId: String) async
     -> SessionSyncService.StopResult
   {
     if simulatedDelay > 0 {

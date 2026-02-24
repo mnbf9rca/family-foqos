@@ -16,7 +16,7 @@ final class TimerIntervalTests: XCTestCase {
     components.hour = hour
     components.minute = minute
     components.second = 0
-    return Calendar.current.date(from: components)!
+    return Calendar(identifier: .gregorian).date(from: components)!
   }
 
   // MARK: - Same-day timer

@@ -113,7 +113,7 @@ final class PreActivationReminderTests: XCTestCase {
   // MARK: - Time Calculation Tests
 
   func testReminderTimeCalculation() {
-    let calendar = Calendar.current
+    let calendar = Calendar(identifier: .gregorian)
     // Use a fixed reference date to avoid midnight/DST boundary issues
     let referenceDate = Date(timeIntervalSince1970: 1_700_000_000)  // 2023-11-14
 
