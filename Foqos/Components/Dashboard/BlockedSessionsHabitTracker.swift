@@ -45,13 +45,14 @@ struct BlockedSessionsHabitTracker: View {
     let dayStart = calendar.startOfDay(for: date)
     guard let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) else { return [] }
 
+    let now = Date()
     return sessions.filter { session in
       let sessionStart = session.startTime
-      let sessionEnd = session.endTime ?? Date()
+      let sessionEnd = session.endTime ?? now
 
       // Check if session overlaps with this day
       return sessionStart < dayEnd && sessionEnd > dayStart
-    }.sorted { $0.duration() > $1.duration() }
+    }.sorted { $0.duration(now: now) > $1.duration(now: now) }
   }
 
   /// Determines if a session spans multiple days (for display purposes)
