@@ -43,6 +43,7 @@ class StrategyManager: ObservableObject {
 
   // Track if we're currently processing a remote session change
   private var processingRemoteChange = false
+  private var sessionSyncTask: Task<Void, Never>?
 
   /// Whether session changes should be synced to CloudKit.
   /// Returns false when processing remote changes (to avoid echo loops)
@@ -487,7 +488,9 @@ class StrategyManager: ObservableObject {
   private func syncSessionStart(session: BlockedProfileSession, context: ModelContext) {
     guard shouldSyncSessionChange else { return }
 
-    Task { @MainActor in
+    let previousTask = sessionSyncTask
+    sessionSyncTask = Task {
+      await previousTask?.value
       let result = await sessionSyncService.startSession(
         profileId: session.blockedProfile.id,
         startTime: session.startTime
@@ -610,7 +613,9 @@ class StrategyManager: ObservableObject {
 
         // Sync session stop using CAS (if global sync is enabled)
         if self.shouldSyncSessionChange {
-          Task {
+          let previousTask = self.sessionSyncTask
+          self.sessionSyncTask = Task {
+            await previousTask?.value
             let result = await self.sessionSyncService.stopSession(
               profileId: endedProfile.id
             )
@@ -731,7 +736,9 @@ class StrategyManager: ObservableObject {
       // Sync scheduled session start using CAS (if global sync is enabled)
       // This ensures multi-device coordination for scheduled profile activations
       if profileSyncManager.isEnabled {
-        Task {
+        let previousTask = sessionSyncTask
+        sessionSyncTask = Task {
+          await previousTask?.value
           let result = await sessionSyncService.startSession(
             profileId: activeScheduledSession.blockedProfileId,
             startTime: activeScheduledSession.startTime
@@ -778,7 +785,9 @@ class StrategyManager: ObservableObject {
 
       // Sync scheduled session end using CAS (if global sync is enabled)
       if profileSyncManager.isEnabled, let endTime = completedScheduleSession.endTime {
-        Task {
+        let previousTask = sessionSyncTask
+        sessionSyncTask = Task {
+          await previousTask?.value
           let result = await sessionSyncService.stopSession(
             profileId: completedScheduleSession.blockedProfileId,
             endTime: endTime
