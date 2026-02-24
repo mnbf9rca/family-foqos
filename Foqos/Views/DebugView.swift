@@ -241,7 +241,7 @@ struct DebugView: View {
     markdown += "## Strategy Manager\n\n"
     markdown += "- **Has Active Session:** \(strategyManager.activeSession != nil ? "Yes" : "No")\n"
     markdown += "- **Elapsed Time:** \(Int(strategyManager.elapsedTime)) seconds\n"
-    markdown += "- **Timer Active:** \(strategyManager.timer != nil ? "Yes" : "No")\n\n"
+    markdown += "- **Timer Active:** \(strategyManager.timerTask != nil ? "Yes" : "No")\n\n"
 
     // Device Activities Section
     markdown += "## Device Activities (\(deviceActivities.count))\n\n"

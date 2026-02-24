@@ -14,7 +14,7 @@ class StrategyManager: ObservableObject {
   private let locationManager: LocationManager
 
   @Published var elapsedTime: TimeInterval = 0
-  @Published var timer: Timer?
+  @Published var timerTask: Task<Void, Never>?
   @Published var activeSession: BlockedProfileSession?
 
   @Published var showCustomStrategyView: Bool = false
@@ -176,30 +176,31 @@ class StrategyManager: ObservableObject {
 
   func startTimer() {
     stopTimer()
-    timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-      Task { @MainActor in
-        guard let self else { return }
-        guard let session = self.activeSession else { return }
+    timerTask = Task {
+      while !Task.isCancelled {
+        try? await Task.sleep(for: .seconds(1))
+        guard !Task.isCancelled else { break }
+        guard let session = activeSession else { break }
 
         if session.isBreakActive {
           // Calculate break time remaining (countdown)
-          guard let breakStartTime = session.breakStartTime else { return }
+          guard let breakStartTime = session.breakStartTime else { continue }
           let timeSinceBreakStart = Date().timeIntervalSince(breakStartTime)
           let breakDurationInSeconds = TimeInterval(session.blockedProfile.breakTimeInMinutes * 60)
-          self.elapsedTime = max(0, breakDurationInSeconds - timeSinceBreakStart)
+          elapsedTime = max(0, breakDurationInSeconds - timeSinceBreakStart)
         } else {
           // Calculate session elapsed time
           let rawElapsedTime = Date().timeIntervalSince(session.startTime)
           let breakDuration = session.calculateBreakDuration()
-          self.elapsedTime = rawElapsedTime - breakDuration
+          elapsedTime = rawElapsedTime - breakDuration
         }
       }
     }
   }
 
   func stopTimer() {
-    timer?.invalidate()
-    timer = nil
+    timerTask?.cancel()
+    timerTask = nil
   }
 
   func toggleSessionFromDeeplink(

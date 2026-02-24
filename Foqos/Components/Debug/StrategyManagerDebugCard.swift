@@ -21,7 +21,7 @@ struct StrategyManagerDebugCard: View {
           label: "Elapsed Time",
           value: DateFormatters.formatDuration(strategyManager.elapsedTime)
         )
-        DebugRow(label: "Timer Active", value: "\(strategyManager.timer != nil)")
+        DebugRow(label: "Timer Active", value: "\(strategyManager.timerTask != nil)")
       }
 
       Divider()
