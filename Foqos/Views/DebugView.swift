@@ -213,7 +213,7 @@ struct DebugView: View {
     }
 
     markdown += "- **Force Started:** \(session.forceStarted ? "Yes" : "No")\n"
-    markdown += "- **Duration:** \(DateFormatters.formatDuration(session.duration))\n"
+    markdown += "- **Duration:** \(DateFormatters.formatDuration(session.duration()))\n"
 
     markdown += "\n"
 

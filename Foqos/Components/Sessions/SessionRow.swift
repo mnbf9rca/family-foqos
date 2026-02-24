@@ -98,7 +98,7 @@ extension BlockedProfileSession {
   }
 
   var formattedDuration: String {
-    let minutes = Int(duration) / 60
+    let minutes = Int(duration()) / 60
     let hours = minutes / 60
     let remainingMinutes = minutes % 60
 

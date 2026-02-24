@@ -51,7 +51,7 @@ struct BlockedSessionsHabitTracker: View {
 
       // Check if session overlaps with this day
       return sessionStart < dayEnd && sessionEnd > dayStart
-    }.sorted { $0.duration > $1.duration }
+    }.sorted { $0.duration() > $1.duration() }
   }
 
   /// Determines if a session spans multiple days (for display purposes)
