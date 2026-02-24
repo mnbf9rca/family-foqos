@@ -10,6 +10,7 @@ class SyncCoordinator: ObservableObject {
   private let sessionController: SessionController
   private let syncManager: ProfileSyncManager
   private var modelContext: ModelContext?
+  private var pushTask: Task<Void, Never>?
 
   /// Tracks profile IDs that have active sessions started via remote trigger.
   /// Used to determine which sessions should be auto-stopped when remote ends.
@@ -68,7 +69,9 @@ class SyncCoordinator: ObservableObject {
         "Pushing \(syncedProfiles.count) profiles and \(syncedLocations.count) locations to CloudKit",
         category: .sync)
 
-      Task {
+      let previousTask = pushTask
+      pushTask = Task {
+        await previousTask?.value
         // Push synced profiles
         for syncedProfile in syncedProfiles {
           do {
@@ -546,7 +549,9 @@ class SyncCoordinator: ObservableObject {
     }
 
     // Re-push all local synced profiles and locations to CloudKit
-    Task {
+    let previousTask = pushTask
+    pushTask = Task {
+      await previousTask?.value
       await rePushLocalSyncedData(context: context)
 
       // Then trigger a full sync to get any data from other devices
@@ -612,7 +617,9 @@ class SyncCoordinator: ObservableObject {
       return
     }
 
-    Task {
+    let previousTask = pushTask
+    pushTask = Task {
+      await previousTask?.value
       do {
         try await syncManager.pushProfile(profile)
       } catch {
@@ -627,7 +634,9 @@ class SyncCoordinator: ObservableObject {
   func deleteProfileFromSync(_ profileId: UUID) {
     guard syncManager.isEnabled else { return }
 
-    Task {
+    let previousTask = pushTask
+    pushTask = Task {
+      await previousTask?.value
       do {
         try await syncManager.deleteProfile(profileId)
       } catch {
