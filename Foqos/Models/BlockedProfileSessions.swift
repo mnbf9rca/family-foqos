@@ -34,17 +34,17 @@ class BlockedProfileSession: BreakDurationCalculable {
       && breakEndTime == nil
   }
 
-  var isOneMoreMinuteActive: Bool {
+  func isOneMoreMinuteActive(now: Date = Date()) -> Bool {
     guard let startTime = oneMoreMinuteStartTime else { return false }
-    return Date().timeIntervalSince(startTime) < 60
+    return now.timeIntervalSince(startTime) < 60
   }
 
   var isOneMoreMinuteAvailable: Bool {
     return !oneMoreMinuteUsed && !isBreakActive
   }
 
-  var duration: TimeInterval {
-    let end = endTime ?? Date()
+  func duration(now: Date = Date()) -> TimeInterval {
+    let end = endTime ?? now
     return end.timeIntervalSince(startTime)
   }
 
@@ -64,42 +64,30 @@ class BlockedProfileSession: BreakDurationCalculable {
     blockedProfile.sessions.append(self)
   }
 
-  func startBreak() {
-    let breakStartTime = Date()
-
-    SharedData.setBreakStartTime(date: breakStartTime)
-    self.breakStartTime = breakStartTime
+  func startBreak(now: Date = Date()) {
+    SharedData.setBreakStartTime(date: now)
+    self.breakStartTime = now
   }
 
-  func endBreak() {
-    let breakEndTime = Date()
-
-    SharedData.setBreakEndTime(date: breakEndTime)
-    self.breakEndTime = breakEndTime
-  }
-
-  func startOneMoreMinute() {
-    let oneMoreMinuteStart = Date()
+  func startOneMoreMinute(now: Date = Date()) {
     oneMoreMinuteUsed = true
-    oneMoreMinuteStartTime = oneMoreMinuteStart
+    oneMoreMinuteStartTime = now
 
     // Sync to SharedData for background/foreground transitions
-    SharedData.setOneMoreMinuteStartTime(date: oneMoreMinuteStart)
+    SharedData.setOneMoreMinuteStartTime(date: now)
   }
 
-  func endSession() {
-    let endTime = Date()
-
+  func endSession(now: Date = Date()) {
     // Set the end time in shared data in case its being saved
-    SharedData.setEndTime(date: endTime)
-    self.endTime = endTime
+    SharedData.setEndTime(date: now)
+    self.endTime = now
 
     // If this was a schedule-started session, record when it stopped.
     // The reader in ScheduleTimerActivity compares this against today's start time.
     // Schedule-started sessions have tag == profile UUID (set by createSessionForScheduler).
     let isScheduleStarted = (tag == blockedProfile.id.uuidString)
     if isScheduleStarted, modelContext != nil {
-      blockedProfile.scheduleLastStoppedAt = endTime
+      blockedProfile.scheduleLastStoppedAt = now
       BlockedProfiles.updateSnapshot(for: blockedProfile)
     }
 
