@@ -114,6 +114,38 @@ final class StrategyManagerStopTests: XCTestCase {
     XCTAssertNotNil(result.errorMessage)
   }
 
+  func testCanStopWithSameQRWhenSessionTagMatches() {
+    var stop = ProfileStopConditions()
+    stop.sameQR = true
+
+    // Session tags are stored with "qr:" prefix in production (via startWithQRCode)
+    let result = StartStopActionResolver.canStop(
+      with: .qr(code: "session-code"),
+      conditions: stop,
+      sessionTag: "qr:session-code",
+      stopNFCTagId: nil,
+      stopQRCodeId: nil
+    )
+
+    XCTAssertTrue(result.allowed)
+  }
+
+  func testCannotStopWithSameQRWhenSessionTagMismatch() {
+    var stop = ProfileStopConditions()
+    stop.sameQR = true
+
+    let result = StartStopActionResolver.canStop(
+      with: .qr(code: "different-code"),
+      conditions: stop,
+      sessionTag: "qr:original-code",
+      stopNFCTagId: nil,
+      stopQRCodeId: nil
+    )
+
+    XCTAssertFalse(result.allowed)
+    XCTAssertNotNil(result.errorMessage)
+  }
+
   // MARK: - determineStopAction Tests
 
   func testDetermineStopActionManualReturnsStopImmediately() {
