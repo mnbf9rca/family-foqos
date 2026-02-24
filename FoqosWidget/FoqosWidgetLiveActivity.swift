@@ -12,7 +12,7 @@ struct FoqosWidgetAttributes: ActivityAttributes {
     var isOneMoreMinuteActive: Bool = false
     var oneMoreMinuteStartTime: Date? = nil
 
-    func getTimeIntervalSinceNow() -> Double {
+    func getTimeIntervalSinceNow(now: Date = Date()) -> Double {
       // Calculate the break duration to subtract from elapsed time
       let breakDuration = calculateBreakDuration()
 
@@ -20,7 +20,7 @@ struct FoqosWidgetAttributes: ActivityAttributes {
       let adjustedStartTime = startTime.addingTimeInterval(breakDuration)
 
       return adjustedStartTime.timeIntervalSince1970
-        - Date().timeIntervalSince1970
+        - now.timeIntervalSince1970
     }
 
   }

@@ -44,7 +44,7 @@ struct SessionDebugCard: View {
       Divider()
 
       // Duration
-      DebugRow(label: "Duration", value: DateFormatters.formatDuration(session.duration))
+      DebugRow(label: "Duration", value: DateFormatters.formatDuration(session.duration()))
     }
   }
 }

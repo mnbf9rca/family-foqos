@@ -119,7 +119,7 @@ class LiveActivityManager: ObservableObject {
       isBreakActive: session.isBreakActive,
       breakStartTime: session.breakStartTime,
       breakEndTime: session.breakEndTime,
-      isOneMoreMinuteActive: session.isOneMoreMinuteActive,
+      isOneMoreMinuteActive: session.isOneMoreMinuteActive(),
       oneMoreMinuteStartTime: session.oneMoreMinuteStartTime
     )
 
@@ -141,7 +141,7 @@ class LiveActivityManager: ObservableObject {
       isBreakActive: session.isBreakActive,
       breakStartTime: session.breakStartTime,
       breakEndTime: session.breakEndTime,
-      isOneMoreMinuteActive: session.isOneMoreMinuteActive,
+      isOneMoreMinuteActive: session.isOneMoreMinuteActive(),
       oneMoreMinuteStartTime: session.oneMoreMinuteStartTime
     )
 
@@ -163,7 +163,7 @@ class LiveActivityManager: ObservableObject {
       isBreakActive: session.isBreakActive,
       breakStartTime: session.breakStartTime,
       breakEndTime: session.breakEndTime,
-      isOneMoreMinuteActive: session.isOneMoreMinuteActive,
+      isOneMoreMinuteActive: session.isOneMoreMinuteActive(),
       oneMoreMinuteStartTime: session.oneMoreMinuteStartTime
     )
 

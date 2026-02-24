@@ -66,7 +66,7 @@ class StrategyManager: ObservableObject {
   }
 
   var isOneMoreMinuteActive: Bool {
-    return activeSession?.isOneMoreMinuteActive == true
+    return activeSession?.isOneMoreMinuteActive() == true
   }
 
   var isOneMoreMinuteAvailable: Bool {
