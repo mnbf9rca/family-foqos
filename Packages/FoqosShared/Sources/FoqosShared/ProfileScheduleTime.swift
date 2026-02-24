@@ -1,41 +1,52 @@
-// Foqos/Models/ProfileScheduleTime.swift
 import Foundation
 
 /// A time-of-day schedule for starting or stopping a profile.
 /// Independent from the existing BlockedProfileSchedule which combines start and stop.
-struct ProfileScheduleTime: Codable, Equatable {
-  var days: [Weekday]
-  var hour: Int
-  var minute: Int
-  var updatedAt: Date
+public struct ProfileScheduleTime: Codable, Equatable {
+  public var days: [Weekday]
+  public var hour: Int
+  public var minute: Int
+  public var updatedAt: Date
 
-  var isActive: Bool { !days.isEmpty }
+  public init(
+    days: [Weekday],
+    hour: Int,
+    minute: Int,
+    updatedAt: Date
+  ) {
+    self.days = days
+    self.hour = hour
+    self.minute = minute
+    self.updatedAt = updatedAt
+  }
 
-  func isTodayScheduled(now: Date = Date(), calendar: Calendar = .current) -> Bool {
+  public var isActive: Bool { !days.isEmpty }
+
+  public func isTodayScheduled(now: Date = Date(), calendar: Calendar = .current) -> Bool {
     guard isActive else { return false }
     let currentWeekdayRaw = calendar.component(.weekday, from: now)
     guard let today = Weekday(rawValue: currentWeekdayRaw) else { return false }
     return days.contains(today)
   }
 
-  func olderThanOneMinute(now: Date = Date()) -> Bool {
+  public func olderThanOneMinute(now: Date = Date()) -> Bool {
     return now.timeIntervalSince(updatedAt) > 1 * 60
   }
 
-  var formattedTime: String {
+  public var formattedTime: String {
     var h = hour % 12
     if h == 0 { h = 12 }
     let isPM = hour >= 12
     return "\(h):\(String(format: "%02d", minute)) \(isPM ? "PM" : "AM")"
   }
 
-  var daysText: String {
+  public var daysText: String {
     days.compactDaysText()
   }
 
   /// Returns the next future occurrence of this schedule after the given date.
   /// Walks up to 7 days forward to find the next scheduled day.
-  func nextScheduledStartTime(after date: Date, calendar: Calendar = .current) -> Date? {
+  public func nextScheduledStartTime(after date: Date, calendar: Calendar = .current) -> Date? {
     guard isActive else { return nil }
 
     var components = calendar.dateComponents([.year, .month, .day], from: date)
@@ -72,7 +83,7 @@ struct ProfileScheduleTime: Codable, Equatable {
   /// Returns this schedule's start time on the given date.
   /// Constructs a Date from the date's year/month/day and this schedule's hour:minute.
   /// Does not check whether `date` falls on a scheduled day — callers are responsible for day checks.
-  func scheduledStartTime(on date: Date, calendar: Calendar = .current) -> Date? {
+  public func scheduledStartTime(on date: Date, calendar: Calendar = .current) -> Date? {
     var components = calendar.dateComponents([.year, .month, .day], from: date)
     components.hour = hour
     components.minute = minute
@@ -87,7 +98,7 @@ struct ProfileScheduleTime: Codable, Equatable {
   /// - Same-day (start < stop): in window when todayStart <= now < todayStop
   /// - Overnight (start >= stop): could be in tonight's window (now >= todayStart)
   ///   or last night's window (now < todayStop, start was yesterday)
-  func activeWindowStart(
+  public func activeWindowStart(
     on date: Date,
     stopSchedule: ProfileScheduleTime?,
     calendar: Calendar = .current
@@ -127,7 +138,7 @@ struct ProfileScheduleTime: Codable, Equatable {
   /// Single source of truth combining: window detection, day check, age check, suppression.
   ///
   /// Used by both the DA extension reader and the foreground catch-up mechanism.
-  func shouldBeActiveNow(
+  public func shouldBeActiveNow(
     stopSchedule: ProfileScheduleTime?,
     lastStoppedAt: Date?,
     on date: Date = Date(),
@@ -157,7 +168,7 @@ struct ProfileScheduleTime: Codable, Equatable {
     return true
   }
 
-  var scheduleDescription: String {
+  public var scheduleDescription: String {
     let dayNames = days.compactDaysText()
     let time = String(format: "%d:%02d", hour, minute)
     return "\(dayNames) at \(time)"

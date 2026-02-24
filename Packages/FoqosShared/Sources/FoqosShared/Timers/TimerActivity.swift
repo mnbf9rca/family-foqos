@@ -1,6 +1,6 @@
 import DeviceActivity
 
-protocol TimerActivity {
+public protocol TimerActivity {
   static var id: String { get }
 
   func getDeviceActivityName(from profileId: String) -> DeviceActivityName

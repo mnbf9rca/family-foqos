@@ -1,7 +1,7 @@
 import DeviceActivity
 
-class TimerActivityUtil {
-  static func startTimerActivity(for activity: DeviceActivityName) {
+public class TimerActivityUtil {
+  public static func startTimerActivity(for activity: DeviceActivityName) {
     let parts = getTimerParts(from: activity)
 
     guard let timerActivity = getTimerActivity(for: parts.deviceActivityId),
@@ -13,7 +13,7 @@ class TimerActivityUtil {
     timerActivity.start(for: profile)
   }
 
-  static func stopTimerActivity(for activity: DeviceActivityName) {
+  public static func stopTimerActivity(for activity: DeviceActivityName) {
     let parts = getTimerParts(from: activity)
 
     guard let timerActivity = getTimerActivity(for: parts.deviceActivityId),

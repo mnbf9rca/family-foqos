@@ -17,6 +17,10 @@
 		80FF388E2D80DB540032BC5E /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 80C6CAFA2D4301B3008680F4 /* WidgetKit.framework */; };
 		80FF388F2D80DB540032BC5E /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 80C6CAFC2D4301B3008680F4 /* SwiftUI.framework */; };
 		80FF389C2D80DB560032BC5E /* FoqosWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 80FF388D2D80DB540032BC5E /* FoqosWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		D4A98F672F4D15C40069BE94 /* FoqosShared in Frameworks */ = {isa = PBXBuildFile; productRef = D4A98F662F4D15C40069BE94 /* FoqosShared */; };
+		D4A98F692F4D161E0069BE94 /* FoqosShared in Frameworks */ = {isa = PBXBuildFile; productRef = D4A98F682F4D161E0069BE94 /* FoqosShared */; };
+		D4A98F6B2F4D16220069BE94 /* FoqosShared in Frameworks */ = {isa = PBXBuildFile; productRef = D4A98F6A2F4D16220069BE94 /* FoqosShared */; };
+		D4A98F6D2F4D16260069BE94 /* FoqosShared in Frameworks */ = {isa = PBXBuildFile; productRef = D4A98F6C2F4D16260069BE94 /* FoqosShared */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -110,44 +114,6 @@
 			);
 			target = 801B20942CB363A10073E9E2 /* FamilyFoqos */;
 		};
-		801C99CE2E9C9B9D000E07CD /* Exceptions for "Foqos" folder in "FoqosWidgetExtension" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				Models/GeofenceRule.swift,
-				Models/ProfileScheduleTime.swift,
-				Models/Schedule.swift,
-				Models/Shared.swift,
-				Utils/AppBlockerUtil.swift,
-				Utils/Log.swift,
-			);
-			target = 80FF388C2D80DB540032BC5E /* FoqosWidgetExtension */;
-		};
-		803899772EF736BA009988BB /* Exceptions for "Foqos" folder in "FoqosShieldConfig" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				Utils/ThemeManager.swift,
-			);
-			target = 808A3C492E4ACD18002A7812 /* FoqosShieldConfig */;
-		};
-		804415942DE7E94B0000CAE4 /* Exceptions for "Foqos" folder in "FoqosDeviceMonitor" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				Models/GeofenceRule.swift,
-				Models/ProfileScheduleTime.swift,
-				Models/Schedule.swift,
-				Models/Shared.swift,
-				Models/Timers/BreakTimerActivity.swift,
-				Models/Timers/OneMoreMinuteTimerActivity.swift,
-				Models/Timers/ScheduleTimerActivity.swift,
-				Models/Timers/StopScheduleTimerActivity.swift,
-				Models/Timers/StrategyTimerActivity.swift,
-				Models/Timers/TimerActivity.swift,
-				Models/Timers/TimerActivityUtil.swift,
-				Utils/AppBlockerUtil.swift,
-				Utils/Log.swift,
-			);
-			target = 801713092DE6C78C00B77FE1 /* FoqosDeviceMonitor */;
-		};
 		807B2B8A2CC0ACCD00944D2B /* Exceptions for "Foqos" folder in "FamilyFoqos" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -185,9 +151,6 @@
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				807B2B8A2CC0ACCD00944D2B /* Exceptions for "Foqos" folder in "FamilyFoqos" target */,
-				801C99CE2E9C9B9D000E07CD /* Exceptions for "Foqos" folder in "FoqosWidgetExtension" target */,
-				804415942DE7E94B0000CAE4 /* Exceptions for "Foqos" folder in "FoqosDeviceMonitor" target */,
-				803899772EF736BA009988BB /* Exceptions for "Foqos" folder in "FoqosShieldConfig" target */,
 			);
 			path = Foqos;
 			sourceTree = "<group>";
@@ -221,6 +184,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D4A98F6B2F4D16220069BE94 /* FoqosShared in Frameworks */,
 				8017130B2DE6C78C00B77FE1 /* DeviceActivity.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -231,6 +195,7 @@
 			files = (
 				80F674AB2D6185510056977F /* CodeScanner in Frameworks */,
 				803989B32CCC06D600E87F57 /* StoreKit.framework in Frameworks */,
+				D4A98F672F4D15C40069BE94 /* FoqosShared in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -254,6 +219,7 @@
 			files = (
 				808A3C4C2E4ACD18002A7812 /* ManagedSettings.framework in Frameworks */,
 				808A3C4E2E4ACD18002A7812 /* ManagedSettingsUI.framework in Frameworks */,
+				D4A98F6D2F4D16260069BE94 /* FoqosShared in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -263,6 +229,7 @@
 			files = (
 				80FF388F2D80DB540032BC5E /* SwiftUI.framework in Frameworks */,
 				80FF388E2D80DB540032BC5E /* WidgetKit.framework in Frameworks */,
+				D4A98F692F4D161E0069BE94 /* FoqosShared in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -328,6 +295,7 @@
 			);
 			name = FoqosDeviceMonitor;
 			packageProductDependencies = (
+				D4A98F6A2F4D16220069BE94 /* FoqosShared */,
 			);
 			productName = FoqosDeviceMonitor;
 			productReference = 8017130A2DE6C78C00B77FE1 /* FoqosDeviceMonitor.appex */;
@@ -357,6 +325,7 @@
 			name = FamilyFoqos;
 			packageProductDependencies = (
 				80F674AA2D6185510056977F /* CodeScanner */,
+				D4A98F662F4D15C40069BE94 /* FoqosShared */,
 			);
 			productName = foqos;
 			productReference = 801B20952CB363A10073E9E2 /* FamilyFoqos.app */;
@@ -422,6 +391,7 @@
 			);
 			name = FoqosShieldConfig;
 			packageProductDependencies = (
+				D4A98F6C2F4D16260069BE94 /* FoqosShared */,
 			);
 			productName = FoqosShieldConfig;
 			productReference = 808A3C4A2E4ACD18002A7812 /* FoqosShieldConfig.appex */;
@@ -444,6 +414,7 @@
 			);
 			name = FoqosWidgetExtension;
 			packageProductDependencies = (
+				D4A98F682F4D161E0069BE94 /* FoqosShared */,
 			);
 			productName = FoqosWidgetExtension;
 			productReference = 80FF388D2D80DB540032BC5E /* FoqosWidgetExtension.appex */;
@@ -492,6 +463,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				8021D2462D61837E00A92114 /* XCRemoteSwiftPackageReference "CodeScanner" */,
+				D4A98F652F4D15C40069BE94 /* XCLocalSwiftPackageReference "Packages/FoqosShared" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 801B20962CB363A10073E9E2 /* Products */;
@@ -1268,6 +1240,13 @@
 		};
 /* End XCConfigurationList section */
 
+/* Begin XCLocalSwiftPackageReference section */
+		D4A98F652F4D15C40069BE94 /* XCLocalSwiftPackageReference "Packages/FoqosShared" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/FoqosShared;
+		};
+/* End XCLocalSwiftPackageReference section */
+
 /* Begin XCRemoteSwiftPackageReference section */
 		8021D2462D61837E00A92114 /* XCRemoteSwiftPackageReference "CodeScanner" */ = {
 			isa = XCRemoteSwiftPackageReference;
@@ -1284,6 +1263,25 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 8021D2462D61837E00A92114 /* XCRemoteSwiftPackageReference "CodeScanner" */;
 			productName = CodeScanner;
+		};
+		D4A98F662F4D15C40069BE94 /* FoqosShared */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = FoqosShared;
+		};
+		D4A98F682F4D161E0069BE94 /* FoqosShared */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D4A98F652F4D15C40069BE94 /* XCLocalSwiftPackageReference "Packages/FoqosShared" */;
+			productName = FoqosShared;
+		};
+		D4A98F6A2F4D16220069BE94 /* FoqosShared */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D4A98F652F4D15C40069BE94 /* XCLocalSwiftPackageReference "Packages/FoqosShared" */;
+			productName = FoqosShared;
+		};
+		D4A98F6C2F4D16260069BE94 /* FoqosShared */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D4A98F652F4D15C40069BE94 /* XCLocalSwiftPackageReference "Packages/FoqosShared" */;
+			productName = FoqosShared;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

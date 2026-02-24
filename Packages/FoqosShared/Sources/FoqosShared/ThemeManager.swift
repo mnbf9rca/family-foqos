@@ -1,14 +1,14 @@
 import SwiftUI
 
 @MainActor
-class ThemeManager: ObservableObject {
-  static let shared = ThemeManager()
+public class ThemeManager: ObservableObject {
+  public static let shared = ThemeManager()
 
   private init() {}
 
   // Single source of truth for all theme colors
   // nonisolated: Safe because it's immutable data accessed by Shield extension
-  nonisolated static let availableColors: [(name: String, color: Color)] = [
+  public nonisolated static let availableColors: [(name: String, color: Color)] = [
     ("Grimace Purple", Color(hex: "#894fa3")),
     ("Ocean Blue", Color(hex: "#007aff")),
     ("Mint Fresh", Color(hex: "#00c6bf")),
@@ -32,7 +32,7 @@ class ThemeManager: ObservableObject {
     "family_foqos_theme_color_name", store: UserDefaults(suiteName: "group.com.cynexia.family-foqos"))
   private var themeColorName: String = defaultColorName
 
-  var selectedColorName: String {
+  public var selectedColorName: String {
     get { themeColorName }
     set {
       themeColorName = newValue
@@ -40,18 +40,18 @@ class ThemeManager: ObservableObject {
     }
   }
 
-  var themeColor: Color {
+  public var themeColor: Color {
     Self.availableColors.first(where: { $0.name == themeColorName })?.color
       ?? Self.availableColors.first!.color
   }
 
-  func setTheme(named name: String) {
+  public func setTheme(named name: String) {
     selectedColorName = name
   }
 }
 
 extension Color {
-  init(hex: String) {
+  public init(hex: String) {
     let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
     var int: UInt64 = 0
     Scanner(string: hex).scanHexInt64(&int)
@@ -79,7 +79,7 @@ extension Color {
     )
   }
 
-  func toHex() -> String? {
+  public func toHex() -> String? {
     let uiColor = UIColor(self)
     var r: CGFloat = 0
     var g: CGFloat = 0

@@ -57,8 +57,7 @@ final class TimersUtil: @unchecked Sendable {  // SAFETY: Mutable state (backgro
 
   /// Superset range covering all reminder minute values ever shipped, used to clean up
   /// stale notifications when the supported options change between releases.
-  /// SYNC: ScheduleTimerActivity.swift duplicates this range (module boundary prevents import).
-  static let allReminderCleanupRange: ClosedRange<Int> = 1...5
+  static let allReminderCleanupRange = ScheduleTimerActivity.allReminderCleanupRange
 
   static func allPreActivationReminderIdentifiers(for profileId: UUID) -> [String] {
     // Always cancel identifiers for full cleanup range (not just current options) to clean up stale reminders

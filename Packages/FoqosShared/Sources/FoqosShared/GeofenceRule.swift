@@ -1,11 +1,11 @@
 import Foundation
 
 /// The type of geofence rule for profile override restrictions
-enum GeofenceRuleType: String, Codable, CaseIterable {
+public enum GeofenceRuleType: String, Codable, CaseIterable {
   case within  // User must be inside ANY of the referenced locations
   case outside  // User must be outside ALL of the referenced locations
 
-  var displayName: String {
+  public var displayName: String {
     switch self {
     case .within:
       return "Must be within"
@@ -14,7 +14,7 @@ enum GeofenceRuleType: String, Codable, CaseIterable {
     }
   }
 
-  var description: String {
+  public var description: String {
     switch self {
     case .within:
       return "You can only stop this profile when you're at one of the selected locations"
@@ -23,7 +23,7 @@ enum GeofenceRuleType: String, Codable, CaseIterable {
     }
   }
 
-  var shortDescription: String {
+  public var shortDescription: String {
     switch self {
     case .within:
       return "Stop only at selected locations"
@@ -32,7 +32,7 @@ enum GeofenceRuleType: String, Codable, CaseIterable {
     }
   }
 
-  var iconName: String {
+  public var iconName: String {
     switch self {
     case .within:
       return "location.circle.fill"
@@ -43,28 +43,28 @@ enum GeofenceRuleType: String, Codable, CaseIterable {
 }
 
 /// A reference to a saved location with an optional radius override
-struct ProfileLocationReference: Codable, Equatable, Hashable {
-  var savedLocationId: UUID
-  var radiusOverrideMeters: Double?  // nil = use location's default radius
+public struct ProfileLocationReference: Codable, Equatable, Hashable {
+  public var savedLocationId: UUID
+  public var radiusOverrideMeters: Double?  // nil = use location's default radius
 
-  init(savedLocationId: UUID, radiusOverrideMeters: Double? = nil) {
+  public init(savedLocationId: UUID, radiusOverrideMeters: Double? = nil) {
     self.savedLocationId = savedLocationId
     self.radiusOverrideMeters = radiusOverrideMeters
   }
 
   /// Get the effective radius (override or default from saved location)
-  func effectiveRadius(defaultRadius: Double) -> Double {
+  public func effectiveRadius(defaultRadius: Double) -> Double {
     return radiusOverrideMeters ?? defaultRadius
   }
 }
 
 /// A geofence rule for a profile, defining location-based restrictions for stopping
-struct ProfileGeofenceRule: Codable, Equatable {
-  var ruleType: GeofenceRuleType
-  var locationReferences: [ProfileLocationReference]
-  var allowEmergencyOverride: Bool
+public struct ProfileGeofenceRule: Codable, Equatable {
+  public var ruleType: GeofenceRuleType
+  public var locationReferences: [ProfileLocationReference]
+  public var allowEmergencyOverride: Bool
 
-  init(
+  public init(
     ruleType: GeofenceRuleType,
     locationReferences: [ProfileLocationReference],
     allowEmergencyOverride: Bool = true
@@ -75,17 +75,17 @@ struct ProfileGeofenceRule: Codable, Equatable {
   }
 
   /// Whether this rule has any locations configured
-  var hasLocations: Bool {
+  public var hasLocations: Bool {
     return !locationReferences.isEmpty
   }
 
   /// Number of locations in the rule
-  var locationCount: Int {
+  public var locationCount: Int {
     return locationReferences.count
   }
 
   /// Generate a summary text for UI display
-  func summaryText(locationNames: [UUID: String]) -> String {
+  public func summaryText(locationNames: [UUID: String]) -> String {
     guard hasLocations else {
       return "No locations selected"
     }
@@ -105,15 +105,20 @@ struct ProfileGeofenceRule: Codable, Equatable {
 }
 
 /// Result of checking a geofence rule against current location
-struct GeofenceCheckResult {
-  var isSatisfied: Bool
-  var failureMessage: String?
+public struct GeofenceCheckResult {
+  public var isSatisfied: Bool
+  public var failureMessage: String?
 
-  static func satisfied() -> GeofenceCheckResult {
+  public init(isSatisfied: Bool, failureMessage: String? = nil) {
+    self.isSatisfied = isSatisfied
+    self.failureMessage = failureMessage
+  }
+
+  public static func satisfied() -> GeofenceCheckResult {
     return GeofenceCheckResult(isSatisfied: true, failureMessage: nil)
   }
 
-  static func failed(message: String) -> GeofenceCheckResult {
+  public static func failed(message: String) -> GeofenceCheckResult {
     return GeofenceCheckResult(isSatisfied: false, failureMessage: message)
   }
 }

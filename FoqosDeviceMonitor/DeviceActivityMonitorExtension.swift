@@ -6,6 +6,7 @@
 //
 
 import DeviceActivity
+import FoqosShared
 import ManagedSettings
 import OSLog
 

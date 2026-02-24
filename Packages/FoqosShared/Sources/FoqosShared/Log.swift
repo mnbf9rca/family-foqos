@@ -2,17 +2,17 @@ import Foundation
 import OSLog
 
 /// Log levels for the privacy-focused logging framework
-enum LogLevel: Int, Comparable, Codable {
+public enum LogLevel: Int, Comparable, Codable {
   case debug = 0
   case info = 1
   case warning = 2
   case error = 3
 
-  static func < (lhs: LogLevel, rhs: LogLevel) -> Bool {
+  public static func < (lhs: LogLevel, rhs: LogLevel) -> Bool {
     return lhs.rawValue < rhs.rawValue
   }
 
-  var prefix: String {
+  public var prefix: String {
     switch self {
     case .debug: return "DEBUG"
     case .info: return "INFO"
@@ -21,7 +21,7 @@ enum LogLevel: Int, Comparable, Codable {
     }
   }
 
-  var osLogType: OSLogType {
+  public var osLogType: OSLogType {
     switch self {
     case .debug: return .debug
     case .info: return .info
@@ -32,7 +32,7 @@ enum LogLevel: Int, Comparable, Codable {
 }
 
 /// Categories for organizing log output
-enum LogCategory: String, CaseIterable {
+public enum LogCategory: String, CaseIterable {
   case app = "App"
   case cloudKit = "CloudKit"
   case sync = "Sync"
@@ -48,17 +48,17 @@ enum LogCategory: String, CaseIterable {
 }
 
 /// A single log entry with timestamp, level, category, and message
-struct LogEntry: Codable, Identifiable {
-  let id: UUID
-  let timestamp: Date
-  let level: LogLevel
-  let category: String
-  let message: String
-  let file: String
-  let function: String
-  let line: Int
+public struct LogEntry: Codable, Identifiable {
+  public let id: UUID
+  public let timestamp: Date
+  public let level: LogLevel
+  public let category: String
+  public let message: String
+  public let file: String
+  public let function: String
+  public let line: Int
 
-  init(
+  public init(
     level: LogLevel,
     category: String,
     message: String,
@@ -76,7 +76,7 @@ struct LogEntry: Codable, Identifiable {
     self.line = line
   }
 
-  var formattedString: String {
+  public var formattedString: String {
     let dateFormatter = ISO8601DateFormatter()
     dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     let timestamp = dateFormatter.string(from: self.timestamp)
@@ -85,8 +85,8 @@ struct LogEntry: Codable, Identifiable {
 }
 
 /// Privacy-focused logging framework with file persistence and export capabilities
-final class Log: @unchecked Sendable {  // SAFETY: entries/file I/O protected by serial queue; minimumLevel/fileLoggingEnabled are immutable
-  static let shared = Log()
+public final class Log: @unchecked Sendable {  // SAFETY: entries/file I/O protected by serial queue; minimumLevel/fileLoggingEnabled are immutable
+  public static let shared = Log()
 
   private let queue = DispatchQueue(label: "com.cynexia.family-foqos.log", qos: .utility)
   private var entries: [LogEntry] = []
@@ -98,10 +98,10 @@ final class Log: @unchecked Sendable {  // SAFETY: entries/file I/O protected by
   private let fileManager = FileManager.default
 
   /// Minimum log level to record
-  let minimumLevel: LogLevel = .debug
+  public let minimumLevel: LogLevel = .debug
 
   /// Whether to persist logs to file
-  let fileLoggingEnabled: Bool = true
+  public let fileLoggingEnabled: Bool = true
 
   private var logDirectory: URL? {
     guard
@@ -128,7 +128,7 @@ final class Log: @unchecked Sendable {  // SAFETY: entries/file I/O protected by
 
   // MARK: - Public Logging Methods
 
-  static func debug(
+  public static func debug(
     _ message: String,
     category: LogCategory = .app,
     file: String = #file,
@@ -140,7 +140,7 @@ final class Log: @unchecked Sendable {  // SAFETY: entries/file I/O protected by
       line: line)
   }
 
-  static func info(
+  public static func info(
     _ message: String,
     category: LogCategory = .app,
     file: String = #file,
@@ -152,7 +152,7 @@ final class Log: @unchecked Sendable {  // SAFETY: entries/file I/O protected by
       line: line)
   }
 
-  static func warning(
+  public static func warning(
     _ message: String,
     category: LogCategory = .app,
     file: String = #file,
@@ -164,7 +164,7 @@ final class Log: @unchecked Sendable {  // SAFETY: entries/file I/O protected by
       function: function, line: line)
   }
 
-  static func error(
+  public static func error(
     _ message: String,
     category: LogCategory = .app,
     file: String = #file,
@@ -276,7 +276,7 @@ final class Log: @unchecked Sendable {  // SAFETY: entries/file I/O protected by
   // MARK: - Export Functions
 
   /// Get all in-memory log entries
-  func getEntries() -> [LogEntry] {
+  public func getEntries() -> [LogEntry] {
     return queue.sync { entries }
   }
 
@@ -301,7 +301,7 @@ final class Log: @unchecked Sendable {  // SAFETY: entries/file I/O protected by
   }
 
   /// Get all log file URLs for export (thread-safe)
-  func getLogFileURLs() -> [URL] {
+  public func getLogFileURLs() -> [URL] {
     return queue.sync { _getLogFileURLsUnsafe() }
   }
 
@@ -310,7 +310,7 @@ final class Log: @unchecked Sendable {  // SAFETY: entries/file I/O protected by
   /// not provide an all-or-nothing filesystem transaction if a copy fails.
   /// - Parameter stagingDir: Destination directory (must already exist).
   /// - Throws: If any file copy fails.
-  func copyLogFilesToStagingDirectory(_ stagingDir: URL) throws {
+  public func copyLogFilesToStagingDirectory(_ stagingDir: URL) throws {
     try queue.sync {
       let urls = _getLogFileURLsUnsafe()
       for (index, url) in urls.enumerated() {
@@ -322,7 +322,7 @@ final class Log: @unchecked Sendable {  // SAFETY: entries/file I/O protected by
   }
 
   /// Get combined log content as a string
-  func getLogContent() -> String {
+  public func getLogContent() -> String {
     return queue.sync {
       let urls = _getLogFileURLsUnsafe().reversed()  // Oldest first
       var content = ""
@@ -338,7 +338,7 @@ final class Log: @unchecked Sendable {  // SAFETY: entries/file I/O protected by
   }
 
   /// Get tailed log content (last N lines) for preview - avoids loading massive logs
-  func getLogContentTail(maxLines: Int) -> String {
+  public func getLogContentTail(maxLines: Int) -> String {
     guard maxLines > 0 else { return "" }
 
     return queue.sync {
@@ -371,7 +371,7 @@ final class Log: @unchecked Sendable {  // SAFETY: entries/file I/O protected by
   }
 
   /// Clear all log files and in-memory entries
-  func clearLogs() {
+  public func clearLogs() {
     queue.async { [weak self] in
       self?.entries.removeAll()
 
@@ -388,7 +388,7 @@ final class Log: @unchecked Sendable {  // SAFETY: entries/file I/O protected by
   }
 
   /// Get total size of all log files (thread-safe)
-  func getTotalLogSize() -> Int {
+  public func getTotalLogSize() -> Int {
     return queue.sync {
       let urls = _getLogFileURLsUnsafe()
       var totalSize = 0

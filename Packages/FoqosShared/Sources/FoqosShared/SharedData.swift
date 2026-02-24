@@ -4,21 +4,21 @@ import os
 
 // MARK: – Break-duration calculation shared by SessionSnapshot, ContentState, and BlockedProfileSession
 
-protocol BreakDurationCalculable {
+public protocol BreakDurationCalculable {
   var breakStartTime: Date? { get }
   var breakEndTime: Date? { get }
 }
 
 extension BreakDurationCalculable {
   /// Returns the duration of a completed break in seconds. Returns 0 if no break occurred or if the break is still active.
-  func calculateBreakDuration() -> TimeInterval {
+  public func calculateBreakDuration() -> TimeInterval {
     guard let breakStart = breakStartTime else { return 0 }
     guard let breakEnd = breakEndTime else { return 0 }
     return breakEnd.timeIntervalSince(breakStart)
   }
 }
 
-enum SharedData {
+public enum SharedData {
   private nonisolated(unsafe) static let suite = UserDefaults(  // SAFETY: UserDefaults is thread-safe per Apple docs
     suiteName: "group.com.cynexia.family-foqos"
   )!
@@ -99,77 +99,171 @@ enum SharedData {
 
   // MARK: – Serializable snapshot of a profile (no sessions)
 
-  struct ProfileSnapshot: Codable, Equatable {
-    var id: UUID
-    var name: String
-    var selectedActivity: FamilyActivitySelection
-    var createdAt: Date
-    var updatedAt: Date
-    var blockingStrategyId: String?
-    var strategyData: Data?
-    var order: Int
+  public struct ProfileSnapshot: Codable, Equatable {
+    public var id: UUID
+    public var name: String
+    public var selectedActivity: FamilyActivitySelection
+    public var createdAt: Date
+    public var updatedAt: Date
+    public var blockingStrategyId: String?
+    public var strategyData: Data?
+    public var order: Int
 
-    var enableLiveActivity: Bool
-    var reminderTimeInSeconds: UInt32?
-    var customReminderMessage: String?
-    var enableBreaks: Bool
-    var breakTimeInMinutes: Int = 15
-    var enableStrictMode: Bool
-    var enableAllowMode: Bool
-    var enableAllowModeDomains: Bool
-    var enableSafariBlocking: Bool
+    public var enableLiveActivity: Bool
+    public var reminderTimeInSeconds: UInt32?
+    public var customReminderMessage: String?
+    public var enableBreaks: Bool
+    public var breakTimeInMinutes: Int = 15
+    public var enableStrictMode: Bool
+    public var enableAllowMode: Bool
+    public var enableAllowModeDomains: Bool
+    public var enableSafariBlocking: Bool
 
-    var preActivationReminderTimes: [UInt8]?
+    public var preActivationReminderTimes: [UInt8]?
 
-    var domains: [String]?
-    var physicalUnblockNFCTagId: String?
-    var physicalUnblockQRCodeId: String?
+    public var domains: [String]?
+    public var physicalUnblockNFCTagId: String?
+    public var physicalUnblockQRCodeId: String?
 
-    var schedule: BlockedProfileSchedule?
+    public var schedule: BlockedProfileSchedule?
 
     // V2 trigger system
-    var startSchedule: ProfileScheduleTime?
-    var stopSchedule: ProfileScheduleTime?
-    var startTriggersSchedule: Bool?
-    var stopConditionsSchedule: Bool?
+    public var startSchedule: ProfileScheduleTime?
+    public var stopSchedule: ProfileScheduleTime?
+    public var startTriggersSchedule: Bool?
+    public var stopConditionsSchedule: Bool?
 
-    var geofenceRule: ProfileGeofenceRule?
+    public var geofenceRule: ProfileGeofenceRule?
 
-    var disableBackgroundStops: Bool?
+    public var disableBackgroundStops: Bool?
 
     // Managed profile fields
-    var isManaged: Bool?
-    var managedByChildId: String?
+    public var isManaged: Bool?
+    public var managedByChildId: String?
 
     // Device sync fields
-    var syncVersion: Int?
-    var needsAppSelection: Bool?
+    public var syncVersion: Int?
+    public var needsAppSelection: Bool?
 
-    var scheduleLastStoppedAt: Date?
+    public var scheduleLastStoppedAt: Date?
+
+    public init(
+      id: UUID,
+      name: String,
+      selectedActivity: FamilyActivitySelection,
+      createdAt: Date,
+      updatedAt: Date,
+      blockingStrategyId: String? = nil,
+      strategyData: Data? = nil,
+      order: Int,
+      enableLiveActivity: Bool,
+      reminderTimeInSeconds: UInt32? = nil,
+      customReminderMessage: String? = nil,
+      enableBreaks: Bool,
+      breakTimeInMinutes: Int = 15,
+      enableStrictMode: Bool,
+      enableAllowMode: Bool,
+      enableAllowModeDomains: Bool,
+      enableSafariBlocking: Bool,
+      preActivationReminderTimes: [UInt8]? = nil,
+      domains: [String]? = nil,
+      physicalUnblockNFCTagId: String? = nil,
+      physicalUnblockQRCodeId: String? = nil,
+      schedule: BlockedProfileSchedule? = nil,
+      startSchedule: ProfileScheduleTime? = nil,
+      stopSchedule: ProfileScheduleTime? = nil,
+      startTriggersSchedule: Bool? = nil,
+      stopConditionsSchedule: Bool? = nil,
+      geofenceRule: ProfileGeofenceRule? = nil,
+      disableBackgroundStops: Bool? = nil,
+      isManaged: Bool? = nil,
+      managedByChildId: String? = nil,
+      syncVersion: Int? = nil,
+      needsAppSelection: Bool? = nil,
+      scheduleLastStoppedAt: Date? = nil
+    ) {
+      self.id = id
+      self.name = name
+      self.selectedActivity = selectedActivity
+      self.createdAt = createdAt
+      self.updatedAt = updatedAt
+      self.blockingStrategyId = blockingStrategyId
+      self.strategyData = strategyData
+      self.order = order
+      self.enableLiveActivity = enableLiveActivity
+      self.reminderTimeInSeconds = reminderTimeInSeconds
+      self.customReminderMessage = customReminderMessage
+      self.enableBreaks = enableBreaks
+      self.breakTimeInMinutes = breakTimeInMinutes
+      self.enableStrictMode = enableStrictMode
+      self.enableAllowMode = enableAllowMode
+      self.enableAllowModeDomains = enableAllowModeDomains
+      self.enableSafariBlocking = enableSafariBlocking
+      self.preActivationReminderTimes = preActivationReminderTimes
+      self.domains = domains
+      self.physicalUnblockNFCTagId = physicalUnblockNFCTagId
+      self.physicalUnblockQRCodeId = physicalUnblockQRCodeId
+      self.schedule = schedule
+      self.startSchedule = startSchedule
+      self.stopSchedule = stopSchedule
+      self.startTriggersSchedule = startTriggersSchedule
+      self.stopConditionsSchedule = stopConditionsSchedule
+      self.geofenceRule = geofenceRule
+      self.disableBackgroundStops = disableBackgroundStops
+      self.isManaged = isManaged
+      self.managedByChildId = managedByChildId
+      self.syncVersion = syncVersion
+      self.needsAppSelection = needsAppSelection
+      self.scheduleLastStoppedAt = scheduleLastStoppedAt
+    }
   }
 
   // MARK: – Serializable snapshot of a session (no profile object)
 
-  struct SessionSnapshot: Codable, Equatable, BreakDurationCalculable {
-    var id: String
-    var tag: String
-    var blockedProfileId: UUID
+  public struct SessionSnapshot: Codable, Equatable, BreakDurationCalculable {
+    public var id: String
+    public var tag: String
+    public var blockedProfileId: UUID
 
-    var startTime: Date
-    var endTime: Date?
+    public var startTime: Date
+    public var endTime: Date?
 
-    var breakStartTime: Date?
-    var breakEndTime: Date?
+    public var breakStartTime: Date?
+    public var breakEndTime: Date?
 
-    var forceStarted: Bool
+    public var forceStarted: Bool
 
-    var oneMoreMinuteUsed: Bool = false
-    var oneMoreMinuteStartTime: Date?
+    public var oneMoreMinuteUsed: Bool = false
+    public var oneMoreMinuteStartTime: Date?
+
+    public init(
+      id: String,
+      tag: String,
+      blockedProfileId: UUID,
+      startTime: Date,
+      endTime: Date? = nil,
+      breakStartTime: Date? = nil,
+      breakEndTime: Date? = nil,
+      forceStarted: Bool,
+      oneMoreMinuteUsed: Bool = false,
+      oneMoreMinuteStartTime: Date? = nil
+    ) {
+      self.id = id
+      self.tag = tag
+      self.blockedProfileId = blockedProfileId
+      self.startTime = startTime
+      self.endTime = endTime
+      self.breakStartTime = breakStartTime
+      self.breakEndTime = breakEndTime
+      self.forceStarted = forceStarted
+      self.oneMoreMinuteUsed = oneMoreMinuteUsed
+      self.oneMoreMinuteStartTime = oneMoreMinuteStartTime
+    }
   }
 
   // MARK: – Persisted snapshots keyed by profile ID (UUID string)
 
-  static var profileSnapshots: [String: ProfileSnapshot] {
+  public static var profileSnapshots: [String: ProfileSnapshot] {
     get {
       guard let data = data(forKey: .profileSnapshots, legacyKey: .profileSnapshots) else { return [:] }
       return (try? JSONDecoder().decode([String: ProfileSnapshot].self, from: data)) ?? [:]
@@ -183,11 +277,11 @@ enum SharedData {
     }
   }
 
-  static func snapshot(for profileID: String) -> ProfileSnapshot? {
+  public static func snapshot(for profileID: String) -> ProfileSnapshot? {
     withLock { profileSnapshots[profileID] }
   }
 
-  static func setSnapshot(_ snapshot: ProfileSnapshot, for profileID: String) {
+  public static func setSnapshot(_ snapshot: ProfileSnapshot, for profileID: String) {
     withLock {
       var all = profileSnapshots
       all[profileID] = snapshot
@@ -195,7 +289,7 @@ enum SharedData {
     }
   }
 
-  static func removeSnapshot(for profileID: String) {
+  public static func removeSnapshot(for profileID: String) {
     withLock {
       var all = profileSnapshots
       all.removeValue(forKey: profileID)
@@ -205,7 +299,7 @@ enum SharedData {
 
   // MARK: – Persisted array of scheduled sessions
 
-  static var completedSessionsInScheduler: [SessionSnapshot] {
+  public static var completedSessionsInScheduler: [SessionSnapshot] {
     get {
       guard let data = data(forKey: .completedScheduleSessions, legacyKey: .completedScheduleSessions) else { return [] }
       return (try? JSONDecoder().decode([SessionSnapshot].self, from: data)) ?? []
@@ -221,7 +315,7 @@ enum SharedData {
 
   // MARK: – Persisted array of scheduled sessions
 
-  static var activeSharedSession: SessionSnapshot? {
+  public static var activeSharedSession: SessionSnapshot? {
     get {
       guard let data = data(forKey: .activeScheduleSession, legacyKey: .activeScheduleSession) else { return nil }
       return (try? JSONDecoder().decode(SessionSnapshot.self, from: data)) ?? nil
@@ -235,7 +329,7 @@ enum SharedData {
     }
   }
 
-  static func createSessionForScheduler(for profileID: UUID) {
+  public static func createSessionForScheduler(for profileID: UUID) {
     withLock {
       activeSharedSession = SessionSnapshot(
         id: UUID().uuidString,
@@ -247,17 +341,17 @@ enum SharedData {
     }
   }
 
-  static func createActiveSharedSession(for session: SessionSnapshot) {
+  public static func createActiveSharedSession(for session: SessionSnapshot) {
     withLock {
       activeSharedSession = session
     }
   }
 
-  static func getActiveSharedSession() -> SessionSnapshot? {
+  public static func getActiveSharedSession() -> SessionSnapshot? {
     withLock { activeSharedSession }
   }
 
-  static func endActiveSharedSession() {
+  public static func endActiveSharedSession() {
     withLock {
       guard var existingScheduledSession = activeSharedSession else { return }
 
@@ -270,7 +364,7 @@ enum SharedData {
 
   /// Sets scheduleLastStoppedAt on the profile snapshot in SharedData.
   /// Called from extension processes that cannot access SwiftData.
-  static func setLastStoppedAt(for profileID: String, at date: Date) {
+  public static func setLastStoppedAt(for profileID: String, at date: Date) {
     withLock {
       var all = profileSnapshots
       guard var snapshot = all[profileID] else { return }
@@ -280,7 +374,7 @@ enum SharedData {
     }
   }
 
-  static func flushActiveSession() {
+  public static func flushActiveSession() {
     withLock {
       activeSharedSession = nil
     }
@@ -289,7 +383,7 @@ enum SharedData {
   /// Atomically reads and clears completed scheduled sessions.
   /// Use this in production instead of separate get + flush calls
   /// to prevent TOCTOU races with concurrent endActiveSharedSession() writes.
-  static func getAndFlushCompletedSessionsForScheduler() -> [SessionSnapshot] {
+  public static func getAndFlushCompletedSessionsForScheduler() -> [SessionSnapshot] {
     withLock {
       let sessions = completedSessionsInScheduler
       completedSessionsInScheduler = []
@@ -297,25 +391,25 @@ enum SharedData {
     }
   }
 
-  static func setBreakStartTime(date: Date) {
+  public static func setBreakStartTime(date: Date) {
     withLock {
       activeSharedSession?.breakStartTime = date
     }
   }
 
-  static func setBreakEndTime(date: Date) {
+  public static func setBreakEndTime(date: Date) {
     withLock {
       activeSharedSession?.breakEndTime = date
     }
   }
 
-  static func setEndTime(date: Date) {
+  public static func setEndTime(date: Date) {
     withLock {
       activeSharedSession?.endTime = date
     }
   }
 
-  static func setOneMoreMinuteStartTime(date: Date) {
+  public static func setOneMoreMinuteStartTime(date: Date) {
     withLock {
       guard var session = activeSharedSession else { return }
       session.oneMoreMinuteStartTime = date
@@ -324,7 +418,7 @@ enum SharedData {
     }
   }
 
-  static func clearOneMoreMinuteStartTime() {
+  public static func clearOneMoreMinuteStartTime() {
     withLock {
       guard var session = activeSharedSession else { return }
       session.oneMoreMinuteStartTime = nil
@@ -336,7 +430,7 @@ enum SharedData {
 
   /// Unique identifier for this device in sync operations.
   /// Generated once and persisted across app launches.
-  static var deviceSyncId: UUID {
+  public static var deviceSyncId: UUID {
     get {
       withLock {
         if let idString = string(forKey: .deviceSyncId, legacyKey: .deviceSyncId),
@@ -358,7 +452,7 @@ enum SharedData {
   }
 
   /// Whether device sync is enabled for this device.
-  static var deviceSyncEnabled: Bool {
+  public static var deviceSyncEnabled: Bool {
     get {
       return bool(forKey: .deviceSyncEnabled, legacyKey: .deviceSyncEnabled)
     }

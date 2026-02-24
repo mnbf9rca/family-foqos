@@ -1,3 +1,4 @@
+@preconcurrency import FoqosShared
 import XCTest
 
 @testable import FamilyFoqos

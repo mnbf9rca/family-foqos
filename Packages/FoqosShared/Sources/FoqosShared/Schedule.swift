@@ -1,6 +1,6 @@
 import Foundation
 
-enum Weekday: Int, CaseIterable, Codable, Equatable {
+public enum Weekday: Int, CaseIterable, Codable, Equatable {
   case sunday = 1
   case monday
   case tuesday
@@ -9,7 +9,7 @@ enum Weekday: Int, CaseIterable, Codable, Equatable {
   case friday
   case saturday
 
-  var name: String {
+  public var name: String {
     switch self {
     case .sunday: return "Sunday"
     case .monday: return "Monday"
@@ -21,7 +21,7 @@ enum Weekday: Int, CaseIterable, Codable, Equatable {
     }
   }
 
-  var shortLabel: String {
+  public var shortLabel: String {
     switch self {
     case .sunday: return "Su"
     case .monday: return "Mo"
@@ -34,7 +34,7 @@ enum Weekday: Int, CaseIterable, Codable, Equatable {
   }
 
   /// Returns all weekdays ordered by the locale's first day of week.
-  static func localeOrdered(calendar: Calendar = .current) -> [Weekday] {
+  public static func localeOrdered(calendar: Calendar = .current) -> [Weekday] {
     let first = calendar.firstWeekday  // 1=Sunday, 2=Monday, etc.
     return (0..<7).compactMap { offset in
       Weekday(rawValue: ((first - 1 + offset) % 7) + 1)
@@ -44,7 +44,7 @@ enum Weekday: Int, CaseIterable, Codable, Equatable {
 
 extension Array where Element == Weekday {
   /// Sorts weekdays by locale order (e.g., Monday-first in EU locales).
-  func localeSorted(calendar: Calendar = .current) -> [Weekday] {
+  public func localeSorted(calendar: Calendar = .current) -> [Weekday] {
     let order = Weekday.localeOrdered(calendar: calendar)
     return self.sorted { a, b in
       (order.firstIndex(of: a) ?? 0) < (order.firstIndex(of: b) ?? 0)
@@ -52,7 +52,7 @@ extension Array where Element == Weekday {
   }
 
   /// Compact display text: "Every day", "Weekdays", "Weekends", or short labels.
-  func compactDaysText(calendar: Calendar = .current) -> String {
+  public func compactDaysText(calendar: Calendar = .current) -> String {
     let daySet = Set(self)
     if daySet.count == 7 { return "Every day" }
     let weekdays: Set<Weekday> = [.monday, .tuesday, .wednesday, .thursday, .friday]
@@ -65,27 +65,43 @@ extension Array where Element == Weekday {
   }
 }
 
-struct BlockedProfileSchedule: Codable, Equatable {
-  var days: [Weekday]
+public struct BlockedProfileSchedule: Codable, Equatable {
+  public var days: [Weekday]
 
-  var startHour: Int
-  var startMinute: Int
-  var endHour: Int
-  var endMinute: Int
+  public var startHour: Int
+  public var startMinute: Int
+  public var endHour: Int
+  public var endMinute: Int
 
-  var updatedAt: Date = Date()
+  public var updatedAt: Date = Date()
 
-  var isActive: Bool {
+  public init(
+    days: [Weekday],
+    startHour: Int,
+    startMinute: Int,
+    endHour: Int,
+    endMinute: Int,
+    updatedAt: Date = Date()
+  ) {
+    self.days = days
+    self.startHour = startHour
+    self.startMinute = startMinute
+    self.endHour = endHour
+    self.endMinute = endMinute
+    self.updatedAt = updatedAt
+  }
+
+  public var isActive: Bool {
     return !days.isEmpty
   }
 
-  var totalDurationInSeconds: Int {
+  public var totalDurationInSeconds: Int {
     let secondsPerDay = 24 * 60 * 60
     let raw = (endHour - startHour) * 3600 + (endMinute - startMinute) * 60
     return raw >= 0 ? raw : raw + secondsPerDay
   }
 
-  var summaryText: String {
+  public var summaryText: String {
     guard isActive else { return "No Schedule Set" }
 
     let daysSummary = days.compactDaysText()
@@ -96,14 +112,14 @@ struct BlockedProfileSchedule: Codable, Equatable {
     return "\(daysSummary) · \(start) - \(end)"
   }
 
-  func isTodayScheduled(now: Date = Date(), calendar: Calendar = .current) -> Bool {
+  public func isTodayScheduled(now: Date = Date(), calendar: Calendar = .current) -> Bool {
     guard isActive else { return false }
     let currentWeekdayRaw = calendar.component(.weekday, from: now)
     guard let today = Weekday(rawValue: currentWeekdayRaw) else { return false }
     return days.contains(today)
   }
 
-  func olderThanOneMinute(now: Date = Date()) -> Bool {
+  public func olderThanOneMinute(now: Date = Date()) -> Bool {
     return now.timeIntervalSince(updatedAt) > 1 * 60
   }
 

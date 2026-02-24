@@ -1,12 +1,14 @@
 import ManagedSettings
 import SwiftUI
 
-class AppBlockerUtil {
-  let store = ManagedSettingsStore(
+public class AppBlockerUtil {
+  public let store = ManagedSettingsStore(
     named: ManagedSettingsStore.Name("familyFoqosAppRestrictions")
   )
 
-  func activateRestrictions(for profile: SharedData.ProfileSnapshot) {
+  public init() {}
+
+  public func activateRestrictions(for profile: SharedData.ProfileSnapshot) {
     Log.info("Starting restrictions", category: .familyControls)
 
     let selection = profile.selectedActivity
@@ -47,7 +49,7 @@ class AppBlockerUtil {
     store.application.denyAppRemoval = strict
   }
 
-  func deactivateRestrictions() {
+  public func deactivateRestrictions() {
     Log.info("Stopping restrictions", category: .familyControls)
 
     store.shield.applications = nil
@@ -62,7 +64,7 @@ class AppBlockerUtil {
     store.clearAllSettings()
   }
 
-  func getWebDomains(from profile: SharedData.ProfileSnapshot) -> Set<WebDomain> {
+  public func getWebDomains(from profile: SharedData.ProfileSnapshot) -> Set<WebDomain> {
     if let domains = profile.domains {
       return Set(domains.map { WebDomain(domain: $0) })
     }

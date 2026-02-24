@@ -1,21 +1,23 @@
 import DeviceActivity
 
-class OneMoreMinuteTimerActivity: TimerActivity {
-  static let id: String = "OneMoreMinuteActivity"
+public class OneMoreMinuteTimerActivity: TimerActivity {
+  public static let id: String = "OneMoreMinuteActivity"
 
-  private let appBlocker = AppBlockerUtil()
+  private let appBlocker: AppBlockerUtil
 
-  func getDeviceActivityName(from profileId: String) -> DeviceActivityName {
+  public init() { self.appBlocker = AppBlockerUtil() }
+
+  public func getDeviceActivityName(from profileId: String) -> DeviceActivityName {
     return DeviceActivityName(rawValue: "\(OneMoreMinuteTimerActivity.id):\(profileId)")
   }
 
-  func getAllOneMoreMinuteActivities(from activities: [DeviceActivityName])
+  public func getAllOneMoreMinuteActivities(from activities: [DeviceActivityName])
     -> [DeviceActivityName]
   {
     return activities.filter { $0.rawValue.starts(with: OneMoreMinuteTimerActivity.id) }
   }
 
-  func start(for profile: SharedData.ProfileSnapshot) {
+  public func start(for profile: SharedData.ProfileSnapshot) {
     // No-op: The main app process already deactivated restrictions and set
     // oneMoreMinuteStartTime before registering this DeviceActivity.
     // intervalDidStart fires immediately (since intervalStart is 00:00:00)
@@ -24,7 +26,7 @@ class OneMoreMinuteTimerActivity: TimerActivity {
     Log.info("One more minute intervalDidStart for \(profileId) - no-op (main process handled start)", category: .timer)
   }
 
-  func stop(for profile: SharedData.ProfileSnapshot) {
+  public func stop(for profile: SharedData.ProfileSnapshot) {
     let profileId = profile.id.uuidString
 
     guard let activeSession = SharedData.getActiveSharedSession() else {

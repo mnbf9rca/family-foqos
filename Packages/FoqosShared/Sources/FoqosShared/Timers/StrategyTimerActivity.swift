@@ -1,20 +1,22 @@
 import DeviceActivity
 import Foundation
 
-class StrategyTimerActivity: TimerActivity {
-  static let id: String = "StrategyTimerActivity"
+public class StrategyTimerActivity: TimerActivity {
+  public static let id: String = "StrategyTimerActivity"
 
-  private let appBlocker = AppBlockerUtil()
+  private let appBlocker: AppBlockerUtil
 
-  func getDeviceActivityName(from profileId: String) -> DeviceActivityName {
+  public init() { self.appBlocker = AppBlockerUtil() }
+
+  public func getDeviceActivityName(from profileId: String) -> DeviceActivityName {
     return DeviceActivityName(rawValue: "\(StrategyTimerActivity.id):\(profileId)")
   }
 
-  func getAllStrategyTimerActivities(from activities: [DeviceActivityName]) -> [DeviceActivityName] {
+  public func getAllStrategyTimerActivities(from activities: [DeviceActivityName]) -> [DeviceActivityName] {
     return activities.filter { $0.rawValue.starts(with: StrategyTimerActivity.id) }
   }
 
-  func start(for profile: SharedData.ProfileSnapshot) {
+  public func start(for profile: SharedData.ProfileSnapshot) {
     let profileId = profile.id.uuidString
 
     Log.info("Start strategy timer activity for \(profileId), profile: \(profileId)", category: .timer)
@@ -34,7 +36,7 @@ class StrategyTimerActivity: TimerActivity {
     appBlocker.activateRestrictions(for: profile)
   }
 
-  func stop(for profile: SharedData.ProfileSnapshot) {
+  public func stop(for profile: SharedData.ProfileSnapshot) {
     let profileId = profile.id.uuidString
 
     guard let activeSession = SharedData.getActiveSharedSession() else {

@@ -2,22 +2,24 @@ import DeviceActivity
 
 /// Handles stop-only scheduling for profiles that start manually but stop on schedule.
 /// `intervalDidStart` is a no-op. `intervalDidEnd` stops the active session.
-class StopScheduleTimerActivity: TimerActivity {
-  static let id: String = "StopScheduleTimerActivity"
+public class StopScheduleTimerActivity: TimerActivity {
+  public static let id: String = "StopScheduleTimerActivity"
 
-  private let appBlocker = AppBlockerUtil()
+  private let appBlocker: AppBlockerUtil
 
-  func getDeviceActivityName(from profileId: String) -> DeviceActivityName {
+  public init() { self.appBlocker = AppBlockerUtil() }
+
+  public func getDeviceActivityName(from profileId: String) -> DeviceActivityName {
     return DeviceActivityName(rawValue: "\(StopScheduleTimerActivity.id):\(profileId)")
   }
 
-  func start(for profile: SharedData.ProfileSnapshot) {
+  public func start(for profile: SharedData.ProfileSnapshot) {
     // No-op: this activity only handles stop timing.
     // intervalDidStart fires at midnight but we don't want to start a session.
     Log.info("StopScheduleTimerActivity.start called for \(profile.id.uuidString) - no-op", category: .timer)
   }
 
-  func stop(for profile: SharedData.ProfileSnapshot) {
+  public func stop(for profile: SharedData.ProfileSnapshot) {
     let profileId = profile.id.uuidString
 
     guard let activeSession = SharedData.getActiveSharedSession() else {

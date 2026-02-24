@@ -1,18 +1,25 @@
 import DeviceActivity
 import UserNotifications
 
-class ScheduleTimerActivity: TimerActivity {
-  static let id: String = "ScheduleTimerActivity"
+public class ScheduleTimerActivity: TimerActivity {
+  public static let id: String = "ScheduleTimerActivity"
 
-  private let appBlocker = AppBlockerUtil()
+  /// Superset range covering all reminder minute values ever shipped.
+  /// Used by both ScheduleTimerActivity (extension) and TimersUtil (main app)
+  /// to cancel stale pre-activation reminder notifications.
+  public static let allReminderCleanupRange: ClosedRange<Int> = 1...5
 
-  func getDeviceActivityName(from profileId: String) -> DeviceActivityName {
+  private let appBlocker: AppBlockerUtil
+
+  public init() { self.appBlocker = AppBlockerUtil() }
+
+  public func getDeviceActivityName(from profileId: String) -> DeviceActivityName {
     // Since schedules were implemented before the timer activities, the profile id is used as the device activity name for
     // backward compatibility
     return DeviceActivityName(rawValue: profileId)
   }
 
-  func getAllScheduleTimerActivities(from activities: [DeviceActivityName]) -> [DeviceActivityName] {
+  public func getAllScheduleTimerActivities(from activities: [DeviceActivityName]) -> [DeviceActivityName] {
     // Schedule timer activities use just the profile UUID as the rawValue (no prefix)
     // Other activities use prefixes like "BreakScheduleActivity:" or "StrategyTimerActivity:"
     return activities.filter { activity in
@@ -24,14 +31,12 @@ class ScheduleTimerActivity: TimerActivity {
     }
   }
 
-  func start(for profile: SharedData.ProfileSnapshot) {
+  public func start(for profile: SharedData.ProfileSnapshot) {
     let profileId = profile.id.uuidString
 
     // Cancel any pre-activation reminders now that the start time has arrived,
     // regardless of whether the profile actually starts (early returns below).
-    // SYNC: identifier format must match TimersUtil.preActivationReminderIdentifier(for:minutes:)
-    // SYNC: cancels full 1-5 range intentionally (matches allPreActivationReminderIdentifiers)
-    let reminderIds = (1...5).map { "pre-activation-reminder-\(profile.id.uuidString)-\($0)" }
+    let reminderIds = Self.allReminderCleanupRange.map { "pre-activation-reminder-\(profile.id.uuidString)-\($0)" }
     UNUserNotificationCenter.current().removePendingNotificationRequests(
       withIdentifiers: reminderIds
     )
@@ -80,7 +85,7 @@ class ScheduleTimerActivity: TimerActivity {
     appBlocker.activateRestrictions(for: profile)
   }
 
-  func stop(for profile: SharedData.ProfileSnapshot) {
+  public func stop(for profile: SharedData.ProfileSnapshot) {
     let profileId = profile.id.uuidString
 
     guard let activeSession = SharedData.getActiveSharedSession() else {

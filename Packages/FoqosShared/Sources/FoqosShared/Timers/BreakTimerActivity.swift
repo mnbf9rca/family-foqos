@@ -1,20 +1,22 @@
 import DeviceActivity
 import Foundation
 
-class BreakTimerActivity: TimerActivity {
-  static let id: String = "BreakScheduleActivity"
+public class BreakTimerActivity: TimerActivity {
+  public static let id: String = "BreakScheduleActivity"
 
-  private let appBlocker = AppBlockerUtil()
+  private let appBlocker: AppBlockerUtil
 
-  func getDeviceActivityName(from profileId: String) -> DeviceActivityName {
+  public init() { self.appBlocker = AppBlockerUtil() }
+
+  public func getDeviceActivityName(from profileId: String) -> DeviceActivityName {
     return DeviceActivityName(rawValue: "\(BreakTimerActivity.id):\(profileId)")
   }
 
-  func getAllBreakTimerActivities(from activities: [DeviceActivityName]) -> [DeviceActivityName] {
+  public func getAllBreakTimerActivities(from activities: [DeviceActivityName]) -> [DeviceActivityName] {
     return activities.filter { $0.rawValue.starts(with: BreakTimerActivity.id) }
   }
 
-  func start(for profile: SharedData.ProfileSnapshot) {
+  public func start(for profile: SharedData.ProfileSnapshot) {
     let profileId = profile.id.uuidString
 
     guard let activeSession = SharedData.getActiveSharedSession() else {
@@ -41,7 +43,7 @@ class BreakTimerActivity: TimerActivity {
     SharedData.setBreakStartTime(date: now)
   }
 
-  func stop(for profile: SharedData.ProfileSnapshot) {
+  public func stop(for profile: SharedData.ProfileSnapshot) {
     let profileId = profile.id.uuidString
 
     guard let activeSession = SharedData.getActiveSharedSession() else {

@@ -5,6 +5,7 @@
 //  Created by Ali Waseem on 2025-08-11.
 //
 
+import FoqosShared
 import ManagedSettings
 import ManagedSettingsUI
 import SwiftUI
