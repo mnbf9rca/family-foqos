@@ -4,7 +4,7 @@ import XCTest
 @testable import FamilyFoqos
 
 final class ShouldBeActiveNowTests: XCTestCase {
-  private let calendar = Calendar.current
+  private let calendar = Calendar(identifier: .gregorian)
 
   // Fixed reference: Monday 2026-06-15 (weekday 2 = Monday)
   private let referenceDate: Date = {
@@ -15,7 +15,7 @@ final class ShouldBeActiveNowTests: XCTestCase {
     c.hour = 12
     c.minute = 0
     c.second = 0
-    return Calendar.current.date(from: c)!
+    return Calendar(identifier: .gregorian).date(from: c)!
   }()
 
   /// Monday's weekday value (2 in Apple's Calendar)

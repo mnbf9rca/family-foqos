@@ -4,7 +4,7 @@ import XCTest
 @testable import FamilyFoqos
 
 final class ActiveWindowTests: XCTestCase {
-  private let calendar = Calendar.current
+  private let calendar = Calendar(identifier: .gregorian)
 
   // Fixed reference: Monday 2026-06-15 (weekday 2 = Monday)
   private let referenceDate: Date = {
@@ -15,7 +15,7 @@ final class ActiveWindowTests: XCTestCase {
     c.hour = 12
     c.minute = 0
     c.second = 0
-    return Calendar.current.date(from: c)!
+    return Calendar(identifier: .gregorian).date(from: c)!
   }()
 
   private func date(hour: Int, minute: Int, dayOffset: Int = 0) -> Date {
