@@ -48,7 +48,10 @@ public enum SharedData {
   /// another withLock closure. On BSD/macOS the inner unlock would release
   /// the process-wide lock while the outer critical section is still running.
   private static func withLock<T>(_ body: () -> T) -> T {
-    guard let lockPath else { return body() }
+    guard let lockPath else {
+      lockLog.debug("SharedData: no lockPath (test mode?) — proceeding unlocked")
+      return body()
+    }
     let fd = open(lockPath, O_CREAT | O_RDWR, 0o644)
     guard fd >= 0 else {
       lockLog.warning("SharedData: open() failed, errno \(errno) — proceeding unlocked")

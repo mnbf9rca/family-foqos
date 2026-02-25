@@ -200,7 +200,7 @@ class LockCodeManager: ObservableObject {
     // For child mode, verify the authorization type is still valid
     if mode == .child {
       guard authorizationType == .child else {
-        Log.info("Authorization type mismatch, clearing cached codes", category: .app)
+        Log.info("Authorization type mismatch, rejecting code verification", category: .app)
         return false
       }
     }
