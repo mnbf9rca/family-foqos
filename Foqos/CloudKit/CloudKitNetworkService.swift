@@ -2,7 +2,7 @@ import CloudKit
 import Foundation
 
 /// Result of verifying the current user's FamilyMember record against CloudKit
-struct VerificationResult {
+struct VerificationResult: Sendable {
   let isConnected: Bool
   let userRecordID: CKRecord.ID?
   let isSignedIn: Bool?
@@ -10,7 +10,7 @@ struct VerificationResult {
 }
 
 /// Result of syncing share participants to FamilyMember records
-struct ParticipantSyncResult {
+struct ParticipantSyncResult: Sendable {
   let pendingParticipants: [CKShare.Participant]
   let familyMembers: [FamilyMember]
 }
@@ -770,7 +770,7 @@ actor CloudKitNetworkService {
           else {
             Log.error("FamilyMember record has missing/invalid role", category: .cloudKit)
             return VerificationResult(
-              isConnected: true, userRecordID: userRecordID, isSignedIn: nil, enforcedMode: nil)
+              isConnected: true, userRecordID: userRecordID, isSignedIn: true, enforcedMode: nil)
           }
 
           let cloudKitMode: AppMode = recordRole == .parent ? .parent : .child
@@ -783,7 +783,7 @@ actor CloudKitNetworkService {
               "verifySelfFamilyMember: complete (\(String(format: "%.2f", CFAbsoluteTimeGetCurrent() - start))s)",
               category: .cloudKit)
             return VerificationResult(
-              isConnected: true, userRecordID: userRecordID, isSignedIn: nil,
+              isConnected: true, userRecordID: userRecordID, isSignedIn: true,
               enforcedMode: cloudKitMode)
           }
 
@@ -791,7 +791,7 @@ actor CloudKitNetworkService {
             "verifySelfFamilyMember: complete (\(String(format: "%.2f", CFAbsoluteTimeGetCurrent() - start))s)",
             category: .cloudKit)
           return VerificationResult(
-            isConnected: true, userRecordID: userRecordID, isSignedIn: nil, enforcedMode: nil)
+            isConnected: true, userRecordID: userRecordID, isSignedIn: true, enforcedMode: nil)
         }
       }
 
@@ -809,14 +809,14 @@ actor CloudKitNetworkService {
         "verifySelfFamilyMember: complete (\(String(format: "%.2f", CFAbsoluteTimeGetCurrent() - start))s)",
         category: .cloudKit)
       return VerificationResult(
-        isConnected: true, userRecordID: userRecordID, isSignedIn: nil, enforcedMode: nil)
+        isConnected: true, userRecordID: userRecordID, isSignedIn: true, enforcedMode: nil)
     } catch {
       Log.error("Failed to verify self FamilyMember record: \(error)", category: .cloudKit)
       Log.info(
         "verifySelfFamilyMember: failed (\(String(format: "%.2f", CFAbsoluteTimeGetCurrent() - start))s)",
         category: .cloudKit)
       return VerificationResult(
-        isConnected: true, userRecordID: userRecordID, isSignedIn: nil, enforcedMode: nil)
+        isConnected: true, userRecordID: userRecordID, isSignedIn: true, enforcedMode: nil)
     }
   }
 
@@ -856,7 +856,7 @@ actor CloudKitNetworkService {
     do {
       let rootRecord = try await privateDatabase.record(for: rootRecordID)
       guard let shareRef = rootRecord.share else {
-        Log.info("CloudKitManager: No share exists yet", category: .cloudKit)
+        Log.info("No share exists yet", category: .cloudKit)
         return ParticipantSyncResult(pendingParticipants: [], familyMembers: [])
       }
       let shareRecord = try await privateDatabase.record(for: shareRef.recordID)
