@@ -740,6 +740,11 @@ actor CloudKitNetworkService {
         Log.info(
           "verifySelfFamilyMember: fetched user record ID (\(String(format: "%.2f", CFAbsoluteTimeGetCurrent() - start))s)",
           category: .cloudKit)
+      } catch CloudKitError.notSignedIn {
+        Log.error(
+          "User not signed in during verification", category: .cloudKit)
+        return VerificationResult(
+          isConnected: true, userRecordID: nil, isSignedIn: false, enforcedMode: nil)
       } catch {
         Log.error(
           "Could not fetch user record ID for verification: \(error)", category: .cloudKit)
