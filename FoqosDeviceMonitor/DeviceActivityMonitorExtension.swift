@@ -21,6 +21,9 @@ class DeviceActivityMonitorExtension: DeviceActivityMonitor {
   private let appBlocker = AppBlockerUtil()
 
   override init() {
+    SharedData.configure(
+      suite: UserDefaults(suiteName: "group.com.cynexia.family-foqos")!
+    )
     super.init()
   }
 

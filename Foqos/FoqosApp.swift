@@ -91,6 +91,9 @@ struct FoqosApp: App {
   @Environment(\.scenePhase) private var scenePhase
 
   init() {
+    SharedData.configure(
+      suite: UserDefaults(suiteName: "group.com.cynexia.family-foqos")!
+    )
     Log.info("init() called", category: .app)
     TimersUtil.registerBackgroundTasks()
     UNUserNotificationCenter.current().delegate = NotificationDelegate.shared

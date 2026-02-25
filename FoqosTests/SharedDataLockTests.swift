@@ -5,11 +5,18 @@ import XCTest
 
 final class SharedDataLockTests: XCTestCase {
 
+  private static let testSuiteName = "SharedDataLockTests-\(UUID().uuidString)"
+
   override func setUp() {
     super.setUp()
-    // Clean slate for each test
-    SharedData.flushActiveSession()
-    _ = SharedData.getAndFlushCompletedSessionsForScheduler()
+    SharedData.configure(
+      suite: UserDefaults(suiteName: Self.testSuiteName)!
+    )
+  }
+
+  override func tearDown() {
+    UserDefaults().removePersistentDomain(forName: Self.testSuiteName)
+    super.tearDown()
   }
 
   func testGivenTwoSnapshots_WhenSettingAndRemovingSequentially_ThenNoDeadlock() {
@@ -28,9 +35,6 @@ final class SharedDataLockTests: XCTestCase {
     let remaining = SharedData.profileSnapshots
     XCTAssertNil(remaining[id1.uuidString])
     XCTAssertNotNil(remaining[id2.uuidString])
-
-    // Cleanup
-    SharedData.removeSnapshot(for: id2.uuidString)
   }
 
   func testGivenManyConcurrentWrites_WhenWritingSnapshots_ThenPreservesAllEntries() {
@@ -60,11 +64,6 @@ final class SharedDataLockTests: XCTestCase {
     let all = SharedData.profileSnapshots
     for id in ids {
       XCTAssertNotNil(all[id.uuidString], "Snapshot for \(id) should exist")
-    }
-
-    // Cleanup
-    for id in ids {
-      SharedData.removeSnapshot(for: id.uuidString)
     }
   }
 

@@ -19,9 +19,15 @@ extension BreakDurationCalculable {
 }
 
 public enum SharedData {
-  private nonisolated(unsafe) static let suite = UserDefaults(  // SAFETY: UserDefaults is thread-safe per Apple docs
-    suiteName: "group.com.cynexia.family-foqos"
-  )!
+  private nonisolated(unsafe) static var suite: UserDefaults!  // SAFETY: UserDefaults is thread-safe per Apple docs
+
+  /// Configure SharedData with a UserDefaults suite. Must be called before any access.
+  /// - Main app: call in FoqosApp.init()
+  /// - Extensions: call in extension init()
+  /// - Tests: call in setUp() with an ephemeral suite
+  public static func configure(suite: UserDefaults) {
+    self.suite = suite
+  }
 
   private static let containerURL: URL = FileManager.default.containerURL(  // SAFETY: same app group as `suite`
     forSecurityApplicationGroupIdentifier: "group.com.cynexia.family-foqos"
