@@ -1,4 +1,3 @@
-// FoqosTests/SyncConflictManagerTests.swift
 import XCTest
 
 @testable import FamilyFoqos
@@ -6,21 +5,14 @@ import XCTest
 @MainActor
 final class SyncConflictManagerTests: XCTestCase {
 
-  override func setUp() {
-    super.setUp()
-    MainActor.assumeIsolated {
-      SyncConflictManager.shared.clearAll()
-    }
-  }
-
   func testGivenFreshManager_WhenCheckingState_ThenNoConflicts() {
-    let manager = SyncConflictManager.shared
+    let manager = SyncConflictManager()
     XCTAssertTrue(manager.conflictedProfiles.isEmpty)
     XCTAssertFalse(manager.showConflictBanner)
   }
 
   func testGivenNoConflicts_WhenAddingConflict_ThenShowsBanner() {
-    let manager = SyncConflictManager.shared
+    let manager = SyncConflictManager()
     let profileId = UUID()
 
     manager.addConflict(profileId: profileId, profileName: "Test")
@@ -30,7 +22,7 @@ final class SyncConflictManagerTests: XCTestCase {
   }
 
   func testGivenNoConflicts_WhenAddingMultiple_ThenAllTracked() {
-    let manager = SyncConflictManager.shared
+    let manager = SyncConflictManager()
     let id1 = UUID()
     let id2 = UUID()
 
@@ -44,7 +36,7 @@ final class SyncConflictManagerTests: XCTestCase {
   }
 
   func testGivenExistingConflict_WhenAddingSameConflict_ThenNoDuplicate() {
-    let manager = SyncConflictManager.shared
+    let manager = SyncConflictManager()
     let profileId = UUID()
 
     manager.addConflict(profileId: profileId, profileName: "Test")
@@ -54,7 +46,7 @@ final class SyncConflictManagerTests: XCTestCase {
   }
 
   func testGivenVisibleBanner_WhenDismissing_ThenBannerHiddenButConflictsRemain() {
-    let manager = SyncConflictManager.shared
+    let manager = SyncConflictManager()
     let profileId = UUID()
 
     manager.addConflict(profileId: profileId, profileName: "Test")
@@ -65,7 +57,7 @@ final class SyncConflictManagerTests: XCTestCase {
   }
 
   func testGivenMultipleConflicts_WhenClearingOne_ThenOnlyThatOneRemoved() {
-    let manager = SyncConflictManager.shared
+    let manager = SyncConflictManager()
     let id1 = UUID()
     let id2 = UUID()
 
@@ -79,7 +71,7 @@ final class SyncConflictManagerTests: XCTestCase {
   }
 
   func testGivenSingleConflict_WhenClearing_ThenBannerHidden() {
-    let manager = SyncConflictManager.shared
+    let manager = SyncConflictManager()
     let profileId = UUID()
 
     manager.addConflict(profileId: profileId, profileName: "Test")
@@ -90,7 +82,7 @@ final class SyncConflictManagerTests: XCTestCase {
   }
 
   func testGivenMultipleConflicts_WhenClearingAll_ThenEmptyAndBannerHidden() {
-    let manager = SyncConflictManager.shared
+    let manager = SyncConflictManager()
     let id1 = UUID()
     let id2 = UUID()
 
@@ -103,7 +95,7 @@ final class SyncConflictManagerTests: XCTestCase {
   }
 
   func testGivenOneConflict_WhenGettingMessage_ThenIncludesProfileName() {
-    let manager = SyncConflictManager.shared
+    let manager = SyncConflictManager()
     manager.addConflict(profileId: UUID(), profileName: "Work Focus")
 
     XCTAssertEqual(
@@ -113,7 +105,7 @@ final class SyncConflictManagerTests: XCTestCase {
   }
 
   func testGivenMultipleConflicts_WhenGettingMessage_ThenUsesPlural() {
-    let manager = SyncConflictManager.shared
+    let manager = SyncConflictManager()
     manager.addConflict(profileId: UUID(), profileName: "Work Focus")
     manager.addConflict(profileId: UUID(), profileName: "Study Mode")
 
@@ -126,7 +118,7 @@ final class SyncConflictManagerTests: XCTestCase {
   // MARK: - Newer Version Conflict Tests
 
   func testGivenNoConflicts_WhenAddingNewerVersionConflict_ThenShowsBanner() {
-    let manager = SyncConflictManager.shared
+    let manager = SyncConflictManager()
     let profileId = UUID()
 
     manager.addNewerVersionConflict(profileId: profileId, profileName: "Test")
@@ -136,7 +128,7 @@ final class SyncConflictManagerTests: XCTestCase {
   }
 
   func testGivenBothConflictTypes_WhenChecking_ThenTrackedSeparately() {
-    let manager = SyncConflictManager.shared
+    let manager = SyncConflictManager()
     let olderId = UUID()
     let newerId = UUID()
 
@@ -148,7 +140,7 @@ final class SyncConflictManagerTests: XCTestCase {
   }
 
   func testGivenOneNewerVersionConflict_WhenGettingMessage_ThenIncludesProfileName() {
-    let manager = SyncConflictManager.shared
+    let manager = SyncConflictManager()
     manager.addNewerVersionConflict(profileId: UUID(), profileName: "Work Focus")
 
     XCTAssertEqual(
@@ -158,7 +150,7 @@ final class SyncConflictManagerTests: XCTestCase {
   }
 
   func testGivenMultipleNewerVersionConflicts_WhenGettingMessage_ThenUsesPlural() {
-    let manager = SyncConflictManager.shared
+    let manager = SyncConflictManager()
     manager.addNewerVersionConflict(profileId: UUID(), profileName: "Work Focus")
     manager.addNewerVersionConflict(profileId: UUID(), profileName: "Study Mode")
 
@@ -169,7 +161,7 @@ final class SyncConflictManagerTests: XCTestCase {
   }
 
   func testGivenNewerVersionConflict_WhenClearing_ThenRemovedAndBannerHidden() {
-    let manager = SyncConflictManager.shared
+    let manager = SyncConflictManager()
     let profileId = UUID()
 
     manager.addNewerVersionConflict(profileId: profileId, profileName: "Test")
@@ -180,7 +172,7 @@ final class SyncConflictManagerTests: XCTestCase {
   }
 
   func testGivenBothConflictTypes_WhenClearingAll_ThenAllRemovedAndBannerHidden() {
-    let manager = SyncConflictManager.shared
+    let manager = SyncConflictManager()
     manager.addConflict(profileId: UUID(), profileName: "A")
     manager.addNewerVersionConflict(profileId: UUID(), profileName: "B")
     manager.clearAll()
@@ -191,7 +183,7 @@ final class SyncConflictManagerTests: XCTestCase {
   }
 
   func testGivenBothConflictTypes_WhenClearingOlderOnly_ThenBannerStays() {
-    let manager = SyncConflictManager.shared
+    let manager = SyncConflictManager()
     let olderId = UUID()
     let newerId = UUID()
 
@@ -206,7 +198,7 @@ final class SyncConflictManagerTests: XCTestCase {
   // MARK: - Computed Banner Visibility Tests
 
   func testGivenNewerVersionConflicts_WhenCheckingBannerVisibility_ThenShowsNewerOnly() {
-    let manager = SyncConflictManager.shared
+    let manager = SyncConflictManager()
     manager.addNewerVersionConflict(profileId: UUID(), profileName: "New Version")
 
     XCTAssertTrue(manager.shouldShowNewerVersionBanner)
@@ -214,7 +206,7 @@ final class SyncConflictManagerTests: XCTestCase {
   }
 
   func testGivenOlderDeviceConflicts_WhenCheckingBannerVisibility_ThenShowsOlderOnly() {
-    let manager = SyncConflictManager.shared
+    let manager = SyncConflictManager()
     manager.addConflict(profileId: UUID(), profileName: "Old Device")
 
     XCTAssertTrue(manager.shouldShowOlderDeviceBanner)
@@ -222,7 +214,7 @@ final class SyncConflictManagerTests: XCTestCase {
   }
 
   func testGivenBothConflictTypes_WhenBannerDismissed_ThenBothComputedPropertiesFalse() {
-    let manager = SyncConflictManager.shared
+    let manager = SyncConflictManager()
     manager.addConflict(profileId: UUID(), profileName: "Old Device")
     manager.addNewerVersionConflict(profileId: UUID(), profileName: "New Version")
     manager.dismissBanner()
@@ -232,7 +224,7 @@ final class SyncConflictManagerTests: XCTestCase {
   }
 
   func testGivenBothConflictTypes_WhenBannerVisible_ThenBothComputedPropertiesTrue() {
-    let manager = SyncConflictManager.shared
+    let manager = SyncConflictManager()
     manager.addConflict(profileId: UUID(), profileName: "Old Device")
     manager.addNewerVersionConflict(profileId: UUID(), profileName: "New Version")
 
