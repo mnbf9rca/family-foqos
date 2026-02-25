@@ -89,4 +89,29 @@ final class BlockedProfileSessionTests: XCTestCase {
 
     XCTAssertFalse(session.isBreakAvailable)
   }
+
+  // MARK: - duration
+
+  func testGivenActiveSession_WhenCalculatingDuration_ThenReturnsElapsedTime() {
+    let now = Date()
+    let profile = BlockedProfiles(name: "Test")
+    let session = BlockedProfileSession(
+      tag: "test", blockedProfile: profile, startTime: now.addingTimeInterval(-300)
+    )
+
+    let result = session.duration(now: now)
+    XCTAssertEqual(result, 300, accuracy: 0.001)
+  }
+
+  func testGivenCompletedSession_WhenCalculatingDuration_ThenReturnsTotalDuration() {
+    let now = Date()
+    let profile = BlockedProfiles(name: "Test")
+    let session = BlockedProfileSession(
+      tag: "test", blockedProfile: profile, startTime: now.addingTimeInterval(-600)
+    )
+    session.endTime = now.addingTimeInterval(-100)
+
+    let result = session.duration(now: now)
+    XCTAssertEqual(result, 500, accuracy: 0.001)
+  }
 }

@@ -38,8 +38,24 @@ public enum SharedData {
     forSecurityApplicationGroupIdentifier: "group.com.cynexia.family-foqos"
   )
 
+  private nonisolated(unsafe) static var _lockPathOverride: String?
+  private nonisolated(unsafe) static var _lockPathOverrideSet = false
+
+  /// Override the lock path for testing. Pass `nil` to force the nil-lockPath code path.
+  public static func configureLockPath(_ path: String?) {
+    _lockPathOverride = path
+    _lockPathOverrideSet = true
+  }
+
+  /// Reset the lock path override so the default container-based path is used.
+  public static func resetLockPath() {
+    _lockPathOverride = nil
+    _lockPathOverrideSet = false
+  }
+
   private static var lockPath: String? {
-    containerURL?.appendingPathComponent(".shared-data.lock").path
+    if _lockPathOverrideSet { return _lockPathOverride }
+    return containerURL?.appendingPathComponent(".shared-data.lock").path
   }
 
   private static let lockLog = Logger(

@@ -105,6 +105,38 @@ final class SharedDataLockTests: XCTestCase {
     XCTAssertTrue(SharedData.getAndFlushCompletedSessionsForScheduler().isEmpty)
   }
 
+  // MARK: - Error paths (withLock graceful degradation)
+
+  func testGivenNilLockPath_WhenWritingSnapshot_ThenProceedsUnlocked() {
+    // Given: force nil lockPath (simulates missing app group container)
+    SharedData.configureLockPath(nil)
+    defer { SharedData.resetLockPath() }
+
+    // When: write a snapshot (exercises withLock with nil lockPath)
+    let id = UUID()
+    let snapshot = makeSnapshot(id: id, name: "NilLock")
+    SharedData.setSnapshot(snapshot, for: id.uuidString)
+
+    // Then: snapshot was written despite no lock
+    let retrieved = SharedData.snapshot(for: id.uuidString)
+    XCTAssertEqual(retrieved?.name, "NilLock")
+  }
+
+  func testGivenInvalidLockPath_WhenWritingSnapshot_ThenProceedsUnlocked() {
+    // Given: lock path in nonexistent directory (open() will fail with ENOENT)
+    SharedData.configureLockPath("/nonexistent/directory/lock")
+    defer { SharedData.resetLockPath() }
+
+    // When: write a snapshot (exercises withLock with open() failure)
+    let id = UUID()
+    let snapshot = makeSnapshot(id: id, name: "BadPath")
+    SharedData.setSnapshot(snapshot, for: id.uuidString)
+
+    // Then: snapshot was written despite lock failure
+    let retrieved = SharedData.snapshot(for: id.uuidString)
+    XCTAssertEqual(retrieved?.name, "BadPath")
+  }
+
   // MARK: - Helpers
 
   private func makeSnapshot(id: UUID, name: String) -> SharedData.ProfileSnapshot {
