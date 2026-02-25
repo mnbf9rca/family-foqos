@@ -66,7 +66,7 @@ final class StrategyManagerBackgroundTests: XCTestCase {
 
     XCTAssertThrowsError(
       try manager.startSessionFromBackground(
-        profile.id, context: context, durationInMinutes: 5
+        profile.id, context: context, durationInMinutes: 14
       )
     ) { error in
       if case IntentError.durationOutOfRange = error {

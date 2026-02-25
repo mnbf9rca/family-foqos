@@ -38,8 +38,8 @@ public enum SharedData {
     forSecurityApplicationGroupIdentifier: "group.com.cynexia.family-foqos"
   )
 
-  private nonisolated(unsafe) static var _lockPathOverride: String?
-  private nonisolated(unsafe) static var _lockPathOverrideSet = false
+  private nonisolated(unsafe) static var _lockPathOverride: String?  // SAFETY: test-only; set/reset from serial setUp/tearDown
+  private nonisolated(unsafe) static var _lockPathOverrideSet = false  // SAFETY: test-only; set/reset from serial setUp/tearDown
 
   /// Override the lock path for testing. Pass `nil` to force the nil-lockPath code path.
   public static func configureLockPath(_ path: String?) {
