@@ -188,17 +188,18 @@ class LockCodeManager: ObservableObject {
     }
   }
 
-  /// Verify a code entered by a child
-  /// Returns true if the code is valid for the given child
-  /// For child mode, verifies authorization status before checking codes
-  func verifyCode(_ code: String, forChildId childId: String?) -> Bool {
-    // Use cached codes for verification
-    let codesToCheck = appModeManager.currentMode == .parent ? lockCodes : cachedLockCodes
-
+  /// Pure verification logic — all inputs explicit, no instance state.
+  /// Used directly by tests; the instance method below is a thin wrapper.
+  static func verifyCode(
+    _ code: String,
+    forChildId childId: String?,
+    mode: AppMode,
+    authorizationType: AuthorizationVerifier.AuthorizationType,
+    codes: [FamilyLockCode]
+  ) -> Bool {
     // For child mode, verify the authorization type is still valid
-    if appModeManager.currentMode == .child {
-      let authType = AuthorizationVerifier.shared.currentAuthorizationType
-      guard authType == .child else {
+    if mode == .child {
+      guard authorizationType == .child else {
         Log.info("Authorization type mismatch, clearing cached codes", category: .app)
         return false
       }
@@ -206,7 +207,7 @@ class LockCodeManager: ObservableObject {
 
     // First try to find a specific code for this child
     if let childId = childId {
-      if let specificCode = codesToCheck.first(where: {
+      if let specificCode = codes.first(where: {
         if case .specificChild(let id) = $0.scope {
           return id == childId
         }
@@ -217,11 +218,25 @@ class LockCodeManager: ObservableObject {
     }
 
     // Fall back to the "all children" code
-    if let generalCode = codesToCheck.first(where: { $0.scope == .allChildren }) {
+    if let generalCode = codes.first(where: { $0.scope == .allChildren }) {
       return generalCode.verifyCode(code)
     }
 
     return false
+  }
+
+  /// Verify a code entered by a child
+  /// Returns true if the code is valid for the given child
+  /// For child mode, verifies authorization status before checking codes
+  func verifyCode(_ code: String, forChildId childId: String?) -> Bool {
+    let codesToCheck = appModeManager.currentMode == .parent ? lockCodes : cachedLockCodes
+    return Self.verifyCode(
+      code,
+      forChildId: childId,
+      mode: appModeManager.currentMode,
+      authorizationType: AuthorizationVerifier.shared.currentAuthorizationType,
+      codes: codesToCheck
+    )
   }
 
   /// Verify a code for a managed profile
