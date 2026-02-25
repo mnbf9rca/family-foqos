@@ -38,23 +38,27 @@ public enum SharedData {
     forSecurityApplicationGroupIdentifier: "group.com.cynexia.family-foqos"
   )
 
-  private nonisolated(unsafe) static var _lockPathOverride: String?  // SAFETY: test-only; set/reset from serial setUp/tearDown
-  private nonisolated(unsafe) static var _lockPathOverrideSet = false  // SAFETY: test-only; set/reset from serial setUp/tearDown
+  #if DEBUG
+    private nonisolated(unsafe) static var _lockPathOverride: String?
+    private nonisolated(unsafe) static var _lockPathOverrideSet = false
 
-  /// Override the lock path for testing. Pass `nil` to force the nil-lockPath code path.
-  public static func configureLockPath(_ path: String?) {
-    _lockPathOverride = path
-    _lockPathOverrideSet = true
-  }
+    /// Override the lock path for testing. Pass `nil` to force the nil-lockPath code path.
+    public static func configureLockPath(_ path: String?) {
+      _lockPathOverride = path
+      _lockPathOverrideSet = true
+    }
 
-  /// Reset the lock path override so the default container-based path is used.
-  public static func resetLockPath() {
-    _lockPathOverride = nil
-    _lockPathOverrideSet = false
-  }
+    /// Reset the lock path override so the default container-based path is used.
+    public static func resetLockPath() {
+      _lockPathOverride = nil
+      _lockPathOverrideSet = false
+    }
+  #endif
 
   private static var lockPath: String? {
-    if _lockPathOverrideSet { return _lockPathOverride }
+    #if DEBUG
+      if _lockPathOverrideSet { return _lockPathOverride }
+    #endif
     return containerURL?.appendingPathComponent(".shared-data.lock").path
   }
 

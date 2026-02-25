@@ -229,7 +229,7 @@ class LockCodeManager: ObservableObject {
   /// Returns true if the code is valid for the given child
   /// For child mode, verifies authorization status before checking codes
   func verifyCode(_ code: String, forChildId childId: String?) -> Bool {
-    let codesToCheck = appModeManager.currentMode == .parent ? lockCodes : cachedLockCodes
+    let codesToCheck = appModeManager.currentMode != .child ? lockCodes : cachedLockCodes
     return Self.verifyCode(
       code,
       forChildId: childId,
@@ -246,13 +246,13 @@ class LockCodeManager: ObservableObject {
 
   /// Simple validation - checks if code matches any available lock code
   func validateCode(_ code: String) -> Bool {
-    let codesToCheck = appModeManager.currentMode == .parent ? lockCodes : cachedLockCodes
+    let codesToCheck = appModeManager.currentMode != .child ? lockCodes : cachedLockCodes
     return codesToCheck.contains { $0.verifyCode(code) }
   }
 
   /// Check if there's a lock code available for verification
   var canVerifyCode: Bool {
-    let codesToCheck = appModeManager.currentMode == .parent ? lockCodes : cachedLockCodes
+    let codesToCheck = appModeManager.currentMode != .child ? lockCodes : cachedLockCodes
     return !codesToCheck.isEmpty
   }
 
