@@ -19,14 +19,19 @@ extension BreakDurationCalculable {
 }
 
 public enum SharedData {
-  private nonisolated(unsafe) static var suite: UserDefaults!  // SAFETY: UserDefaults is thread-safe per Apple docs
+  private nonisolated(unsafe) static var _suite: UserDefaults?  // SAFETY: UserDefaults is thread-safe per Apple docs
+
+  private static var suite: UserDefaults {
+    precondition(_suite != nil, "SharedData.configure(suite:) must be called before accessing SharedData")
+    return _suite!
+  }
 
   /// Configure SharedData with a UserDefaults suite. Must be called before any access.
   /// - Main app: call in FoqosApp.init()
   /// - Extensions: call in extension init()
   /// - Tests: call in setUp() with an ephemeral suite
   public static func configure(suite: UserDefaults) {
-    self.suite = suite
+    self._suite = suite
   }
 
   private static let containerURL: URL? = FileManager.default.containerURL(  // SAFETY: same app group as `suite`
@@ -49,7 +54,7 @@ public enum SharedData {
   /// the process-wide lock while the outer critical section is still running.
   private static func withLock<T>(_ body: () -> T) -> T {
     guard let lockPath else {
-      lockLog.debug("SharedData: no lockPath (test mode?) — proceeding unlocked")
+      lockLog.warning("SharedData: no lockPath (test mode?) — proceeding unlocked")
       return body()
     }
     let fd = open(lockPath, O_CREAT | O_RDWR, 0o644)
