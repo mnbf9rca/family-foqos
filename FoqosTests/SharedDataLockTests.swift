@@ -5,11 +5,18 @@ import XCTest
 
 final class SharedDataLockTests: XCTestCase {
 
+  private static let testSuiteName = "SharedDataLockTests-\(UUID().uuidString)"
+
   override func setUp() {
     super.setUp()
-    // Clean slate for each test
-    SharedData.flushActiveSession()
-    _ = SharedData.getAndFlushCompletedSessionsForScheduler()
+    SharedData.configure(
+      suite: UserDefaults(suiteName: Self.testSuiteName)!
+    )
+  }
+
+  override func tearDown() {
+    UserDefaults().removePersistentDomain(forName: Self.testSuiteName)
+    super.tearDown()
   }
 
   func testGivenTwoSnapshots_WhenSettingAndRemovingSequentially_ThenNoDeadlock() {
@@ -28,9 +35,6 @@ final class SharedDataLockTests: XCTestCase {
     let remaining = SharedData.profileSnapshots
     XCTAssertNil(remaining[id1.uuidString])
     XCTAssertNotNil(remaining[id2.uuidString])
-
-    // Cleanup
-    SharedData.removeSnapshot(for: id2.uuidString)
   }
 
   func testGivenManyConcurrentWrites_WhenWritingSnapshots_ThenPreservesAllEntries() {
@@ -60,11 +64,6 @@ final class SharedDataLockTests: XCTestCase {
     let all = SharedData.profileSnapshots
     for id in ids {
       XCTAssertNotNil(all[id.uuidString], "Snapshot for \(id) should exist")
-    }
-
-    // Cleanup
-    for id in ids {
-      SharedData.removeSnapshot(for: id.uuidString)
     }
   }
 
@@ -104,6 +103,38 @@ final class SharedDataLockTests: XCTestCase {
     XCTAssertEqual(flushed[0].blockedProfileId, profileId1)
     XCTAssertEqual(flushed[1].blockedProfileId, profileId2)
     XCTAssertTrue(SharedData.getAndFlushCompletedSessionsForScheduler().isEmpty)
+  }
+
+  // MARK: - Error paths (withLock graceful degradation)
+
+  func testGivenNilLockPath_WhenWritingSnapshot_ThenProceedsUnlocked() {
+    // Given: force nil lockPath (simulates missing app group container)
+    SharedData.configureLockPath(nil)
+    defer { SharedData.resetLockPath() }
+
+    // When: write a snapshot (exercises withLock with nil lockPath)
+    let id = UUID()
+    let snapshot = makeSnapshot(id: id, name: "NilLock")
+    SharedData.setSnapshot(snapshot, for: id.uuidString)
+
+    // Then: snapshot was written despite no lock
+    let retrieved = SharedData.snapshot(for: id.uuidString)
+    XCTAssertEqual(retrieved?.name, "NilLock")
+  }
+
+  func testGivenInvalidLockPath_WhenWritingSnapshot_ThenProceedsUnlocked() {
+    // Given: lock path in nonexistent directory (open() will fail with ENOENT)
+    SharedData.configureLockPath("/nonexistent/directory/lock")
+    defer { SharedData.resetLockPath() }
+
+    // When: write a snapshot (exercises withLock with open() failure)
+    let id = UUID()
+    let snapshot = makeSnapshot(id: id, name: "BadPath")
+    SharedData.setSnapshot(snapshot, for: id.uuidString)
+
+    // Then: snapshot was written despite lock failure
+    let retrieved = SharedData.snapshot(for: id.uuidString)
+    XCTAssertEqual(retrieved?.name, "BadPath")
   }
 
   // MARK: - Helpers

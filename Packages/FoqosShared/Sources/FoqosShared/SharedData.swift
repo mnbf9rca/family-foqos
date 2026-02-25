@@ -19,17 +19,48 @@ extension BreakDurationCalculable {
 }
 
 public enum SharedData {
-  private nonisolated(unsafe) static let suite = UserDefaults(  // SAFETY: UserDefaults is thread-safe per Apple docs
-    suiteName: "group.com.cynexia.family-foqos"
-  )!
+  private nonisolated(unsafe) static var _suite: UserDefaults?  // SAFETY: UserDefaults is thread-safe per Apple docs
 
-  private static let containerURL: URL = FileManager.default.containerURL(  // SAFETY: same app group as `suite`
+  private static var suite: UserDefaults {
+    precondition(_suite != nil, "SharedData.configure(suite:) must be called before accessing SharedData")
+    return _suite!
+  }
+
+  /// Configure SharedData with a UserDefaults suite. Must be called before any access.
+  /// - Main app: call in FoqosApp.init()
+  /// - Extensions: call in extension init()
+  /// - Tests: call in setUp() with an ephemeral suite
+  public static func configure(suite: UserDefaults) {
+    self._suite = suite
+  }
+
+  private static let containerURL: URL? = FileManager.default.containerURL(  // SAFETY: same app group as `suite`
     forSecurityApplicationGroupIdentifier: "group.com.cynexia.family-foqos"
-  )!
+  )
 
-  private static let lockPath: String =
-    containerURL
-    .appendingPathComponent(".shared-data.lock").path
+  #if DEBUG
+    private nonisolated(unsafe) static var _lockPathOverride: String?
+    private nonisolated(unsafe) static var _lockPathOverrideSet = false
+
+    /// Override the lock path for testing. Pass `nil` to force the nil-lockPath code path.
+    public static func configureLockPath(_ path: String?) {
+      _lockPathOverride = path
+      _lockPathOverrideSet = true
+    }
+
+    /// Reset the lock path override so the default container-based path is used.
+    public static func resetLockPath() {
+      _lockPathOverride = nil
+      _lockPathOverrideSet = false
+    }
+  #endif
+
+  private static var lockPath: String? {
+    #if DEBUG
+      if _lockPathOverrideSet { return _lockPathOverride }
+    #endif
+    return containerURL?.appendingPathComponent(".shared-data.lock").path
+  }
 
   private static let lockLog = Logger(
     subsystem: "com.cynexia.family-foqos", category: "SharedData"
@@ -42,6 +73,10 @@ public enum SharedData {
   /// another withLock closure. On BSD/macOS the inner unlock would release
   /// the process-wide lock while the outer critical section is still running.
   private static func withLock<T>(_ body: () -> T) -> T {
+    guard let lockPath else {
+      lockLog.warning("SharedData: no lockPath (test mode?) — proceeding unlocked")
+      return body()
+    }
     let fd = open(lockPath, O_CREAT | O_RDWR, 0o644)
     guard fd >= 0 else {
       lockLog.warning("SharedData: open() failed, errno \(errno) — proceeding unlocked")

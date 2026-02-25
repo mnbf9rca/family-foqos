@@ -332,6 +332,7 @@ class BlockedProfiles {
   static func updateProfile(
     _ profile: BlockedProfiles,
     in context: ModelContext,
+    now: Date = Date(),
     name: String? = nil,
     selection: FamilyActivitySelection? = nil,
     blockingStrategyId: String? = nil,
@@ -455,7 +456,7 @@ class BlockedProfiles {
     if let customReminderMessage {
       profile.customReminderMessage = customReminderMessage
     }
-    profile.updatedAt = Date()
+    profile.updatedAt = now
 
     // Update the snapshot
     updateSnapshot(for: profile)

@@ -4,6 +4,20 @@ import XCTest
 
 final class OneMoreMinuteTests: XCTestCase {
 
+  private static let testSuiteName = "OneMoreMinuteTests-\(UUID().uuidString)"
+
+  override func setUp() {
+    super.setUp()
+    SharedData.configure(
+      suite: UserDefaults(suiteName: Self.testSuiteName)!
+    )
+  }
+
+  override func tearDown() {
+    UserDefaults().removePersistentDomain(forName: Self.testSuiteName)
+    super.tearDown()
+  }
+
   // MARK: - SessionSnapshot Tests
 
   func testGivenNewSnapshot_WhenCheckingDefaults_ThenOneMoreMinuteFieldsAreEmpty() {
@@ -275,16 +289,9 @@ final class OneMoreMinuteTests: XCTestCase {
     XCTAssertNotNil(afterSession)
     XCTAssertTrue(afterSession!.oneMoreMinuteUsed)
     XCTAssertEqual(afterSession!.oneMoreMinuteStartTime, oneMoreMinuteStart)
-
-    // Cleanup
-    SharedData.flushActiveSession()
   }
 
   func testGivenNoActiveSession_WhenSettingOneMoreMinuteStartTime_ThenNoOp() {
-    // Ensure no active session
-    SharedData.flushActiveSession()
-    XCTAssertNil(SharedData.getActiveSharedSession())
-
     // Act: Call the API with no active session (should not crash)
     SharedData.setOneMoreMinuteStartTime(date: Date())
 

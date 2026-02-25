@@ -11,7 +11,7 @@ final class SyncConflictManager: ObservableObject {
   @Published var newerVersionProfiles: [UUID: String] = [:]  // ID → name (this device outdated)
   @Published var showConflictBanner: Bool = false
 
-  private init() {}
+  init() {}
 
   func addConflict(profileId: UUID, profileName: String) {
     conflictedProfiles[profileId] = profileName
