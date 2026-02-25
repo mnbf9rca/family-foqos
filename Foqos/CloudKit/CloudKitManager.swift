@@ -2,7 +2,7 @@ import CloudKit
 import Foundation
 
 /// Thin @MainActor state layer for CloudKit operations.
-/// All network I/O is delegated to CloudKitNetworkService (a nonisolated actor),
+/// All network I/O is delegated to CloudKitNetworkService (a background actor, not @MainActor),
 /// keeping the main thread free from CloudKit IPC.
 @MainActor
 class CloudKitManager: ObservableObject {
@@ -36,8 +36,10 @@ class CloudKitManager: ObservableObject {
   func checkAccountStatus() async {
     let result = await networkService.checkAccountStatus()
     self.isSignedIn = result.isSignedIn
-    if let recordID = result.userRecordID {
+    if result.isSignedIn, let recordID = result.userRecordID {
       self.currentUserRecordID = recordID
+    } else {
+      self.currentUserRecordID = nil
     }
   }
 
@@ -127,8 +129,8 @@ class CloudKitManager: ObservableObject {
     try await networkService.deleteCommand(command)
   }
 
-  func cleanupStaleCommands(maxAgeDays: Int = 7) async {
-    await networkService.cleanupStaleCommands(maxAgeDays: maxAgeDays)
+  func cleanupStaleCommands() async {
+    await networkService.cleanupStaleCommands()
   }
 
   // MARK: - Family Sharing

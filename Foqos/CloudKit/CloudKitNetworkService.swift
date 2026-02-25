@@ -309,7 +309,7 @@ actor CloudKitNetworkService {
     record["createdAt"] = lockCode.createdAt
     record["updatedAt"] = lockCode.updatedAt
 
-    let familyRootID = CKRecord.ID(recordName: "FamilyRoot", zoneID: policyZoneID)
+    let familyRootID = CKRecord.ID(recordName: familyRootRecordName, zoneID: policyZoneID)
     record.parent = CKRecord.Reference(recordID: familyRootID, action: .none)
 
     switch lockCode.scope {
