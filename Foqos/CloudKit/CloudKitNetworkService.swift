@@ -15,18 +15,6 @@ struct ParticipantSyncResult: Sendable {
   let familyMembers: [FamilyMember]
 }
 
-/// Result of checking CloudKit account status
-struct AccountStatusResult: Sendable {
-  let isSignedIn: Bool
-  let userRecordID: CKRecord.ID?
-}
-
-/// Result of fetching shared lock codes
-struct SharedLockCodesResult: Sendable {
-  let codes: [FamilyLockCode]
-  let isConnected: Bool
-}
-
 /// Contains all CloudKit network I/O, running on the cooperative thread pool (NOT @MainActor).
 /// CloudKitManager delegates to this actor for every network call, then updates @Published
 /// properties on the main actor with the results.
