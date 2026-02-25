@@ -1,0 +1,240 @@
+import CloudKit
+import Foundation
+
+extension CloudKitNetworkService {
+
+  // MARK: - Family Sharing
+
+  func getOrCreateFamilyShare() async throws -> CKShare {
+    if let existingShare = self.activeZoneShare {
+      return existingShare
+    }
+
+    try await createPolicyZoneIfNeeded()
+
+    let rootRecordID = CKRecord.ID(recordName: familyRootRecordName, zoneID: policyZoneID)
+
+    do {
+      let rootRecord = try await privateDatabase.record(for: rootRecordID)
+
+      if let shareRef = rootRecord.share {
+        let shareRecord = try await privateDatabase.record(for: shareRef.recordID)
+        guard let share = shareRecord as? CKShare else {
+          Log.error(
+            "Expected CKShare but received \(type(of: shareRecord))",
+            category: .cloudKit)
+          throw CloudKitError.shareNotFound
+        }
+        self.activeZoneShare = share
+        Log.debug("Found existing family share", category: .cloudKit)
+        return share
+      }
+
+      return try await createShareForRoot(rootRecord)
+    } catch let error as CKError where error.code == .unknownItem {
+      Log.info("Creating new family root record", category: .cloudKit)
+      let rootRecord = CKRecord(recordType: "FamilyRoot", recordID: rootRecordID)
+      rootRecord["createdAt"] = Date()
+
+      _ = try await privateDatabase.save(rootRecord)
+      return try await createShareForRoot(rootRecord)
+    }
+  }
+
+  private func createShareForRoot(_ rootRecord: CKRecord) async throws -> CKShare {
+    let share = CKShare(rootRecord: rootRecord)
+    share.publicPermission = .none
+    share[CKShare.SystemFieldKey.title] = "Family Foqos Policies" as CKRecordValue
+
+    let modifyOperation = CKModifyRecordsOperation(
+      recordsToSave: [rootRecord, share],
+      recordIDsToDelete: nil
+    )
+    modifyOperation.savePolicy = .changedKeys
+
+    // Capture privateDatabase as local before entering the continuation closure
+    let database = self.privateDatabase
+
+    let resultShare: CKShare = try await withCheckedThrowingContinuation { continuation in
+      modifyOperation.modifyRecordsResultBlock = { result in
+        switch result {
+        case .success:
+          Log.info("Created family share successfully", category: .cloudKit)
+          continuation.resume(returning: share)
+        case .failure(let error):
+          Log.error("Failed to create family share: \(error)", category: .cloudKit)
+          continuation.resume(throwing: CloudKitError.shareFailed(error))
+        }
+      }
+      database.add(modifyOperation)
+    }
+
+    // Update activeZoneShare after continuation resumes (not inside the callback)
+    self.activeZoneShare = resultShare
+    return resultShare
+  }
+
+  func getCurrentFamilyShare() async -> CKShare? {
+    return activeZoneShare
+  }
+
+  func refreshShareParticipants() async -> [CKShare.Participant] {
+    await cleanupStaleCommands()
+
+    // Clear cached share to force fresh fetch from server
+    self.activeZoneShare = nil
+
+    let rootRecordID = CKRecord.ID(recordName: familyRootRecordName, zoneID: policyZoneID)
+    do {
+      let rootRecord = try await privateDatabase.record(for: rootRecordID)
+      guard let shareRef = rootRecord.share else {
+        Log.debug("No share exists", category: .cloudKit)
+        return []
+      }
+
+      let shareRecord = try await privateDatabase.record(for: shareRef.recordID)
+      guard let share = shareRecord as? CKShare else {
+        Log.error(
+          "Expected CKShare but received \(type(of: shareRecord))",
+          category: .cloudKit)
+        return []
+      }
+      self.activeZoneShare = share
+
+      let participants = share.participants.filter { $0.role != .owner }
+      for participant in participants {
+        let name = participant.userIdentity.nameComponents?.formatted() ?? ""
+        let email = participant.userIdentity.lookupInfo?.emailAddress ?? ""
+        let displayInfo = !name.isEmpty ? name : (!email.isEmpty ? email : "Unknown")
+        Log.debug(
+          "Participant '\(displayInfo)' status: \(participant.acceptanceStatus.rawValue)",
+          category: .cloudKit)
+      }
+
+      Log.info("Found \(participants.count) share participants", category: .cloudKit)
+      return participants
+    } catch {
+      Log.error("Failed to fetch share participants: \(error)", category: .cloudKit)
+      return []
+    }
+  }
+
+  // MARK: - Share Acceptance
+
+  func acceptShareDirect(metadata: CKShare.Metadata) async throws {
+    do {
+      _ = try await container.accept(metadata)
+      Log.info("Accepted share successfully", category: .cloudKit)
+    } catch {
+      throw CloudKitError.shareAcceptFailed(error)
+    }
+  }
+
+  // MARK: - Share Participant Sync
+
+  func syncShareParticipantsToFamilyMembers() async throws -> ParticipantSyncResult {
+    // Clear cached share to force fresh fetch
+    self.activeZoneShare = nil
+
+    let share: CKShare
+    let rootRecordID = CKRecord.ID(recordName: familyRootRecordName, zoneID: policyZoneID)
+    do {
+      let rootRecord = try await privateDatabase.record(for: rootRecordID)
+      guard let shareRef = rootRecord.share else {
+        Log.info("No share exists yet", category: .cloudKit)
+        return ParticipantSyncResult(pendingParticipants: [], familyMembers: [])
+      }
+      let shareRecord = try await privateDatabase.record(for: shareRef.recordID)
+      guard let fetchedShare = shareRecord as? CKShare else {
+        Log.error(
+          "Expected CKShare but received \(type(of: shareRecord))",
+          category: .cloudKit)
+        return ParticipantSyncResult(pendingParticipants: [], familyMembers: [])
+      }
+      share = fetchedShare
+      self.activeZoneShare = share
+    } catch {
+      Log.error("Could not fetch share: \(error)", category: .cloudKit)
+      return ParticipantSyncResult(pendingParticipants: [], familyMembers: [])
+    }
+
+    let acceptedParticipants = share.participants.filter {
+      $0.acceptanceStatus == .accepted && $0.role != .owner
+    }
+
+    let currentParticipantRecordNames = Set(
+      acceptedParticipants.compactMap { $0.userIdentity.userRecordID?.recordName }
+    )
+
+    Log.info("Found \(acceptedParticipants.count) accepted participants", category: .cloudKit)
+
+    var familyMembers = try await fetchFamilyMembers()
+
+    let matchedRecordNames = Set(familyMembers.map { $0.userRecordName })
+
+    var pending: [CKShare.Participant] = []
+    for participant in acceptedParticipants {
+      guard let userRecordID = participant.userIdentity.userRecordID else {
+        pending.append(participant)
+        continue
+      }
+      if !matchedRecordNames.contains(userRecordID.recordName) {
+        pending.append(participant)
+      }
+    }
+
+    if !pending.isEmpty {
+      Log.info(
+        "\(pending.count) accepted participants pending self-registration", category: .cloudKit)
+    }
+
+    // Remove FamilyMembers who are no longer accepted participants
+    for member in familyMembers {
+      let userRecordName = member.userRecordName
+
+      if !currentParticipantRecordNames.contains(userRecordName) {
+        do {
+          let recordID = CKRecord.ID(recordName: member.id.uuidString, zoneID: policyZoneID)
+          try await privateDatabase.deleteRecord(withID: recordID)
+          familyMembers.removeAll { $0.id == member.id }
+          Log.info(
+            "Removed FamilyMember who left share: \(member.displayName)", category: .cloudKit)
+        } catch {
+          Log.error("Failed to remove stale FamilyMember: \(error)", category: .cloudKit)
+        }
+      }
+    }
+
+    return ParticipantSyncResult(
+      pendingParticipants: pending, familyMembers: familyMembers)
+  }
+
+  // MARK: - Connection Status
+
+  func checkFamilyConnectionStatus() async -> Bool {
+    let zone = await findSharedZoneByName()
+    return zone != nil
+  }
+
+  func fetchShareFromSharedDatabase() async throws -> CKShare {
+    guard let zone = await findSharedZoneByName() else {
+      throw CloudKitError.notConnectedToFamily
+    }
+
+    let rootRecordID = CKRecord.ID(recordName: familyRootRecordName, zoneID: zone.zoneID)
+    let rootRecord = try await sharedDatabase.record(for: rootRecordID)
+
+    guard let shareRef = rootRecord.share else {
+      throw CloudKitError.shareNotFound
+    }
+
+    let shareRecord = try await sharedDatabase.record(for: shareRef.recordID)
+    guard let share = shareRecord as? CKShare else {
+      Log.error(
+        "Expected CKShare but received \(type(of: shareRecord))",
+        category: .cloudKit)
+      throw CloudKitError.shareNotFound
+    }
+    return share
+  }
+}
