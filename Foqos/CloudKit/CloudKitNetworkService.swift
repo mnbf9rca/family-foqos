@@ -50,13 +50,21 @@ actor CloudKitNetworkService {
   // MARK: - Account Status
 
   func checkAccountStatus() async -> (isSignedIn: Bool, userRecordID: CKRecord.ID?) {
+    let start = CFAbsoluteTimeGetCurrent()
+    Log.info("checkAccountStatus: starting", category: .cloudKit)
     do {
       let status = try await container.accountStatus()
+      Log.info(
+        "checkAccountStatus: got status (\(String(format: "%.2f", CFAbsoluteTimeGetCurrent() - start))s)",
+        category: .cloudKit)
       let signedIn = (status == .available)
 
       if signedIn {
         do {
           let recordID = try await container.userRecordID()
+          Log.info(
+            "checkAccountStatus: complete (\(String(format: "%.2f", CFAbsoluteTimeGetCurrent() - start))s)",
+            category: .cloudKit)
           return (isSignedIn: true, userRecordID: recordID)
         } catch {
           Log.error("Failed to fetch user record ID: \(error)", category: .cloudKit)
@@ -64,6 +72,9 @@ actor CloudKitNetworkService {
         }
       }
 
+      Log.info(
+        "checkAccountStatus: not signed in (\(String(format: "%.2f", CFAbsoluteTimeGetCurrent() - start))s)",
+        category: .cloudKit)
       return (isSignedIn: false, userRecordID: nil)
     } catch {
       Log.error("Account status error: \(error)", category: .cloudKit)
@@ -706,10 +717,19 @@ actor CloudKitNetworkService {
     cachedUserRecordID: CKRecord.ID?,
     localMode: AppMode
   ) async -> VerificationResult {
+    let start = CFAbsoluteTimeGetCurrent()
+    Log.info("verifySelfFamilyMember: starting", category: .cloudKit)
+
     guard let zone = await findSharedZoneByName() else {
+      Log.info(
+        "verifySelfFamilyMember: no shared zone (\(String(format: "%.2f", CFAbsoluteTimeGetCurrent() - start))s)",
+        category: .cloudKit)
       return VerificationResult(
         isConnected: false, userRecordID: cachedUserRecordID, isSignedIn: nil, enforcedMode: nil)
     }
+    Log.info(
+      "verifySelfFamilyMember: found zone (\(String(format: "%.2f", CFAbsoluteTimeGetCurrent() - start))s)",
+      category: .cloudKit)
 
     let userRecordID: CKRecord.ID
     if let cached = cachedUserRecordID {
@@ -717,6 +737,9 @@ actor CloudKitNetworkService {
     } else {
       do {
         userRecordID = try await ensureUserRecordID(cached: cachedUserRecordID)
+        Log.info(
+          "verifySelfFamilyMember: fetched user record ID (\(String(format: "%.2f", CFAbsoluteTimeGetCurrent() - start))s)",
+          category: .cloudKit)
       } catch {
         Log.error(
           "Could not fetch user record ID for verification: \(error)", category: .cloudKit)
@@ -736,6 +759,9 @@ actor CloudKitNetworkService {
         matching: query,
         inZoneWith: zone.zoneID
       )
+      Log.info(
+        "verifySelfFamilyMember: queried FamilyMember (\(String(format: "%.2f", CFAbsoluteTimeGetCurrent() - start))s)",
+        category: .cloudKit)
 
       for (_, result) in results {
         if case .success(let record) = result {
@@ -753,11 +779,17 @@ actor CloudKitNetworkService {
             Log.info(
               "Enforced app mode from CloudKit: \(localMode.rawValue) -> \(cloudKitMode.rawValue)",
               category: .cloudKit)
+            Log.info(
+              "verifySelfFamilyMember: complete (\(String(format: "%.2f", CFAbsoluteTimeGetCurrent() - start))s)",
+              category: .cloudKit)
             return VerificationResult(
               isConnected: true, userRecordID: userRecordID, isSignedIn: nil,
               enforcedMode: cloudKitMode)
           }
 
+          Log.info(
+            "verifySelfFamilyMember: complete (\(String(format: "%.2f", CFAbsoluteTimeGetCurrent() - start))s)",
+            category: .cloudKit)
           return VerificationResult(
             isConnected: true, userRecordID: userRecordID, isSignedIn: nil, enforcedMode: nil)
         }
@@ -773,10 +805,16 @@ actor CloudKitNetworkService {
           "No self FamilyMember record found, staying in individual mode", category: .cloudKit)
       }
 
+      Log.info(
+        "verifySelfFamilyMember: complete (\(String(format: "%.2f", CFAbsoluteTimeGetCurrent() - start))s)",
+        category: .cloudKit)
       return VerificationResult(
         isConnected: true, userRecordID: userRecordID, isSignedIn: nil, enforcedMode: nil)
     } catch {
       Log.error("Failed to verify self FamilyMember record: \(error)", category: .cloudKit)
+      Log.info(
+        "verifySelfFamilyMember: failed (\(String(format: "%.2f", CFAbsoluteTimeGetCurrent() - start))s)",
+        category: .cloudKit)
       return VerificationResult(
         isConnected: true, userRecordID: userRecordID, isSignedIn: nil, enforcedMode: nil)
     }
