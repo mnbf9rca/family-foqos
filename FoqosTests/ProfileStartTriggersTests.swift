@@ -5,7 +5,7 @@ import XCTest
 
 final class ProfileStartTriggersTests: XCTestCase {
 
-  func testDefaultTriggersAreAllFalse() {
+  func testGivenNewTriggers_WhenCheckingDefaults_ThenAllFalse() {
     let triggers = ProfileStartTriggers()
     XCTAssertFalse(triggers.manual)
     XCTAssertFalse(triggers.anyNFC)
@@ -16,42 +16,42 @@ final class ProfileStartTriggersTests: XCTestCase {
     XCTAssertFalse(triggers.deepLink)
   }
 
-  func testHasNFCReturnsTrueForAnyNFC() {
+  func testGivenAnyNFCTrue_WhenCheckingHasNFC_ThenReturnsTrue() {
     var triggers = ProfileStartTriggers()
     triggers.anyNFC = true
     XCTAssertTrue(triggers.hasNFC)
   }
 
-  func testHasNFCReturnsTrueForSpecificNFC() {
+  func testGivenSpecificNFCTrue_WhenCheckingHasNFC_ThenReturnsTrue() {
     var triggers = ProfileStartTriggers()
     triggers.specificNFC = true
     XCTAssertTrue(triggers.hasNFC)
   }
 
-  func testHasQRReturnsTrueForAnyQR() {
+  func testGivenAnyQRTrue_WhenCheckingHasQR_ThenReturnsTrue() {
     var triggers = ProfileStartTriggers()
     triggers.anyQR = true
     XCTAssertTrue(triggers.hasQR)
   }
 
-  func testHasQRReturnsTrueForSpecificQR() {
+  func testGivenSpecificQRTrue_WhenCheckingHasQR_ThenReturnsTrue() {
     var triggers = ProfileStartTriggers()
     triggers.specificQR = true
     XCTAssertTrue(triggers.hasQR)
   }
 
-  func testIsValidReturnsFalseWhenEmpty() {
+  func testGivenNoTriggersSet_WhenCheckingIsValid_ThenReturnsFalse() {
     let triggers = ProfileStartTriggers()
     XCTAssertFalse(triggers.isValid)
   }
 
-  func testIsValidReturnsTrueWhenManualSet() {
+  func testGivenManualTriggerSet_WhenCheckingIsValid_ThenReturnsTrue() {
     var triggers = ProfileStartTriggers()
     triggers.manual = true
     XCTAssertTrue(triggers.isValid)
   }
 
-  func testCodableRoundTrip() throws {
+  func testGivenTriggersWithValues_WhenEncodingAndDecoding_ThenRoundTrips() throws {
     var original = ProfileStartTriggers()
     original.manual = true
     original.anyNFC = true

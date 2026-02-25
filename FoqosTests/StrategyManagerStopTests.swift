@@ -6,7 +6,7 @@ import XCTest
 @MainActor
 final class StrategyManagerStopTests: XCTestCase {
 
-  func testCanStopWithManualWhenManualEnabled() {
+  func testGivenManualStopEnabled_WhenStoppingWithManual_ThenAllowed() {
     var stop = ProfileStopConditions()
     stop.manual = true
 
@@ -21,7 +21,7 @@ final class StrategyManagerStopTests: XCTestCase {
     XCTAssertTrue(result.allowed)
   }
 
-  func testCannotStopWithManualWhenNotEnabled() {
+  func testGivenManualStopDisabled_WhenStoppingWithManual_ThenNotAllowed() {
     var stop = ProfileStopConditions()
     stop.timer = true
 
@@ -36,7 +36,7 @@ final class StrategyManagerStopTests: XCTestCase {
     XCTAssertFalse(result.allowed)
   }
 
-  func testCanStopWithAnyNFCWhenEnabled() {
+  func testGivenAnyNFCEnabled_WhenStoppingWithNFC_ThenAllowed() {
     var stop = ProfileStopConditions()
     stop.anyNFC = true
 
@@ -51,7 +51,7 @@ final class StrategyManagerStopTests: XCTestCase {
     XCTAssertTrue(result.allowed)
   }
 
-  func testCanStopWithSpecificNFCWhenMatches() {
+  func testGivenSpecificNFCEnabled_WhenStoppingWithMatchingTag_ThenAllowed() {
     var stop = ProfileStopConditions()
     stop.specificNFC = true
 
@@ -66,7 +66,7 @@ final class StrategyManagerStopTests: XCTestCase {
     XCTAssertTrue(result.allowed)
   }
 
-  func testCannotStopWithSpecificNFCWhenMismatch() {
+  func testGivenSpecificNFCEnabled_WhenStoppingWithWrongTag_ThenNotAllowed() {
     var stop = ProfileStopConditions()
     stop.specificNFC = true
 
@@ -82,7 +82,7 @@ final class StrategyManagerStopTests: XCTestCase {
     XCTAssertNotNil(result.errorMessage)
   }
 
-  func testCanStopWithSameNFCWhenSessionTagMatches() {
+  func testGivenSameNFCEnabled_WhenStoppingWithMatchingSessionTag_ThenAllowed() {
     var stop = ProfileStopConditions()
     stop.sameNFC = true
 
@@ -98,7 +98,7 @@ final class StrategyManagerStopTests: XCTestCase {
     XCTAssertTrue(result.allowed)
   }
 
-  func testCannotStopWithSameNFCWhenSessionTagMismatch() {
+  func testGivenSameNFCEnabled_WhenStoppingWithDifferentTag_ThenNotAllowed() {
     var stop = ProfileStopConditions()
     stop.sameNFC = true
 
@@ -114,7 +114,7 @@ final class StrategyManagerStopTests: XCTestCase {
     XCTAssertNotNil(result.errorMessage)
   }
 
-  func testCanStopWithSameQRWhenSessionTagMatches() {
+  func testGivenSameQREnabled_WhenStoppingWithMatchingSessionTag_ThenAllowed() {
     var stop = ProfileStopConditions()
     stop.sameQR = true
 
@@ -130,7 +130,7 @@ final class StrategyManagerStopTests: XCTestCase {
     XCTAssertTrue(result.allowed)
   }
 
-  func testCannotStopWithSameQRWhenSessionTagMismatch() {
+  func testGivenSameQREnabled_WhenStoppingWithDifferentCode_ThenNotAllowed() {
     var stop = ProfileStopConditions()
     stop.sameQR = true
 
@@ -148,7 +148,7 @@ final class StrategyManagerStopTests: XCTestCase {
 
   // MARK: - determineStopAction Tests
 
-  func testDetermineStopActionManualReturnsStopImmediately() {
+  func testGivenManualAndNFC_WhenDeterminingStopAction_ThenStopImmediately() {
     var conditions = ProfileStopConditions()
     conditions.manual = true
     conditions.anyNFC = true  // Even with NFC, manual wins
@@ -158,7 +158,7 @@ final class StrategyManagerStopTests: XCTestCase {
     XCTAssertEqual(action, .stopImmediately)
   }
 
-  func testDetermineStopActionOnlyAnyNFCReturnsScanNFC() {
+  func testGivenOnlyAnyNFC_WhenDeterminingStopAction_ThenScanNFC() {
     var conditions = ProfileStopConditions()
     conditions.anyNFC = true
 
@@ -167,7 +167,7 @@ final class StrategyManagerStopTests: XCTestCase {
     XCTAssertEqual(action, .scanNFC)
   }
 
-  func testDetermineStopActionOnlySameNFCReturnsScanNFC() {
+  func testGivenOnlySameNFC_WhenDeterminingStopAction_ThenScanNFC() {
     var conditions = ProfileStopConditions()
     conditions.sameNFC = true
 
@@ -176,7 +176,7 @@ final class StrategyManagerStopTests: XCTestCase {
     XCTAssertEqual(action, .scanNFC)
   }
 
-  func testDetermineStopActionOnlySpecificNFCReturnsScanNFC() {
+  func testGivenOnlySpecificNFC_WhenDeterminingStopAction_ThenScanNFC() {
     var conditions = ProfileStopConditions()
     conditions.specificNFC = true
 
@@ -185,7 +185,7 @@ final class StrategyManagerStopTests: XCTestCase {
     XCTAssertEqual(action, .scanNFC)
   }
 
-  func testDetermineStopActionOnlyAnyQRReturnsScanQR() {
+  func testGivenOnlyAnyQR_WhenDeterminingStopAction_ThenScanQR() {
     var conditions = ProfileStopConditions()
     conditions.anyQR = true
 
@@ -194,7 +194,7 @@ final class StrategyManagerStopTests: XCTestCase {
     XCTAssertEqual(action, .scanQR)
   }
 
-  func testDetermineStopActionOnlySameQRReturnsScanQR() {
+  func testGivenOnlySameQR_WhenDeterminingStopAction_ThenScanQR() {
     var conditions = ProfileStopConditions()
     conditions.sameQR = true
 
@@ -203,7 +203,7 @@ final class StrategyManagerStopTests: XCTestCase {
     XCTAssertEqual(action, .scanQR)
   }
 
-  func testDetermineStopActionOnlySpecificQRReturnsScanQR() {
+  func testGivenOnlySpecificQR_WhenDeterminingStopAction_ThenScanQR() {
     var conditions = ProfileStopConditions()
     conditions.specificQR = true
 
@@ -212,7 +212,7 @@ final class StrategyManagerStopTests: XCTestCase {
     XCTAssertEqual(action, .scanQR)
   }
 
-  func testDetermineStopActionBothNFCAndQRReturnsShowPicker() {
+  func testGivenNFCAndQR_WhenDeterminingStopAction_ThenShowPicker() {
     var conditions = ProfileStopConditions()
     conditions.anyNFC = true
     conditions.anyQR = true
@@ -222,7 +222,7 @@ final class StrategyManagerStopTests: XCTestCase {
     XCTAssertEqual(action, .showPicker(options: [.scanNFC, .scanQR]))
   }
 
-  func testDetermineStopActionOnlyTimerReturnsCannotStop() {
+  func testGivenOnlyTimer_WhenDeterminingStopAction_ThenCannotStop() {
     var conditions = ProfileStopConditions()
     conditions.timer = true
 
@@ -235,7 +235,7 @@ final class StrategyManagerStopTests: XCTestCase {
     }
   }
 
-  func testDetermineStopActionOnlyScheduleReturnsCannotStop() {
+  func testGivenOnlySchedule_WhenDeterminingStopAction_ThenCannotStop() {
     var conditions = ProfileStopConditions()
     conditions.schedule = true
 
@@ -248,7 +248,7 @@ final class StrategyManagerStopTests: XCTestCase {
     }
   }
 
-  func testDetermineStopActionEmptyConditionsReturnsCannotStop() {
+  func testGivenEmptyConditions_WhenDeterminingStopAction_ThenCannotStop() {
     let conditions = ProfileStopConditions()
 
     let action = StartStopActionResolver.determineStopAction(for: conditions)
@@ -260,7 +260,7 @@ final class StrategyManagerStopTests: XCTestCase {
     }
   }
 
-  func testDetermineStopActionManualOverridesEverything() {
+  func testGivenAllConditionsEnabled_WhenDeterminingStopAction_ThenManualOverrides() {
     var conditions = ProfileStopConditions()
     conditions.manual = true
     conditions.anyNFC = true

@@ -5,7 +5,7 @@ import XCTest
 
 final class WeekdayLocaleOrderTests: XCTestCase {
 
-  func testLocaleOrdered_sundayFirst_returnsSundayFirst() {
+  func testGivenSundayFirstLocale_WhenOrdering_ThenSundayIsFirst() {
     var calendar = Calendar(identifier: .gregorian)
     calendar.firstWeekday = 1  // Sunday
     let ordered = Weekday.localeOrdered(calendar: calendar)
@@ -14,7 +14,7 @@ final class WeekdayLocaleOrderTests: XCTestCase {
     XCTAssertEqual(ordered.count, 7)
   }
 
-  func testLocaleOrdered_mondayFirst_returnsMondayFirst() {
+  func testGivenMondayFirstLocale_WhenOrdering_ThenMondayIsFirst() {
     var calendar = Calendar(identifier: .gregorian)
     calendar.firstWeekday = 2  // Monday
     let ordered = Weekday.localeOrdered(calendar: calendar)
@@ -23,7 +23,7 @@ final class WeekdayLocaleOrderTests: XCTestCase {
     XCTAssertEqual(ordered.count, 7)
   }
 
-  func testLocaleOrdered_saturdayFirst_returnsSaturdayFirst() {
+  func testGivenSaturdayFirstLocale_WhenOrdering_ThenSaturdayIsFirst() {
     var calendar = Calendar(identifier: .gregorian)
     calendar.firstWeekday = 7  // Saturday
     let ordered = Weekday.localeOrdered(calendar: calendar)
@@ -32,14 +32,14 @@ final class WeekdayLocaleOrderTests: XCTestCase {
     XCTAssertEqual(ordered.count, 7)
   }
 
-  func testLocaleOrdered_containsAllDays() {
+  func testGivenAnyLocale_WhenOrdering_ThenContainsAllDays() {
     var calendar = Calendar(identifier: .gregorian)
     calendar.firstWeekday = 2
     let ordered = Weekday.localeOrdered(calendar: calendar)
     XCTAssertEqual(Set(ordered), Set(Weekday.allCases))
   }
 
-  func testLocaleSorted_sortsSubsetByLocaleOrder() {
+  func testGivenMondayFirstLocale_WhenSortingSubset_ThenSortsByLocaleOrder() {
     var calendar = Calendar(identifier: .gregorian)
     calendar.firstWeekday = 2  // Monday-first
 
@@ -49,7 +49,7 @@ final class WeekdayLocaleOrderTests: XCTestCase {
     XCTAssertEqual(sorted, [.monday, .wednesday, .sunday])
   }
 
-  func testLocaleSorted_sundayFirst_sortsSubsetByLocaleOrder() {
+  func testGivenSundayFirstLocale_WhenSortingSubset_ThenSortsByLocaleOrder() {
     var calendar = Calendar(identifier: .gregorian)
     calendar.firstWeekday = 1  // Sunday-first
 
@@ -61,22 +61,22 @@ final class WeekdayLocaleOrderTests: XCTestCase {
 
   // MARK: - compactDaysText
 
-  func testCompactDaysText_allDays_returnsEveryDay() {
+  func testGivenAllDays_WhenGettingCompactText_ThenReturnsEveryDay() {
     let days = Weekday.allCases
     XCTAssertEqual(days.compactDaysText(), "Every day")
   }
 
-  func testCompactDaysText_weekdays_returnsWeekdays() {
+  func testGivenWeekdaysOnly_WhenGettingCompactText_ThenReturnsWeekdays() {
     let days: [Weekday] = [.monday, .tuesday, .wednesday, .thursday, .friday]
     XCTAssertEqual(days.compactDaysText(), "Weekdays")
   }
 
-  func testCompactDaysText_weekends_returnsWeekends() {
+  func testGivenWeekendsOnly_WhenGettingCompactText_ThenReturnsWeekends() {
     let days: [Weekday] = [.saturday, .sunday]
     XCTAssertEqual(days.compactDaysText(), "Weekends")
   }
 
-  func testCompactDaysText_subset_returnsShortLabels() {
+  func testGivenDaySubset_WhenGettingCompactText_ThenReturnsShortLabels() {
     var calendar = Calendar(identifier: .gregorian)
     calendar.firstWeekday = 2  // Monday-first
     let days: [Weekday] = [.sunday, .wednesday, .monday]

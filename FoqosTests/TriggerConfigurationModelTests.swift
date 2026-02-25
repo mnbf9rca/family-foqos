@@ -6,7 +6,7 @@ import XCTest
 @MainActor
 final class TriggerConfigurationModelTests: XCTestCase {
 
-  func testAutoFixOnStartTriggerChange() {
+  func testGivenSameNFCWithNoNFCStart_WhenStartTriggersChange_ThenAutoFixesStop() {
     let model = TriggerConfigurationModel()
     model.stopConditions.sameNFC = true
 
@@ -17,7 +17,7 @@ final class TriggerConfigurationModelTests: XCTestCase {
     XCTAssertFalse(model.stopConditions.sameNFC)
   }
 
-  func testValidationErrorsUpdateOnChange() {
+  func testGivenEmptyTriggers_WhenValidating_ThenShowsErrorsThatClearWhenValid() {
     let model = TriggerConfigurationModel()
     // Empty triggers should have errors after validation
     model.validate()
@@ -31,7 +31,7 @@ final class TriggerConfigurationModelTests: XCTestCase {
     XCTAssertTrue(model.validationErrors.isEmpty)
   }
 
-  func testIsStopEnabled() {
+  func testGivenNFCStartTrigger_WhenCheckingStopEnabled_ThenSameNFCEnabledSameQRDisabled() {
     let model = TriggerConfigurationModel()
     model.startTriggers.anyNFC = true
 
@@ -39,7 +39,7 @@ final class TriggerConfigurationModelTests: XCTestCase {
     XCTAssertFalse(model.isStopEnabled(.sameQR))
   }
 
-  func testReasonStopDisabled() {
+  func testGivenManualStartOnly_WhenCheckingReasonDisabled_ThenSameNFCHasReasonManualDoesNot() {
     let model = TriggerConfigurationModel()
     model.startTriggers.manual = true
 
@@ -47,7 +47,7 @@ final class TriggerConfigurationModelTests: XCTestCase {
     XCTAssertNil(model.reasonStopDisabled(.manual))
   }
 
-  func testValidationErrorsClearWhenStopConditionAdded() {
+  func testGivenStartWithNoStop_WhenAddingStopCondition_ThenValidationErrorsCleared() {
     let model = TriggerConfigurationModel()
     model.startTriggers.manual = true
     model.startTriggersDidChange()
@@ -68,7 +68,7 @@ final class TriggerConfigurationModelTests: XCTestCase {
     )
   }
 
-  func testValidationErrorsAppearWhenStopConditionRemoved() {
+  func testGivenValidStartAndStop_WhenRemovingStopCondition_ThenValidationErrorAppears() {
     let model = TriggerConfigurationModel()
     model.startTriggers.manual = true
     model.stopConditions.manual = true
@@ -87,7 +87,7 @@ final class TriggerConfigurationModelTests: XCTestCase {
     )
   }
 
-  func testValidationErrorWhenStartAndStopScheduleTimesMatch() {
+  func testGivenMatchingScheduleTimes_WhenValidating_ThenShowsEqualTimeError() {
     let now = Date()
     let model = TriggerConfigurationModel()
     model.startTriggers.schedule = true
@@ -106,7 +106,7 @@ final class TriggerConfigurationModelTests: XCTestCase {
     )
   }
 
-  func testNoValidationErrorWhenScheduleTimesDiffer() {
+  func testGivenDifferentScheduleTimes_WhenValidating_ThenNoEqualTimeError() {
     let now = Date()
     let model = TriggerConfigurationModel()
     model.startTriggers.schedule = true

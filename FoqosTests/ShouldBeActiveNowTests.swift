@@ -42,7 +42,7 @@ final class ShouldBeActiveNowTests: XCTestCase {
 
   // MARK: - Basic window checks
 
-  func testInWindow_notSuppressed_returnsTrue() {
+  func testGivenInWindowNotSuppressed_WhenCheckingActive_ThenReturnsTrue() {
     let start = makeSchedule(hour: 10, minute: 0)
     let now = date(hour: 14, minute: 0)
 
@@ -52,7 +52,7 @@ final class ShouldBeActiveNowTests: XCTestCase {
     )
   }
 
-  func testOutsideWindow_returnsFalse() {
+  func testGivenOutsideWindow_WhenCheckingActive_ThenReturnsFalse() {
     let start = makeSchedule(hour: 14, minute: 0)
     let now = date(hour: 9, minute: 0)
 
@@ -62,7 +62,7 @@ final class ShouldBeActiveNowTests: XCTestCase {
     )
   }
 
-  func testInWindow_suppressed_returnsFalse() {
+  func testGivenInWindowSuppressed_WhenCheckingActive_ThenReturnsFalse() {
     let start = makeSchedule(hour: 10, minute: 0)
     let now = date(hour: 14, minute: 0)
     let stoppedAt = date(hour: 12, minute: 0)
@@ -75,7 +75,7 @@ final class ShouldBeActiveNowTests: XCTestCase {
 
   // MARK: - Age check
 
-  func testTooNew_returnsFalse() {
+  func testGivenScheduleTooNew_WhenCheckingActive_ThenReturnsFalse() {
     let now = date(hour: 14, minute: 0)
     let start = makeSchedule(hour: 10, minute: 0, updatedAt: now)
 
@@ -87,7 +87,7 @@ final class ShouldBeActiveNowTests: XCTestCase {
 
   // MARK: - Day check
 
-  func testNotScheduledDay_returnsFalse() {
+  func testGivenNotScheduledDay_WhenCheckingActive_ThenReturnsFalse() {
     // Reference is Monday (weekday 2). Pick a day that is NOT Monday.
     let otherDay = Weekday.allCases.first { $0.rawValue != referenceWeekday }!
     let start = makeSchedule(hour: 10, minute: 0, days: [otherDay])
@@ -101,7 +101,7 @@ final class ShouldBeActiveNowTests: XCTestCase {
 
   // MARK: - Overnight
 
-  func testOvernight_at2300_notSuppressed_returnsTrue() {
+  func testGivenOvernightAt2300NotSuppressed_WhenCheckingActive_ThenReturnsTrue() {
     let start = makeSchedule(hour: 22, minute: 0)
     let stop = makeSchedule(hour: 6, minute: 0)
     let now = date(hour: 23, minute: 0)
@@ -112,7 +112,7 @@ final class ShouldBeActiveNowTests: XCTestCase {
     )
   }
 
-  func testOvernight_at0300_notSuppressed_returnsTrue() {
+  func testGivenOvernightAt0300NotSuppressed_WhenCheckingActive_ThenReturnsTrue() {
     let start = makeSchedule(hour: 22, minute: 0)
     let stop = makeSchedule(hour: 6, minute: 0)
     let now = date(hour: 3, minute: 0)
@@ -123,7 +123,7 @@ final class ShouldBeActiveNowTests: XCTestCase {
     )
   }
 
-  func testOvernight_at0300_stoppedAt2230Yesterday_returnsFalse() {
+  func testGivenOvernightAt0300StoppedYesterday_WhenCheckingActive_ThenReturnsFalse() {
     let start = makeSchedule(hour: 22, minute: 0)
     let stop = makeSchedule(hour: 6, minute: 0)
     let now = date(hour: 3, minute: 0)
@@ -135,7 +135,7 @@ final class ShouldBeActiveNowTests: XCTestCase {
     )
   }
 
-  func testOvernight_betweenWindows_returnsFalse() {
+  func testGivenOvernightBetweenWindows_WhenCheckingActive_ThenReturnsFalse() {
     let start = makeSchedule(hour: 22, minute: 0)
     let stop = makeSchedule(hour: 6, minute: 0)
     let now = date(hour: 12, minute: 0)
@@ -148,7 +148,7 @@ final class ShouldBeActiveNowTests: XCTestCase {
 
   // MARK: - Same-day with stop
 
-  func testSameDay_insideWindow_returnsTrue() {
+  func testGivenSameDayInsideWindow_WhenCheckingActive_ThenReturnsTrue() {
     let start = makeSchedule(hour: 10, minute: 0)
     let stop = makeSchedule(hour: 17, minute: 0)
     let now = date(hour: 14, minute: 0)
@@ -159,7 +159,7 @@ final class ShouldBeActiveNowTests: XCTestCase {
     )
   }
 
-  func testSameDay_afterStop_returnsFalse() {
+  func testGivenSameDayAfterStop_WhenCheckingActive_ThenReturnsFalse() {
     let start = makeSchedule(hour: 10, minute: 0)
     let stop = makeSchedule(hour: 17, minute: 0)
     let now = date(hour: 18, minute: 0)
@@ -172,7 +172,7 @@ final class ShouldBeActiveNowTests: XCTestCase {
 
   // MARK: - Overnight day check (window started yesterday)
 
-  func testOvernight_at0300_yesterdayNotScheduled_returnsFalse() {
+  func testGivenOvernightAt0300YesterdayNotScheduled_WhenCheckingActive_ThenReturnsFalse() {
     // Reference is Monday. Schedule only for Monday (not Sunday = yesterday).
     let mondayDay = Weekday(rawValue: referenceWeekday)!
     let start = makeSchedule(hour: 22, minute: 0, days: [mondayDay])

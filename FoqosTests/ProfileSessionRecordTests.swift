@@ -4,7 +4,7 @@ import XCTest
 
 final class ProfileSessionRecordTests: XCTestCase {
 
-  func testRecordIdIsDeterministicPerProfile() {
+  func testGivenSameProfileId_WhenCreatingRecords_ThenRecordIdsMatch() {
     let profileId = UUID()
 
     let record1 = ProfileSessionRecord(profileId: profileId)
@@ -15,7 +15,7 @@ final class ProfileSessionRecordTests: XCTestCase {
     XCTAssertEqual(record1.recordName, "ProfileSession_\(profileId.uuidString)")
   }
 
-  func testApplyUpdateRejectsLowerSequence() {
+  func testGivenHigherSequence_WhenApplyingLowerSequence_ThenRejectsUpdate() {
     var record = ProfileSessionRecord(profileId: UUID())
 
     // Apply start with seq=3
@@ -39,7 +39,7 @@ final class ProfileSessionRecordTests: XCTestCase {
     XCTAssertTrue(record.isActive)  // Still active
   }
 
-  func testApplyUpdateAcceptsHigherSequence() {
+  func testGivenActiveSession_WhenApplyingHigherSequence_ThenAcceptsUpdate() {
     var record = ProfileSessionRecord(profileId: UUID())
 
     // Start
@@ -56,7 +56,7 @@ final class ProfileSessionRecordTests: XCTestCase {
     XCTAssertFalse(record.isActive)
   }
 
-  func testApplyUpdateRejectsEqualSequence() {
+  func testGivenActiveSession_WhenApplyingEqualSequence_ThenRejectsUpdate() {
     var record = ProfileSessionRecord(profileId: UUID())
 
     // Apply start with seq=1
@@ -73,7 +73,7 @@ final class ProfileSessionRecordTests: XCTestCase {
     XCTAssertTrue(record.isActive)  // Still active
   }
 
-  func testResetForNewSession() {
+  func testGivenCompletedSession_WhenResettingForNewSession_ThenClearsAllFields() {
     var record = ProfileSessionRecord(profileId: UUID())
 
     // Start and then stop a session
@@ -92,7 +92,7 @@ final class ProfileSessionRecordTests: XCTestCase {
     XCTAssertNil(record.sessionOriginDevice)
   }
 
-  func testSessionOriginDeviceIsSetOnStart() {
+  func testGivenNewSession_WhenStarting_ThenSetsSessionOriginDevice() {
     var record = ProfileSessionRecord(profileId: UUID())
 
     _ = record.applyUpdate(isActive: true, sequenceNumber: 1, deviceId: "device-a", startTime: Date())
@@ -100,7 +100,7 @@ final class ProfileSessionRecordTests: XCTestCase {
     XCTAssertEqual(record.sessionOriginDevice, "device-a")
   }
 
-  func testBreakTimesAreUpdated() {
+  func testGivenActiveSession_WhenUpdatingBreakTimes_ThenSetsBreakStartAndEnd() {
     var record = ProfileSessionRecord(profileId: UUID())
     let now = Date()
     let breakStart = now

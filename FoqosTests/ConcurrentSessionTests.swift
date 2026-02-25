@@ -12,7 +12,7 @@ final class ConcurrentSessionTests: XCTestCase {
   }
 
   /// Simulates the original bug: stale start after stop
-  func testStaleStartAfterStopIsRejected() async {
+  func testGivenStoppedSession_WhenStaleStartArrives_ThenRejectsIt() async {
     let now = Date()
 
     // Device A starts
@@ -54,7 +54,7 @@ final class ConcurrentSessionTests: XCTestCase {
   }
 
   /// Simulates concurrent schedule triggers
-  func testConcurrentScheduleTriggersFirstWins() async {
+  func testGivenConcurrentScheduleTriggers_WhenBothDevicesStart_ThenFirstWins() async {
     let now = Date()
 
     // Simulate Device A winning the race (Device B gets conflict)
@@ -79,7 +79,7 @@ final class ConcurrentSessionTests: XCTestCase {
   }
 
   /// Simulates multiple devices starting and stopping
-  func testMultiDeviceStartStop() async {
+  func testGivenMultipleDevices_WhenStartingAndStopping_ThenAllSeeStoppedState() async {
     let now = Date()
 
     // Device A starts
@@ -121,7 +121,7 @@ final class ConcurrentSessionTests: XCTestCase {
   }
 
   /// Tests that stopping an already stopped session returns alreadyStopped
-  func testStopAlreadyStoppedSession() async {
+  func testGivenAlreadyStoppedSession_WhenStoppingAgain_ThenReturnsAlreadyStopped() async {
     let now = Date()
 
     // Start and stop
@@ -140,7 +140,7 @@ final class ConcurrentSessionTests: XCTestCase {
   }
 
   /// Tests that stopping a non-existent session returns alreadyStopped
-  func testStopNonExistentSession() async {
+  func testGivenNonExistentSession_WhenStopping_ThenReturnsAlreadyStopped() async {
     let now = Date()
 
     let result = await mockService.stopSession(
@@ -152,7 +152,7 @@ final class ConcurrentSessionTests: XCTestCase {
   }
 
   /// Verifies that the maxRetriesExceeded error case exists and is usable
-  func testMaxRetriesExceededErrorHasDescription() {
+  func testGivenMaxRetriesExceededError_WhenCheckingDescription_ThenContainsRetry() {
     let error = SessionSyncError.maxRetriesExceeded
     XCTAssertNotNil(error.errorDescription)
     XCTAssertTrue(error.errorDescription!.contains("retry"))
@@ -160,7 +160,7 @@ final class ConcurrentSessionTests: XCTestCase {
 
   /// Verifies that simulated CAS conflicts return alreadyActive
   /// to match real-world behavior when another device wins the race
-  func testSimulatedConflictReturnsAlreadyActive() async {
+  func testGivenSimulatedConflict_WhenStarting_ThenReturnsAlreadyActive() async {
     let now = Date()
 
     await mockService.reset()
@@ -181,7 +181,7 @@ final class ConcurrentSessionTests: XCTestCase {
   }
 
   /// Verifies that after conflicts are exhausted, normal behavior resumes
-  func testStartSucceedsAfterConflictsExhausted() async {
+  func testGivenExhaustedConflicts_WhenStarting_ThenSucceedsNormally() async {
     let now = Date()
 
     await mockService.reset()

@@ -5,7 +5,7 @@ import XCTest
 
 final class ProfileStopConditionsTests: XCTestCase {
 
-  func testDefaultConditionsAreAllFalse() {
+  func testGivenNewConditions_WhenCheckingDefaults_ThenAllFalse() {
     let conditions = ProfileStopConditions()
     XCTAssertFalse(conditions.manual)
     XCTAssertFalse(conditions.timer)
@@ -19,24 +19,24 @@ final class ProfileStopConditionsTests: XCTestCase {
     XCTAssertFalse(conditions.deepLink)
   }
 
-  func testIsValidReturnsFalseWhenEmpty() {
+  func testGivenEmptyConditions_WhenCheckingIsValid_ThenFalse() {
     let conditions = ProfileStopConditions()
     XCTAssertFalse(conditions.isValid)
   }
 
-  func testIsValidReturnsTrueWhenManualSet() {
+  func testGivenManualEnabled_WhenCheckingIsValid_ThenTrue() {
     var conditions = ProfileStopConditions()
     conditions.manual = true
     XCTAssertTrue(conditions.isValid)
   }
 
-  func testIsValidReturnsTrueWhenTimerSet() {
+  func testGivenTimerEnabled_WhenCheckingIsValid_ThenTrue() {
     var conditions = ProfileStopConditions()
     conditions.timer = true
     XCTAssertTrue(conditions.isValid)
   }
 
-  func testCodableRoundTrip() throws {
+  func testGivenConditionsWithMultipleFlags_WhenEncodingAndDecoding_ThenRoundTripsCorrectly() throws {
     var original = ProfileStopConditions()
     original.manual = true
     original.sameNFC = true

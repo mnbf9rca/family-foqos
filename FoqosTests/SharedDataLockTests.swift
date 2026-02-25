@@ -12,7 +12,7 @@ final class SharedDataLockTests: XCTestCase {
     _ = SharedData.getAndFlushCompletedSessionsForScheduler()
   }
 
-  func testSequentialSnapshotOperationsDoNotDeadlock() {
+  func testGivenTwoSnapshots_WhenSettingAndRemovingSequentially_ThenNoDeadlock() {
     // Given: two snapshots
     let id1 = UUID()
     let id2 = UUID()
@@ -33,7 +33,7 @@ final class SharedDataLockTests: XCTestCase {
     SharedData.removeSnapshot(for: id2.uuidString)
   }
 
-  func testConcurrentSnapshotWritesPreserveAllEntries() {
+  func testGivenManyConcurrentWrites_WhenWritingSnapshots_ThenPreservesAllEntries() {
     // NOTE: Uses GCD to simulate concurrent writes within a single process.
     // True cross-process testing (main app vs DeviceActivity extension) is
     // impractical in XCTest, but the POSIX flock() mechanism is identical
@@ -68,7 +68,7 @@ final class SharedDataLockTests: XCTestCase {
     }
   }
 
-  func testEndActiveSharedSessionIsAtomic() {
+  func testGivenActiveSession_WhenEndingSession_ThenAtomicallyMovesToCompleted() {
     // Given: an active session
     let profileId = UUID()
     SharedData.createSessionForScheduler(for: profileId)
@@ -84,7 +84,7 @@ final class SharedDataLockTests: XCTestCase {
     XCTAssertEqual(completed.first?.blockedProfileId, profileId)
   }
 
-  func testGetAndFlushCompletedSessionsIsAtomic() {
+  func testGivenTwoCompletedSessions_WhenFlushingAtomically_ThenReturnsBothAndClears() {
     // Given: two completed sessions
     let profileId1 = UUID()
     let profileId2 = UUID()

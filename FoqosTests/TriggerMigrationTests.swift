@@ -7,7 +7,7 @@ final class TriggerMigrationTests: XCTestCase {
 
   // MARK: - ManualBlockingStrategy
 
-  func testMigrateManualStrategy() {
+  func testGivenManualStrategyV1_WhenMigrating_ThenSetsManualTriggers() {
     let (start, stop) = TriggerMigration.migrateFromStrategy("ManualBlockingStrategy")
 
     XCTAssertTrue(start.manual)
@@ -21,7 +21,7 @@ final class TriggerMigrationTests: XCTestCase {
 
   // MARK: - NFCBlockingStrategy
 
-  func testMigrateNFCStrategy() {
+  func testGivenNFCStrategyV1_WhenMigrating_ThenSetsNFCTriggers() {
     let (start, stop) = TriggerMigration.migrateFromStrategy("NFCBlockingStrategy")
 
     XCTAssertTrue(start.anyNFC)
@@ -33,7 +33,7 @@ final class TriggerMigrationTests: XCTestCase {
 
   // MARK: - NFCManualBlockingStrategy
 
-  func testMigrateNFCManualStrategy() {
+  func testGivenNFCManualStrategyV1_WhenMigrating_ThenSetsManualStartAnyNFCStop() {
     let (start, stop) = TriggerMigration.migrateFromStrategy("NFCManualBlockingStrategy")
 
     XCTAssertTrue(start.manual)
@@ -45,7 +45,7 @@ final class TriggerMigrationTests: XCTestCase {
 
   // MARK: - NFCTimerBlockingStrategy
 
-  func testMigrateNFCTimerStrategy() {
+  func testGivenNFCTimerStrategyV1_WhenMigrating_ThenSetsManualStartAnyNFCAndTimerStop() {
     let (start, stop) = TriggerMigration.migrateFromStrategy("NFCTimerBlockingStrategy")
 
     XCTAssertTrue(start.manual)
@@ -56,7 +56,7 @@ final class TriggerMigrationTests: XCTestCase {
 
   // MARK: - QRCodeBlockingStrategy
 
-  func testMigrateQRCodeStrategy() {
+  func testGivenQRCodeStrategyV1_WhenMigrating_ThenSetsQRTriggers() {
     let (start, stop) = TriggerMigration.migrateFromStrategy("QRCodeBlockingStrategy")
 
     XCTAssertTrue(start.anyQR)
@@ -68,7 +68,7 @@ final class TriggerMigrationTests: XCTestCase {
 
   // MARK: - QRManualBlockingStrategy
 
-  func testMigrateQRManualStrategy() {
+  func testGivenQRManualStrategyV1_WhenMigrating_ThenSetsManualStartAnyQRStop() {
     let (start, stop) = TriggerMigration.migrateFromStrategy("QRManualBlockingStrategy")
 
     XCTAssertTrue(start.manual)
@@ -80,7 +80,7 @@ final class TriggerMigrationTests: XCTestCase {
 
   // MARK: - QRTimerBlockingStrategy
 
-  func testMigrateQRTimerStrategy() {
+  func testGivenQRTimerStrategyV1_WhenMigrating_ThenSetsManualStartAnyQRAndTimerStop() {
     let (start, stop) = TriggerMigration.migrateFromStrategy("QRTimerBlockingStrategy")
 
     XCTAssertTrue(start.manual)
@@ -91,7 +91,7 @@ final class TriggerMigrationTests: XCTestCase {
 
   // MARK: - ShortcutTimerBlockingStrategy
 
-  func testMigrateShortcutTimerStrategy() {
+  func testGivenShortcutTimerStrategyV1_WhenMigrating_ThenSetsManualStartTimerStop() {
     let (start, stop) = TriggerMigration.migrateFromStrategy("ShortcutTimerBlockingStrategy")
 
     XCTAssertTrue(start.manual)
@@ -106,7 +106,7 @@ final class TriggerMigrationTests: XCTestCase {
 
   // MARK: - Unknown Strategy
 
-  func testMigrateUnknownStrategyDefaultsToManual() {
+  func testGivenUnknownStrategyV1_WhenMigrating_ThenDefaultsToManual() {
     let (start, stop) = TriggerMigration.migrateFromStrategy("UnknownStrategy")
 
     XCTAssertTrue(start.manual)
@@ -115,7 +115,7 @@ final class TriggerMigrationTests: XCTestCase {
 
   // MARK: - Physical Unlock Migration
 
-  func testMigratePhysicalUnlockNFC() {
+  func testGivenAnyNFCStop_WhenMigratingPhysicalUnlockNFC_ThenSetsSpecificNFC() {
     var stop = ProfileStopConditions()
     stop.anyNFC = true
 
@@ -130,7 +130,7 @@ final class TriggerMigrationTests: XCTestCase {
     XCTAssertEqual(newStopTagId, "nfc-tag-123")
   }
 
-  func testMigratePhysicalUnlockNFCClearsSameNFC() {
+  func testGivenSameNFCStop_WhenMigratingPhysicalUnlockNFC_ThenClearsSameNFC() {
     // Simulates NFCBlockingStrategy migration path: sameNFC is set,
     // then physical unlock adds specificNFC — sameNFC must be cleared
     var stop = ProfileStopConditions()
@@ -147,7 +147,7 @@ final class TriggerMigrationTests: XCTestCase {
     XCTAssertFalse(newStop.anyNFC)
   }
 
-  func testMigratePhysicalUnlockQR() {
+  func testGivenAnyQRStop_WhenMigratingPhysicalUnlockQR_ThenSetsSpecificQR() {
     var stop = ProfileStopConditions()
     stop.anyQR = true
 
@@ -162,7 +162,7 @@ final class TriggerMigrationTests: XCTestCase {
     XCTAssertEqual(newStopCodeId, QRCodeHasher.hash("qr-code-456"))
   }
 
-  func testMigratePhysicalUnlockQRClearsSameQR() {
+  func testGivenSameQRStop_WhenMigratingPhysicalUnlockQR_ThenClearsSameQR() {
     // Simulates QRCodeBlockingStrategy migration path: sameQR is set,
     // then physical unlock adds specificQR — sameQR must be cleared
     var stop = ProfileStopConditions()
@@ -181,7 +181,7 @@ final class TriggerMigrationTests: XCTestCase {
 
   // MARK: - Schedule Migration
 
-  func testMigrateScheduleToStartAndStop() {
+  func testGivenLegacySchedule_WhenMigrating_ThenSplitsIntoStartAndStop() {
     let legacySchedule = BlockedProfileSchedule(
       days: [.monday, .tuesday],
       startHour: 9,
@@ -202,7 +202,7 @@ final class TriggerMigrationTests: XCTestCase {
     XCTAssertEqual(stopSchedule?.minute, 30)
   }
 
-  func testMigrateNilScheduleReturnsNils() {
+  func testGivenNilSchedule_WhenMigrating_ThenReturnsNils() {
     let (startSchedule, stopSchedule) = TriggerMigration.migrateSchedule(nil)
 
     XCTAssertNil(startSchedule)
