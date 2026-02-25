@@ -91,6 +91,12 @@ struct FoqosApp: App {
   @Environment(\.scenePhase) private var scenePhase
 
   init() {
+    // Migrate UserDefaults keys BEFORE any @AppStorage reads.
+    // Must run here (not in .onAppear) because SwiftUI reads @AppStorage
+    // when building the view hierarchy, which happens before .onAppear fires.
+    UserDefaultsMigration.migrateIfNeeded()
+    UserDefaultsMigration.migrateAppGroupIfNeeded()
+
     SharedData.configure(
       suite: UserDefaults(suiteName: "group.com.cynexia.family-foqos")!
     )
@@ -212,9 +218,6 @@ struct FoqosApp: App {
         .onAppear {
           // Set up sync coordinator with model context
           syncCoordinator.setModelContext(container.mainContext)
-          // Migrate UserDefaults keys to family_foqos_ prefix
-          UserDefaultsMigration.migrateIfNeeded()
-          UserDefaultsMigration.migrateAppGroupIfNeeded()
           // Migrate profiles to V2 trigger system if needed
           ProfileMigrationUtil.migrateProfilesIfNeeded(context: container.mainContext)
           // Initialize sync if enabled

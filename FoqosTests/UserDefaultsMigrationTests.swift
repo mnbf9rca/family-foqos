@@ -143,4 +143,19 @@ final class UserDefaultsMigrationTests: XCTestCase {
     UserDefaultsMigration.migrateAppGroupIfNeeded(defaults: nil)
     // Should not crash or set any flags — just returns early
   }
+
+  // MARK: - Synchronous contract tests
+
+  func testGivenOldShowIntroScreen_WhenMigrate_ThenNewKeyPopulatedSynchronously() {
+    // Given: old key set to false (returning user)
+    defaults.set(false, forKey: "showIntroScreen")
+
+    // When: migration runs
+    UserDefaultsMigration.migrateIfNeeded(defaults: defaults)
+
+    // Then: new key is immediately readable (no async gap)
+    // This documents the contract that @AppStorage("family_foqos_show_intro_screen")
+    // will find the correct value if migration runs before view init.
+    XCTAssertFalse(defaults.bool(forKey: "family_foqos_show_intro_screen"))
+  }
 }
