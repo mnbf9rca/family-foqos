@@ -85,12 +85,22 @@ struct FoqosApp: App {
   /// Sync upgrade notice (shown when legacy session records are cleaned up)
   @State private var showSyncUpgradeAlert = false
 
+  /// Tracks whether .onAppear has run, to skip duplicate schedule work
+  /// when scenePhase fires .active on initial launch.
+  @State private var hasPerformedInitialSetup = false
+
   /// CloudKit share acceptance
   @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
   @Environment(\.scenePhase) private var scenePhase
 
   init() {
+    // Migrate UserDefaults keys BEFORE any @AppStorage reads.
+    // Must run here (not in .onAppear) because SwiftUI reads @AppStorage
+    // when building the view hierarchy, which happens before .onAppear fires.
+    UserDefaultsMigration.migrateIfNeeded()
+    UserDefaultsMigration.migrateAppGroupIfNeeded()
+
     SharedData.configure(
       suite: UserDefaults(suiteName: "group.com.cynexia.family-foqos")!
     )
@@ -124,10 +134,11 @@ struct FoqosApp: App {
               // Verify child authorization when app becomes active
               verifyChildAuthorizationIfNeeded()
             }
-            // Reschedule pre-activation reminders (handles warm returns on new days)
-            PreActivationReminderScheduler.rescheduleAllReminders(context: container.mainContext)
-            // Catch up any missed schedule starts (DA may not re-fire on foreground)
-            PreActivationReminderScheduler.catchUpMissedScheduleStarts(context: container.mainContext)
+            // Only reschedule on warm returns — .onAppear handles cold launch
+            if hasPerformedInitialSetup {
+              PreActivationReminderScheduler.rescheduleAllReminders(context: container.mainContext)
+              PreActivationReminderScheduler.catchUpMissedScheduleStarts(context: container.mainContext)
+            }
           }
         }
         .onOpenURL { url in
@@ -212,9 +223,6 @@ struct FoqosApp: App {
         .onAppear {
           // Set up sync coordinator with model context
           syncCoordinator.setModelContext(container.mainContext)
-          // Migrate UserDefaults keys to family_foqos_ prefix
-          UserDefaultsMigration.migrateIfNeeded()
-          UserDefaultsMigration.migrateAppGroupIfNeeded()
           // Migrate profiles to V2 trigger system if needed
           ProfileMigrationUtil.migrateProfilesIfNeeded(context: container.mainContext)
           // Initialize sync if enabled
@@ -227,6 +235,7 @@ struct FoqosApp: App {
           PreActivationReminderScheduler.rescheduleAllReminders(context: container.mainContext)
           // Catch up any missed schedule starts
           PreActivationReminderScheduler.catchUpMissedScheduleStarts(context: container.mainContext)
+          hasPerformedInitialSetup = true
         }
     }
     .handlesExternalEvents(matching: ["*"])  // Handle all external events including CloudKit shares
