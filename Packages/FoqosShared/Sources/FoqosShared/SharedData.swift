@@ -29,13 +29,13 @@ public enum SharedData {
     self.suite = suite
   }
 
-  private static let containerURL: URL = FileManager.default.containerURL(  // SAFETY: same app group as `suite`
+  private static let containerURL: URL? = FileManager.default.containerURL(  // SAFETY: same app group as `suite`
     forSecurityApplicationGroupIdentifier: "group.com.cynexia.family-foqos"
-  )!
+  )
 
-  private static let lockPath: String =
-    containerURL
-    .appendingPathComponent(".shared-data.lock").path
+  private static var lockPath: String? {
+    containerURL?.appendingPathComponent(".shared-data.lock").path
+  }
 
   private static let lockLog = Logger(
     subsystem: "com.cynexia.family-foqos", category: "SharedData"
@@ -48,6 +48,7 @@ public enum SharedData {
   /// another withLock closure. On BSD/macOS the inner unlock would release
   /// the process-wide lock while the outer critical section is still running.
   private static func withLock<T>(_ body: () -> T) -> T {
+    guard let lockPath else { return body() }
     let fd = open(lockPath, O_CREAT | O_RDWR, 0o644)
     guard fd >= 0 else {
       lockLog.warning("SharedData: open() failed, errno \(errno) — proceeding unlocked")
