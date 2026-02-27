@@ -150,38 +150,40 @@ struct BlockedProfileCarousel: View {
 
             HStack(spacing: cardSpacing) {
               ForEach(validProfiles.indices, id: \.self) { index in
-                BlockedProfileCard(
-                  profile: validProfiles[index],
-                  isActive: validProfiles[index].id
-                    == activeSessionProfileId,
-                  isBreakAvailable: isBreakAvailable,
-                  isBreakActive: isBreakActive,
-                  elapsedTime: elapsedTime,
-                  onStartTapped: {
-                    onStartTapped(validProfiles[index])
-                  },
-                  onStopTapped: {
-                    onStopTapped(validProfiles[index])
-                  },
-                  onEditTapped: {
-                    onEditTapped(validProfiles[index])
-                  },
-                  onStatsTapped: {
-                    onStatsTapped(validProfiles[index])
-                  },
-                  onBreakTapped: {
-                    onBreakTapped(validProfiles[index])
-                  },
-                  onAppSelectionTapped: {
-                    onAppSelectionTapped(validProfiles[index])
-                  },
-                  isOneMoreMinuteActive: isOneMoreMinuteActive,
-                  isOneMoreMinuteAvailable: isOneMoreMinuteAvailable,
-                  oneMoreMinuteStartTime: oneMoreMinuteStartTime,
-                  onOneMoreMinuteTapped: {
-                    onOneMoreMinuteTapped(validProfiles[index])
-                  }
-                )
+                SafeModelView(validProfiles[index]) { profile in
+                  BlockedProfileCard(
+                    profile: profile,
+                    isActive: profile.id
+                      == activeSessionProfileId,
+                    isBreakAvailable: isBreakAvailable,
+                    isBreakActive: isBreakActive,
+                    elapsedTime: elapsedTime,
+                    onStartTapped: {
+                      onStartTapped(profile)
+                    },
+                    onStopTapped: {
+                      onStopTapped(profile)
+                    },
+                    onEditTapped: {
+                      onEditTapped(profile)
+                    },
+                    onStatsTapped: {
+                      onStatsTapped(profile)
+                    },
+                    onBreakTapped: {
+                      onBreakTapped(profile)
+                    },
+                    onAppSelectionTapped: {
+                      onAppSelectionTapped(profile)
+                    },
+                    isOneMoreMinuteActive: isOneMoreMinuteActive,
+                    isOneMoreMinuteAvailable: isOneMoreMinuteAvailable,
+                    oneMoreMinuteStartTime: oneMoreMinuteStartTime,
+                    onOneMoreMinuteTapped: {
+                      onOneMoreMinuteTapped(profile)
+                    }
+                  )
+                }
                 .frame(width: cardWidth)
               }
             }
