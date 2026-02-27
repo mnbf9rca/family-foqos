@@ -133,6 +133,20 @@ class CloudKitManager: ObservableObject {
     await networkService.cleanupStaleCommands()
   }
 
+  func resetFamilySharing(clearEverything: Bool) async throws {
+    try await networkService.resetFamilySharing(clearEverything: clearEverything)
+    if clearEverything {
+      clearSharedState()
+      familyMembers = []
+      lockCodes = []
+      pendingParticipants = []
+      shareParticipants = []
+    } else {
+      lockCodes = []
+      sharedLockCodes = []
+    }
+  }
+
   // MARK: - Family Sharing
 
   func getOrCreateFamilyShare() async throws -> CKShare {
