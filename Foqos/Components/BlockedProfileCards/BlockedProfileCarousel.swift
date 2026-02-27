@@ -149,6 +149,8 @@ struct BlockedProfileCarousel: View {
             let cardWidth = geometry.size.width - 32  // Padding on sides
 
             HStack(spacing: cardSpacing) {
+              // If a model becomes a zombie mid-render, SafeModelView renders EmptyView
+              // inside the .frame — a brief invisible gap. Self-corrects next render cycle.
               ForEach(validProfiles.indices, id: \.self) { index in
                 SafeModelView(validProfiles[index]) { profile in
                   BlockedProfileCard(
