@@ -208,6 +208,7 @@ class CloudKitManager: ObservableObject {
   func clearSharedState() {
     self.isConnectedToFamily = false
     self.sharedLockCodes = []
+    self.isShareOwner = false
     Log.info("Cleared shared state after leaving family", category: .cloudKit)
   }
 }
