@@ -124,4 +124,62 @@ extension CloudKitNetworkService {
 
     return (codes: codes, isConnected: true)
   }
+
+  /// Delete family sharing data from the FamilyPolicies zone.
+  /// - Parameter clearEverything: If true, deletes ALL records including FamilyRoot and
+  ///   FamilyMember. If false, only deletes FamilyLockCode and FamilyCommand records.
+  func resetFamilySharing(clearEverything: Bool) async throws {
+    var recordTypes = [
+      FamilyLockCode.recordType,
+      FamilyCommand.recordType,
+    ]
+
+    if clearEverything {
+      recordTypes.append(contentsOf: [
+        FamilyMember.recordType,
+        "FamilyRoot",
+      ])
+    }
+
+    for recordType in recordTypes {
+      let query = CKQuery(recordType: recordType, predicate: NSPredicate(value: true))
+
+      do {
+        let (results, _) = try await privateDatabase.records(
+          matching: query,
+          inZoneWith: policyZoneID
+        )
+
+        let recordIDs = results.compactMap { recordID, result -> CKRecord.ID? in
+          if case .success = result { return recordID }
+          return nil
+        }
+
+        guard !recordIDs.isEmpty else { continue }
+        _ = try await privateDatabase.modifyRecords(saving: [], deleting: recordIDs)
+        Log.info(
+          "Deleted \(recordIDs.count) \(recordType) records from FamilyPolicies",
+          category: .cloudKit)
+      } catch {
+        if let ckError = error as? CKError, ckError.code == .zoneNotFound {
+          Log.debug("Policy zone not found, nothing to reset", category: .cloudKit)
+          policyZoneVerified = false
+          activeZoneShare = nil
+          return
+        } else {
+          Log.error(
+            "Failed to delete \(recordType) records from FamilyPolicies: \(error)",
+            category: .cloudKit)
+        }
+      }
+    }
+
+    if clearEverything {
+      policyZoneVerified = false
+      activeZoneShare = nil
+      Log.info("Reset all family sharing data", category: .cloudKit)
+    } else {
+      Log.info("Reset family rules (lock codes and commands)", category: .cloudKit)
+    }
+  }
 }

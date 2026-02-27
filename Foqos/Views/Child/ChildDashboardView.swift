@@ -238,15 +238,17 @@ struct ChildDashboardView: View {
   }
 
   private var lockedProfilesSection: some View {
-    VStack(alignment: .leading, spacing: 12) {
+    let hasLockCodes = !cloudKitManager.sharedLockCodes.isEmpty
+
+    return VStack(alignment: .leading, spacing: 12) {
       HStack {
-        Text("Locked Profiles")
+        Text(hasLockCodes ? "Locked Profiles" : "Parent-Managed Profiles")
           .font(.headline)
 
         Spacer()
 
         // Edit button - requires lock code
-        if !cloudKitManager.sharedLockCodes.isEmpty {
+        if hasLockCodes {
           Button {
             showCodeEntry = true
           } label: {
@@ -288,9 +290,17 @@ struct ChildDashboardView: View {
           }
         }
 
-        Text("These profiles require a lock code to edit or delete")
+        if hasLockCodes {
+          Text("These profiles require a lock code to edit or delete")
+            .font(.caption)
+            .foregroundColor(.secondary)
+        } else {
+          Text(
+            "These profiles are managed by a parent but can be freely edited while no lock code is set"
+          )
           .font(.caption)
           .foregroundColor(.secondary)
+        }
       }
     }
   }

@@ -106,6 +106,22 @@ class LockCodeManager: ObservableObject {
     lockCodes.removeAll { $0.id == lockCode.id }
   }
 
+  /// Delete all lock codes (parent operation for "Clear PIN")
+  func deleteAllLockCodes() async throws {
+    guard appModeManager.currentMode != .child else {
+      throw LockCodeError.notAuthorized
+    }
+
+    isLoading = true
+    defer { isLoading = false }
+
+    let codesToDelete = lockCodes
+    for lockCode in codesToDelete {
+      try await cloudKitManager.deleteLockCode(lockCode)
+      lockCodes.removeAll { $0.id == lockCode.id }
+    }
+  }
+
   /// Fetch all lock codes created by this user (parent or individual mode)
   func fetchLockCodes() async {
     guard appModeManager.currentMode != .child else { return }

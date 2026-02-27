@@ -32,6 +32,10 @@ struct ParentDashboardView: View {
   @State private var showLockCodeEntry = false
   @State private var showLeaveConfirmation = false
   @State private var showLeaveLockCodeEntry = false
+  @State private var showClearLockCodeAlert = false
+  @State private var showResetFamilySheet = false
+  @State private var showResetEverythingConfirmation = false
+  @State private var isResettingFamily = false
   // Share coordinator for direct sharing
   @StateObject private var shareCoordinator = ShareCoordinator()
 
@@ -120,6 +124,13 @@ struct ParentDashboardView: View {
             pendingMembersSection
               .disabled(!parentOperationsEnabled)
               .opacity(parentOperationsEnabled ? 1.0 : 0.5)
+          }
+
+          // Reset Family Sharing (parent mode only, danger zone)
+          if !isChildMode && cloudKitManager.isConnectedToFamily {
+            resetFamilySharingSection
+              .disabled(!parentOperationsEnabled || isResettingFamily)
+              .opacity((parentOperationsEnabled && !isResettingFamily) ? 1.0 : 0.5)
           }
 
           // How to use section
@@ -353,6 +364,9 @@ struct ParentDashboardView: View {
         LockCodeStatusCard(
           onEdit: {
             showLockCodeSetup = true
+          },
+          onClear: {
+            showClearLockCodeAlert = true
           }
         )
       } else {
@@ -360,6 +374,21 @@ struct ParentDashboardView: View {
           showLockCodeSetup = true
         })
       }
+    }
+    .alert("Remove Lock Code?", isPresented: $showClearLockCodeAlert) {
+      Button("Cancel", role: .cancel) {}
+      Button("Remove", role: .destructive) {
+        Task {
+          do {
+            try await lockCodeManager.deleteAllLockCodes()
+          } catch {
+            errorMessage = "Failed to remove lock code: \(error.localizedDescription)"
+            showError = true
+          }
+        }
+      }
+    } message: {
+      Text("Children will be able to freely edit all profiles without entering a code.")
     }
   }
 
@@ -627,6 +656,82 @@ struct ParentDashboardView: View {
     }
   }
 
+  private var resetFamilySharingSection: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      Text("Troubleshooting")
+        .font(.headline)
+
+      Button {
+        showResetFamilySheet = true
+      } label: {
+        HStack(spacing: 12) {
+          Image(systemName: "arrow.triangle.2.circlepath")
+            .font(.title2)
+            .foregroundColor(.red)
+
+          VStack(alignment: .leading, spacing: 2) {
+            Text("Reset Family Sharing")
+              .font(.subheadline)
+              .fontWeight(.medium)
+
+            Text("Clear shared data for troubleshooting")
+              .font(.caption)
+              .foregroundColor(.secondary)
+          }
+
+          Spacer()
+
+          if isResettingFamily {
+            ProgressView()
+              .scaleEffect(0.8)
+          }
+        }
+        .padding()
+        .background(
+          RoundedRectangle(cornerRadius: 12)
+            .fill(Color(.secondarySystemBackground))
+        )
+      }
+      .buttonStyle(.plain)
+      .confirmationDialog("Reset Family Sharing", isPresented: $showResetFamilySheet) {
+        Button("Reset Rules Only") {
+          performFamilyReset(clearEverything: false)
+        }
+        Button("Reset Everything", role: .destructive) {
+          showResetEverythingConfirmation = true
+        }
+        Button("Cancel", role: .cancel) {}
+      } message: {
+        Text(
+          "Choose what to reset. \"Reset Rules Only\" erases lock codes and pending instructions but keeps your family connected. \"Reset Everything\" deletes all shared family data."
+        )
+      }
+      .alert("Are you sure?", isPresented: $showResetEverythingConfirmation) {
+        Button("Cancel", role: .cancel) {}
+        Button("Reset Everything", role: .destructive) {
+          performFamilyReset(clearEverything: true)
+        }
+      } message: {
+        Text(
+          "This will delete all shared family data including member records. Other family members may need to leave and rejoin the family share."
+        )
+      }
+    }
+  }
+
+  private func performFamilyReset(clearEverything: Bool) {
+    isResettingFamily = true
+    Task {
+      do {
+        try await cloudKitManager.resetFamilySharing(clearEverything: clearEverything)
+      } catch {
+        errorMessage = "Failed to reset family sharing: \(error.localizedDescription)"
+        showError = true
+      }
+      isResettingFamily = false
+    }
+  }
+
   // MARK: - Actions
 
   private func refreshData() async {
@@ -681,30 +786,48 @@ struct ParentDashboardView: View {
 
 struct LockCodeStatusCard: View {
   let onEdit: () -> Void
+  let onClear: () -> Void
 
   var body: some View {
-    HStack(spacing: 16) {
-      Image(systemName: "lock.shield.fill")
-        .font(.largeTitle)
-        .foregroundColor(.green)
+    VStack(spacing: 12) {
+      HStack(spacing: 12) {
+        Image(systemName: "lock.shield.fill")
+          .font(.title2)
+          .foregroundColor(.green)
 
-      VStack(alignment: .leading, spacing: 4) {
-        Text("Lock Code Set")
-          .font(.subheadline)
-          .fontWeight(.medium)
+        VStack(alignment: .leading, spacing: 2) {
+          Text("Lock Code Set")
+            .font(.subheadline)
+            .fontWeight(.medium)
 
-        Text("Your lock code is active and shared with all parents")
-          .font(.caption)
-          .foregroundColor(.secondary)
+          Text("Your lock code is active and shared with all parents")
+            .font(.caption)
+            .foregroundColor(.secondary)
+        }
+
+        Spacer()
       }
 
-      Spacer()
+      HStack(spacing: 8) {
+        Button {
+          onClear()
+        } label: {
+          Text("Clear")
+            .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .tint(.red)
 
-      Button("Change") {
-        onEdit()
+        Button {
+          onEdit()
+        } label: {
+          Text("Change")
+            .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
       }
-      .buttonStyle(.bordered)
-      .controlSize(.small)
     }
     .padding()
     .background(
