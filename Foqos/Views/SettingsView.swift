@@ -277,11 +277,12 @@ struct SettingsView: View {
             Text("Screen Time Access")
               .foregroundStyle(.primary)
             Spacer()
+            let status = requestAuthorizer.authorizationStatus
             HStack(spacing: 8) {
               Circle()
-                .fill(requestAuthorizer.authorizationStatus == .approved ? .green : .red)
+                .fill(status == .approved ? .green : .red)
                 .frame(width: 8, height: 8)
-              Text(requestAuthorizer.authorizationStatus == .approved ? "Authorized" : "Not Authorized")
+              Text(status == .approved ? "Authorized" : "Not Authorized")
                 .foregroundStyle(.secondary)
                 .font(.subheadline)
             }
