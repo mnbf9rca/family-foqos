@@ -68,6 +68,7 @@ struct ParentDashboardView: View {
     guard appModeManager.currentMode == .parent else { return false }
     guard cloudKitManager.isShareOwner else { return false }
     return !cloudKitManager.familyMembers.isEmpty
+      || !cloudKitManager.shareParticipants.isEmpty
   }
 
   /// Whether the child needs a PIN check before leaving
@@ -187,7 +188,13 @@ struct ParentDashboardView: View {
         titleVisibility: .visible
       ) {
         Button("Leave Family", role: .destructive) {
-          shareCoordinator.prepareToLeaveShare()
+          if cloudKitManager.isShareOwner {
+            cloudKitManager.clearSharedState()
+            appModeManager.selectMode(.individual)
+            dismiss()
+          } else {
+            shareCoordinator.prepareToLeaveShare()
+          }
         }
         Button("Cancel", role: .cancel) {}
       } message: {
@@ -580,7 +587,7 @@ struct ParentDashboardView: View {
               .fontWeight(.medium)
 
             if isLeaveDisabled {
-              Text("Remove all family members before leaving the family.")
+              Text("Remove all family members and pending invitations before leaving.")
                 .font(.caption)
                 .foregroundColor(.secondary)
             } else {
