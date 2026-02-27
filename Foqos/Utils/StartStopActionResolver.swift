@@ -17,14 +17,16 @@ enum StartStopActionResolver {
   ]
 
   static func getStrategyFromId(id: String) -> BlockingStrategy {
-    if let strategy = availableStrategies.first(
-      where: {
-        $0.getIdentifier() == id
-      })
-    {
-      return strategy
-    } else {
-      return NFCBlockingStrategy()
+    switch id {
+    case ManualBlockingStrategy.id: return ManualBlockingStrategy()
+    case NFCBlockingStrategy.id: return NFCBlockingStrategy()
+    case NFCManualBlockingStrategy.id: return NFCManualBlockingStrategy()
+    case NFCTimerBlockingStrategy.id: return NFCTimerBlockingStrategy()
+    case QRCodeBlockingStrategy.id: return QRCodeBlockingStrategy()
+    case QRManualBlockingStrategy.id: return QRManualBlockingStrategy()
+    case QRTimerBlockingStrategy.id: return QRTimerBlockingStrategy()
+    case ShortcutTimerBlockingStrategy.id: return ShortcutTimerBlockingStrategy()
+    default: return NFCBlockingStrategy()
     }
   }
 
