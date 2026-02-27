@@ -23,6 +23,8 @@ struct ParentDashboardView: View {
   @ObservedObject private var strategyManager = StrategyManager.shared
   @ObservedObject private var emergencyManager = EmergencyUnblockManager.shared
 
+  @Environment(\.dismiss) private var dismiss
+
   @State private var showLockCodeSetup = false
   @State private var showError = false
   @State private var errorMessage = ""
@@ -142,6 +144,14 @@ struct ParentDashboardView: View {
         )
       }
       .enrollFamilyMemberSheet(coordinator: shareCoordinator)
+      .toolbar {
+        ToolbarItem(placement: .topBarLeading) {
+          Button(action: { dismiss() }) {
+            Image(systemName: "xmark")
+          }
+          .accessibilityLabel("Cancel")
+        }
+      }
       .alert("Error", isPresented: $showError) {
         Button("OK", role: .cancel) {}
       } message: {
