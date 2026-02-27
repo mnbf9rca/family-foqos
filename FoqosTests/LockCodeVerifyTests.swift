@@ -225,4 +225,15 @@ final class LockCodeVerifyTests: XCTestCase {
 
     XCTAssertFalse(result)
   }
+
+  func testGivenNoCodes_WhenVerifyingWithNilChildId_ThenReturnsFalse() {
+    let result = LockCodeManager.verifyCode(
+      "1234",
+      forChildId: nil,
+      mode: .child,
+      authorizationType: .child,
+      codes: []
+    )
+    XCTAssertFalse(result, "Should return false when no codes exist")
+  }
 }
