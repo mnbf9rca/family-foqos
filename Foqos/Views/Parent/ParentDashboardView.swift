@@ -573,7 +573,7 @@ struct ParentDashboardView: View {
         Button("Cancel", role: .cancel) {}
       } message: {
         Text(
-          "Choose what to reset. \"Reset Rules Only\" erases lock codes and pending instructions but keeps your family connected. \"Reset Everything\" disconnects all family members."
+          "Choose what to reset. \"Reset Rules Only\" erases lock codes and pending instructions but keeps your family connected. \"Reset Everything\" deletes all shared family data."
         )
       }
       .alert("Are you sure?", isPresented: $showResetEverythingConfirmation) {
@@ -583,7 +583,7 @@ struct ParentDashboardView: View {
         }
       } message: {
         Text(
-          "This will disconnect all family members from this group. You'll need to re-invite everyone to set up family sharing again."
+          "This will delete all shared family data including member records. Other family members may need to leave and rejoin the family share."
         )
       }
     }
