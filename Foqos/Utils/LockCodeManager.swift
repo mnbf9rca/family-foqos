@@ -115,11 +115,12 @@ class LockCodeManager: ObservableObject {
     isLoading = true
     defer { isLoading = false }
 
+    var remaining = lockCodes
     for lockCode in lockCodes {
       try await cloudKitManager.deleteLockCode(lockCode)
+      remaining.removeAll { $0.id == lockCode.id }
     }
-
-    lockCodes.removeAll()
+    lockCodes = remaining
   }
 
   /// Fetch all lock codes created by this user (parent or individual mode)
