@@ -162,6 +162,8 @@ extension CloudKitNetworkService {
           category: .cloudKit)
       } catch let error as CKError where error.code == .zoneNotFound {
         Log.debug("Policy zone not found, nothing to reset", category: .cloudKit)
+        policyZoneVerified = false
+        activeZoneShare = nil
         return
       }
     }
