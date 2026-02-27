@@ -436,16 +436,7 @@ struct SettingsView: View {
         ParentDashboardView()
       }
       .sheet(isPresented: $showChildDashboard) {
-        NavigationStack {
-          ChildDashboardView()
-            .toolbar {
-              ToolbarItem(placement: .navigationBarTrailing) {
-                Button("Done") {
-                  showChildDashboard = false
-                }
-              }
-            }
-        }
+        ChildDashboardView()
       }
       .sheet(isPresented: $showDebugView) {
         DebugView()
