@@ -31,9 +31,23 @@ final class StartStopActionResolverFactoryTests: XCTestCase {
     ]
 
     for strategyId in expectedIds {
-      let strategy = StartStopActionResolver.getStrategyFromId(id: strategyId)
+      let first = StartStopActionResolver.getStrategyFromId(id: strategyId)
+      let second = StartStopActionResolver.getStrategyFromId(id: strategyId)
+
+      // Cast to AnyObject for identity comparison since BlockingStrategy is a protocol existential
+      let firstObj = first as AnyObject
+      let secondObj = second as AnyObject
+      XCTAssertTrue(
+        firstObj !== secondObj,
+        "getStrategyFromId should return a new instance each call for id \(strategyId), not a shared reference"
+      )
+
       XCTAssertEqual(
-        strategy.getIdentifier(), strategyId,
+        first.getIdentifier(), strategyId,
+        "Factory should return a strategy matching the requested ID"
+      )
+      XCTAssertEqual(
+        second.getIdentifier(), strategyId,
         "Factory should return a strategy matching the requested ID"
       )
     }
