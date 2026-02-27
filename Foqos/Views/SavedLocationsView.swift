@@ -70,13 +70,15 @@ struct SavedLocationsView: View {
         } else {
           Section {
             ForEach(locations) { location in
-              SavedLocationCard(
-                location: location,
-                onTap: {
-                  handleEdit(location)
-                },
-                inUseByProfile: locationsInUseByActiveProfiles[location.id]
-              )
+              SafeModelView(location) { loc in
+                SavedLocationCard(
+                  location: loc,
+                  onTap: {
+                    handleEdit(loc)
+                  },
+                  inUseByProfile: locationsInUseByActiveProfiles[loc.id]
+                )
+              }
             }
           } header: {
             Text("Your Locations")

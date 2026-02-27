@@ -59,17 +59,19 @@ struct BlockedProfileSessionsView: View {
         if !inactiveSessions.isEmpty {
           Section("Past Sessions") {
             ForEach(inactiveSessions) { session in
-              SessionRow(session: session)
-                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                  Button(role: .destructive) {
-                    alertIdentifier = SessionAlertIdentifier(
-                      id: .deleteSession,
-                      session: session
-                    )
-                  } label: {
-                    Label("Delete", systemImage: "trash")
+              SafeModelView(session) { s in
+                SessionRow(session: s)
+                  .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                    Button(role: .destructive) {
+                      alertIdentifier = SessionAlertIdentifier(
+                        id: .deleteSession,
+                        session: s
+                      )
+                    } label: {
+                      Label("Delete", systemImage: "trash")
+                    }
                   }
-                }
+              }
             }
           }
         }

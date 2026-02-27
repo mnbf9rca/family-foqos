@@ -286,7 +286,9 @@ struct ChildDashboardView: View {
         // Show locked profiles
         VStack(spacing: 8) {
           ForEach(lockedProfiles) { profile in
-            LockedProfileCard(profile: profile)
+            SafeModelView(profile) { p in
+              LockedProfileCard(profile: p)
+            }
           }
         }
 

@@ -55,13 +55,15 @@ struct BlockedProfileListView: View {
   private var listView: some View {
     List {
       ForEach(profiles) { profile in
-        ProfileRow(profile: profile)
-          .contentShape(Rectangle())
-          .onTapGesture {
-            if editMode == .inactive {
-              profileToEdit = profile
+        SafeModelView(profile) { p in
+          ProfileRow(profile: p)
+            .contentShape(Rectangle())
+            .onTapGesture {
+              if editMode == .inactive {
+                profileToEdit = p
+              }
             }
-          }
+        }
       }
       .onDelete(perform: deleteProfiles)
       .onMove(perform: moveProfiles)

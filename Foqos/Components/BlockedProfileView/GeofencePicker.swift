@@ -90,31 +90,33 @@ struct GeofencePicker: View {
             .padding(.vertical, 16)
           } else {
             ForEach(savedLocations) { location in
-              let isSelected = selectedLocationIds.contains(location.id)
-              let binding = Binding<ProfileLocationReference>(
-                get: {
-                  locationReferences[location.id] ?? ProfileLocationReference(savedLocationId: location.id)
-                },
-                set: { newValue in
-                  locationReferences[location.id] = newValue
-                }
-              )
-
-              LocationReferenceRow(
-                location: location,
-                reference: binding,
-                isSelected: isSelected,
-                onToggle: { selected in
-                  if selected {
-                    selectedLocationIds.insert(location.id)
-                    if locationReferences[location.id] == nil {
-                      locationReferences[location.id] = ProfileLocationReference(savedLocationId: location.id)
-                    }
-                  } else {
-                    selectedLocationIds.remove(location.id)
+              SafeModelView(location) { loc in
+                let isSelected = selectedLocationIds.contains(loc.id)
+                let binding = Binding<ProfileLocationReference>(
+                  get: {
+                    locationReferences[loc.id] ?? ProfileLocationReference(savedLocationId: loc.id)
+                  },
+                  set: { newValue in
+                    locationReferences[loc.id] = newValue
                   }
-                }
-              )
+                )
+
+                LocationReferenceRow(
+                  location: loc,
+                  reference: binding,
+                  isSelected: isSelected,
+                  onToggle: { selected in
+                    if selected {
+                      selectedLocationIds.insert(loc.id)
+                      if locationReferences[loc.id] == nil {
+                        locationReferences[loc.id] = ProfileLocationReference(savedLocationId: loc.id)
+                      }
+                    } else {
+                      selectedLocationIds.remove(loc.id)
+                    }
+                  }
+                )
+              }
             }
           }
         } header: {
