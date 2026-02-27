@@ -7,13 +7,13 @@ struct AuthorizationCallout: View {
   let authorizationStatus: AuthorizationStatus
   let onAuthorizationHandler: () -> Void
 
-  private var isAuthorized: Bool {
-    authorizationStatus == .approved
+  private var shouldShowCallout: Bool {
+    authorizationStatus == .denied
   }
 
   var body: some View {
     Group {
-      if !isAuthorized {
+      if shouldShowCallout {
         Button(action: onAuthorizationHandler) {
           HStack(alignment: .top, spacing: 12) {
             Image(systemName: "exclamationmark.shield.fill")
@@ -82,6 +82,14 @@ struct AuthorizationCallout: View {
     )
     .environmentObject(ThemeManager.shared)
 
+    // Should render nothing — .notDetermined is treated as loading
+    AuthorizationCallout(
+      authorizationStatus: .notDetermined,
+      onAuthorizationHandler: {}
+    )
+    .environmentObject(ThemeManager.shared)
+
+    // Should render nothing — already authorized
     AuthorizationCallout(
       authorizationStatus: .approved,
       onAuthorizationHandler: {}

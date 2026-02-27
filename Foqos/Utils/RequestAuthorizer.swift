@@ -1,3 +1,4 @@
+import Combine
 import DeviceActivity
 import FamilyControls
 import ManagedSettings
@@ -6,15 +7,33 @@ import SwiftUI
 @MainActor
 class RequestAuthorizer: ObservableObject {
   @Published private(set) var isAuthorized: Bool
+  @Published private(set) var authorizationStatus: AuthorizationStatus
   @Published var authorizationError: String?
+
+  private var cancellable: AnyCancellable?
 
   init() {
     let status = AuthorizationCenter.shared.authorizationStatus
     let approved = status == .approved
     self.isAuthorized = approved
+    self.authorizationStatus = status
     Log.info(
       "RequestAuthorizer init: authorizationStatus=\(status), isAuthorized=\(approved)",
       category: .authorization)
+
+    cancellable = AuthorizationCenter.shared.$authorizationStatus
+      .receive(on: DispatchQueue.main)
+      .sink { [weak self] newStatus in
+        guard let self else { return }
+        let approved = newStatus == .approved
+        if self.authorizationStatus != newStatus {
+          Log.info(
+            "AuthorizationCenter status changed: \(self.authorizationStatus) → \(newStatus)",
+            category: .authorization)
+        }
+        self.authorizationStatus = newStatus
+        self.isAuthorized = approved
+      }
   }
 
   /// Request authorization for the current app mode
@@ -49,10 +68,6 @@ class RequestAuthorizer: ObservableObject {
         self.authorizationError = self.describeAuthorizationError(error, for: mode)
       }
     }
-  }
-
-  func getAuthorizationStatus() -> AuthorizationStatus {
-    return AuthorizationCenter.shared.authorizationStatus
   }
 
   /// Check if the device is eligible for child mode
