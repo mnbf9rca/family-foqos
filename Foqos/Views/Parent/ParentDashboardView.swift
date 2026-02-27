@@ -30,6 +30,8 @@ struct ParentDashboardView: View {
   @State private var errorMessage = ""
   @State private var isDashboardUnlocked = false
   @State private var showLockCodeEntry = false
+  @State private var showLeaveConfirmation = false
+  @State private var showLeaveLockCodeEntry = false
   // Share coordinator for direct sharing
   @StateObject private var shareCoordinator = ShareCoordinator()
 
@@ -54,6 +56,23 @@ struct ParentDashboardView: View {
   /// Controls like set/change lock code, add/remove family members
   private var parentOperationsEnabled: Bool {
     isPageFunctional && !isChildMode
+  }
+
+  /// Whether the current user is in a family (parent or child mode)
+  private var isInFamily: Bool {
+    appModeManager.currentMode != .individual
+  }
+
+  /// Whether the leave button should be disabled (owner with members still present)
+  private var isLeaveDisabled: Bool {
+    guard appModeManager.currentMode == .parent else { return false }
+    guard cloudKitManager.isShareOwner else { return false }
+    return !cloudKitManager.familyMembers.isEmpty
+  }
+
+  /// Whether the child needs a PIN check before leaving
+  private var childNeedsPinCheck: Bool {
+    isChildMode && (lockCodeManager.hasAnyLockCode || lockCodeManager.canVerifyCode)
   }
 
   var body: some View {
@@ -104,6 +123,11 @@ struct ParentDashboardView: View {
 
           // How to use section
           howToUseSection
+
+          // Leave family section (only for parent/child modes)
+          if isInFamily {
+            leaveFamilySection
+          }
         }
         .padding()
       }
@@ -156,6 +180,38 @@ struct ParentDashboardView: View {
         Button("OK", role: .cancel) {}
       } message: {
         Text(errorMessage)
+      }
+      .confirmationDialog(
+        "Leave Family",
+        isPresented: $showLeaveConfirmation,
+        titleVisibility: .visible
+      ) {
+        Button("Leave Family", role: .destructive) {
+          shareCoordinator.prepareToLeaveShare()
+        }
+        Button("Cancel", role: .cancel) {}
+      } message: {
+        Text(
+          "You will be removed from this family group and switched to individual mode. This cannot be undone."
+        )
+      }
+      .sheet(isPresented: $showLeaveLockCodeEntry) {
+        LockCodeEntrySheet(
+          onSuccess: {
+            showLeaveLockCodeEntry = false
+            showLeaveConfirmation = true
+          },
+          onCancel: {
+            showLeaveLockCodeEntry = false
+          }
+        )
+      }
+      .leaveShareSheet(coordinator: shareCoordinator)
+      .onChange(of: shareCoordinator.didLeaveShare) { _, didLeave in
+        if didLeave {
+          appModeManager.selectMode(.individual)
+          dismiss()
+        }
       }
     }
   }
@@ -503,6 +559,63 @@ struct ParentDashboardView: View {
       .background(
         RoundedRectangle(cornerRadius: 12)
           .fill(Color(.tertiarySystemBackground))
+      )
+    }
+  }
+
+  private var leaveFamilySection: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      Text("Family Membership")
+        .font(.headline)
+
+      VStack(spacing: 16) {
+        HStack(spacing: 12) {
+          Image(systemName: "rectangle.portrait.and.arrow.right")
+            .font(.title2)
+            .foregroundColor(.red)
+
+          VStack(alignment: .leading, spacing: 4) {
+            Text("Leave Family")
+              .font(.subheadline)
+              .fontWeight(.medium)
+
+            if isLeaveDisabled {
+              Text("Remove all family members before leaving the family.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            } else {
+              Text("Leave this family group and switch to individual mode.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
+
+          Spacer()
+        }
+
+        Button(role: .destructive) {
+          if childNeedsPinCheck {
+            showLeaveLockCodeEntry = true
+          } else {
+            showLeaveConfirmation = true
+          }
+        } label: {
+          Text("Leave Family")
+            .fontWeight(.semibold)
+            .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.bordered)
+        .tint(.red)
+        .disabled(isLeaveDisabled)
+      }
+      .padding()
+      .background(
+        RoundedRectangle(cornerRadius: 12)
+          .fill(Color.red.opacity(0.05))
+          .overlay(
+            RoundedRectangle(cornerRadius: 12)
+              .stroke(Color.red.opacity(0.15), lineWidth: 1)
+          )
       )
     }
   }
