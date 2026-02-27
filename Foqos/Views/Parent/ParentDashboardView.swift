@@ -33,6 +33,9 @@ struct ParentDashboardView: View {
   @State private var showLeaveConfirmation = false
   @State private var showLeaveLockCodeEntry = false
   @State private var showClearLockCodeAlert = false
+  @State private var showResetFamilySheet = false
+  @State private var showResetEverythingConfirmation = false
+  @State private var isResettingFamily = false
   // Share coordinator for direct sharing
   @StateObject private var shareCoordinator = ShareCoordinator()
 
@@ -120,6 +123,13 @@ struct ParentDashboardView: View {
           if !cloudKitManager.pendingParticipants.isEmpty {
             pendingMembersSection
               .disabled(!parentOperationsEnabled)
+              .opacity(parentOperationsEnabled ? 1.0 : 0.5)
+          }
+
+          // Reset Family Sharing (parent mode only, danger zone)
+          if !isChildMode && cloudKitManager.isConnectedToFamily {
+            resetFamilySharingSection
+              .disabled(!parentOperationsEnabled || isResettingFamily)
               .opacity(parentOperationsEnabled ? 1.0 : 0.5)
           }
 
@@ -643,6 +653,82 @@ struct ParentDashboardView: View {
               .stroke(Color.red.opacity(0.15), lineWidth: 1)
           )
       )
+    }
+  }
+
+  private var resetFamilySharingSection: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      Text("Troubleshooting")
+        .font(.headline)
+
+      Button {
+        showResetFamilySheet = true
+      } label: {
+        HStack(spacing: 12) {
+          Image(systemName: "arrow.triangle.2.circlepath")
+            .font(.title2)
+            .foregroundColor(.red)
+
+          VStack(alignment: .leading, spacing: 2) {
+            Text("Reset Family Sharing")
+              .font(.subheadline)
+              .fontWeight(.medium)
+
+            Text("Clear shared data for troubleshooting")
+              .font(.caption)
+              .foregroundColor(.secondary)
+          }
+
+          Spacer()
+
+          if isResettingFamily {
+            ProgressView()
+              .scaleEffect(0.8)
+          }
+        }
+        .padding()
+        .background(
+          RoundedRectangle(cornerRadius: 12)
+            .fill(Color(.secondarySystemBackground))
+        )
+      }
+      .buttonStyle(.plain)
+      .confirmationDialog("Reset Family Sharing", isPresented: $showResetFamilySheet) {
+        Button("Reset Rules Only") {
+          performFamilyReset(clearEverything: false)
+        }
+        Button("Reset Everything", role: .destructive) {
+          showResetEverythingConfirmation = true
+        }
+        Button("Cancel", role: .cancel) {}
+      } message: {
+        Text(
+          "Choose what to reset. \"Reset Rules Only\" erases lock codes and pending instructions but keeps your family connected. \"Reset Everything\" deletes all shared family data."
+        )
+      }
+      .alert("Are you sure?", isPresented: $showResetEverythingConfirmation) {
+        Button("Cancel", role: .cancel) {}
+        Button("Reset Everything", role: .destructive) {
+          performFamilyReset(clearEverything: true)
+        }
+      } message: {
+        Text(
+          "This will delete all shared family data including member records. Other family members may need to leave and rejoin the family share."
+        )
+      }
+    }
+  }
+
+  private func performFamilyReset(clearEverything: Bool) {
+    isResettingFamily = true
+    Task {
+      do {
+        try await cloudKitManager.resetFamilySharing(clearEverything: clearEverything)
+      } catch {
+        errorMessage = "Failed to reset family sharing: \(error.localizedDescription)"
+        showError = true
+      }
+      isResettingFamily = false
     }
   }
 
