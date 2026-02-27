@@ -18,7 +18,7 @@ import SwiftUI
 /// ```
 struct SafeModelView<Model: PersistentModel, Content: View>: View {
   let model: Model
-  @ViewBuilder let content: (Model) -> Content
+  let content: (Model) -> Content
 
   init(_ model: Model, @ViewBuilder content: @escaping (Model) -> Content) {
     self.model = model

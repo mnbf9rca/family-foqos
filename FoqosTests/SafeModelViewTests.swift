@@ -94,11 +94,34 @@ final class SafeModelViewTests: XCTestCase {
     try context.save()
     context.delete(profile)
 
-    // SafeModelView should not crash — it guards before accessing
-    let view = SafeModelView(profile) { model in
-      Text(model.name)
+    var contentCalled = false
+    let view = SafeModelView(profile) { _ in
+      contentCalled = true
+      return Text("Should not render")
     }
-    // If we got here without EXC_BREAKPOINT, the guard works
-    XCTAssertNotNil(view)
+
+    // Force body evaluation — the guard should prevent the content closure from executing
+    let _ = view.body
+
+    XCTAssertFalse(contentCalled, "Content closure should not be called for a deleted model")
+  }
+
+  func testSafeModelViewWithValidModel() throws {
+    let profile = BlockedProfiles(
+      id: UUID(), name: "Valid", selectedActivity: .init(),
+      blockingStrategyId: "manual")
+
+    context.insert(profile)
+    try context.save()
+
+    var contentCalled = false
+    let view = SafeModelView(profile) { _ in
+      contentCalled = true
+      return Text("Should render")
+    }
+
+    let _ = view.body
+
+    XCTAssertTrue(contentCalled, "Content closure should be called for a valid model")
   }
 }
