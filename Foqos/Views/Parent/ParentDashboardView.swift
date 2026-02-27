@@ -789,33 +789,41 @@ struct LockCodeStatusCard: View {
   let onClear: () -> Void
 
   var body: some View {
-    HStack(spacing: 16) {
-      Image(systemName: "lock.shield.fill")
-        .font(.largeTitle)
-        .foregroundColor(.green)
+    VStack(spacing: 12) {
+      HStack(spacing: 12) {
+        Image(systemName: "lock.shield.fill")
+          .font(.title2)
+          .foregroundColor(.green)
 
-      VStack(alignment: .leading, spacing: 4) {
-        Text("Lock Code Set")
-          .font(.subheadline)
-          .fontWeight(.medium)
+        VStack(alignment: .leading, spacing: 2) {
+          Text("Lock Code Set")
+            .font(.subheadline)
+            .fontWeight(.medium)
 
-        Text("Your lock code is active and shared with all parents")
-          .font(.caption)
-          .foregroundColor(.secondary)
+          Text("Your lock code is active and shared with all parents")
+            .font(.caption)
+            .foregroundColor(.secondary)
+        }
+
+        Spacer()
       }
 
-      Spacer()
-
       HStack(spacing: 8) {
-        Button("Clear") {
+        Button {
           onClear()
+        } label: {
+          Text("Clear")
+            .frame(maxWidth: .infinity)
         }
         .buttonStyle(.bordered)
         .controlSize(.small)
         .tint(.red)
 
-        Button("Change") {
+        Button {
           onEdit()
+        } label: {
+          Text("Change")
+            .frame(maxWidth: .infinity)
         }
         .buttonStyle(.bordered)
         .controlSize(.small)
