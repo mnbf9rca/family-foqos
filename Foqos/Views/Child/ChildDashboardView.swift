@@ -54,12 +54,11 @@ struct ChildDashboardView: View {
       }
       .navigationTitle("My Screen Time")
       .toolbar {
-        ToolbarItem(placement: .navigationBarLeading) {
-          Button {
-            showPersonalProfiles = true
-          } label: {
-            Image(systemName: "person.fill")
+        ToolbarItem(placement: .topBarLeading) {
+          Button(action: { dismiss() }) {
+            Image(systemName: "xmark")
           }
+          .accessibilityLabel("Cancel")
         }
 
         ToolbarItem(placement: .navigationBarTrailing) {

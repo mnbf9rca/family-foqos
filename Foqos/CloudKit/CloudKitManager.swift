@@ -23,6 +23,7 @@ class CloudKitManager: ObservableObject {
   @Published var shareAcceptedMessage: String?
   @Published var shareAcceptanceIsError = false
   @Published var pendingParticipants: [CKShare.Participant] = []
+  @Published var isShareOwner = false
 
   // MARK: - Initialization
 
@@ -146,6 +147,7 @@ class CloudKitManager: ObservableObject {
   func refreshShareParticipants() async {
     let participants = await networkService.refreshShareParticipants()
     self.shareParticipants = participants
+    self.isShareOwner = await networkService.getIsShareOwner()
   }
 
   // MARK: - Share Acceptance
@@ -206,6 +208,7 @@ class CloudKitManager: ObservableObject {
   func clearSharedState() {
     self.isConnectedToFamily = false
     self.sharedLockCodes = []
+    self.isShareOwner = false
     Log.info("Cleared shared state after leaving family", category: .cloudKit)
   }
 }
