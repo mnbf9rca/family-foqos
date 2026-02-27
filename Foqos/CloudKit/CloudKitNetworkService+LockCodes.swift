@@ -160,11 +160,17 @@ extension CloudKitNetworkService {
         Log.info(
           "Deleted \(recordIDs.count) \(recordType) records from FamilyPolicies",
           category: .cloudKit)
-      } catch let error as CKError where error.code == .zoneNotFound {
-        Log.debug("Policy zone not found, nothing to reset", category: .cloudKit)
-        policyZoneVerified = false
-        activeZoneShare = nil
-        return
+      } catch {
+        if let ckError = error as? CKError, ckError.code == .zoneNotFound {
+          Log.debug("Policy zone not found, nothing to reset", category: .cloudKit)
+          policyZoneVerified = false
+          activeZoneShare = nil
+          return
+        } else {
+          Log.error(
+            "Failed to delete \(recordType) records from FamilyPolicies: \(error)",
+            category: .cloudKit)
+        }
       }
     }
 

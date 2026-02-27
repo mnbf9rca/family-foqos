@@ -130,7 +130,7 @@ struct ParentDashboardView: View {
           if !isChildMode && cloudKitManager.isConnectedToFamily {
             resetFamilySharingSection
               .disabled(!parentOperationsEnabled || isResettingFamily)
-              .opacity(parentOperationsEnabled ? 1.0 : 0.5)
+              .opacity((parentOperationsEnabled && !isResettingFamily) ? 1.0 : 0.5)
           }
 
           // How to use section
