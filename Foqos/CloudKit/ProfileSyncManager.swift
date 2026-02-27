@@ -188,7 +188,7 @@ class ProfileSyncManager: ObservableObject {
     do {
       _ = try await privateDatabase.save(zone)
       syncZoneVerified = true
-      Log.info("Created sync zone: \(CloudKitConstants.syncZoneName)", category: .sync)
+      Log.info("Sync zone ready: \(CloudKitConstants.syncZoneName)", category: .sync)
     } catch _ as CKError {
       // Check if zone already exists
       do {
