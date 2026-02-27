@@ -65,17 +65,11 @@ extension CloudKitNetworkService {
     Log.info("verifySelfFamilyMember: starting", category: .cloudKit)
 
     guard let zone = await findSharedZoneByName() else {
-      // No shared zone, but still check if iCloud account is available
-      // so the UI doesn't show "iCloud Not Available" for signed-in users.
-      let accountResult = await checkAccountStatus()
       Log.info(
-        "verifySelfFamilyMember: no shared zone, signed in: \(accountResult.isSignedIn) (\(String(format: "%.2f", CFAbsoluteTimeGetCurrent() - start))s)",
+        "verifySelfFamilyMember: no shared zone (\(String(format: "%.2f", CFAbsoluteTimeGetCurrent() - start))s)",
         category: .cloudKit)
       return VerificationResult(
-        isConnected: false,
-        userRecordID: accountResult.userRecordID ?? cachedUserRecordID,
-        isSignedIn: accountResult.isSignedIn,
-        enforcedMode: nil)
+        isConnected: false, userRecordID: cachedUserRecordID, isSignedIn: nil, enforcedMode: nil)
     }
     Log.info(
       "verifySelfFamilyMember: found zone (\(String(format: "%.2f", CFAbsoluteTimeGetCurrent() - start))s)",

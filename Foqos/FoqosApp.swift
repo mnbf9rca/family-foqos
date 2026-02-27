@@ -129,6 +129,8 @@ struct FoqosApp: App {
           Log.debug("scenePhase changed from \(oldPhase) to \(newPhase)", category: .app)
           if newPhase == .active {
             Task {
+              // Determine iCloud sign-in status (independent of family sharing)
+              await CloudKitManager.shared.checkAccountStatus()
               // Enforce CloudKit FamilyMember role as local app mode (must complete before auth check)
               await CloudKitManager.shared.verifySelfFamilyMemberRecord()
               // Verify child authorization when app becomes active
