@@ -32,6 +32,7 @@ struct ParentDashboardView: View {
   @State private var showLockCodeEntry = false
   @State private var showLeaveConfirmation = false
   @State private var showLeaveLockCodeEntry = false
+  @State private var showClearLockCodeAlert = false
   // Share coordinator for direct sharing
   @StateObject private var shareCoordinator = ShareCoordinator()
 
@@ -353,6 +354,9 @@ struct ParentDashboardView: View {
         LockCodeStatusCard(
           onEdit: {
             showLockCodeSetup = true
+          },
+          onClear: {
+            showClearLockCodeAlert = true
           }
         )
       } else {
@@ -360,6 +364,21 @@ struct ParentDashboardView: View {
           showLockCodeSetup = true
         })
       }
+    }
+    .alert("Remove Lock Code?", isPresented: $showClearLockCodeAlert) {
+      Button("Cancel", role: .cancel) {}
+      Button("Remove", role: .destructive) {
+        Task {
+          do {
+            try await lockCodeManager.deleteAllLockCodes()
+          } catch {
+            errorMessage = "Failed to remove lock code: \(error.localizedDescription)"
+            showError = true
+          }
+        }
+      }
+    } message: {
+      Text("Children will be able to freely edit all profiles without entering a code.")
     }
   }
 
@@ -681,6 +700,7 @@ struct ParentDashboardView: View {
 
 struct LockCodeStatusCard: View {
   let onEdit: () -> Void
+  let onClear: () -> Void
 
   var body: some View {
     HStack(spacing: 16) {
@@ -700,11 +720,20 @@ struct LockCodeStatusCard: View {
 
       Spacer()
 
-      Button("Change") {
-        onEdit()
+      HStack(spacing: 8) {
+        Button("Clear") {
+          onClear()
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .tint(.red)
+
+        Button("Change") {
+          onEdit()
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
       }
-      .buttonStyle(.bordered)
-      .controlSize(.small)
     }
     .padding()
     .background(
