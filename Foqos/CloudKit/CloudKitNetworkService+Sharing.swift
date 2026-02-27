@@ -209,6 +209,12 @@ extension CloudKitNetworkService {
       pendingParticipants: pending, familyMembers: familyMembers)
   }
 
+  // MARK: - Share Ownership
+
+  func getIsShareOwner() -> Bool {
+    return activeZoneShare != nil
+  }
+
   // MARK: - Connection Status
 
   func checkFamilyConnectionStatus() async -> Bool {
