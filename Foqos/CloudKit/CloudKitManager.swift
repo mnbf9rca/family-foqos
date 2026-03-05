@@ -162,6 +162,11 @@ class CloudKitManager: ObservableObject {
     let participants = await networkService.refreshShareParticipants()
     self.shareParticipants = participants
     self.isShareOwner = await networkService.getIsShareOwner()
+
+    // Upgrade child permissions to readWrite for heartbeat writes (#190)
+    if isShareOwner {
+      await networkService.upgradeSharePermissionsIfNeeded()
+    }
   }
 
   // MARK: - Share Acceptance

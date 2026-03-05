@@ -748,6 +748,11 @@ struct ParentDashboardView: View {
 
       _ = try await cloudKitManager.fetchFamilyMembers()
       await lockCodeManager.fetchLockCodes()
+
+      // Refresh heartbeats for device monitoring (#190)
+      if !isChildMode {
+        await HeartbeatManager.shared.refreshHeartbeats()
+      }
     } catch {
       errorMessage = error.localizedDescription
       showError = true
