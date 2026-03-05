@@ -217,8 +217,8 @@ class CloudKitManager: ObservableObject {
     try await networkService.writeHeartbeat(heartbeat)
   }
 
-  func fetchHeartbeats() async throws -> [DeviceHeartbeat] {
-    return try await networkService.fetchHeartbeats()
+  func fetchHeartbeats() async -> [DeviceHeartbeat] {
+    return await networkService.fetchHeartbeats()
   }
 
   func deleteHeartbeat(childUserRecordName: String, deviceIdentifier: String) async throws {

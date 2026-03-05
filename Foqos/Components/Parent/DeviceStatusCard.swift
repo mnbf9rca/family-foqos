@@ -7,13 +7,15 @@ struct DeviceStatusCard: View {
 
   private var statusColor: Color {
     if device.isSuppressed { return .secondary }
-    if device.shouldAlert() { return .red }
+    if device.isAuthRevoked { return .red }
+    if device.isStale() { return .orange }
     return .green
   }
 
   private var statusText: String {
     if device.isSuppressed { return "Alerts suppressed" }
-    if device.shouldAlert() { return "Not seen recently" }
+    if device.isAuthRevoked { return "Permissions revoked" }
+    if device.isStale() { return "Not seen recently" }
     return "Active"
   }
 

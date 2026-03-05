@@ -37,7 +37,7 @@ extension CloudKitNetworkService {
   // MARK: - Parent: Fetch Heartbeats
 
   /// Fetch all heartbeat records from the private database. Called by parent device.
-  func fetchHeartbeats() async throws -> [DeviceHeartbeat] {
+  func fetchHeartbeats() async -> [DeviceHeartbeat] {
     let query = CKQuery(
       recordType: DeviceHeartbeat.recordType,
       predicate: NSPredicate(value: true)

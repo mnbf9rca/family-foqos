@@ -7,20 +7,25 @@ import UIKit
 class HeartbeatManager: ObservableObject {
   static let shared = HeartbeatManager()
 
-  private let userDefaultsKey = "family_foqos_monitored_devices"
-  private let notificationEnabledKey = "family_foqos_heartbeat_notifications_enabled"
+  private static let userDefaultsKey = "family_foqos_monitored_devices"
+  private static let notificationEnabledKey = "family_foqos_heartbeat_notifications_enabled"
 
   @Published var monitoredDevices: [MonitoredDevice] = []
 
   @Published var heartbeatNotificationsEnabled: Bool {
     didSet {
-      UserDefaults.standard.set(heartbeatNotificationsEnabled, forKey: notificationEnabledKey)
+      UserDefaults.standard.set(heartbeatNotificationsEnabled, forKey: Self.notificationEnabledKey)
+      if heartbeatNotificationsEnabled {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) {
+          _, _ in
+        }
+      }
     }
   }
 
   private init() {
     self.heartbeatNotificationsEnabled = UserDefaults.standard.bool(
-      forKey: notificationEnabledKey)
+      forKey: Self.notificationEnabledKey)
     self.monitoredDevices = Self.loadDevices()
   }
 
@@ -63,19 +68,15 @@ class HeartbeatManager: ObservableObject {
 
   /// Fetch heartbeats from CloudKit and update local monitored devices.
   func refreshHeartbeats() async {
-    do {
-      let heartbeats = try await CloudKitManager.shared.fetchHeartbeats()
+    let heartbeats = await CloudKitManager.shared.fetchHeartbeats()
 
-      for heartbeat in heartbeats {
-        updateOrCreateDevice(from: heartbeat)
-      }
-      saveDevices()
+    for heartbeat in heartbeats {
+      updateOrCreateDevice(from: heartbeat)
+    }
+    saveDevices()
 
-      if heartbeatNotificationsEnabled {
-        scheduleNotifications()
-      }
-    } catch {
-      Log.warning("Failed to refresh heartbeats: \(error)", category: .cloudKit)
+    if heartbeatNotificationsEnabled {
+      scheduleNotifications()
     }
   }
 
@@ -129,11 +130,22 @@ class HeartbeatManager: ObservableObject {
     let notificationId = "heartbeat-\(device.deviceIdentifier)"
     let content = UNMutableNotificationContent()
     content.sound = .default
-    content.title = "Device Check-In"
-    content.body =
-      "We haven't heard from \(device.deviceName) in a while. Tap to check their status."
 
-    let triggerDate = device.lastSeenAt.addingTimeInterval(MonitoredDevice.stalenessThreshold)
+    let triggerDate: Date
+
+    if device.isAuthRevoked {
+      // Auth revoked — fire near-immediately
+      content.title = "Screen Time Permissions Lost"
+      content.body =
+        "\(device.deviceName) has lost Screen Time permissions. Tap to review."
+      triggerDate = Date().addingTimeInterval(1)
+    } else {
+      // Normal staleness countdown
+      content.title = "Device Check-In"
+      content.body =
+        "We haven't heard from \(device.deviceName) in a while. Tap to check their status."
+      triggerDate = device.lastSeenAt.addingTimeInterval(MonitoredDevice.stalenessThreshold)
+    }
 
     // Don't schedule if trigger is in the past (device already stale — banner handles it)
     guard triggerDate > Date() else { return }
@@ -171,6 +183,7 @@ class HeartbeatManager: ObservableObject {
     }) {
       monitoredDevices[index].lastSeenAt = heartbeat.lastHeartbeatAt
       monitoredDevices[index].deviceName = heartbeat.deviceName
+      monitoredDevices[index].authorizationStatus = heartbeat.authorizationStatus
     } else {
       let device = MonitoredDevice(
         deviceIdentifier: heartbeat.deviceIdentifier,
@@ -178,7 +191,8 @@ class HeartbeatManager: ObservableObject {
         childUserRecordName: heartbeat.childUserRecordName,
         lastSeenAt: heartbeat.lastHeartbeatAt,
         isSuppressed: false,
-        notificationIdentifier: nil
+        notificationIdentifier: nil,
+        authorizationStatus: heartbeat.authorizationStatus
       )
       monitoredDevices.append(device)
     }
@@ -186,12 +200,12 @@ class HeartbeatManager: ObservableObject {
 
   private func saveDevices() {
     if let data = try? JSONEncoder().encode(monitoredDevices) {
-      UserDefaults.standard.set(data, forKey: userDefaultsKey)
+      UserDefaults.standard.set(data, forKey: Self.userDefaultsKey)
     }
   }
 
   private static func loadDevices() -> [MonitoredDevice] {
-    guard let data = UserDefaults.standard.data(forKey: "family_foqos_monitored_devices"),
+    guard let data = UserDefaults.standard.data(forKey: userDefaultsKey),
       let devices = try? JSONDecoder().decode([MonitoredDevice].self, from: data)
     else {
       return []

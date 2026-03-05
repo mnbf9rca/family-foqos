@@ -10,14 +10,19 @@ struct MonitoredDevice: Codable, Identifiable {
   var lastSeenAt: Date
   var isSuppressed: Bool
   var notificationIdentifier: String?
+  var authorizationStatus: String?
 
   static let stalenessThreshold: TimeInterval = 24 * 3600  // 24 hours
+
+  var isAuthRevoked: Bool {
+    authorizationStatus == "denied"
+  }
 
   func isStale(now: Date = Date()) -> Bool {
     now.timeIntervalSince(lastSeenAt) >= Self.stalenessThreshold
   }
 
   func shouldAlert(now: Date = Date()) -> Bool {
-    !isSuppressed && isStale(now: now)
+    !isSuppressed && (isAuthRevoked || isStale(now: now))
   }
 }
