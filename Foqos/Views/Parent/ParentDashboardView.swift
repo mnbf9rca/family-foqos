@@ -22,6 +22,7 @@ struct ParentDashboardView: View {
   @ObservedObject private var lockCodeManager = LockCodeManager.shared
   @ObservedObject private var strategyManager = StrategyManager.shared
   @ObservedObject private var emergencyManager = EmergencyUnblockManager.shared
+  @ObservedObject private var heartbeatManager = HeartbeatManager.shared
 
   @Environment(\.dismiss) private var dismiss
 
@@ -118,6 +119,13 @@ struct ParentDashboardView: View {
           childrenSection
             .disabled(!parentOperationsEnabled)
             .opacity(parentOperationsEnabled ? 1.0 : 0.5)
+
+          // Device heartbeat monitoring (#190)
+          if !isChildMode {
+            deviceStatusSection
+              .disabled(!parentOperationsEnabled)
+              .opacity(parentOperationsEnabled ? 1.0 : 0.5)
+          }
 
           // Pending members section (accepted share but haven't opened the app yet)
           if !cloudKitManager.pendingParticipants.isEmpty {
@@ -516,6 +524,42 @@ struct ParentDashboardView: View {
             participant: participant,
             onRemove: {
               removeParticipant(participant)
+            }
+          )
+        }
+      }
+    }
+  }
+
+  private var deviceStatusSection: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      HStack {
+        Text("Device Status")
+          .font(.headline)
+        Spacer()
+        Toggle("Notify", isOn: $heartbeatManager.heartbeatNotificationsEnabled)
+          .labelsHidden()
+          .toggleStyle(.switch)
+          .scaleEffect(0.8)
+      }
+
+      if heartbeatManager.monitoredDevices.isEmpty {
+        EmptyMemberCard(
+          icon: "antenna.radiowaves.left.and.right",
+          title: "No Devices",
+          description: "Child devices will appear here when they activate a profile"
+        )
+      } else {
+        ForEach(heartbeatManager.monitoredDevices) { device in
+          DeviceStatusCard(
+            device: device,
+            onSuppress: {
+              heartbeatManager.toggleSuppression(for: device.deviceIdentifier)
+            },
+            onRemove: {
+              Task {
+                await heartbeatManager.removeDevice(device)
+              }
             }
           )
         }
