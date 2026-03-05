@@ -560,6 +560,11 @@ class StrategyManager: ObservableObject {
     } else {
       Log.warning("No ModelContext available for session sync", category: .strategy)
     }
+
+    // Write heartbeat for child device monitoring (#190)
+    if AppModeManager.shared.currentMode == .child {
+      HeartbeatManager.shared.writeHeartbeat()
+    }
   }
 
   func getStrategy(id: String) -> BlockingStrategy {
