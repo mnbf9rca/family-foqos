@@ -119,6 +119,40 @@ extension CloudKitNetworkService {
     }
   }
 
+  // MARK: - Share Permission Upgrade
+
+  /// Upgrade share participant permissions from readOnly to readWrite.
+  /// Required for child devices to write heartbeat records.
+  func upgradeSharePermissionsIfNeeded() async {
+    guard let share = activeZoneShare else {
+      Log.debug("No active share to upgrade permissions", category: .cloudKit)
+      return
+    }
+
+    let participants = share.participants.filter { $0.role != .owner }
+    var needsSave = false
+
+    for participant in participants {
+      if participant.permission == .readOnly {
+        participant.permission = .readWrite
+        needsSave = true
+        Log.info(
+          "Upgrading participant permission to readWrite",
+          category: .cloudKit)
+      }
+    }
+
+    guard needsSave else { return }
+
+    do {
+      _ = try await privateDatabase.save(share)
+      self.activeZoneShare = share
+      Log.info("Share permissions upgraded to readWrite", category: .cloudKit)
+    } catch {
+      Log.error("Failed to upgrade share permissions: \(error)", category: .cloudKit)
+    }
+  }
+
   // MARK: - Share Acceptance
 
   func acceptShareDirect(metadata: CKShare.Metadata) async throws {
