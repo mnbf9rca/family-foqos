@@ -206,6 +206,21 @@ class CloudKitManager: ObservableObject {
     self.familyMembers = result.familyMembers
   }
 
+  // MARK: - Heartbeat
+
+  func writeHeartbeat(_ heartbeat: DeviceHeartbeat) async throws {
+    try await networkService.writeHeartbeat(heartbeat)
+  }
+
+  func fetchHeartbeats() async throws -> [DeviceHeartbeat] {
+    return try await networkService.fetchHeartbeats()
+  }
+
+  func deleteHeartbeat(childUserRecordName: String, deviceIdentifier: String) async throws {
+    try await networkService.deleteHeartbeat(
+      childUserRecordName: childUserRecordName, deviceIdentifier: deviceIdentifier)
+  }
+
   // MARK: - Connection Status
 
   func checkFamilyConnectionStatus() async -> Bool {
