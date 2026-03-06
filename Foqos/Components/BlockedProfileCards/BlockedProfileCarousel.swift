@@ -165,6 +165,7 @@ struct BlockedProfileCarousel: View {
         .scrollTargetBehavior(.viewAligned)
         .scrollPosition(id: $currentProfileId)
         .scrollDisabled(isBlocking)
+        .scrollIndicators(.hidden)
         .frame(height: cardHeight)
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: cardHeight)
         .padding(.bottom, 10)
