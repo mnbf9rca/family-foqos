@@ -24,14 +24,10 @@ struct BlockedProfileCarousel: View {
   let oneMoreMinuteStartTime: Date?
   var onOneMoreMinuteTapped: (BlockedProfiles) -> Void
 
-  // State for tracking current profile index and drag gesture
-  @State private var currentIndex: Int = 0
-  @State private var dragOffset: CGFloat = 0
-  @State private var animatingOffset: CGFloat = 0
+  @State private var currentProfileId: UUID?
 
   // Constants for the carousel
   private let cardSpacing: CGFloat = 12
-  private let dragThreshold: CGFloat = 50
 
   private var cardHeight: CGFloat {
     if isBlocking {
@@ -103,29 +99,25 @@ struct BlockedProfileCarousel: View {
     self.onOneMoreMinuteTapped = onOneMoreMinuteTapped
   }
 
-  // Initialize current index based on active profile or starting profile
   private func initialSetup() {
     // First priority: active session profile
     if let activeId = activeSessionProfileId,
-      let index = validProfiles.firstIndex(where: { $0.id == activeId })
+      validProfiles.contains(where: { $0.id == activeId })
     {
-      currentIndex = index
+      currentProfileId = activeId
       return
     }
 
     // Second priority: starting profile
     if let startingId = startingProfileId,
-      let index = validProfiles.firstIndex(where: { $0.id == startingId })
+      validProfiles.contains(where: { $0.id == startingId })
     {
-      currentIndex = index
+      currentProfileId = startingId
       return
     }
 
     // Default: first profile if available
-    if validProfiles.first != nil {
-      currentIndex = 0
-      return
-    }
+    currentProfileId = validProfiles.first?.id
   }
 
   var body: some View {
@@ -143,98 +135,38 @@ struct BlockedProfileCarousel: View {
 
       VStack(spacing: 16) {
         // Card carousel
-        ZStack {
-          // Carousel container
-          GeometryReader { geometry in
-            let cardWidth = geometry.size.width - 32  // Padding on sides
-
-            HStack(spacing: cardSpacing) {
-              // If a model becomes a zombie mid-render, SafeModelView renders EmptyView
-              // inside the .frame — a brief invisible gap. Self-corrects next render cycle.
-              ForEach(validProfiles.indices, id: \.self) { index in
-                SafeModelView(validProfiles[index]) { profile in
-                  BlockedProfileCard(
-                    profile: profile,
-                    isActive: profile.id
-                      == activeSessionProfileId,
-                    isBreakAvailable: isBreakAvailable,
-                    isBreakActive: isBreakActive,
-                    elapsedTime: elapsedTime,
-                    onStartTapped: {
-                      onStartTapped(profile)
-                    },
-                    onStopTapped: {
-                      onStopTapped(profile)
-                    },
-                    onEditTapped: {
-                      onEditTapped(profile)
-                    },
-                    onStatsTapped: {
-                      onStatsTapped(profile)
-                    },
-                    onBreakTapped: {
-                      onBreakTapped(profile)
-                    },
-                    onAppSelectionTapped: {
-                      onAppSelectionTapped(profile)
-                    },
-                    isOneMoreMinuteActive: isOneMoreMinuteActive,
-                    isOneMoreMinuteAvailable: isOneMoreMinuteAvailable,
-                    oneMoreMinuteStartTime: oneMoreMinuteStartTime,
-                    onOneMoreMinuteTapped: {
-                      onOneMoreMinuteTapped(profile)
-                    }
-                  )
-                }
-                .frame(width: cardWidth)
+        ScrollView(.horizontal) {
+          LazyHStack(spacing: cardSpacing) {
+            ForEach(validProfiles) { profile in
+              SafeModelView(profile) { profile in
+                BlockedProfileCard(
+                  profile: profile,
+                  isActive: profile.id == activeSessionProfileId,
+                  isBreakAvailable: isBreakAvailable,
+                  isBreakActive: isBreakActive,
+                  elapsedTime: elapsedTime,
+                  onStartTapped: { onStartTapped(profile) },
+                  onStopTapped: { onStopTapped(profile) },
+                  onEditTapped: { onEditTapped(profile) },
+                  onStatsTapped: { onStatsTapped(profile) },
+                  onBreakTapped: { onBreakTapped(profile) },
+                  onAppSelectionTapped: { onAppSelectionTapped(profile) },
+                  isOneMoreMinuteActive: isOneMoreMinuteActive,
+                  isOneMoreMinuteAvailable: isOneMoreMinuteAvailable,
+                  oneMoreMinuteStartTime: oneMoreMinuteStartTime,
+                  onOneMoreMinuteTapped: { onOneMoreMinuteTapped(profile) }
+                )
               }
+              .containerRelativeFrame(.horizontal)
             }
-            .offset(
-              x: calculateOffset(
-                geometry: geometry,
-                cardWidth: cardWidth
-              )
-            )
-            .animation(
-              .spring(response: 0.4, dampingFraction: 0.8),
-              value: currentIndex
-            )
-            .animation(
-              .spring(response: 0.4, dampingFraction: 0.8),
-              value: dragOffset
-            )
-            .gesture(
-              DragGesture()
-                .onChanged { value in
-                  if !isBlocking {  // Only allow dragging when not blocking
-                    dragOffset = value.translation.width
-                  }
-                }
-                .onEnded { value in
-                  if !isBlocking {  // Only allow dragging when not blocking
-                    let offsetAmount = value.translation
-                      .width
-                    let swipedRight =
-                      offsetAmount > dragThreshold
-                    let swipedLeft =
-                      offsetAmount < -dragThreshold
-
-                    if swipedLeft
-                      && currentIndex < validProfiles.count - 1
-                    {
-                      currentIndex += 1
-                    } else if swipedRight
-                      && currentIndex > 0
-                    {
-                      currentIndex -= 1
-                    }
-
-                    dragOffset = 0
-                  }
-                }
-            )
           }
+          .scrollTargetLayout()
         }
+        .scrollTargetBehavior(.viewAligned)
+        .scrollPosition(id: $currentProfileId)
+        .scrollDisabled(isBlocking)
+        .scrollIndicators(.hidden)
+        .contentMargins(.horizontal, 16)
         .frame(height: cardHeight)
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: cardHeight)
         .padding(.bottom, 10)
@@ -242,15 +174,15 @@ struct BlockedProfileCarousel: View {
         // Page indicator dots
         HStack(spacing: 8) {
           if !isBlocking && validProfiles.count > 1 {
-            ForEach(0..<validProfiles.count, id: \.self) { index in
+            ForEach(validProfiles) { profile in
               Circle()
                 .fill(
-                  index == currentIndex
+                  profile.id == currentProfileId
                     ? Color.primary
                     : Color.secondary.opacity(0.3)
                 )
                 .frame(width: 8, height: 8)
-                .animation(.easeInOut, value: currentIndex)
+                .animation(.easeInOut, value: currentProfileId)
             }
           }
         }
@@ -273,15 +205,6 @@ struct BlockedProfileCarousel: View {
     }
   }
 
-  // Calculate the offset based on current index and drag
-  private func calculateOffset(geometry: GeometryProxy, cardWidth: CGFloat)
-    -> CGFloat
-  {
-    let totalWidth = cardWidth + cardSpacing
-    let baseOffset = CGFloat(currentIndex) * -totalWidth
-    let leadingPadding = (geometry.size.width - cardWidth) / 2
-    return baseOffset + dragOffset + leadingPadding
-  }
 }
 
 // Active preview
