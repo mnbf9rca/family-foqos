@@ -1,6 +1,7 @@
 import FamilyControls
 import Foundation
 import UIKit
+@preconcurrency import UserNotifications
 
 /// Manages device heartbeat lifecycle for both child and parent modes.
 @MainActor
@@ -19,6 +20,9 @@ class HeartbeatManager: ObservableObject {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) {
           _, _ in
         }
+        scheduleNotifications()
+      } else {
+        cancelAllNotifications()
       }
     }
   }
