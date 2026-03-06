@@ -162,6 +162,11 @@ class CloudKitManager: ObservableObject {
     let participants = await networkService.refreshShareParticipants()
     self.shareParticipants = participants
     self.isShareOwner = await networkService.getIsShareOwner()
+
+    // Upgrade child permissions to readWrite for heartbeat writes (#190)
+    if isShareOwner {
+      await networkService.upgradeSharePermissionsIfNeeded()
+    }
   }
 
   // MARK: - Share Acceptance
@@ -204,6 +209,21 @@ class CloudKitManager: ObservableObject {
     let result = try await networkService.syncShareParticipantsToFamilyMembers()
     self.pendingParticipants = result.pendingParticipants
     self.familyMembers = result.familyMembers
+  }
+
+  // MARK: - Heartbeat
+
+  func writeHeartbeat(_ heartbeat: DeviceHeartbeat) async throws {
+    try await networkService.writeHeartbeat(heartbeat)
+  }
+
+  func fetchHeartbeats() async -> [DeviceHeartbeat] {
+    return await networkService.fetchHeartbeats()
+  }
+
+  func deleteHeartbeat(childUserRecordName: String, deviceIdentifier: String) async throws {
+    try await networkService.deleteHeartbeat(
+      childUserRecordName: childUserRecordName, deviceIdentifier: deviceIdentifier)
   }
 
   // MARK: - Connection Status

@@ -350,6 +350,10 @@ class AppDelegate: NSObject, UIApplicationDelegate {
       // Handle the notification via ProfileSyncManager
       Task {
         await ProfileSyncManager.shared.handleRemoteNotification()
+        // Refresh heartbeats for parent monitoring (#190)
+        if AppModeManager.shared.currentMode == .parent {
+          await HeartbeatManager.shared.refreshHeartbeats()
+        }
         completionHandler(.newData)
       }
     } else {
