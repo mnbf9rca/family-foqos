@@ -83,7 +83,7 @@ class HeartbeatManager: ObservableObject {
   /// Remove a device from monitoring and delete its CloudKit record.
   func removeDevice(_ device: MonitoredDevice) async {
     cancelNotification(for: device)
-    monitoredDevices.removeAll { $0.deviceIdentifier == device.deviceIdentifier }
+    monitoredDevices.removeAll { $0.id == device.id }
     saveDevices()
 
     do {
@@ -97,8 +97,8 @@ class HeartbeatManager: ObservableObject {
   }
 
   /// Toggle suppression for a device.
-  func toggleSuppression(for deviceIdentifier: String) {
-    guard let index = monitoredDevices.firstIndex(where: { $0.deviceIdentifier == deviceIdentifier })
+  func toggleSuppression(for deviceId: String) {
+    guard let index = monitoredDevices.firstIndex(where: { $0.id == deviceId })
     else { return }
 
     monitoredDevices[index].isSuppressed.toggle()
@@ -127,7 +127,7 @@ class HeartbeatManager: ObservableObject {
   private func scheduleNotification(for device: MonitoredDevice) {
     cancelNotification(for: device)
 
-    let notificationId = "heartbeat-\(device.deviceIdentifier)"
+    let notificationId = "heartbeat-\(device.id)"
     let content = UNMutableNotificationContent()
     content.sound = .default
 
@@ -162,7 +162,7 @@ class HeartbeatManager: ObservableObject {
 
     // Update device with notification ID
     if let index = monitoredDevices.firstIndex(where: {
-      $0.deviceIdentifier == device.deviceIdentifier
+      $0.id == device.id
     }) {
       monitoredDevices[index].notificationIdentifier = notificationId
       saveDevices()
@@ -179,7 +179,8 @@ class HeartbeatManager: ObservableObject {
 
   private func updateOrCreateDevice(from heartbeat: DeviceHeartbeat) {
     if let index = monitoredDevices.firstIndex(where: {
-      $0.deviceIdentifier == heartbeat.deviceIdentifier
+      $0.childUserRecordName == heartbeat.childUserRecordName
+        && $0.deviceIdentifier == heartbeat.deviceIdentifier
     }) {
       monitoredDevices[index].lastSeenAt = heartbeat.lastHeartbeatAt
       monitoredDevices[index].deviceName = heartbeat.deviceName

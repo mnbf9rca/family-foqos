@@ -554,7 +554,7 @@ struct ParentDashboardView: View {
           DeviceStatusCard(
             device: device,
             onSuppress: {
-              heartbeatManager.toggleSuppression(for: device.deviceIdentifier)
+              heartbeatManager.toggleSuppression(for: device.id)
             },
             onRemove: {
               Task {

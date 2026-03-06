@@ -3,7 +3,7 @@ import Foundation
 /// Parent-side record tracking a child's device heartbeat status.
 /// Stored in UserDefaults — each parent manages their own list.
 struct MonitoredDevice: Codable, Identifiable {
-  var id: String { deviceIdentifier }
+  var id: String { "\(childUserRecordName)|\(deviceIdentifier)" }
   var deviceIdentifier: String
   var deviceName: String
   var childUserRecordName: String

@@ -4,6 +4,38 @@ import XCTest
 
 final class MonitoredDeviceTests: XCTestCase {
 
+  func testId_isCompositeKey() {
+    let device = MonitoredDevice(
+      deviceIdentifier: "dev1",
+      deviceName: "iPhone",
+      childUserRecordName: "child1",
+      lastSeenAt: Date(),
+      isSuppressed: false,
+      notificationIdentifier: nil
+    )
+    XCTAssertEqual(device.id, "child1|dev1")
+  }
+
+  func testId_distinguishesSameDeviceDifferentChildren() {
+    let device1 = MonitoredDevice(
+      deviceIdentifier: "sharedIPad",
+      deviceName: "iPad",
+      childUserRecordName: "child1",
+      lastSeenAt: Date(),
+      isSuppressed: false,
+      notificationIdentifier: nil
+    )
+    let device2 = MonitoredDevice(
+      deviceIdentifier: "sharedIPad",
+      deviceName: "iPad",
+      childUserRecordName: "child2",
+      lastSeenAt: Date(),
+      isSuppressed: false,
+      notificationIdentifier: nil
+    )
+    XCTAssertNotEqual(device1.id, device2.id)
+  }
+
   func testIsStale_returnsTrueWhenOlderThan24Hours() {
     let now = Date()
     let device = MonitoredDevice(
