@@ -483,6 +483,12 @@ struct BlockedProfileView: View {
                 .disabled(isBlocking)
                 .font(.subheadline)
                 .foregroundColor(.secondary)
+                .onChange(of: reminderTimeInMinutes) { _, newValue in
+                  let clamped = min(max(newValue, 0), Self.maxReminderTimeInMinutes)
+                  if clamped != newValue {
+                    reminderTimeInMinutes = clamped
+                  }
+                }
 
                 Text("minutes")
                   .font(.subheadline)
@@ -728,6 +734,7 @@ struct BlockedProfileView: View {
                     source, in: modelContext, newName: trimmed
                   )
                   DeviceActivityCenterUtil.scheduleTimerActivity(for: clonedProfile)
+                  SyncCoordinator.shared.pushProfile(clonedProfile)
                 }
               } catch {
                 showError(message: error.localizedDescription)
@@ -816,6 +823,20 @@ struct BlockedProfileView: View {
     }
   }
 
+  /// Largest minutes value whose seconds representation fits in UInt32.
+  /// Any previously savable value stays within these bounds — the clamp only
+  /// rejects input that would have trapped, never rewrites stored settings.
+  static let maxReminderTimeInMinutes = Int(UInt32.max) / 60
+
+  /// Clamped conversion of free-form minutes input to reminder seconds.
+  /// UInt32(_:) traps on negative or overflowing values, so unchecked input
+  /// from the reminder TextField must never reach it directly (#234).
+  static func reminderTimeSeconds(enabled: Bool, minutes: Int) -> UInt32? {
+    guard enabled else { return nil }
+    let clampedMinutes = min(max(minutes, 0), maxReminderTimeInMinutes)
+    return UInt32(clampedMinutes * 60)
+  }
+
   private func showError(message: String) {
     alertIdentifier = AlertIdentifier(id: .error, errorMessage: message)
   }
@@ -879,8 +900,8 @@ struct BlockedProfileView: View {
 
     do {
       // Calculate reminder time in seconds or nil if disabled
-      let reminderTimeSeconds: UInt32? =
-        enableReminder ? UInt32(reminderTimeInMinutes * 60) : nil
+      let reminderTimeSeconds = Self.reminderTimeSeconds(
+        enabled: enableReminder, minutes: reminderTimeInMinutes)
 
       // Only set managedByChildId on child devices - this identifies which child owns this profile
       let managedChildId: String? =

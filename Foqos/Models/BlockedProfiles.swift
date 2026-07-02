@@ -679,7 +679,18 @@ class BlockedProfiles {
     cloned.startSchedule = source.startSchedule
     cloned.stopSchedule = source.stopSchedule
 
+    // Preserve the source's schema version: init stamps V2 unconditionally,
+    // which would leave a V1 source's clone with all-false triggers that no
+    // migration pass will ever repair. Migrating here translates the copied
+    // blockingStrategyId into startable triggers immediately (#223)
+    cloned.profileSchemaVersion = source.profileSchemaVersion
+    cloned.migrateToV2IfNeeded()
+
     try context.save()
+
+    // Create the snapshot so extensions can read it immediately (#209)
+    updateSnapshot(for: cloned)
+
     return cloned
   }
 

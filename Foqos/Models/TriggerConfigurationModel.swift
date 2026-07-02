@@ -109,5 +109,10 @@ final class TriggerConfigurationModel: ObservableObject {
     profile.stopQRCodeId = stopQRCodeId
     profile.startSchedule = startSchedule
     profile.stopSchedule = stopSchedule
+
+    // Refresh the app-group snapshot after trigger persistence — the snapshot
+    // written earlier by createProfile/updateProfile predates these fields, and
+    // the FoqosDeviceMonitor extension enforces schedules purely from it (#198)
+    BlockedProfiles.updateSnapshot(for: profile)
   }
 }
