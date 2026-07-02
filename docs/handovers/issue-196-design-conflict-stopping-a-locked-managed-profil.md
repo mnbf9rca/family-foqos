@@ -1,11 +1,15 @@
 # Handover: Design conflict: stopping a locked (managed) profile is un-gated, but ChildDashboardView copy promises the lock code is required to stop
 
 - **GitHub issue:** #196
-- **Severity:** high
+- **Severity:** low (downgraded 2026-07-02 — copy fix only)
 - **Domain:** family-lockcode
 - **Primary location:** `Foqos/Views/HomeView.swift:518`
 - **Status:** Confirmed by adversarial verification
 - **Audit date:** 2026-07-02 (line numbers cited below are from this date's `main`)
+
+## Maintainer decision (2026-07-02) — READ FIRST
+
+The design question is RESOLVED: the as-designed behavior stands. *"Lock code only gates editing profile settings and deleting profiles. Stopping blocking sessions should work identically to unmanaged profiles"* (deviation report #7). **Implement Option B only**: fix the footer copy in `ChildDashboardView.swift:576` to say "edit or delete", and audit for any other copy promising that stopping is gated. Do NOT add lock-code checks to any stop path.
 
 ## Problem
 

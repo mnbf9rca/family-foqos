@@ -5,6 +5,8 @@ One handover per GitHub issue from the 2026-07-02 multi-agent defect audit
 an implementing agent should read the doc, re-verify the defect against current
 code, then fix it following AGENTS.md.
 
+**Sequencing:** see [REMEDIATION-PLAN.md](REMEDIATION-PLAN.md) (21 PR bundles, 5 waves) and tracking epic [#263](https://github.com/mnbf9rca/family-foqos/issues/263).
+
 ## Critical (5)
 
 - [#195](https://github.com/mnbf9rca/family-foqos/issues/195) — [Reset Sync race lets deletion reconciliation wipe all local profiles on other devices](issue-195-reset-sync-race-lets-deletion-reconciliation-wip.md)
@@ -15,7 +17,6 @@ code, then fix it following AGENTS.md.
 
 ## High (20)
 
-- [#196](https://github.com/mnbf9rca/family-foqos/issues/196) — [Design conflict: stopping a locked (managed) profile is un-gated, but ChildDashboardView copy promises the lock code is required to stop](issue-196-design-conflict-stopping-a-locked-managed-profil.md)
 - [#200](https://github.com/mnbf9rca/family-foqos/issues/200) — [5-minute notification throttle silently drops remote session start/stop — other devices stay blocked/unblocked indefinitely](issue-200-5-minute-notification-throttle-silently-drops-re.md)
 - [#201](https://github.com/mnbf9rca/family-foqos/issues/201) — [Failed CloudKit pushes (profile save/delete, session stop) are logged and dropped with no retry — silent divergence and stuck blocking](issue-201-failed-cloudkit-pushes-profile-save-delete-sessi.md)
 - [#202](https://github.com/mnbf9rca/family-foqos/issues/202) — [SyncResetRequest is consumed by the first device that sees it and never cleaned up by the origin — missed resets and stale resets that wipe app selections](issue-202-syncresetrequest-is-consumed-by-the-first-device.md)
@@ -62,8 +63,9 @@ code, then fix it following AGENTS.md.
 - [#239](https://github.com/mnbf9rca/family-foqos/issues/239) — [Deviation #17 still present: disableBackgroundStops ignored by schedule-based stops (StopScheduleTimerActivity)](issue-239-deviation-17-still-present-disablebackgroundstop.md)
 - [#240](https://github.com/mnbf9rca/family-foqos/issues/240) — [TODO in FamilyLockCode acknowledges brute-forceable PIN hash that syncs to child-readable CloudKit DB](issue-240-todo-in-familylockcode-acknowledges-brute-forcea.md)
 
-## Low (19)
+## Low (20)
 
+- [#196](https://github.com/mnbf9rca/family-foqos/issues/196) — [ChildDashboardView footer wrongly says the lock code is required to STOP a locked profile (copy fix; decided 2026-07-02)](issue-196-design-conflict-stopping-a-locked-managed-profil.md)
 - [#241](https://github.com/mnbf9rca/family-foqos/issues/241) — [syncShareParticipantsToFamilyMembers deletes a child's FamilyMember record when the participant's userRecordID is unresolved](issue-241-syncshareparticipantstofamilymembers-deletes-a-c.md)
 - [#242](https://github.com/mnbf9rca/family-foqos/issues/242) — [Emergency unblock schedules the post-session reminder twice, producing duplicate notifications](issue-242-emergency-unblock-schedules-the-post-session-rem.md)
 - [#243](https://github.com/mnbf9rca/family-foqos/issues/243) — [scheduleLastStoppedAt written by the monitor extension is never imported back into SwiftData and is clobbered by app-side snapshot writes](issue-243-schedulelaststoppedat-written-by-the-monitor-ext.md)
