@@ -123,10 +123,10 @@ class LiveActivityManager: ObservableObject {
       oneMoreMinuteStartTime: session.oneMoreMinuteStartTime
     )
 
+    let activityId = activity.id
     Task {
-      let content = ActivityContent(state: updatedState, staleDate: nil)
-      await activity.update(content)
-      Log.info("Updated Live Activity with ID: \(activity.id)", category: .liveActivity)
+      await Self.updateActivity(withId: activityId, to: updatedState)
+      Log.info("Updated Live Activity with ID: \(activityId)", category: .liveActivity)
     }
   }
 
@@ -145,10 +145,11 @@ class LiveActivityManager: ObservableObject {
       oneMoreMinuteStartTime: session.oneMoreMinuteStartTime
     )
 
+    let activityId = activity.id
+    let isBreakActive = session.isBreakActive
     Task {
-      let content = ActivityContent(state: updatedState, staleDate: nil)
-      await activity.update(content)
-      Log.info("Updated Live Activity break state: \(session.isBreakActive)", category: .liveActivity)
+      await Self.updateActivity(withId: activityId, to: updatedState)
+      Log.info("Updated Live Activity break state: \(isBreakActive)", category: .liveActivity)
     }
   }
 
@@ -167,9 +168,9 @@ class LiveActivityManager: ObservableObject {
       oneMoreMinuteStartTime: session.oneMoreMinuteStartTime
     )
 
+    let activityId = activity.id
     Task {
-      let content = ActivityContent(state: updatedState, staleDate: nil)
-      await activity.update(content)
+      await Self.updateActivity(withId: activityId, to: updatedState)
       Log.info(
         "Updated Live Activity one-more-minute state", category: .liveActivity)
     }
@@ -186,14 +187,38 @@ class LiveActivityManager: ObservableObject {
       startTime: Date.now
     )
 
+    let activityId = activity.id
     Task {
-      let content = ActivityContent(state: completedState, staleDate: nil)
-      await activity.end(content, dismissalPolicy: .immediate)
+      await Self.endActivity(withId: activityId, finalState: completedState)
       Log.info("Ended Live Activity", category: .liveActivity)
     }
 
     // Remove the stored activity ID when ending the activity
     removeActivityId()
     currentActivity = nil
+  }
+
+  // Activity<T> is not Sendable, so a MainActor-held reference cannot be passed
+  // to its nonisolated async update/end methods. Look the activity up by ID in a
+  // nonisolated context instead, keeping it out of the main actor's region.
+  private nonisolated static func activity(
+    withId id: String
+  ) -> Activity<FoqosWidgetAttributes>? {
+    Activity<FoqosWidgetAttributes>.activities.first(where: { $0.id == id })
+  }
+
+  private nonisolated static func updateActivity(
+    withId id: String, to state: FoqosWidgetAttributes.ContentState
+  ) async {
+    guard let activity = activity(withId: id) else { return }
+    await activity.update(ActivityContent(state: state, staleDate: nil))
+  }
+
+  private nonisolated static func endActivity(
+    withId id: String, finalState: FoqosWidgetAttributes.ContentState
+  ) async {
+    guard let activity = activity(withId: id) else { return }
+    await activity.end(
+      ActivityContent(state: finalState, staleDate: nil), dismissalPolicy: .immediate)
   }
 }
