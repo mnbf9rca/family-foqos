@@ -110,9 +110,11 @@ final class TriggerConfigurationModel: ObservableObject {
     profile.startSchedule = startSchedule
     profile.stopSchedule = stopSchedule
 
-    // Refresh the app-group snapshot after trigger persistence — the snapshot
-    // written earlier by createProfile/updateProfile predates these fields, and
-    // the FoqosDeviceMonitor extension enforces schedules purely from it (#198)
+    // Refresh the app-group snapshot now that the trigger fields are set on the
+    // in-memory model (SwiftData persistence happens later in the caller) — the
+    // snapshot written earlier by createProfile/updateProfile predates these
+    // fields, and the FoqosDeviceMonitor extension enforces schedules purely
+    // from it (#198)
     BlockedProfiles.updateSnapshot(for: profile)
   }
 }

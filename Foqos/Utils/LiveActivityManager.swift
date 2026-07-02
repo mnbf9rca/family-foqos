@@ -201,21 +201,23 @@ class LiveActivityManager: ObservableObject {
   // Activity<T> is not Sendable, so a MainActor-held reference cannot be passed
   // to its nonisolated async update/end methods. Look the activity up by ID in a
   // nonisolated context instead, keeping it out of the main actor's region.
+  private nonisolated static func activity(
+    withId id: String
+  ) -> Activity<FoqosWidgetAttributes>? {
+    Activity<FoqosWidgetAttributes>.activities.first(where: { $0.id == id })
+  }
+
   private nonisolated static func updateActivity(
     withId id: String, to state: FoqosWidgetAttributes.ContentState
   ) async {
-    guard
-      let activity = Activity<FoqosWidgetAttributes>.activities.first(where: { $0.id == id })
-    else { return }
+    guard let activity = activity(withId: id) else { return }
     await activity.update(ActivityContent(state: state, staleDate: nil))
   }
 
   private nonisolated static func endActivity(
     withId id: String, finalState: FoqosWidgetAttributes.ContentState
   ) async {
-    guard
-      let activity = Activity<FoqosWidgetAttributes>.activities.first(where: { $0.id == id })
-    else { return }
+    guard let activity = activity(withId: id) else { return }
     await activity.end(
       ActivityContent(state: finalState, staleDate: nil), dismissalPolicy: .immediate)
   }
