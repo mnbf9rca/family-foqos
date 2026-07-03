@@ -172,9 +172,7 @@ struct SettingsView: View {
             }
 
             Button {
-              Task {
-                await profileSyncManager.performFullSync()
-              }
+              profileSyncManager.syncNow()
             } label: {
               HStack {
                 Image(systemName: "arrow.clockwise")
@@ -389,30 +387,10 @@ struct SettingsView: View {
       .alert("Reset Syncing", isPresented: $showResetSyncAlert) {
         Button("Cancel", role: .cancel) {}
         Button("Keep App Selections") {
-          Task {
-            do {
-              try await profileSyncManager.resetSync(clearRemoteAppSelections: false)
-            } catch {
-              Log.error(
-                "Failed to reset sync (keep selections): \(error.localizedDescription)",
-                category: .sync)
-              syncErrorMessage =
-                "Sync reset failed: \(error.localizedDescription)"
-            }
-          }
+          profileSyncManager.resetSync(clearRemoteAppSelections: false)
         }
         Button("Clear App Selections", role: .destructive) {
-          Task {
-            do {
-              try await profileSyncManager.resetSync(clearRemoteAppSelections: true)
-            } catch {
-              Log.error(
-                "Failed to reset sync (clear selections): \(error.localizedDescription)",
-                category: .sync)
-              syncErrorMessage =
-                "Sync reset failed: \(error.localizedDescription)"
-            }
-          }
+          profileSyncManager.resetSync(clearRemoteAppSelections: true)
         }
       } message: {
         Text("This will re-sync from this device. Choose how other devices should respond:\n\n• Keep app selections: Other devices keep their blocked apps\n• Clear app selections: Other devices must re-select apps")

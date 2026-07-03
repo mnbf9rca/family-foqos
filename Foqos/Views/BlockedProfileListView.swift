@@ -5,6 +5,7 @@ import SwiftUI
 struct BlockedProfileListView: View {
   @Environment(\.modelContext) private var context
   @Environment(\.dismiss) private var dismiss
+  @EnvironmentObject private var profileSyncManager: ProfileSyncManager
 
   @SafeQuery(sort: [
     SortDescriptor(\BlockedProfiles.order, order: .forward),
@@ -157,12 +158,33 @@ struct BlockedProfileListView: View {
     do {
       for index in offsets {
         let profile = profilesToDelete[index]
-        try BlockedProfiles.deleteProfile(profile, in: context)
+        let profileId = profile.id
+        if profileSyncManager.isEnabled {
+          // Route the delete entirely through the funnel (I2): it re-reads the profile
+          // itself, writes the delete-intent tombstone, performs the persisted delete, and
+          // enqueues the `.deleteRecord` — all in one call. The view's `context` here is the
+          // SAME `ModelContext` instance the funnel uses (both are `container.mainContext`),
+          // so the view must NOT pre-delete: an unsaved `context.delete()` is already
+          // excluded from the funnel's own re-fetch-by-id on that shared context, which
+          // would throw `entityNotFound` and roll back (undoing the delete entirely). Must
+          // run BEFORE the reorder below, whose `context.save()` would otherwise commit
+          // ahead of the funnel.
+          profileSyncManager.enqueueProfileDelete(profileId)
+        } else {
+          // Sync disabled — the funnel would no-op (I2 is only reachable once the engine has
+          // started), so delete locally directly.
+          try BlockedProfiles.deleteProfile(profile, in: context)
+        }
       }
 
       // Reorder remaining profiles to fix gaps in ordering
       let remainingProfiles = try BlockedProfiles.fetchProfiles(in: context)
       try BlockedProfiles.reorderProfiles(remainingProfiles, in: context)
+      // The `order` field is synced state — bump syncVersion + enqueue a save for each
+      // surviving profile so the gap-fix reaches other devices (I2).
+      for profile in remainingProfiles {
+        profileSyncManager.enqueueProfileSave(profile.id)
+      }
     } catch {
       Log.error("Failed to delete or reorder profiles: \(error)", category: .ui)
     }
@@ -174,6 +196,11 @@ struct BlockedProfileListView: View {
 
     do {
       try BlockedProfiles.reorderProfiles(reorderedProfiles, in: context)
+      // Persist the new order to sync (I2) — drag-reorder mutates the synced `order`
+      // field and must not bypass the funnel.
+      for profile in reorderedProfiles {
+        profileSyncManager.enqueueProfileSave(profile.id)
+      }
     } catch {
       Log.error("Failed to reorder profiles: \(error)", category: .ui)
     }
@@ -182,5 +209,6 @@ struct BlockedProfileListView: View {
 
 #Preview {
   BlockedProfileListView()
+    .environmentObject(ProfileSyncManager.shared)
     .modelContainer(for: BlockedProfiles.self, inMemory: true)
 }

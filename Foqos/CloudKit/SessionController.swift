@@ -1,8 +1,8 @@
 import Foundation
 import SwiftData
 
-/// Defines the contract SyncCoordinator needs for remote session management.
-/// StrategyManager conforms to this; injected into SyncCoordinator for testability.
+/// Defines the contract sync applies remote session state through.
+/// StrategyManager conforms to this; injected into `SyncApplyService` for testability.
 @MainActor
 protocol SessionController: AnyObject {
   var activeSession: BlockedProfileSession? { get }

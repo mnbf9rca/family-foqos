@@ -10,11 +10,19 @@ final class SyncConflictManager: ObservableObject {
   @Published var conflictedProfiles: [UUID: String] = [:]  // ID → name (older device edited)
   @Published var newerVersionProfiles: [UUID: String] = [:]  // ID → name (this device outdated)
   @Published var showConflictBanner: Bool = false
+  @Published var resetWasSuperseded: Bool = false  // profile-less: a reset request did not run
 
   init() {}
 
   func addConflict(profileId: UUID, profileName: String) {
     conflictedProfiles[profileId] = profileName
+    showConflictBanner = true
+  }
+
+  /// Surfaces a "your reset did not run" conflict. Profile-less: reset requests are
+  /// device-scoped, not tied to any single profile.
+  func addResetSupersededConflict() {
+    resetWasSuperseded = true
     showConflictBanner = true
   }
 
@@ -25,6 +33,7 @@ final class SyncConflictManager: ObservableObject {
 
   func dismissBanner() {
     showConflictBanner = false
+    resetWasSuperseded = false
   }
 
   func clearConflict(profileId: UUID) {
@@ -39,6 +48,7 @@ final class SyncConflictManager: ObservableObject {
     conflictedProfiles.removeAll()
     newerVersionProfiles.removeAll()
     showConflictBanner = false
+    resetWasSuperseded = false
   }
 
   var shouldShowNewerVersionBanner: Bool {

@@ -21,6 +21,7 @@ struct BlockedProfileView: View {
   @EnvironmentObject private var themeManager: ThemeManager
   @EnvironmentObject private var nfcWriter: NFCWriter
   @EnvironmentObject private var strategyManager: StrategyManager
+  @EnvironmentObject private var profileSyncManager: ProfileSyncManager
 
   @ObservedObject private var appModeManager = AppModeManager.shared
   @ObservedObject private var lockCodeManager = LockCodeManager.shared
@@ -734,7 +735,7 @@ struct BlockedProfileView: View {
                     source, in: modelContext, newName: trimmed
                   )
                   DeviceActivityCenterUtil.scheduleTimerActivity(for: clonedProfile)
-                  SyncCoordinator.shared.pushProfile(clonedProfile)
+                  profileSyncManager.enqueueProfileSave(clonedProfile.id)
                 }
               } catch {
                 showError(message: error.localizedDescription)
@@ -802,9 +803,22 @@ struct BlockedProfileView: View {
                 if let profileToDelete = profile {
                   let profileId = profileToDelete.id
                   do {
-                    try BlockedProfiles.deleteProfile(profileToDelete, in: modelContext)
-                    // Delete from sync (if global sync is enabled)
-                    SyncCoordinator.shared.deleteProfileFromSync(profileId)
+                    if profileSyncManager.isEnabled {
+                      // Route the delete entirely through the funnel (I2): it re-reads the
+                      // profile itself, writes the delete-intent tombstone, performs the
+                      // persisted delete, and enqueues the `.deleteRecord` — all in one call.
+                      // `modelContext` here is the SAME `ModelContext` instance the funnel
+                      // uses (both are `container.mainContext`), so this view must NOT
+                      // pre-delete: a committed local delete would leave the funnel's
+                      // re-fetch-by-id finding nothing, producing `entityNotFound` and
+                      // swallowing the tombstone with no `.deleteRecord` enqueued — the
+                      // delete would never propagate to other devices.
+                      profileSyncManager.enqueueProfileDelete(profileId)
+                    } else {
+                      // Sync disabled — the funnel would no-op (I2 is only reachable once the
+                      // engine has started), so delete locally directly.
+                      try BlockedProfiles.deleteProfile(profileToDelete, in: modelContext)
+                    }
                   } catch {
                     showError(message: error.localizedDescription)
                   }
@@ -882,7 +896,7 @@ struct BlockedProfileView: View {
         "Failed to save trigger config: \(error.localizedDescription)", category: .ui)
     }
     DeviceActivityCenterUtil.scheduleTimerActivity(for: profile)
-    SyncCoordinator.shared.pushProfile(profile)
+    profileSyncManager.enqueueProfileSave(profile.id)
   }
 
   private func saveProfile() {

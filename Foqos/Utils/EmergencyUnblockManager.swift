@@ -110,6 +110,12 @@ class EmergencyUnblockManager: ObservableObject {
     }
   }
 
+  /// Increment the synced emergency-settings version as part of MutationFunnel's save path (I2).
+  /// The property's `didSet` persists the new value immediately.
+  func incrementEmergencySettingsVersionForSync() {
+    emergencySettingsVersion += 1
+  }
+
   // MARK: - Queries
 
   func getRemainingEmergencyUnblocks() -> Int {
@@ -237,29 +243,26 @@ class EmergencyUnblockManager: ObservableObject {
     emergencySettingsVersion = remote.version
   }
 
-  private func pushEmergencySettingsToCloudKit() {
-    guard profileSyncManager.isEnabled else { return }
-
-    let nextVersion = emergencySettingsVersion + 1
-    let settings = SyncedEmergencySettings(
+  /// Snapshot of the current emergency settings for CKRecord materialization (RecordProvider).
+  /// Reads the current version verbatim — never bumps (I2: version bumps only in MutationFunnel).
+  func currentEmergencySettings(deviceId: String, now: Date = Date()) -> SyncedEmergencySettings {
+    SyncedEmergencySettings(
       unblocksRemaining: emergencyUnblocksRemaining,
       resetPeriodInDays: emergencyUnblocksResetPeriodInDays,
       lastResetDate: Date(
         timeIntervalSinceReferenceDate: lastEmergencyUnblocksResetDateTimestamp),
       settingsLocked: emergencySettingsLockedStorage,
-      version: nextVersion,
-      lastModified: Date(),
-      originDeviceId: SharedData.deviceSyncId.uuidString
+      version: emergencySettingsVersion,
+      lastModified: now,
+      originDeviceId: deviceId
     )
+  }
 
-    Task {
-      do {
-        try await profileSyncManager.pushEmergencySettings(settings)
-        await MainActor.run { self.emergencySettingsVersion = nextVersion }
-      } catch {
-        Log.error(
-          "Failed to push emergency settings: \(error.localizedDescription)", category: .sync)
-      }
-    }
+  private func pushEmergencySettingsToCloudKit() {
+    guard profileSyncManager.isEnabled else { return }
+
+    // The funnel owns the version bump-in-write (I2) and materializes the record from
+    // `currentEmergencySettings`, so no local version bump or payload construction here.
+    profileSyncManager.enqueueEmergencySettingsSave()
   }
 }

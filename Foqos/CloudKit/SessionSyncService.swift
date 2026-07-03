@@ -229,8 +229,10 @@ actor SessionSyncService {
       return await deactivateSession(profileId: profileId, endTime: endTime)
 
     case .notFound:
-      // No record - nothing to stop
-      return .alreadyStopped
+      // §6: this device stopped a session it believed active — write a stopped record
+      // create-if-absent so mirrors converge (do NOT silently drop, the old
+      // .notFound -> .alreadyStopped path is removed).
+      return await createStoppedRecordIfAbsent(profileId: profileId, endTime: endTime)
 
     case .error(let error):
       return .error(error)
@@ -279,6 +281,41 @@ actor SessionSyncService {
             return .alreadyStopped
           }
           return .conflict(currentSession: current)
+        case .notFound:
+          return .alreadyStopped
+        case .error(let fetchError):
+          return .error(fetchError)
+        }
+      }
+      return .error(error)
+    } catch {
+      return .error(error)
+    }
+  }
+
+  /// §6 stop-on-absent: build a FRESH stopped record (no cached change tag) and save it
+  /// create-if-absent. A fresh CKRecord saved with .ifServerRecordUnchanged succeeds only
+  /// when the record is absent server-side; a concurrent fresh start surfaces as
+  /// serverRecordChanged, in which case the newer active session supersedes this stale stop.
+  private func createStoppedRecordIfAbsent(profileId: UUID, endTime: Date) async -> StopResult {
+    var session = ProfileSessionRecord(profileId: profileId)
+    _ = session.applyUpdate(
+      isActive: false, sequenceNumber: 1, deviceId: deviceId, endTime: endTime)
+    let record = session.toCKRecord(in: syncZoneID)
+    do {
+      let savedRecord = try await saveRecordWithPolicy(record, policy: .ifServerRecordUnchanged)
+      if let saved = ProfileSessionRecord(from: savedRecord) {
+        cachedRecords[profileId] = (savedRecord, saved)
+      }
+      return .stopped(sequenceNumber: 1)
+    } catch let error as CKError {
+      if error.code == .serverRecordChanged {
+        // A concurrent fresh start won the create race — refetch and yield to a newer active.
+        let refetch = await fetchSession(profileId: profileId)
+        switch refetch {
+        case .found(let current):
+          if current.isActive { return .alreadyStopped }
+          return .alreadyStopped
         case .notFound:
           return .alreadyStopped
         case .error(let fetchError):

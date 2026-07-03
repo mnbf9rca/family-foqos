@@ -422,6 +422,24 @@ struct SyncedLocation: Codable, Equatable {
     self.lastModified = lastModified
   }
 
+  init(
+    locationId: UUID,
+    name: String,
+    latitude: Double,
+    longitude: Double,
+    defaultRadiusMeters: Double,
+    isLocked: Bool,
+    lastModified: Date
+  ) {
+    self.locationId = locationId
+    self.name = name
+    self.latitude = latitude
+    self.longitude = longitude
+    self.defaultRadiusMeters = defaultRadiusMeters
+    self.isLocked = isLocked
+    self.lastModified = lastModified
+  }
+
   // MARK: - Initialization from SavedLocation
 
   init(from location: SavedLocation) {

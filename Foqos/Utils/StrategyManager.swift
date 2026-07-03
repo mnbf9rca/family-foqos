@@ -13,6 +13,10 @@ class StrategyManager: ObservableObject {
   private let sessionSyncService: SessionSyncService
   private let locationManager: LocationManager
 
+  /// #201: persisted intents for session-stops dropped by a failed/exhausted CAS write.
+  /// Internal (not private) so Phase-E tests can assert routing without a live CloudKit call.
+  let sessionStopOutbox = SessionStopOutbox()
+
   @Published var elapsedTime: TimeInterval = 0
   @Published var timerTask: Task<Void, Never>?
   @Published var activeSession: BlockedProfileSession?
@@ -527,6 +531,55 @@ class StrategyManager: ObservableObject {
     }
   }
 
+  /// #201: process the result of a session-stop CAS attempt. On success, logs. On the terminal
+  /// outcomes (an immediate `.error`, or `.conflict`/`.error` after one retry), the dropped stop
+  /// intent is persisted to the outbox for re-drive on foreground (Phase F cutover wires
+  /// `drainSessionStopOutbox()` to scenePhase `.active` — nothing runs in-app this phase).
+  /// Extracted from the CAS Task closure so Phase-E tests can exercise the routing without a
+  /// live CloudKit round trip.
+  func handleStopResult(
+    _ result: SessionSyncService.StopResult, profileId: UUID
+  ) async {
+    switch result {
+    case .stopped(let seq):
+      Log.info("Session stop synced with seq=\(seq)", category: .strategy)
+    case .alreadyStopped:
+      Log.info("Session was already stopped", category: .strategy)
+    case .conflict(let current):
+      Log.info("Stop conflict, current seq=\(current.sequenceNumber)", category: .strategy)
+      // Retry stop once
+      let retryResult = await sessionSyncService.stopSession(profileId: profileId)
+      switch retryResult {
+      case .stopped(let seq):
+        Log.info("Stop retry succeeded with seq=\(seq)", category: .strategy)
+      case .alreadyStopped:
+        Log.info("Stop retry found session already stopped", category: .strategy)
+      case .conflict, .error:
+        Log.info("Stop retry failed - \(retryResult)", category: .strategy)
+        // #201: persist the dropped stop intent for foreground re-drive instead of losing it.
+        sessionStopOutbox.enqueue(profileId: profileId)
+      }
+    case .error(let error):
+      Log.info("Failed to sync session stop - \(error)", category: .strategy)
+      // #201: persist the dropped stop intent for foreground re-drive instead of losing it.
+      sessionStopOutbox.enqueue(profileId: profileId)
+    }
+  }
+
+  /// #201: re-drive persisted session-stop intents (call on foreground).
+  func drainSessionStopOutbox() async {
+    await sessionStopOutbox.drain { [weak self] profileId in
+      guard let self else { return true }
+      let result = await self.sessionSyncService.stopSession(profileId: profileId)
+      switch result {
+      case .stopped, .alreadyStopped:
+        return true
+      case .conflict, .error:
+        return false
+      }
+    }
+  }
+
   /// Single source of truth for session activation — all start paths converge here.
   /// Handles state updates, timer, live activity, stop scheduling, widget refresh, and CAS sync.
   private func activateSession(
@@ -624,28 +677,7 @@ class StrategyManager: ObservableObject {
             let result = await self.sessionSyncService.stopSession(
               profileId: endedProfile.id
             )
-
-            switch result {
-            case .stopped(let seq):
-              Log.info("Session stop synced with seq=\(seq)", category: .strategy)
-            case .alreadyStopped:
-              Log.info("Session was already stopped", category: .strategy)
-            case .conflict(let current):
-              Log.info("Stop conflict, current seq=\(current.sequenceNumber)", category: .strategy)
-              // Retry stop once
-              let retryResult = await self.sessionSyncService.stopSession(
-                profileId: endedProfile.id)
-              switch retryResult {
-              case .stopped(let seq):
-                Log.info("Stop retry succeeded with seq=\(seq)", category: .strategy)
-              case .alreadyStopped:
-                Log.info("Stop retry found session already stopped", category: .strategy)
-              case .conflict, .error:
-                Log.info("Stop retry failed - \(retryResult)", category: .strategy)
-              }
-            case .error(let error):
-              Log.info("Failed to sync session stop - \(error)", category: .strategy)
-            }
+            await self.handleStopResult(result, profileId: endedProfile.id)
           }
         }
       }

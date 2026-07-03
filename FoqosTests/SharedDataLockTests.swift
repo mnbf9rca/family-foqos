@@ -137,6 +137,19 @@ final class SharedDataLockTests: XCTestCase {
     XCTAssertEqual(retrieved?.name, "BadPath")
   }
 
+  // MARK: - Public withLock entry point (Task 3, #267)
+
+  func testGivenReturningClosure_WhenRunUnderWithLock_ThenReturnsBodyResult() {
+    let result = SharedData.withLock { 40 + 2 }
+    XCTAssertEqual(result, 42)
+  }
+
+  func testGivenMutatingClosure_WhenRunUnderWithLock_ThenSideEffectApplied() {
+    var counter = 0
+    SharedData.withLock { counter += 1 }
+    XCTAssertEqual(counter, 1)
+  }
+
   // MARK: - Helpers
 
   private func makeSnapshot(id: UUID, name: String) -> SharedData.ProfileSnapshot {

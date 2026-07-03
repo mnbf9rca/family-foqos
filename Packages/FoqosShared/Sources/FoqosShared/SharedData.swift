@@ -72,7 +72,10 @@ public enum SharedData {
   /// **Not reentrant** — do not call a withLock-wrapped method from inside
   /// another withLock closure. On BSD/macOS the inner unlock would release
   /// the process-wide lock while the outer critical section is still running.
-  private static func withLock<T>(_ body: () -> T) -> T {
+  /// Public entry point for compound cross-process reads/writes made by callers
+  /// outside this file (e.g. SyncEngineStore, §2.1). Same **non-reentrant** contract —
+  /// never call a withLock-wrapped method from inside another withLock closure.
+  public static func withLock<T>(_ body: () -> T) -> T {
     guard let lockPath else {
       lockLog.warning("SharedData: no lockPath (test mode?) — proceeding unlocked")
       return body()
