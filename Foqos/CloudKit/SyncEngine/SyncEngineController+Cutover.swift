@@ -21,39 +21,29 @@ extension SyncEngineController: SyncEngineControlling {
     reset.beginReset(clearRemoteAppSelections: clearRemoteAppSelections, now: Date())
   }
 
-  func enqueueProfileSave(_ id: UUID) {
-    do {
-      try funnel?.enqueueSave(profileId: id)
-    } catch {
-      Log.error("enqueueProfileSave failed: \(error.localizedDescription)", category: .sync)
-    }
+  // The engine's `MutationFunnel` is created in `start()`, so it can briefly be nil even
+  // once `SyncEngineController` itself exists (I10 attach window). Every verb below throws
+  // `SyncEngineControllingError.notAttached` in that case instead of silently no-op'ing
+  // (review findings #2–#6) and otherwise propagates whatever the funnel itself throws
+  // instead of swallowing it (review finding #15) — callers decide how to react.
+  func enqueueProfileSave(_ id: UUID) throws {
+    guard let funnel else { throw SyncEngineControllingError.notAttached }
+    try funnel.enqueueSave(profileId: id)
   }
-  func enqueueProfileDelete(_ id: UUID) {
-    do {
-      try funnel?.enqueueDelete(profileId: id)
-    } catch {
-      Log.error("enqueueProfileDelete failed: \(error.localizedDescription)", category: .sync)
-    }
+  func enqueueProfileDelete(_ id: UUID) throws {
+    guard let funnel else { throw SyncEngineControllingError.notAttached }
+    try funnel.enqueueDelete(profileId: id)
   }
-  func enqueueLocationSave(_ id: UUID) {
-    do {
-      try funnel?.enqueueSave(locationId: id)
-    } catch {
-      Log.error("enqueueLocationSave failed: \(error.localizedDescription)", category: .sync)
-    }
+  func enqueueLocationSave(_ id: UUID) throws {
+    guard let funnel else { throw SyncEngineControllingError.notAttached }
+    try funnel.enqueueSave(locationId: id)
   }
-  func enqueueLocationDelete(_ id: UUID) {
-    do {
-      try funnel?.enqueueDelete(locationId: id)
-    } catch {
-      Log.error("enqueueLocationDelete failed: \(error.localizedDescription)", category: .sync)
-    }
+  func enqueueLocationDelete(_ id: UUID) throws {
+    guard let funnel else { throw SyncEngineControllingError.notAttached }
+    try funnel.enqueueDelete(locationId: id)
   }
-  func enqueueEmergencySettingsSave() {
-    do {
-      try funnel?.enqueueEmergencySettingsSave()
-    } catch {
-      Log.error("enqueueEmergencySettingsSave failed: \(error.localizedDescription)", category: .sync)
-    }
+  func enqueueEmergencySettingsSave() throws {
+    guard let funnel else { throw SyncEngineControllingError.notAttached }
+    funnel.enqueueEmergencySettingsSave()
   }
 }

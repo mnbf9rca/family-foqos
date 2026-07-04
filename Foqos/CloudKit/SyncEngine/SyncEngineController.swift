@@ -147,6 +147,10 @@ final class SyncEngineController: SyncEngineDriverDelegate {
       // else transient/other: keep the intent — do NOT clear or abandon.
     }
     onResumeReset = { [weak self] _ in Task { await self?.reset?.resume() } }
+    // T11 (Fix 7): dequeue a live resetIntent's pending zone/command changes BEFORE
+    // stop()'s best-effort final sendChanges() — user-initiated disable, never surfaced
+    // as a superseded-reset conflict (see ResetController.abandonForStop).
+    onStopReset = { [weak self] in self?.reset?.abandonForStop() }
   }
 
   /// §8.3 step 2 (clear flag) seam for `DefaultResetSeeder.clearSelections`: clears every
@@ -175,6 +179,7 @@ final class SyncEngineController: SyncEngineDriverDelegate {
     namespaceGeneration += 1
     startupTask?.cancel()
     flushTask?.cancel()
+    fetchCycleSweepTask?.cancel()
     store.engineState = nil  // pending unsent saves lost (N5); tombstones survive
     state = .disabled
   }

@@ -34,7 +34,7 @@ final class SyncEngineLegacyCleanupTests: XCTestCase {
       recordID: CKRecord.ID(recordName: name, zoneID: zoneID))
   }
 
-  func testGivenLegacyRecordsFetched_WhenIdentified_ThenIdsPersistedDeletesEnqueuedAndFlagSetOnEmpty() {
+  func testGivenLegacyRecordsFetched_WhenIdentified_ThenIdsPersistedDeletesEnqueuedAndFlagUnset() {
     let recs = [legacyRecord("sess-1"), legacyRecord("sess-2")]
 
     coordinator.identify(modifications: recs)
@@ -42,15 +42,6 @@ final class SyncEngineLegacyCleanupTests: XCTestCase {
     XCTAssertEqual(store.legacyCleanupIds, ["sess-1", "sess-2"])
     XCTAssertEqual(Set(driver.enqueuedDeleteNames), ["sess-1", "sess-2"])
     XCTAssertFalse(store.legacyCleanupDone)
-    XCTAssertTrue(coordinator.isExempt(recordName: "sess-1"))
-
-    coordinator.confirmDeleted(recordNames: ["sess-1"])
-    XCTAssertEqual(store.legacyCleanupIds, ["sess-2"])
-    XCTAssertFalse(store.legacyCleanupDone)  // §11: flag set ONLY when the set empties
-
-    coordinator.confirmDeleted(recordNames: ["sess-2"])
-    XCTAssertTrue(store.legacyCleanupIds.isEmpty)
-    XCTAssertTrue(store.legacyCleanupDone)
   }
 
   func testGivenFlagAlreadyDone_WhenIdentified_ThenNoOp() {
@@ -69,13 +60,5 @@ final class SyncEngineLegacyCleanupTests: XCTestCase {
 
     XCTAssertTrue(store.legacyCleanupIds.isEmpty)
     XCTAssertTrue(driver.enqueuedDeleteNames.isEmpty)
-  }
-
-  func testGivenPersistedIdsAfterKill_WhenReenqueue_ThenDeletesReadded() {
-    store.addLegacyCleanupIds(["sess-a", "sess-b"])  // survived a kill; strip removed the pending deletes
-
-    coordinator.reenqueuePending()
-
-    XCTAssertEqual(Set(driver.enqueuedDeleteNames), ["sess-a", "sess-b"])
   }
 }

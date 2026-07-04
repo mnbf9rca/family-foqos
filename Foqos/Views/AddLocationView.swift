@@ -494,7 +494,13 @@ struct AddLocationView: View {
       }
 
       // Sync location to other devices if sync is enabled
-      profileSyncManager.enqueueLocationSave(savedLocation.id)
+      do {
+        try profileSyncManager.enqueueLocationSave(savedLocation.id)
+      } catch SyncEngineControllingError.notAttached {
+        // Engine isn't attached yet — the location is already saved locally; it will sync
+        // once the engine attaches or on the next "Sync Now".
+        Log.warning("Location saved locally; sync engine not attached yet", category: .sync)
+      }
 
       dismiss()
     } catch {

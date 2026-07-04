@@ -88,12 +88,38 @@ final class SyncEngineControllerCutoverTests: XCTestCase {
     controller.start()
     let before = driver.enqueuedSaveNames.filter { $0 == profile.id.uuidString }.count
 
-    controller.enqueueProfileSave(profile.id)
+    try controller.enqueueProfileSave(profile.id)
 
     let after = driver.enqueuedSaveNames.filter { $0 == profile.id.uuidString }.count
     XCTAssertEqual(after, before + 1)
     let refreshed = try XCTUnwrap(try BlockedProfiles.findProfile(byID: profile.id, in: context))
     XCTAssertGreaterThanOrEqual(refreshed.syncVersion, 1)  // funnel bumped in the same write
+  }
+
+  // MARK: - Review fix: funnel-not-created-yet surfaces (findings #2–#6, #15)
+
+  func testGivenControllerNotStarted_WhenEnqueueProfileSave_ThenThrowsNotAttached() {
+    // `funnel` is only created in `start()` — before that, the enqueue verbs must throw
+    // instead of silently no-op'ing (review root cause).
+    XCTAssertThrowsError(try controller.enqueueProfileSave(UUID())) { error in
+      XCTAssertEqual(error as? SyncEngineControllingError, .notAttached)
+    }
+  }
+
+  func testGivenControllerNotStarted_WhenEnqueueProfileDelete_ThenThrowsNotAttached() {
+    XCTAssertThrowsError(try controller.enqueueProfileDelete(UUID())) { error in
+      XCTAssertEqual(error as? SyncEngineControllingError, .notAttached)
+    }
+  }
+
+  func testGivenStartedController_WhenEnqueueDeleteForMissingProfile_ThenGenuineThrowPropagates() {
+    // A genuine funnel throw (entityNotFound) must reach the caller, not be swallowed
+    // (review finding #15).
+    controller.start()
+
+    XCTAssertThrowsError(try controller.enqueueProfileDelete(UUID())) { error in
+      XCTAssertEqual(error as? MutationFunnel.MutationFunnelError, .entityNotFound)
+    }
   }
 
   // MARK: - Task 134b (CRA-4): ResetController + LegacyCleanupCoordinator wiring

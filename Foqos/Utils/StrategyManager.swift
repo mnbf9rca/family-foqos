@@ -533,8 +533,8 @@ class StrategyManager: ObservableObject {
 
   /// #201: process the result of a session-stop CAS attempt. On success, logs. On the terminal
   /// outcomes (an immediate `.error`, or `.conflict`/`.error` after one retry), the dropped stop
-  /// intent is persisted to the outbox for re-drive on foreground (Phase F cutover wires
-  /// `drainSessionStopOutbox()` to scenePhase `.active` — nothing runs in-app this phase).
+  /// intent is persisted to the outbox for re-drive on foreground (`drainSessionStopOutbox()` is
+  /// wired to scenePhase `.active` in `FoqosApp`).
   /// Extracted from the CAS Task closure so Phase-E tests can exercise the routing without a
   /// live CloudKit round trip.
   func handleStopResult(
@@ -566,7 +566,7 @@ class StrategyManager: ObservableObject {
     }
   }
 
-  /// #201: re-drive persisted session-stop intents (call on foreground).
+  /// #201: re-drive persisted session-stop intents. Wired to scenePhase `.active` in `FoqosApp`.
   func drainSessionStopOutbox() async {
     await sessionStopOutbox.drain { [weak self] profileId in
       guard let self else { return true }

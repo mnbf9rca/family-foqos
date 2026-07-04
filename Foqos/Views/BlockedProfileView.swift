@@ -735,8 +735,12 @@ struct BlockedProfileView: View {
                     source, in: modelContext, newName: trimmed
                   )
                   DeviceActivityCenterUtil.scheduleTimerActivity(for: clonedProfile)
-                  profileSyncManager.enqueueProfileSave(clonedProfile.id)
+                  try profileSyncManager.enqueueProfileSave(clonedProfile.id)
                 }
+              } catch SyncEngineControllingError.notAttached {
+                // Engine isn't attached yet — the clone is already saved locally; it will
+                // sync once the engine attaches or on the next "Sync Now".
+                Log.warning("Clone saved locally; sync engine not attached yet", category: .sync)
               } catch {
                 showError(message: error.localizedDescription)
               }
@@ -813,7 +817,14 @@ struct BlockedProfileView: View {
                       // re-fetch-by-id finding nothing, producing `entityNotFound` and
                       // swallowing the tombstone with no `.deleteRecord` enqueued — the
                       // delete would never propagate to other devices.
-                      profileSyncManager.enqueueProfileDelete(profileId)
+                      do {
+                        try profileSyncManager.enqueueProfileDelete(profileId)
+                      } catch SyncEngineControllingError.notAttached {
+                        // Engine isn't attached yet — the funnel can't own this delete, so
+                        // delete locally now instead of silently leaving the profile behind
+                        // (review finding #5). It will propagate once the engine attaches.
+                        try BlockedProfiles.deleteProfile(profileToDelete, in: modelContext)
+                      }
                     } else {
                       // Sync disabled — the funnel would no-op (I2 is only reachable once the
                       // engine has started), so delete locally directly.
@@ -896,7 +907,15 @@ struct BlockedProfileView: View {
         "Failed to save trigger config: \(error.localizedDescription)", category: .ui)
     }
     DeviceActivityCenterUtil.scheduleTimerActivity(for: profile)
-    profileSyncManager.enqueueProfileSave(profile.id)
+    do {
+      try profileSyncManager.enqueueProfileSave(profile.id)
+    } catch SyncEngineControllingError.notAttached {
+      // Engine isn't attached yet — the profile is already saved locally; it will sync
+      // once the engine attaches or on the next "Sync Now".
+      Log.warning("Profile saved locally; sync engine not attached yet", category: .sync)
+    } catch {
+      showError(message: error.localizedDescription)
+    }
   }
 
   private func saveProfile() {

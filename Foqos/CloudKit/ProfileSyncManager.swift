@@ -191,18 +191,43 @@ class ProfileSyncManager: ObservableObject {
   // MARK: - Engine facade (Phase F)
 
   /// Manual "Sync Now" — schedules a fetch+send on the engine (replaces performFullSync).
-  func syncNow() {
-    engineController?.requestSync()
+  /// Throws `SyncEngineControllingError.notAttached` instead of silently no-op'ing when the
+  /// engine hasn't attached yet (review finding #2) so the caller can surface it.
+  func syncNow() throws {
+    guard let engineController else { throw SyncEngineControllingError.notAttached }
+    engineController.requestSync()
   }
 
-  /// Reset Sync (§8.1). Delegates to the origin reset state machine.
-  func resetSync(clearRemoteAppSelections: Bool) {
-    engineController?.beginReset(clearRemoteAppSelections: clearRemoteAppSelections)
+  /// Reset Sync (§8.1). Delegates to the origin reset state machine. Throws
+  /// `SyncEngineControllingError.notAttached` instead of silently no-op'ing when the engine
+  /// hasn't attached yet (review finding #3) so the caller can surface it.
+  func resetSync(clearRemoteAppSelections: Bool) throws {
+    guard let engineController else { throw SyncEngineControllingError.notAttached }
+    engineController.beginReset(clearRemoteAppSelections: clearRemoteAppSelections)
   }
 
-  func enqueueProfileSave(_ id: UUID) { engineController?.enqueueProfileSave(id) }
-  func enqueueProfileDelete(_ id: UUID) { engineController?.enqueueProfileDelete(id) }
-  func enqueueLocationSave(_ id: UUID) { engineController?.enqueueLocationSave(id) }
-  func enqueueLocationDelete(_ id: UUID) { engineController?.enqueueLocationDelete(id) }
-  func enqueueEmergencySettingsSave() { engineController?.enqueueEmergencySettingsSave() }
+  /// Every verb below throws `SyncEngineControllingError.notAttached` when `engineController`
+  /// is nil (rather than silently no-op'ing) and otherwise propagates whatever the engine
+  /// itself throws (review findings #4–#6, #15). Delete call sites MUST fall back to a direct
+  /// local delete on `.notAttached` so the item is never silently left behind.
+  func enqueueProfileSave(_ id: UUID) throws {
+    guard let engineController else { throw SyncEngineControllingError.notAttached }
+    try engineController.enqueueProfileSave(id)
+  }
+  func enqueueProfileDelete(_ id: UUID) throws {
+    guard let engineController else { throw SyncEngineControllingError.notAttached }
+    try engineController.enqueueProfileDelete(id)
+  }
+  func enqueueLocationSave(_ id: UUID) throws {
+    guard let engineController else { throw SyncEngineControllingError.notAttached }
+    try engineController.enqueueLocationSave(id)
+  }
+  func enqueueLocationDelete(_ id: UUID) throws {
+    guard let engineController else { throw SyncEngineControllingError.notAttached }
+    try engineController.enqueueLocationDelete(id)
+  }
+  func enqueueEmergencySettingsSave() throws {
+    guard let engineController else { throw SyncEngineControllingError.notAttached }
+    try engineController.enqueueEmergencySettingsSave()
+  }
 }

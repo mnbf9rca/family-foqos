@@ -222,6 +222,19 @@ final class ResetController {
     surfacer.surfaceResetSuperseded()
   }
 
+  /// T11: user-initiated sync disable — NOT a supersession. Dequeues a live resetIntent's
+  /// pending zone/command changes (mirrors `abandon(_:)`'s dequeue) and clears the intent,
+  /// but never calls `surfacer` — the user disabled sync themselves, so no "reset did not
+  /// run" conflict may be surfaced. Called from `SyncEngineController.stop()` via
+  /// `onStopReset`, BEFORE the controller's own best-effort final `sendChanges()`, so a
+  /// mid-reset `deleteZone`/`saveZone` (and the command save) never reach CloudKit.
+  func abandonForStop() {
+    guard store.resetIntent != nil else { return }
+    outbox.removeCommandSave()
+    outbox.removeResetZoneChanges()
+    store.resetIntent = nil
+  }
+
   // MARK: - Resume (T1 / §8.1)
 
   /// Resume a persisted resetIntent from its stage. .deleting runs the gate first (Task 106).

@@ -172,7 +172,11 @@ struct SettingsView: View {
             }
 
             Button {
-              profileSyncManager.syncNow()
+              do {
+                try profileSyncManager.syncNow()
+              } catch {
+                syncErrorMessage = error.localizedDescription
+              }
             } label: {
               HStack {
                 Image(systemName: "arrow.clockwise")
@@ -387,10 +391,18 @@ struct SettingsView: View {
       .alert("Reset Syncing", isPresented: $showResetSyncAlert) {
         Button("Cancel", role: .cancel) {}
         Button("Keep App Selections") {
-          profileSyncManager.resetSync(clearRemoteAppSelections: false)
+          do {
+            try profileSyncManager.resetSync(clearRemoteAppSelections: false)
+          } catch {
+            syncErrorMessage = error.localizedDescription
+          }
         }
         Button("Clear App Selections", role: .destructive) {
-          profileSyncManager.resetSync(clearRemoteAppSelections: true)
+          do {
+            try profileSyncManager.resetSync(clearRemoteAppSelections: true)
+          } catch {
+            syncErrorMessage = error.localizedDescription
+          }
         }
       } message: {
         Text("This will re-sync from this device. Choose how other devices should respond:\n\n• Keep app selections: Other devices keep their blocked apps\n• Clear app selections: Other devices must re-select apps")

@@ -44,15 +44,33 @@ final class SyncEngineCallSiteRoutingTests: XCTestCase {
     try container.mainContext.save()
     let before = driver.enqueuedSaveNames.filter { $0 == profile.id.uuidString }.count
 
-    manager.enqueueProfileSave(profile.id)
+    try manager.enqueueProfileSave(profile.id)
 
     let after = driver.enqueuedSaveNames.filter { $0 == profile.id.uuidString }.count
     XCTAssertEqual(after, before + 1)
   }
 
-  func testGivenStartedEngine_WhenSyncNow_ThenFetchScheduled() {
+  func testGivenStartedEngine_WhenSyncNow_ThenFetchScheduled() throws {
     let before = driver.fetchChangesCount
-    manager.syncNow()
+    try manager.syncNow()
     XCTAssertEqual(driver.fetchChangesCount, before + 1)
+  }
+
+  // MARK: - Review fix: engine-not-attached surfaces instead of silent no-op (findings #2–#6)
+
+  func testGivenNoEngineAttached_WhenEnqueueProfileDelete_ThenThrowsNotAttached() {
+    manager.engineController = nil
+
+    XCTAssertThrowsError(try manager.enqueueProfileDelete(UUID())) { error in
+      XCTAssertEqual(error as? SyncEngineControllingError, .notAttached)
+    }
+  }
+
+  func testGivenNoEngineAttached_WhenSyncNow_ThenThrowsNotAttached() {
+    manager.engineController = nil
+
+    XCTAssertThrowsError(try manager.syncNow()) { error in
+      XCTAssertEqual(error as? SyncEngineControllingError, .notAttached)
+    }
   }
 }

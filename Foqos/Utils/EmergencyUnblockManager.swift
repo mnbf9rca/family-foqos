@@ -263,6 +263,10 @@ class EmergencyUnblockManager: ObservableObject {
 
     // The funnel owns the version bump-in-write (I2) and materializes the record from
     // `currentEmergencySettings`, so no local version bump or payload construction here.
-    profileSyncManager.enqueueEmergencySettingsSave()
+    do {
+      try profileSyncManager.enqueueEmergencySettingsSave()
+    } catch {
+      Log.warning("enqueueEmergencySettingsSave skipped: \(error.localizedDescription)", category: .sync)
+    }
   }
 }

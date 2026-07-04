@@ -143,9 +143,16 @@ struct FoqosApp: App {
               // Verify child authorization when app becomes active
               verifyChildAuthorizationIfNeeded()
             }
+            // #201: re-drive persisted session-stop retries so a remote device doesn't see a
+            // stopped session as perpetually active
+            Task { await StrategyManager.shared.drainSessionStopOutbox() }
             // #200: pull/push on foreground instead of the deleted notification throttle
             if profileSyncManager.isEnabled {
-              profileSyncManager.syncNow()
+              do {
+                try profileSyncManager.syncNow()
+              } catch {
+                Log.warning("syncNow skipped: \(error.localizedDescription)", category: .sync)
+              }
             }
             // Only reschedule on warm returns — .onAppear handles cold launch
             if hasPerformedInitialSetup {
@@ -364,7 +371,11 @@ class AppDelegate: NSObject, UIApplicationDelegate {
       // also owns its own database subscription. Preserve heartbeat refresh (#190).
       Task { @MainActor in
         if ProfileSyncManager.shared.isEnabled {
-          ProfileSyncManager.shared.syncNow()
+          do {
+            try ProfileSyncManager.shared.syncNow()
+          } catch {
+            Log.warning("syncNow skipped: \(error.localizedDescription)", category: .sync)
+          }
         }
         if AppModeManager.shared.currentMode == .parent {
           await HeartbeatManager.shared.refreshHeartbeats()

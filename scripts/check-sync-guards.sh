@@ -10,7 +10,7 @@ status=0
 # (out of scope, B2) and may legitimately query. SessionSyncService uses CAS
 # record fetches, not CKQuery, and is allowed.
 i5_files=$(git ls-files 'Foqos/CloudKit/*.swift' 'Foqos/CloudKit/SyncEngine/*.swift' \
-  | grep -vE 'CloudKitManager|CloudKitNetworkService')
+  | grep -vE 'CloudKitManager|CloudKitNetworkService' || true)
 if echo "$i5_files" | xargs grep -nE 'CKQuery|CKQueryOperation|records\(matching:|NSPredicate' ; then
   echo "❌ I5 VIOLATION: CKQuery remains in the private-DB sync path (see above)."
   status=1

@@ -22,11 +22,13 @@ struct BlockedProfileListView: View {
   private enum DeleteError {
     case activeProfile
     case fetchFailed
+    case syncFailed(String)
 
     var title: String {
       switch self {
       case .activeProfile: "Cannot Delete Active Profile"
       case .fetchFailed: "Unable to Delete"
+      case .syncFailed: "Sync Error"
       }
     }
 
@@ -36,6 +38,8 @@ struct BlockedProfileListView: View {
         "You cannot delete a profile that is currently active. Please switch to a different profile first."
       case .fetchFailed:
         "Something went wrong while checking profile status. Please try again."
+      case .syncFailed(let message):
+        message
       }
     }
   }
@@ -169,7 +173,14 @@ struct BlockedProfileListView: View {
           // would throw `entityNotFound` and roll back (undoing the delete entirely). Must
           // run BEFORE the reorder below, whose `context.save()` would otherwise commit
           // ahead of the funnel.
-          profileSyncManager.enqueueProfileDelete(profileId)
+          do {
+            try profileSyncManager.enqueueProfileDelete(profileId)
+          } catch SyncEngineControllingError.notAttached {
+            // Engine isn't attached yet — the funnel can't own this delete, so delete
+            // locally now instead of silently leaving the profile behind (review finding
+            // #6). It will propagate once the engine attaches.
+            try BlockedProfiles.deleteProfile(profile, in: context)
+          }
         } else {
           // Sync disabled — the funnel would no-op (I2 is only reachable once the engine has
           // started), so delete locally directly.
@@ -183,10 +194,15 @@ struct BlockedProfileListView: View {
       // The `order` field is synced state — bump syncVersion + enqueue a save for each
       // surviving profile so the gap-fix reaches other devices (I2).
       for profile in remainingProfiles {
-        profileSyncManager.enqueueProfileSave(profile.id)
+        do {
+          try profileSyncManager.enqueueProfileSave(profile.id)
+        } catch SyncEngineControllingError.notAttached {
+          Log.warning("Profile reorder saved locally; sync engine not attached yet", category: .sync)
+        }
       }
     } catch {
       Log.error("Failed to delete or reorder profiles: \(error)", category: .ui)
+      deleteError = .syncFailed(error.localizedDescription)
     }
   }
 
@@ -199,10 +215,15 @@ struct BlockedProfileListView: View {
       // Persist the new order to sync (I2) — drag-reorder mutates the synced `order`
       // field and must not bypass the funnel.
       for profile in reorderedProfiles {
-        profileSyncManager.enqueueProfileSave(profile.id)
+        do {
+          try profileSyncManager.enqueueProfileSave(profile.id)
+        } catch SyncEngineControllingError.notAttached {
+          Log.warning("Profile reorder saved locally; sync engine not attached yet", category: .sync)
+        }
       }
     } catch {
       Log.error("Failed to reorder profiles: \(error)", category: .ui)
+      deleteError = .syncFailed(error.localizedDescription)
     }
   }
 }

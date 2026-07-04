@@ -82,7 +82,9 @@ final class MutationFunnel {
   }
 
   /// Bump the emergency-settings version and enqueue the single fixed-name record (I2, §2).
-  func enqueueEmergencySettingsSave() throws {
+  /// Not `throws`: nothing inside can fail (#9) — the facade layer above still throws for
+  /// the "engine not attached" case (see `SyncEngineController+Cutover`).
+  func enqueueEmergencySettingsSave() {
     EmergencyUnblockManager.shared.incrementEmergencySettingsVersionForSync()
     let recordID = CKRecord.ID(recordName: SyncedEmergencySettings.recordName, zoneID: zoneID)
     driver.add(pendingRecordZoneChanges: [.saveRecord(recordID)])
@@ -141,5 +143,14 @@ final class MutationFunnel {
   static func changeTag(fromSystemFields data: Data?) -> String? {
     guard let data else { return nil }
     return CKRecordSystemFieldsCodec.decode(data)?.recordChangeTag
+  }
+}
+
+extension MutationFunnel.MutationFunnelError: LocalizedError {
+  var errorDescription: String? {
+    switch self {
+    case .entityNotFound:
+      return "The item may have already been removed. Please try again."
+    }
   }
 }

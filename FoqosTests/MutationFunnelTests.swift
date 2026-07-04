@@ -250,7 +250,7 @@ final class MutationFunnelTests: XCTestCase {
     let before = EmergencyUnblockManager.shared.emergencySettingsVersion
 
     // When
-    try funnel.enqueueEmergencySettingsSave()
+    funnel.enqueueEmergencySettingsSave()
 
     // Then: version bumped by one and the single fixed-name record enqueued once.
     XCTAssertEqual(EmergencyUnblockManager.shared.emergencySettingsVersion, before + 1)

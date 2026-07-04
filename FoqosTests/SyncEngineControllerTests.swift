@@ -1342,9 +1342,13 @@ final class SyncEngineControllerTests: XCTestCase {
     store.setTombstone(recordName: "keep", changeTag: "t")
     var stopResetCalled = false
     let controller = makeController()
-    controller.onStopReset = { stopResetCalled = true }
     controller.start()
     controller.startupTask?.cancel()
+    // Fix 7 (T11): start() now wires the real onStopReset ⇒ ResetController.abandonForStop.
+    // Override AFTER start(), same as the other hook-overriding tests in this file, so this
+    // test can keep asserting call ORDER without exercising the real dequeue mechanic (that
+    // is covered separately below by the zone-dequeue/no-supersession test).
+    controller.onStopReset = { stopResetCalled = true }
 
     controller.stop()
 
@@ -1353,6 +1357,30 @@ final class SyncEngineControllerTests: XCTestCase {
     XCTAssertNil(store.engineState, "engine state discarded (N5 saves lost)")
     XCTAssertNotNil(store.deleteTombstones["keep"], "tombstones survive T11 (re-propagate via I12)")
     XCTAssertEqual(driver.sendChangesCount, 1, "best-effort final send")
+    XCTAssertEqual(controller.state, .disabled)
+  }
+
+  /// Fix 7 (T11 contract violation): a `deleteZone` enqueued by a live `.deleting` reset
+  /// must be dequeued BEFORE `stop()`'s best-effort final `sendChanges()` — otherwise a
+  /// user-initiated sync disable flushes a mid-reset zone deletion to CloudKit. This must
+  /// also NOT surface a "reset superseded" conflict (that banner is reserved for a reset
+  /// abandoned by a FOREIGN command, never for the user's own disable).
+  func testGivenMidDeletingReset_WhenStop_ThenDeleteZoneDequeuedNoSupersededResetIntentCleared() {
+    let controller = makeController()
+    controller.start()
+    controller.startupTask?.cancel()
+    controller.beginReset(clearRemoteAppSelections: false)
+    XCTAssertEqual(store.resetIntent?.stage, .deleting, "sanity: mid-reset before stop")
+    XCTAssertTrue(hasPendingZoneDelete(), "sanity: deleteZone enqueued by beginReset")
+
+    controller.stop()
+
+    XCTAssertFalse(
+      hasPendingZoneDelete(), "T11: mid-reset deleteZone dequeued before the final send")
+    XCTAssertFalse(
+      SyncConflictManager.shared.resetWasSuperseded,
+      "user-initiated disable must never surface a superseded-reset conflict")
+    XCTAssertNil(store.resetIntent, "resetIntent cleared")
     XCTAssertEqual(controller.state, .disabled)
   }
 

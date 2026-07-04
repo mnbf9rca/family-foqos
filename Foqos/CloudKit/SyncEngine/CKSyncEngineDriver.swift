@@ -77,7 +77,7 @@ final class CKSyncEngineDriver: NSObject, SyncEngineDriver, CKSyncEngineDelegate
       default: return .transientError(error)
       }
     } catch {
-      return .transientError(CKError(_nsError: error as NSError))
+      return .transientError((error as? CKError) ?? CKError(.serviceUnavailable))
     }
   }
 

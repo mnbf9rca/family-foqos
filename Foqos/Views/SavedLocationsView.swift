@@ -181,7 +181,15 @@ struct SavedLocationsView: View {
         // re-fetch-by-id finding nothing, producing `entityNotFound` and swallowing the
         // tombstone with no `.deleteRecord` enqueued — the delete would never propagate to
         // other devices.
-        profileSyncManager.enqueueLocationDelete(locationId)
+        do {
+          try profileSyncManager.enqueueLocationDelete(locationId)
+        } catch SyncEngineControllingError.notAttached {
+          // Engine isn't attached yet (e.g. the brief window right after cold launch) —
+          // the funnel can't own this delete, so delete locally now instead of silently
+          // leaving the location behind (review finding #4). It will propagate once the
+          // engine attaches / on the next sync.
+          try SavedLocation.delete(location, in: context)
+        }
       } else {
         // Sync disabled — the funnel would no-op (I2 is only reachable once the engine has
         // started), so delete locally directly.
