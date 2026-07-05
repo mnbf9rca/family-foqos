@@ -40,6 +40,8 @@ final class ScheduleWindowValidationTests: XCTestCase {
 
 @MainActor
 final class ScheduleWindowValidationIntegrationTests: XCTestCase {
+  private let minimumWindowErrorFragment =
+    "at least \(DeviceActivityLimits.minimumIntervalMinutes) minutes"
 
   private func makeModel(
     startHour: Int,
@@ -61,25 +63,25 @@ final class ScheduleWindowValidationIntegrationTests: XCTestCase {
   func testGivenSubFifteenSameDayWindow_WhenValidating_ThenAppendsWindowError() {
     let model = makeModel(startHour: 9, startMinute: 0, stopHour: 9, stopMinute: 10)
     model.validate()
-    XCTAssertTrue(model.validationErrors.contains { $0.contains("at least 15 minutes") })
+    XCTAssertTrue(model.validationErrors.contains { $0.contains(minimumWindowErrorFragment) })
   }
 
   func testGivenCrossMidnightSubFifteenWindow_WhenValidating_ThenAppendsWindowError() {
     let model = makeModel(startHour: 23, startMinute: 55, stopHour: 0, stopMinute: 5)
     model.validate()
-    XCTAssertTrue(model.validationErrors.contains { $0.contains("at least 15 minutes") })
+    XCTAssertTrue(model.validationErrors.contains { $0.contains(minimumWindowErrorFragment) })
   }
 
   func testGivenFifteenMinuteWindow_WhenValidating_ThenNoWindowError() {
     let model = makeModel(startHour: 9, startMinute: 0, stopHour: 9, stopMinute: 15)
     model.validate()
-    XCTAssertFalse(model.validationErrors.contains { $0.contains("at least 15 minutes") })
+    XCTAssertFalse(model.validationErrors.contains { $0.contains(minimumWindowErrorFragment) })
   }
 
   func testGivenLegitimateOvernightWindow_WhenValidating_ThenNoWindowError() {
     let model = makeModel(startHour: 22, startMinute: 0, stopHour: 6, stopMinute: 0)
     model.validate()
-    XCTAssertFalse(model.validationErrors.contains { $0.contains("at least 15 minutes") })
+    XCTAssertFalse(model.validationErrors.contains { $0.contains(minimumWindowErrorFragment) })
   }
 
   func testGivenInactiveMatchingSchedules_WhenValidating_ThenNoSameTimeError() {
