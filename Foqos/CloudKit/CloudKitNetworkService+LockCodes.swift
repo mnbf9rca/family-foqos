@@ -120,7 +120,12 @@ extension CloudKitNetworkService {
       for (_, result) in results {
         switch result {
         case .success(let record):
-          guard let code = FamilyLockCode(from: record) else { continue }
+          guard let code = FamilyLockCode(from: record) else {
+            Log.error(
+              "Failed to decode lock code record from zone \(zone.zoneID)",
+              category: .cloudKit)
+            return Self.resolveSharedLockCodeFetch(codes: [], hasRecordFailures: true)
+          }
           codes.append(code)
         case .failure(let error):
           Log.error(
