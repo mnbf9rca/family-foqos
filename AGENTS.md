@@ -6,7 +6,15 @@ This file provides guidelines for agentic coding assistants working on the Famil
 
   - **NEVER** force commit or amend commits. Ever. Always create new commits for fixes, and use Git's revert feature to undo changes if needed. This preserves the integrity of the commit history and allows for proper code review.
   - **ALWAYS request code review before merging any changes.** This ensures that all changes are vetted for quality, correctness, and adherence to project standards.
-  - **NEVER use worktrees**. Always work on feature branches. This prevents accidental changes to the main branch and allows for better organization of work.
+  - **NO parallel development on the same machine.** Xcode and the iOS Simulator cannot handle
+    concurrent builds or test runs: only ONE implementation stream (anything that builds or
+    tests) may be active at a time per machine. Git-level isolation does NOT lift this —
+    worktrees and extra clones still share the same build/test toolchain, so the contention is
+    Xcode, not git. Always work on feature branches, one bundle/PR at a time, branching from
+    `main` after the previous PR merges. Read-only sessions (planning, investigation, code
+    review) MAY run in parallel from their own working copy — a git worktree or a separate
+    clone — never in the checkout an implementer is actively using, and never running builds
+    or tests while an implementation stream is active.
 
 ## Build & Test Commands
 
