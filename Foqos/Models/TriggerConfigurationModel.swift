@@ -63,6 +63,22 @@ final class TriggerConfigurationModel: ObservableObject {
     {
       errors.append("Start and stop times can't be the same")
     }
+    if startTriggers.schedule && stopConditions.schedule,
+      let start = startSchedule, let stop = stopSchedule,
+      start.isActive, stop.isActive
+    {
+      let window = TriggerValidator.scheduleWindowMinutes(
+        startHour: start.hour, startMinute: start.minute,
+        stopHour: stop.hour, stopMinute: stop.minute
+      )
+      // window == 0 is already reported by the same-time rule above.
+      if window > 0 && window < DeviceActivityLimits.minimumIntervalMinutes {
+        errors.append(
+          "A scheduled window must be at least "
+            + "\(DeviceActivityLimits.minimumIntervalMinutes) minutes long"
+        )
+      }
+    }
 
     validationErrors = errors
     if !validationErrors.isEmpty {
