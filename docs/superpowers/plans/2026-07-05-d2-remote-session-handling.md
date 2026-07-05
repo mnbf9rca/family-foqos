@@ -1,13 +1,14 @@
-# D2 — Remote Session Handling Implementation Plan (#203, #204, #237)
+# D2 — Remote Session Handling Implementation Plan (#203, #204, #237, #194)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make cross-device / cross-process session handling *safe by construction* — a remote profile deletion tears down the local block and never leaves a zombie session (#203); a remote session start restores every local side-effect the normal start path performs (#204); and an in-app session mutator can never clobber a session the DeviceActivity extension owns (#237).
+**Goal:** Make cross-device / cross-process session handling *safe by construction* — a remote profile deletion tears down the local block and never leaves a zombie session (#203); a remote session start restores every local side-effect the normal start path performs (#204); an in-app session mutator can never clobber a session the DeviceActivity extension owns (#237); and a child can never delete a locked profile locally (#194), the local gate the uniform-delete policy depends on.
 
-**Architecture:** Three independent defect surfaces, each fixed by reusing an existing seam rather than adding a parallel path:
+**Architecture:** Four defect surfaces, each fixed by reusing an existing seam rather than adding a parallel path:
 1. **#203** — `SyncApplyService.deleteLocalProfile` (the §5.2 fetched-deletion apply path) deletes a profile without stopping the session it owns, leaving `ManagedSettings` shields applied and `StrategyManager.activeSession` pointing at a deleted `@Model` (zombie → `EXC_BREAKPOINT`). Fixed by calling the **already-present** `SessionController.stopRemoteSession` seam — the exact mechanism the sibling `ProfileSessionRecord`-deletion branch already uses — *before* deleting the profile.
 2. **#204** — `StrategyManager.startRemoteSession` hand-rolls a subset of `activateSession`'s side-effects, so a device receiving a remote start gets no elapsed timer, no Live Activity, no local stop-schedule `DeviceActivity`, no widget reload, no heartbeat. Fixed by routing the remote-start path through `activateSession` (its CloudKit echo is already suppressed by `processingRemoteChange`).
-3. **#237** — every in-app `SharedData` session mutator (`setEndTime`, `flushActiveSession`, `setBreakStartTime`, `setBreakEndTime`, `setOneMoreMinuteStartTime`, `clearOneMoreMinuteStartTime`) mutates `activeSharedSession` with **no identity check**, so stopping a stale in-app session wipes an extension-created scheduled session and loses its `endTime`. Fixed by threading an `expectedSessionId` into each mutator and no-op'ing on mismatch (inside the existing `withLock`).
+3. **#237** — every in-app `SharedData` session mutator (`setEndTime`, `flushActiveSession`, `setBreakStartTime`, `setBreakEndTime`, `setOneMoreMinuteStartTime`, `clearOneMoreMinuteStartTime`) mutates `activeSharedSession` with **no identity check**, so stopping a stale in-app session wipes an extension-created scheduled session and loses its `endTime`. Fixed by threading an `expectedSessionId` into each mutator (Part A) and, per MD3, reloading + surfacing on the Stop path (Part B).
+4. **#194** — the list Edit/Move swipe-delete (`BlockedProfileListView.deleteProfiles`) refuses only the *active* profile, so a child can delete a *managed/locked* profile (and crash), bypassing the lock. Fixed by a pure, single-sourced `LockCodeManager` edit-lock gate the user-delete handler calls — the **local** gate MAINTAINER DECISION 2's uniform-delete policy depends on. (Task 4; pairs with Task 3.)
 
 **Tech Stack:** Swift 6, SwiftUI, SwiftData, CloudKit / `CKSyncEngine`, DeviceActivity / FamilyControls / ManagedSettings, XCTest. App target module is `FamilyFoqos`; cross-process shared state lives in the `FoqosShared` local Swift package (app-group `UserDefaults`).
 
@@ -36,7 +37,7 @@ Copied verbatim from `AGENTS.md`; every task's requirements implicitly include t
 - **Request code review before merging.** Never merge unreviewed.
 - **Worktrees:** this plan was authored in a read-only worktree (AGENTS.md permits worktrees for read-only sessions). **Implementation must NOT use a worktree** — use the `fix/263-d2-remote-session` feature branch in the main checkout.
 - Views must use `@SafeQuery` (never raw `@Query`); non-query `PersistentModel` arrays filtered with `.valid`. *(No view queries are added or changed in this plan.)*
-- Lock-code restriction checks must use `appModeManager.currentMode == .child`; the pattern `!= .parent` is forbidden. *(No lock/mode logic is added in D2 — MAINTAINER DECISION 2 keeps delete handling uniform; the lock guarantee is enforced by the local gate, tracked as the #194 prerequisite. If #194's fix touches this, it uses `== .child`.)*
+- Lock-code restriction checks must use `appModeManager.currentMode == .child`; the pattern `!= .parent` is forbidden (it would wrongly block Individual mode). **Task 4 (#194) adds the only lock/mode logic in D2 — its gate uses `== .child` and is covered by an explicit Individual-mode test.** MAINTAINER DECISION 2 keeps *sync* delete handling uniform (no mode logic in `SyncApplyService`).
 - Use `Log.<level>(_, category:)` — never `print()`. Never log lock codes or personal identifiers. Session/sync logs use `category: .session`, `.sync`, `.strategy`, or `.timer` as appropriate.
 - **swift-format** is enforced by a pre-commit hook (2-space indent, ~100–120 col). Run `swift-format --in-place --recursive .` before each commit; `swift-format lint --recursive .` must be clean.
 - **Tests:** name `testGivenX_WhenY_ThenZ()`. Pin time — capture one `let now = Date()` per test and inject via `now:` parameters; never call `Date()` more than once per test where an assertion depends on it.
@@ -80,7 +81,7 @@ D2 shares surface area with other in-flight bundles. As of planning (`main` @ `b
 
 - **D1 (background-stop policy) implements FIRST** and also touches `StrategyManager` and `SharedData` session semantics. If a D1 plan PR is raised before D2 implements, read it and reconcile: D1 must not have changed the `SharedData` mutator signatures or `activateSession`'s body in a way that conflicts with Tasks 1–2. If it did, adapt the exact edits below to the post-D1 code (the *approach* — id-gate the mutators, route remote start through `activateSession`, stop the session before deleting the profile — is unaffected).
 - **Bundles F, I, and C2 also merge before D2 implements. C2 touches `StrategyManager`.** C2 (issue #214 / break-timer sub-15 + #260 break-end re-apply) may reshape the timer/`activateSession`/break paths.
-- **PREREQUISITE (#194 ↔ Task 3):** per [MAINTAINER DECISION 2](#maintainer-decision-2--203-remote-delete-policy--settled-2026-07-05), the uniform-delete policy is safe *only* if the **local** delete-gate for locked profiles works. It currently does not — **[#194](https://github.com/mnbf9rca/family-foqos/issues/194)** lets a child delete a locked profile locally (and crash). **#194 must be fixed before or together with Task 3** (tracked on epic #263 as a D2 prerequisite). There is **no** child-mode special-case in `SyncApplyService` — delete handling is uniform.
+- **PREREQUISITE (#194 = Task 4, pairs with Task 3):** per [MAINTAINER DECISION 2](#maintainer-decision-2--203-remote-delete-policy--settled-2026-07-05), the uniform-delete policy is safe *only* if the **local** delete-gate for locked profiles works. It currently does not — **[#194](https://github.com/mnbf9rca/family-foqos/issues/194)** lets a child delete a locked profile locally (and crash). **#194 is folded into this bundle as Task 4** and must land with (logically before) Task 3. The gate is in `LockCodeManager`/`BlockedProfileListView` (user-initiated deletes); there is **no** child-mode special-case in `SyncApplyService` — sync delete handling stays uniform.
 
 Because of the above, **the first task of the implementing session is [Task 0](#task-0-refresh-citations--re-run-phase-0-spot-checks-against-post-c2-main) — refresh every file:line citation in this plan and re-run the Phase 0 spot-checks against then-current `main`.** Do not skip it; every line number below is from `bd71958` and *will* have drifted.
 
@@ -102,12 +103,15 @@ Because of the above, **the first task of the implementing session is [Task 0](#
 | `FoqosTests/StrategyManagerRemoteSessionTests.swift` | **NEW.** Remote start restores the timer + active session (the `activateSession` discriminator). | 2 |
 | `Foqos/CloudKit/SyncEngine/SyncApplyService.swift` | `deleteLocalProfile` stops the owned session (via `stopRemoteSession`) before deleting the profile. | 3 |
 | `FoqosTests/SyncApplyServiceTests.swift` | Add the remote-profile-deletion-with-active-session test (mirrors the existing session-record test). | 3 |
+| `Foqos/Utils/LockCodeManager.swift` | Add pure `isEditLocked(isManaged:mode:isUnlocked:)` gate + instance convenience (single-sources the child-lock predicate). | 4 |
+| `Foqos/Views/BlockedProfileListView.swift` | Inject managers; add `DeleteError.lockedProfile`; refuse a locked-profile delete in `deleteProfiles` (the #194 code gate). | 4 |
+| `FoqosTests/LockCodeEditGateTests.swift` | **NEW.** Pure-gate matrix incl. the `== .child` (not `!= .parent`) Individual-mode invariant. | 4 |
 
 ---
 
 ## MAINTAINER DECISIONS (✅ ALL SETTLED 2026-07-05)
 
-All three decisions were ratified by the maintainer on 2026-07-05 (recorded on issues #203 and #237). Each task is written against the settled option; the alternatives are retained only as rationale/record. **The one remaining gate is a *prerequisite*, not an open decision: #194 must be fixed before/with Task 3 (see MD2).**
+All three decisions were ratified by the maintainer on 2026-07-05 (recorded on issues #203 and #237). Each task is written against the settled option; the alternatives are retained only as rationale/record. **The MD2 prerequisite — the local locked-profile delete-gate (#194) — is now implemented in-bundle as [Task 4](#task-4-194--gate-user-initiated-deletion-of-a-locked-profile-task-3s-prerequisite), paired with Task 3.**
 
 ### MAINTAINER DECISION 1 — #203: stop-immediately vs run-to-natural-end (✅ SETTLED = A)
 
@@ -122,7 +126,7 @@ When a remote `SyncedProfile` deletion arrives for a profile that currently owns
 
 *Maintainer rationale (app philosophy):* parents do **not** remotely manage child profiles — they lock profiles **physically on the child's device**. Every delete therefore originates on a device in the child's own account, where deletion of a locked profile must be **lock-code-gated locally**. If the local gate holds on every device, every propagated delete was authorized at its origin, so the wire needs no trust metadata. No per-mode special case in `SyncApplyService`.
 
-> **⚠️ PREREQUISITE — #194 (Task 3 blocker).** The uniform-delete rationale *depends on the local delete-gate actually working*, and it currently does **not**: **[#194](https://github.com/mnbf9rca/family-foqos/issues/194)** — a child device can delete a locked profile via Manage → Edit/Move → Delete (and crash). **#194 must be fixed before or together with Task 3** (now tracked on epic #263 as a D2 prerequisite). Without it, a locked profile deleted locally propagates and unblocks other devices — the lock-bypass. This replaces the earlier "B1 merge gate" framing.
+> **⚠️ PREREQUISITE — #194, folded into this bundle as [Task 4](#task-4-194--gate-user-initiated-deletion-of-a-locked-profile-task-3s-prerequisite).** The uniform-delete rationale *depends on the local delete-gate actually working*, and it currently does **not**: **[#194](https://github.com/mnbf9rca/family-foqos/issues/194)** — a child device can delete a locked profile via Manage → Edit/Move → Delete (and crash). **Task 4 implements that local gate and must land with (logically before) Task 3.** Without it, a locked profile deleted locally propagates and unblocks other devices — the lock-bypass. This replaces the earlier "B1 merge gate" framing.
 
 *Accepted residual (recorded, not fixed):* a fresh device on the child's account set up in **Individual** mode is not blocked by locked items (per the AGENTS.md mode table) and could delete a locked profile. Accepted per app philosophy — parental conversations, not DRM.
 
@@ -134,7 +138,7 @@ When a remote `SyncedProfile` deletion arrives for a profile that currently owns
 
 ## Task 0: Refresh citations & re-run Phase 0 spot-checks against post-C2 `main`
 
-**This is a mandatory gate, not optional.** Every line number in Tasks 1–3 is from `bd71958`. Bundles D1, F, I, and C2 merge before D2 implements; C2 touches `StrategyManager`. Verify the ground has not shifted before writing any code.
+**This is a mandatory gate, not optional.** Every line number in Tasks 1–4 is from `bd71958`. Bundles D1, F, I, and C2 merge before D2 implements; C2 touches `StrategyManager`. Verify the ground has not shifted before writing any code.
 
 - [ ] **Step 1: Branch off current `main`.**
 
@@ -148,9 +152,9 @@ git checkout -b fix/263-d2-remote-session
   - **#204:** `Foqos/Utils/StrategyManager.swift` → `startRemoteSession(...)` still sets `self.activeSession = <created session>` directly and does **not** call `activateSession(...)`. Confirm `activateSession(_:context:)` still exists with that signature and still calls `startTimer()`, `liveActivityManager.startSessionActivity`, `DeviceActivityCenterUtil.scheduleStopActivity`, `WidgetCenter…reloadTimelines`. Confirm `shouldSyncSessionChange == profileSyncManager.isEnabled && !processingRemoteChange` and that `syncSessionStart` is `guard shouldSyncSessionChange`'d.
   - **#237:** `Packages/FoqosShared/.../SharedData.swift` → the six mutators still take no `expectedSessionId`; `flushActiveSession` still does not append to `completedSessionsInScheduler`. Confirm `SessionSnapshot.id: String` and `BlockedProfileSession.id: String` are still the identity key.
 
-- [ ] **Step 3: Refresh every `file:line` in Tasks 1–3** to the post-C2 line numbers. Use symbol search (function names), not raw line numbers — names are stable, lines are not. Task 1 has two parts (1A the identity gate; 1B the `toggleBlocking` reconcile); confirm `toggleBlocking`'s stop branch (`StrategyManager.swift:116-136`) still has the geofence-then-`stopBlocking` shape shown in Task 1 Part B.
+- [ ] **Step 3: Refresh every `file:line` in Tasks 1–4** to the post-C2 line numbers. Use symbol search (function names), not raw line numbers — names are stable, lines are not. Task 1 has two parts (1A the identity gate; 1B the `toggleBlocking` reconcile); confirm `toggleBlocking`'s stop branch (`StrategyManager.swift:116-136`) still has the geofence-then-`stopBlocking` shape shown in Task 1 Part B.
 
-- [ ] **Step 4: Confirm the #194 prerequisite status.** Task 3's uniform-delete policy depends on the local locked-profile delete-gate. Check whether **#194** ("can delete a profile while locked") is fixed on current `main`. If it is **not**, Task 3 must not merge until it is — either fix #194 in this bundle or coordinate its landing (tracked on epic #263). Record the status in the PR.
+- [ ] **Step 4: Confirm the #194 gap still exists** (it is fixed by Task 4 in this bundle). Check `BlockedProfileListView.deleteProfiles(at:)` on current `main`: it should still refuse only `.activeProfile` with **no** managed/lock check. If a prior bundle already added a lock gate there, STOP — re-scope Task 4. (If #194 was fixed elsewhere entirely, drop Task 4 and keep the Task 3 pairing note only.)
 
 - [ ] **Step 5: Boot the simulator once and run the full suite green** to establish a clean baseline before changing anything (see Running tests). If it is not green on fresh `main`, STOP and report — do not build on a red baseline.
 
@@ -735,7 +739,7 @@ on the next foreground — unchanged.)"
 
 ## Task 3: #203 — stop the owned session before applying a remote profile deletion
 
-> **⚠️ PREREQUISITE — fix #194 first (or in the same bundle).** Per MAINTAINER DECISION 2, delete handling is **uniform** (no per-mode special case): the safety of honoring every propagated delete rests on the **local** delete-gate stopping an unauthorized delete of a *locked* profile at its origin. That local gate is currently broken — **[#194](https://github.com/mnbf9rca/family-foqos/issues/194)** lets a child delete a locked profile locally (and crash). **Do not merge Task 3 until #194 is fixed** (before or together with this task; tracked on epic #263). Task 3 itself adds **no** mode/lock logic to `SyncApplyService`.
+> **⚠️ PAIRS WITH TASK 4 (#194).** Per MAINTAINER DECISION 2, delete handling is **uniform** (no per-mode special case): the safety of honoring every propagated delete rests on the **local** delete-gate stopping an unauthorized delete of a *locked* profile at its origin. That gate is **[Task 4](#task-4-194--gate-user-initiated-deletion-of-a-locked-profile-task-3s-prerequisite)** (fixes #194). **Do not merge Task 3 without Task 4** — implement Task 4 first. Task 3 itself adds **no** mode/lock logic to `SyncApplyService`.
 
 **Files:**
 - Modify: `Foqos/CloudKit/SyncEngine/SyncApplyService.swift:104-125` (`deleteLocalProfile`)
@@ -899,6 +903,182 @@ bypass, no version bump (I2). MAINTAINER DECISION 1-A (stop immediately)."
 
 ---
 
+## Task 4: #194 — gate user-initiated deletion of a locked profile (Task 3's prerequisite)
+
+**This is the MD2 prerequisite, now folded into this bundle. It must land with (and logically before) Task 3** — MD2's "honor all deletes uniformly" is only safe because deletion of a locked profile is refused **locally at its origin**. Today that local gate is missing on the list swipe/Edit-Move path, so a child can delete a locked profile (and crash) — and, once Task 3 propagates deletes cleanly, that would unblock other devices. **The gate must be in code, not just UI** (a hidden button is bypassable and does not protect every entry point).
+
+**The user-initiated vs sync-applied distinction is the whole design:** *user* deletes (this view) must be gated; *sync-applied* deletes (`SyncApplyService` → `BlockedProfiles.deleteProfile`) must stay ungated (MD2). Therefore the gate lives on the **user-initiated view handler**, never inside the shared model method `BlockedProfiles.deleteProfile`.
+
+**Files:**
+- Modify: `Foqos/Utils/LockCodeManager.swift` (add a pure, testable edit-lock gate)
+- Modify: `Foqos/Views/BlockedProfileListView.swift` (inject the managers; add `DeleteError.lockedProfile`; refuse in `deleteProfiles`)
+- Create: `FoqosTests/LockCodeEditGateTests.swift`
+
+**Interfaces:**
+- Produces: `LockCodeManager.isEditLocked(isManaged:mode:isUnlocked:) -> Bool` (pure static) and `func isEditLocked(_ profile: BlockedProfiles) -> Bool` (instance convenience). "Edit-locked" = *managed profile ∧ child mode ∧ not temporarily unlocked* — the exact predicate `BlockedProfileView` already uses inline (`BlockedProfileView.swift:635`), now single-sourced and testable.
+- Consumes: `BlockedProfiles.isManaged: Bool` (`BlockedProfiles.swift:90`); `AppMode` (`.individual`/`.parent`/`.child`); `LockCodeManager.isUnlocked(_ profileId: UUID)` (`LockCodeManager.swift:357`); `appModeManager.currentMode` (already held by `LockCodeManager`).
+
+**Context / current offending code:** `BlockedProfileListView.deleteProfiles(at:)` (`BlockedProfileListView.swift:141-190`) refuses deleting the **active** profile (`deleteError = .activeProfile`) but performs **no lock check**, and the view injects neither `appModeManager` nor `lockCodeManager`. The screenshots' path (Manage → Edit/Move → swipe-delete) lands here. `BlockedProfileView`'s own delete **is** already gated (`BlockedProfileView.swift:633-637`: `if isManagedProfile && currentMode == .child && !isUnlockedForEditing { showingLockCodeEntry }`), so the list is the sole gap. Per **AGENTS.md**, the lock check must be `currentMode == .child` — never `!= .parent` (that would wrongly block Individual mode, whose accepted residual MD2 already records).
+
+- [ ] **Step 1: Write the failing gate tests.** Create `FoqosTests/LockCodeEditGateTests.swift` (pure-function matrix — the testable core of the code gate):
+
+```swift
+import XCTest
+
+@testable import FamilyFoqos
+
+final class LockCodeEditGateTests: XCTestCase {
+  // Only a managed profile, on a child device, not temporarily unlocked, is edit-locked.
+  func testGivenManagedProfileOnChildDeviceLocked_WhenGating_ThenEditLocked() {
+    XCTAssertTrue(
+      LockCodeManager.isEditLocked(isManaged: true, mode: .child, isUnlocked: false))
+  }
+
+  func testGivenManagedProfileOnChildDeviceUnlocked_WhenGating_ThenNotLocked() {
+    XCTAssertFalse(
+      LockCodeManager.isEditLocked(isManaged: true, mode: .child, isUnlocked: true))
+  }
+
+  func testGivenManagedProfileOnParentDevice_WhenGating_ThenNotLocked() {
+    XCTAssertFalse(
+      LockCodeManager.isEditLocked(isManaged: true, mode: .parent, isUnlocked: false))
+  }
+
+  // AGENTS.md invariant: Individual mode must NOT be gated (the `== .child`, not `!= .parent`, rule).
+  func testGivenManagedProfileOnIndividualDevice_WhenGating_ThenNotLocked() {
+    XCTAssertFalse(
+      LockCodeManager.isEditLocked(isManaged: true, mode: .individual, isUnlocked: false))
+  }
+
+  func testGivenUnmanagedProfileOnChildDevice_WhenGating_ThenNotLocked() {
+    XCTAssertFalse(
+      LockCodeManager.isEditLocked(isManaged: false, mode: .child, isUnlocked: false))
+  }
+}
+```
+
+- [ ] **Step 2: Run to verify it fails.**
+
+Run: `xcodebuild test … -only-testing:FoqosTests/LockCodeEditGateTests`
+Expected: FAIL to compile — `LockCodeManager.isEditLocked(isManaged:mode:isUnlocked:)` does not exist yet.
+
+- [ ] **Step 3: Add the pure gate + instance convenience** to `Foqos/Utils/LockCodeManager.swift` (place near `isUnlocked`, `:357`):
+
+```swift
+  /// Pure gate for **user-initiated** edit/delete of a profile. Edit-locked ==
+  /// managed profile ∧ child device ∧ not temporarily unlocked. Uses `== .child`
+  /// (never `!= .parent`) so Individual mode is not gated (AGENTS.md).
+  ///
+  /// Sync-applied deletes (`SyncApplyService`) must NOT consult this — remote deletes
+  /// are honored uniformly (MAINTAINER DECISION 2 / #203).
+  static func isEditLocked(isManaged: Bool, mode: AppMode, isUnlocked: Bool) -> Bool {
+    isManaged && mode == .child && !isUnlocked
+  }
+
+  /// Instance convenience: gate `profile` against this device's current mode + unlock state.
+  func isEditLocked(_ profile: BlockedProfiles) -> Bool {
+    LockCodeManager.isEditLocked(
+      isManaged: profile.isManaged,
+      mode: appModeManager.currentMode,
+      isUnlocked: isUnlocked(profile.id))
+  }
+```
+
+- [ ] **Step 4: Run to verify the gate tests pass.**
+
+Run: `xcodebuild test … -only-testing:FoqosTests/LockCodeEditGateTests`
+Expected: PASS (all five).
+
+- [ ] **Step 5: Wire the gate into the list-delete handler.** In `Foqos/Views/BlockedProfileListView.swift`:
+
+(a) Inject the managers (mirroring `BlockedProfileView`'s `.shared` pattern), alongside the existing `@EnvironmentObject … profileSyncManager` (`:8`):
+
+```swift
+  @ObservedObject private var appModeManager = AppModeManager.shared
+  @ObservedObject private var lockCodeManager = LockCodeManager.shared
+```
+
+(b) Add a `DeleteError.lockedProfile` case (enum at `:22`, plus its `title`/`message`):
+
+```swift
+  private enum DeleteError {
+    case activeProfile
+    case lockedProfile
+    case fetchFailed
+    case syncFailed(String)
+
+    var title: String {
+      switch self {
+      case .activeProfile: "Cannot Delete Active Profile"
+      case .lockedProfile: "Profile Locked"
+      case .fetchFailed: "Unable to Delete"
+      case .syncFailed: "Sync Error"
+      }
+    }
+
+    var message: String {
+      switch self {
+      case .activeProfile:
+        "You cannot delete a profile that is currently active. Please switch to a different profile first."
+      case .lockedProfile:
+        "This profile is locked. Open it and enter the lock code to delete it."
+      case .fetchFailed:
+        "Something went wrong while checking profile status. Please try again."
+      case .syncFailed(let message):
+        message
+      }
+    }
+  }
+```
+
+(c) Refuse in `deleteProfiles(at:)` — add the lock check in the same pre-delete offset loop that already refuses the active profile (`:154-159`):
+
+```swift
+    // Check if any of the profiles to delete are active or locked
+    for index in offsets {
+      let profile = profilesToDelete[index]
+      if profile.id == activeSession?.blockedProfile.id {
+        deleteError = .activeProfile
+        return
+      }
+      // #194: a child cannot delete a managed (locked) profile from the list. This is the
+      // LOCAL gate MAINTAINER DECISION 2 depends on — it blocks the delete in code, not just
+      // the UI, so every user-initiated list delete is covered. Sync-applied deletes are
+      // unaffected (they never run through this handler).
+      if lockCodeManager.isEditLocked(profile) {
+        deleteError = .lockedProfile
+        return
+      }
+    }
+```
+
+- [ ] **Step 6: Build to confirm the view compiles** (the handler wiring is not unit-testable — SwiftUI private view method; its logic is a one-line mirror of the verified `.activeProfile` refusal, and the *gate predicate* is fully covered by Step 1's pure tests).
+
+Run: `xcodebuild -project FamilyFoqos.xcodeproj -scheme FamilyFoqos -destination 'platform=iOS Simulator,id=<UUID>' build 2>&1 | xcpretty`
+Expected: BUILD SUCCEEDED.
+
+- [ ] **Step 7: swift-format + commit.**
+
+```bash
+swift-format --in-place --recursive .
+swift-format lint --recursive .
+git add Foqos/Utils/LockCodeManager.swift Foqos/Views/BlockedProfileListView.swift \
+        FoqosTests/LockCodeEditGateTests.swift
+git commit -m "fix(#194): gate user deletion of a locked profile in code
+
+The list Edit/Move swipe-delete (BlockedProfileListView.deleteProfiles) refused
+only the active profile — a child could delete a managed (locked) profile,
+bypassing the lock (and crashing). Add a pure, single-sourced LockCodeManager
+edit-lock gate (managed ∧ child ∧ not-unlocked; == .child, never != .parent) and
+refuse the delete in the handler with a clear message directing to the profile
+screen's unlock flow. This is the LOCAL gate MAINTAINER DECISION 2 relies on;
+sync-applied deletes are deliberately NOT gated (they never run this handler)."
+```
+
+> **Scope note (crash):** the report's crash is the same class as #203 (deleting a referenced/active profile). The list already refuses the *active* profile, and Task 3 clears the zombie on remote deletes; Task 4's gate additionally removes the unauthorized *user* path entirely for children. If a residual crash on deleting a **non-active managed** profile is later reproduced, diagnose it separately (systematic-debugging) — Task 4's contract is the authorization gate MD2 requires, not a blanket crash fix.
+
+---
+
 ## Final integration step (run after all tasks)
 
 - [ ] **Full suite green.**
@@ -908,15 +1088,15 @@ Expected: 0 failures. Confirm the new/edited suites are included (`SharedDataSes
 
 - [ ] **swift-format lint clean:** `swift-format lint --recursive .` → no output.
 
-- [ ] **#194 gate confirmed:** do not open Task 3 for merge unless #194 (local locked-profile delete-gate) is fixed on the merge base or in this bundle (MAINTAINER DECISION 2). State its status in the PR.
+- [ ] **#194 gate (Task 4) present:** confirm Task 4 landed with Task 3 — the list swipe-delete now refuses a locked profile for a child, and the pure-gate tests are green. Task 3 must not merge without it (MAINTAINER DECISION 2).
 
-- [ ] **Request code review** (AGENTS.md requirement) before merging. The three MAINTAINER DECISIONS are settled (2026-07-05); restate the chosen options in the PR (MD1 = A stop-immediately; MD2 = A uniform delete, #194 prerequisite; MD3 = reload-and-surface) so the reviewer sees the ratified design.
+- [ ] **Request code review** (AGENTS.md requirement) before merging. The three MAINTAINER DECISIONS are settled (2026-07-05); restate the chosen options in the PR (MD1 = A stop-immediately; MD2 = A uniform delete + the #194/Task 4 local gate; MD3 = reload-and-surface) so the reviewer sees the ratified design.
 
 ---
 
 ## Self-review (spec coverage / placeholders / type consistency)
 
-- **Coverage:** #203 → Task 3 (wiring in Step 1 + real teardown in Step 4b); #204 → Task 2; #237 → Task 1 Part A (identity gate) + Part B (reconcile-and-surface). Every re-triage "surviving gap" maps to a task. ✅
+- **Coverage:** #203 → Task 3 (wiring in Step 1 + real teardown in Step 4b); #204 → Task 2; #237 → Task 1 Part A (identity gate) + Part B (reconcile-and-surface); #194 → Task 4 (local delete gate — MD2's prerequisite). Every re-triage "surviving gap" and the settled decisions map to a task. ✅
 - **Placeholders:** none — every step has complete code and an exact `-only-testing:` command. ✅
 - **Type consistency:** `expectedSessionId: String` matches `BlockedProfileSession.id: String` and `SessionSnapshot.id: String`; `stopRemoteSession(context:profileId:)` and `activeSession` match the `SessionController` protocol and `MockSessionController`; `activateSession(_:context:)` matches its `StrategyManager` definition; `applyFetchedDeletion(recordID:recordType:)`/`DeletionOutcome`/`makeService()`/`MockSessionController.stopRemoteSessionCalled` match the existing `SyncApplyServiceTests`. ✅
 
@@ -925,7 +1105,7 @@ Expected: 0 failures. Confirm the new/edited suites are included (`SharedDataSes
 Three adversaries attacked the draft (contract-invariant violations, cross-process races, stale-snapshot windows, false-green/false-red tests). **No blockers.** Folded-in fixes:
 - **Cross-context (Task 3):** confirmed NON-issue — `SyncApplyService.modelContext == container.mainContext` (`FoqosApp.swift:252`), the same context `StrategyManager.shared.activeSession` lives on; the stop mutates/saves the right context. Also confirmed `processingRemoteChange` is set *only* inside `startRemoteSession`/`stopRemoteSession`, so `stopRemoteSession`'s own `guard !processingRemoteChange` **passes** (the stop actually runs, not a self-suppressed no-op) while still suppressing the stop-CAS echo (I2 holds).
 - **Task 3 mock coverage gap → added Step 4b** (real-`StrategyManager` teardown test) and corrected the MD1-A "atomic" wording (the stop commits mid-transaction; husk self-heals via §5.6 retry).
-- **Task 3 lock-bypass** surfaced to the maintainer → **settled 2026-07-05 as MD2 = A (uniform delete)**: locking is enforced *locally* at each origin, so no wire-level trust is needed; the lock-bypass is closed by fixing the **local** gate (**#194**, now a Task 3 prerequisite), not by mode logic in `SyncApplyService`. The earlier "B1 merge gate / child defer-guard" framing is superseded.
+- **Task 3 lock-bypass** surfaced to the maintainer → **settled 2026-07-05 as MD2 = A (uniform delete)**: locking is enforced *locally* at each origin, so no wire-level trust is needed; the lock-bypass is closed by fixing the **local** gate (**#194**, folded in as **Task 4**), not by mode logic in `SyncApplyService`. The earlier "B1 merge gate / child defer-guard" framing is superseded.
 - **Task 3 uninserted-session false-red risk → tests now `context.insert(session)`** before the delete.
 - **Task 2 false-green risk → documented** that `timerTask` is a proxy (reviewer must confirm the diff literally converges on `activateSession`); softened the "regression suites" claim (they do not drive `activateSession`); fixed the commit wording (Live Activity is foreground-only); noted the dead `sessionId` param.
 - **Task 1:** confirmed no missed mutator caller, no double-flush, genuine red→green test; added the benign extension-ordering note (N1).
@@ -936,4 +1116,4 @@ Three adversaries attacked the draft (contract-invariant violations, cross-proce
 - **Idempotency:** all three added/rerouted handlers are safe under flaky/duplicate DeviceActivity/extension callbacks.
 - **Residual (#237, MD3 = reload-and-surface):** on identity mismatch the mutator no-ops and the Stop path reloads + surfaces; the foreign shared session is left for the extension to finish (self-heals on its next `start`/`stop`). Bounded, non-destructive. Break / one-more-minute actions on a stale session are protected by Part A's silent no-op only (no reconcile-and-surface) — acceptable, out of D2 scope.
 - **Residual (#203, MD1 = A):** a remote profile deletion instantly ends the local block (the fetched deletion is authoritative). Ratified 2026-07-05.
-- **Residual (#203, MD2 = A uniform):** delete handling is uniform with no per-mode special case. Its safety **depends on #194** (local locked-profile delete-gate) being fixed — a hard Task 3 prerequisite. Accepted sub-residual: a fresh **Individual**-mode device on the child's account is not blocked by locked items and could delete a locked profile (per the AGENTS.md mode table) — accepted per app philosophy (parental conversations, not DRM).
+- **Residual (#203, MD2 = A uniform):** delete handling is uniform with no per-mode special case. Its safety **depends on the local locked-profile delete-gate**, now implemented as **Task 4 (#194)** and paired with Task 3. Accepted sub-residual: a fresh **Individual**-mode device on the child's account is not blocked by locked items and could delete a locked profile (per the AGENTS.md mode table; Task 4's gate is `== .child` by design) — accepted per app philosophy (parental conversations, not DRM).
