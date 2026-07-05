@@ -529,6 +529,8 @@ struct LockCodeEntrySheet: View {
 // MARK: - Edit Locked Profiles Sheet
 
 struct EditLockedProfilesSheet: View {
+  static let lockedProfilesFooter = "Locked profiles require the lock code to edit or delete."
+
   @Environment(\.dismiss) private var dismiss
   @Environment(\.modelContext) private var modelContext
 
@@ -573,7 +575,7 @@ struct EditLockedProfilesSheet: View {
         } header: {
           Text("Select Profiles to Lock")
         } footer: {
-          Text("Locked profiles require the lock code to edit, delete, or stop.")
+          Text(EditLockedProfilesSheet.lockedProfilesFooter)
         }
       }
       .navigationTitle("Edit Locked Profiles")
