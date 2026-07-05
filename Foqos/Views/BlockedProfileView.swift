@@ -128,9 +128,13 @@ struct BlockedProfileView: View {
 
   /// Whether editing should be disabled
   private var editingDisabled: Bool {
-    isBlocking
-      || (isManagedProfile && !isUnlockedForEditing && appModeManager.currentMode == .child
-        && lockCodeManager.canVerifyCode)
+    ProfileEditGate.editingDisabled(
+      isBlocking: isBlocking,
+      isManaged: isManagedProfile,
+      isUnlocked: isUnlockedForEditing,
+      mode: appModeManager.currentMode,
+      lockActive: lockCodeManager.canVerifyCode
+    )
   }
 
   /// Whether to show the managed toggle (only in parent mode when lock code exists)
@@ -335,7 +339,7 @@ struct BlockedProfileView: View {
             startNFCTagId: $triggerConfig.startNFCTagId,
             startQRCodeId: $triggerConfig.startQRCodeId,
             startSchedule: $triggerConfig.startSchedule,
-            disabled: isBlocking || (isManagedProfile && !isUnlockedForEditing),
+            disabled: editingDisabled,
             onTriggerChange: {
               triggerConfig.startTriggersDidChange()
             },
@@ -375,7 +379,7 @@ struct BlockedProfileView: View {
             stopQRCodeId: $triggerConfig.stopQRCodeId,
             stopSchedule: $triggerConfig.stopSchedule,
             startTriggers: triggerConfig.startTriggers,
-            disabled: isBlocking || (isManagedProfile && !isUnlockedForEditing),
+            disabled: editingDisabled,
             onConditionChange: {
               triggerConfig.stopConditionsDidChange()
             },
