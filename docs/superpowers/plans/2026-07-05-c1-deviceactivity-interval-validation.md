@@ -17,7 +17,7 @@
 
 **Explicitly OUT of scope:** building any *enforcement / fallback* mechanism for short intervals (in-app timers that force a session to end when DeviceActivity can't) — that is bundle **C2**, planned separately. No task here may add an alternative stop path or change *when* a stop fires.
 
-**A third, related defect was found during verification and is deliberately deferred — see [Out of Scope: Break-Timer Sub-15 Bug](#out-of-scope-break-timer-sub-15-bug--maintainer-decision-required) and [MAINTAINER DECISION 3]. Do not silently "fix" it by clamping the shared chokepoint's lower bound.**
+**A third, related defect was found during verification and is deliberately deferred — see [Out of Scope: Break-Timer Sub-15 Bug](#out-of-scope-break-timer-sub-15-bug-deferred-tracked-as-214) and [MAINTAINER DECISION 3]. Do not silently "fix" it by clamping the shared chokepoint's lower bound.**
 
 ---
 
@@ -33,7 +33,7 @@ Copied verbatim from `AGENTS.md`; every task's requirements implicitly include t
 - Use `Log.<level>(_, category:)` — never `print()`. Never log lock codes or personal identifiers. Timer/schedule logs use `category: .timer`.
 - **swift-format** is enforced by a pre-commit hook (2-space indent, ~100–120 col). Run `swift-format --in-place --recursive .` before each commit; `swift-format lint --recursive .` must be clean.
 - **Tests:** name `testGivenX_WhenY_ThenZ()`. Pin time — capture one `let now = Date()` per test and inject via `now:` parameters; never call `Date()` more than once per test. Prefer a hardcoded reference date (see existing `TimerIntervalTests.referenceDateAt` / `ProfileScheduleTimeTests`).
-- **Numeric limits are single-sourced** in the new `DeviceActivityLimits` enum (Task 1). Never hardcode `15` or `1439`/`1440` in later tasks — reference the constants.
+- **Numeric limits are single-sourced** in the new `DeviceActivityLimits` enum (Task 1). Never hardcode `15`/`1439`/`1440` in later tasks. In logic, reference the constants directly. In user-facing copy: interpolate the constant in plain-`String` contexts (e.g. the minimum as `\(DeviceActivityLimits.minimumIntervalMinutes)`), and use `DeviceActivityLimits.maximumTimerDescription` for the maximum so it reads as "23 hours 59 minutes" rather than a bare `1439` (humans need meaningful time periods). The one exception is the two `LocalizedStringResource`-backed Intent strings (`IntentError`, `StartProfileIntent`), which must stay string literals so Xcode's string-catalog extraction works — keep those human-readable and manually in sync (the values are framework-fixed).
 
 ### Running tests (do this ONCE per session)
 
@@ -75,25 +75,25 @@ Reuse the same booted UUID for every run in the session. Substitute the class na
 
 ---
 
-## MAINTAINER DECISIONS REQUIRED
+## MAINTAINER DECISIONS (RESOLVED 2026-07-05)
 
-Resolve these **before/at implementation**. Each task below is written against the **Recommended** option; the callout in the task explains exactly what changes if a different option is chosen.
+**Resolved by the maintainer (PR #272 review):** 1 → **A**, 2 → **A**, 3 → **defer, tracked as #214**. Each decision below is marked ✅ DECIDED — the recommended option is now the chosen one, and every task is already written against it. The alternatives are retained only as rationale/record; the implementing session should not re-open them.
 
 ### MAINTAINER DECISION 1 — #228A: how to surface a sub-15 combined-schedule window (Task 4)
-- **(A) Reject at save via `validate()` error — RECOMMENDED.** Mirrors the existing "Start and stop times can't be the same" rule exactly: the error appears in `triggerConfig.validationErrors`, and `BlockedProfileView.saveProfile()` already blocks the save and shows it in an alert. Least code, consistent, no silent mutation of user intent.
+- **(A) Reject at save via `validate()` error — ✅ DECIDED (Task 4 implements this).** Mirrors the existing "Start and stop times can't be the same" rule exactly: the error appears in `triggerConfig.validationErrors`, and `BlockedProfileView.saveProfile()` already blocks the save and shows it in an alert. Least code, consistent, no silent mutation of user intent.
 - **(B) Cap the picker inline.** Also add a red footnote + disabled Save in `ScheduleTimePicker` (it already receives `otherScheduleTime`), like the existing `timesMatch` message. Better immediate feedback, but duplicates the 15-minute math in the view and only guards the *second* time edited.
 - **(C) Both A and B.** Fullest UX; most code.
 - *Rationale for A:* the save-time validation is the authoritative gate (it protects every entry path incl. clone/load), and it is where the "same time" sibling rule already lives. B can be added later as a pure enhancement without reworking A.
 
 ### MAINTAINER DECISION 2 — #228B: how to fix the stop-only sub-15 window (Task 5)
-- **(A) Reshape the internal interval anchor — RECOMMENDED.** The user only ever configured a *stop* time; `intervalStart` is an arbitrary internal artifact and `StopScheduleTimerActivity.start(for:)` is a verified no-op, so moving the anchor cannot change what/when anything is enforced. The user's "stop at 00:10" simply *works* instead of failing — nothing to surface. Verified in-scope (validation/reshape, not enforcement).
+- **(A) Reshape the internal interval anchor — ✅ DECIDED (Task 5 implements this).** The user only ever configured a *stop* time; `intervalStart` is an arbitrary internal artifact and `StopScheduleTimerActivity.start(for:)` is a verified no-op, so moving the anchor cannot change what/when anything is enforced. The user's "stop at 00:10" simply *works* instead of failing — nothing to surface. Verified in-scope (validation/reshape, not enforcement).
 - **(B) Reject at save.** Add a `validate()` error forbidding a stop-only stop time before 00:15 (and ==00:00). Downsides: exposes an implementation detail ("why can't I stop at 12:10 AM?"), and does not repair already-persisted profiles.
 - *Rationale for A:* it eliminates the failure rather than pushing an unintuitive restriction onto the user, and it is the root-cause fix. (No live users exist per project memory, so persisted-data repair is not a concern for either option.)
 
 ### MAINTAINER DECISION 3 — Break-timer sub-15 durations (scope)
-- **(A) Defer to a follow-up issue — RECOMMENDED.** The break-duration picker offers **5 and 10 minutes** (`BlockedProfileView.swift:412-419`), both under DeviceActivity's 15-min floor. A 5/10-min break builds a sub-15 interval through the *same* chokepoint as the strategy timer; its `intervalDidEnd` (which re-applies restrictions) never fires, so the break never ends. This is the same defect class as C1 but is **not** part of issue #212 or #228. File a new issue; do not expand C1.
+- **(A) Defer — ✅ DECIDED. Tracked as [#214](https://github.com/mnbf9rca/family-foqos/issues/214) (bundle C2); do NOT file a new issue.** The break-duration picker offers **5 and 10 minutes** (`BlockedProfileView.swift:412-419`), both under DeviceActivity's 15-min floor. A 5/10-min break builds a sub-15 interval through the *same* chokepoint as the strategy timer; its `intervalDidEnd` (which re-applies restrictions) never fires, so the break never ends. This is the same defect class as C1 but is **not** part of issue #212 or #228. It is already tracked by **#214**; the break-*end* re-apply mechanism is separately captured by **#260**. The sub-15 mechanism from this plan has been posted onto #214 for the C2 session — do not expand C1.
 - **(B) Pull into C1 now.** Would require deciding break's sub-15 behavior (cap the picker at ≥15, or clamp, or surface) — a UX change to a feature neither issue covers.
-- *Rationale for A:* keeping C1 strictly to #212/#228 preserves reviewability; **critically, Task 1's chokepoint clamp is UPPER-BOUND ONLY precisely so it does not silently rewrite a user's 5-min break to 15 min.** See [Out of Scope](#out-of-scope-break-timer-sub-15-bug--maintainer-decision-required).
+- *Rationale for A:* keeping C1 strictly to #212/#228 preserves reviewability; **critically, Task 1's chokepoint clamp is UPPER-BOUND ONLY precisely so it does not silently rewrite a user's 5-min break to 15 min.** See [Out of Scope](#out-of-scope-break-timer-sub-15-bug-deferred-tracked-as-214).
 
 ---
 
@@ -173,6 +173,15 @@ enum DeviceActivityLimits {
   /// Maximum now-relative timer duration, in minutes (23h59m). Exactly 1440
   /// (24h), or any larger multiple, makes `intervalStart == intervalEnd`.
   static let maximumTimerMinutes = 1439
+
+  /// Human-readable form of `maximumTimerMinutes` for user-facing copy, derived
+  /// from the constant so it can never drift out of sync (e.g. "23 hours 59
+  /// minutes").
+  static var maximumTimerDescription: String {
+    let hours = maximumTimerMinutes / 60
+    let minutes = maximumTimerMinutes % 60
+    return "\(hours) hours \(minutes) minutes"
+  }
 }
 ```
 
@@ -383,22 +392,28 @@ Expected: `testGivenDurationExactly1440…` FAILS — no error thrown (1440 curr
         if duration < DeviceActivityLimits.minimumIntervalMinutes
           || duration > DeviceActivityLimits.maximumTimerMinutes
         {
-          self.errorMessage = "Duration must be between 15 and 1439 minutes."
+          // Plain String → interpolate the min constant and the derived
+          // human-readable max (single-sourced; no bare literals).
+          self.errorMessage =
+            "Duration must be between \(DeviceActivityLimits.minimumIntervalMinutes) minutes "
+            + "and \(DeviceActivityLimits.maximumTimerDescription)."
           throw IntentError.durationOutOfRange
         }
 ```
 
 - [ ] **Step 4: Correct the two remaining copy strings**
 
+These two are `LocalizedStringResource`-backed and must stay string *literals* (so Xcode's string-catalog extraction works) — keep them human-readable rather than interpolating the constants:
+
 `Foqos/Intents/IntentError.swift:19`:
 ```swift
     case .durationOutOfRange:
-      "Duration must be between 15 and 1439 minutes."
+      "Duration must be between 15 minutes and 23 hours 59 minutes."
 ```
 
 `Foqos/Intents/StartProfileIntent.swift:20`:
 ```swift
-    "Start a Family Foqos blocking profile. Optionally specify a timer duration in minutes (15-1439)."
+    "Start a Family Foqos blocking profile. Optionally specify a timer duration between 15 minutes and 23 hours 59 minutes."
 ```
 
 - [ ] **Step 5: Run the tests to verify they pass**
@@ -555,7 +570,10 @@ extension TriggerValidator {
       )
       // window == 0 is already reported by the same-time rule above.
       if window > 0 && window < DeviceActivityLimits.minimumIntervalMinutes {
-        errors.append("A scheduled window must be at least 15 minutes long")
+        errors.append(
+          "A scheduled window must be at least "
+            + "\(DeviceActivityLimits.minimumIntervalMinutes) minutes long"
+        )
       }
     }
 ```
@@ -716,15 +734,15 @@ Expected: green, including the pre-existing `TimerIntervalTests`, `ScheduleDurat
 
 ---
 
-## Out of Scope: Break-Timer Sub-15 Bug — MAINTAINER DECISION REQUIRED
+## Out of Scope: Break-Timer Sub-15 Bug (deferred, tracked as #214)
 
 **Do not fix this in C1.** Documented here so it is not mistaken for "covered."
 
 The break-duration picker (`BlockedProfileView.swift:412-419`) offers **5 / 10 / 15 / 30** minutes. A 5- or 10-minute break flows through `startBreakTimerActivity` → the **same** `getTimeIntervalStartAndEnd` chokepoint (Task 1) → a sub-15-minute `DeviceActivitySchedule`, which `startMonitoring` rejects (swallowed at DeviceActivityCenterUtil.swift:245, `Log.info`). Break-end (re-applying restrictions) relies solely on that activity's `intervalDidEnd`; the in-app `timerTask` loop (`StrategyManager.swift:182-203`) only updates the countdown display. **Net effect: a 5/10-minute break can fail to auto-end, leaving restrictions off.**
 
-This is the same *class* as C1 but belongs to neither #212 nor #228. Per **MAINTAINER DECISION 3 (recommended: defer)**, the fix is a separate issue — likely "cap the break picker at ≥15 min" or fold break into the C2 fallback architecture. **Task 1 deliberately clamps only the upper bound** so it neither masks nor silently rewrites break durations; adding a lower clamp there would convert every 5-min break into a silent 15-min break and is explicitly rejected.
+This is the same *class* as C1 but belongs to neither #212 nor #228. Per **MAINTAINER DECISION 3 (defer)**, it is **tracked as [#214](https://github.com/mnbf9rca/family-foqos/issues/214) (bundle C2)** — the sub-15 break-start mechanism from this plan has already been posted there for the C2 session; the break-*end* re-apply failure is separately captured by **#260**. The likely C2 fix is "cap the break picker at ≥15 min" or folding break into the C2 fallback architecture. **Task 1 deliberately clamps only the upper bound** so it neither masks nor silently rewrites break durations; adding a lower clamp there would convert every 5-min break into a silent 15-min break and is explicitly rejected.
 
-Also noted but out of scope (V2 combined schedule is #228A's remit): the **legacy** `BlockedProfileSchedule` path (`DeviceActivityCenterUtil.swift:54-59`) builds an interval from `profile.schedule` and is not routed through `TriggerConfigurationModel.validate()`, so a short legacy window would still fail silently. If a "no sub-15 window can ever silently fail" guarantee is later desired, that path needs its own guard.
+Also noted but out of scope (V2 combined schedule is #228A's remit): the **legacy** `BlockedProfileSchedule` path (`DeviceActivityCenterUtil.swift:54-59`) builds an interval from `profile.schedule` and is not routed through `TriggerConfigurationModel.validate()`, so a short legacy window would still fail silently. This is deliberately not covered by #228's closure here — that legacy path is slated for removal with **[#59](https://github.com/mnbf9rca/family-foqos/issues/59)** (V1 sunset), so it needs no separate guard.
 
 ---
 
