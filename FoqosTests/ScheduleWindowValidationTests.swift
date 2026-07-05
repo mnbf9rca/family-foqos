@@ -42,15 +42,19 @@ final class ScheduleWindowValidationTests: XCTestCase {
 final class ScheduleWindowValidationIntegrationTests: XCTestCase {
 
   private func makeModel(
-    startHour: Int, startMinute: Int, stopHour: Int, stopMinute: Int
+    startHour: Int,
+    startMinute: Int,
+    stopHour: Int,
+    stopMinute: Int,
+    days: [Weekday] = [.monday]
   ) -> TriggerConfigurationModel {
     let model = TriggerConfigurationModel()
     model.startTriggers.schedule = true
     model.stopConditions.schedule = true
     model.startSchedule = ProfileScheduleTime(
-      days: [.monday], hour: startHour, minute: startMinute, updatedAt: .distantPast)
+      days: days, hour: startHour, minute: startMinute, updatedAt: .distantPast)
     model.stopSchedule = ProfileScheduleTime(
-      days: [.monday], hour: stopHour, minute: stopMinute, updatedAt: .distantPast)
+      days: days, hour: stopHour, minute: stopMinute, updatedAt: .distantPast)
     return model
   }
 
@@ -76,5 +80,11 @@ final class ScheduleWindowValidationIntegrationTests: XCTestCase {
     let model = makeModel(startHour: 22, startMinute: 0, stopHour: 6, stopMinute: 0)
     model.validate()
     XCTAssertFalse(model.validationErrors.contains { $0.contains("at least 15 minutes") })
+  }
+
+  func testGivenInactiveMatchingSchedules_WhenValidating_ThenNoSameTimeError() {
+    let model = makeModel(startHour: 9, startMinute: 0, stopHour: 9, stopMinute: 0, days: [])
+    model.validate()
+    XCTAssertFalse(model.validationErrors.contains { $0.contains("can't be the same") })
   }
 }

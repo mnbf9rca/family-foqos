@@ -12,8 +12,8 @@ struct TimerDurationView: View {
   @State private var isSliding = false
 
   // Constants
-  private let minMinutes: Double = 15
-  private let maxMinutes: Double = 1439  // 23h 59m
+  private let minMinutes = Double(DeviceActivityLimits.minimumIntervalMinutes)
+  private let maxMinutes = Double(DeviceActivityLimits.maximumTimerMinutes)
   private let smallIncrement: Double = 5
   private let largeIncrement: Double = 15
 
