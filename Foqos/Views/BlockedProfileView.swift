@@ -365,7 +365,7 @@ struct BlockedProfileView: View {
               geofenceRule: $geofenceRule,
               savedLocations: savedLocations,
               buttonAction: { showingGeofencePicker = true },
-              disabled: isBlocking
+              disabled: editingDisabled
             )
           } header: {
             Text("Location Restrictions")
