@@ -111,6 +111,12 @@ class SavedLocation {
     try context.save()
   }
 
+  /// Whether modifying (editing or deleting) this location must be gated behind the
+  /// parent lock code. Only Child mode is blocked by locked items (AGENTS.md mode table).
+  func requiresLockCodeToModify(mode: AppMode) -> Bool {
+    isLocked && mode == .child
+  }
+
   // MARK: - Radius Steps
 
   /// Radius steps for the slider (in meters)

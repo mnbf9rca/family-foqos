@@ -18,6 +18,8 @@ struct SavedLocationsView: View {
   @State private var locationToEdit: SavedLocation?
   @State private var showingLockCodeEntry = false
   @State private var pendingDeleteLocation: SavedLocation?
+  @State private var pendingEditLocation: SavedLocation?
+  @State private var showingLockCodeEntryForEdit = false
   @State private var errorMessage: String?
 
   /// Location IDs that are in use by profiles with active sessions
@@ -133,6 +135,21 @@ struct SavedLocationsView: View {
           }
         )
       }
+      .sheet(isPresented: $showingLockCodeEntryForEdit) {
+        LockCodeEntryView(
+          title: "Enter Lock Code",
+          subtitle: "This location is locked. Enter the lock code to edit it.",
+          onVerify: { code in
+            lockCodeManager.validateCode(code)
+          },
+          onSuccess: {
+            if let location = pendingEditLocation {
+              locationToEdit = location
+            }
+            pendingEditLocation = nil
+          }
+        )
+      }
       .alert(
         "Error",
         isPresented: .init(
@@ -150,13 +167,16 @@ struct SavedLocationsView: View {
   }
 
   private func handleEdit(_ location: SavedLocation) {
-    // Note: Locked locations can be edited freely in Individual and Parent modes.
-    // In Child mode, AddLocationView will prevent saving changes to locked locations.
-    locationToEdit = location
+    if location.requiresLockCodeToModify(mode: appModeManager.currentMode) {
+      pendingEditLocation = location
+      showingLockCodeEntryForEdit = true
+    } else {
+      locationToEdit = location
+    }
   }
 
   private func handleDelete(_ location: SavedLocation) {
-    if location.isLocked && appModeManager.currentMode == .child {
+    if location.requiresLockCodeToModify(mode: appModeManager.currentMode) {
       pendingDeleteLocation = location
       showingLockCodeEntry = true
     } else {
