@@ -87,7 +87,7 @@ class AppModeManager: ObservableObject {
   /// The mode a device should switch to after successfully setting its first lock code.
   /// Individual devices become Parent (a lock code makes this a parent device);
   /// Parent and Child devices are unchanged. Returns nil when no switch is needed.
-  static func modeAfterSettingLockCode(from currentMode: AppMode) -> AppMode? {
+  nonisolated static func modeAfterSettingLockCode(from currentMode: AppMode) -> AppMode? {
     currentMode == .individual ? .parent : nil
   }
 

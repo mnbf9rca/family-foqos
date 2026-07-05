@@ -167,7 +167,10 @@ struct SavedLocationsView: View {
   }
 
   private func handleEdit(_ location: SavedLocation) {
-    if location.requiresLockCodeToModify(mode: appModeManager.currentMode) {
+    if location.requiresLockCodeToModify(
+      mode: appModeManager.currentMode,
+      canVerifyCode: lockCodeManager.canVerifyCode)
+    {
       pendingEditLocation = location
       showingLockCodeEntryForEdit = true
     } else {
@@ -176,7 +179,10 @@ struct SavedLocationsView: View {
   }
 
   private func handleDelete(_ location: SavedLocation) {
-    if location.requiresLockCodeToModify(mode: appModeManager.currentMode) {
+    if location.requiresLockCodeToModify(
+      mode: appModeManager.currentMode,
+      canVerifyCode: lockCodeManager.canVerifyCode)
+    {
       pendingDeleteLocation = location
       showingLockCodeEntry = true
     } else {

@@ -194,13 +194,13 @@ class LockCodeManager: ObservableObject {
     }
 
     do {
-      let codes = try await cloudKitManager.fetchSharedLockCodes()
+      let result = try await cloudKitManager.fetchSharedLockCodes()
       // Fail-closed-with-cache (#197): trust a CONNECTED result (even empty = parent cleared)
       // and persist it; on a disconnected/failed fetch keep the last-synced cached codes so
       // verification still works offline and the lock never fails open.
       let resolved = Self.resolveLockCodes(
-        fetched: codes,
-        isConnected: cloudKitManager.isConnectedToFamily,
+        fetched: result.codes,
+        isConnected: result.isConnected,
         persisted: loadPersistedLockCodes()
       )
       self.cachedLockCodes = resolved.cache
