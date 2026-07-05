@@ -35,6 +35,7 @@ class LockCodeManager: ObservableObject {
     self.appModeManager = appModeManager
     setupBindings()
     loadThrottleState()
+    cachedLockCodes = loadPersistedLockCodes()
   }
 
   // MARK: - Setup
@@ -58,7 +59,7 @@ class LockCodeManager: ObservableObject {
       await fetchLockCodes()
     case .child:
       // Children need to fetch shared lock codes for verification
-      await fetchSharedLockCodes()
+      await refreshSharedLockCodesForVerification()
     }
   }
 
@@ -175,7 +176,7 @@ class LockCodeManager: ObservableObject {
 
   /// Fetch shared lock codes for verification (child operation)
   /// Verifies child authorization before fetching to ensure security
-  private func fetchSharedLockCodes() async {
+  func refreshSharedLockCodesForVerification() async {
     guard appModeManager.currentMode == .child else { return }
 
     isLoading = true
@@ -193,18 +194,44 @@ class LockCodeManager: ObservableObject {
     }
 
     do {
-      let codes = try await cloudKitManager.fetchSharedLockCodes()
-      self.cachedLockCodes = codes
+      let result = try await cloudKitManager.fetchSharedLockCodes()
+      // Fail-closed-with-cache (#197): trust a CONNECTED result (even empty = parent cleared)
+      // and persist it; on a disconnected/failed fetch keep the last-synced cached codes so
+      // verification still works offline and the lock never fails open.
+      let resolved = Self.resolveLockCodes(
+        fetched: result.codes,
+        isConnected: result.isConnected,
+        persisted: loadPersistedLockCodes()
+      )
+      self.cachedLockCodes = resolved.cache
+      persistLockCodes(resolved.persist)
       self.error = nil
 
       // Also check for pending commands from parent
       await processPendingCommands()
     } catch {
+      // Defensive: the network layer returns empty without throwing for offline/CKError, but
+      // if it ever does throw, keep the last-synced codes rather than falling back to empty.
+      self.cachedLockCodes = loadPersistedLockCodes()
       self.error = error.localizedDescription
     }
   }
 
-  /// Pure verification logic — all inputs explicit, no instance state.
+  /// Resolve the verification cache and the persisted store after a fetch (#197).
+  /// A CONNECTED result is trusted and replaces both — even when empty, which is how a
+  /// parent clearing the PIN propagates to the child. A DISCONNECTED result (offline /
+  /// CloudKit error, which the network layer returns as an empty, non-throwing tuple) is
+  /// ignored in favour of the last-synced persisted codes, so the child can still verify
+  /// the cached code offline. The lock only "fails open" when no code was ever synced.
+  static func resolveLockCodes(
+    fetched: [FamilyLockCode],
+    isConnected: Bool,
+    persisted: [FamilyLockCode]
+  ) -> (cache: [FamilyLockCode], persist: [FamilyLockCode]) {
+    isConnected ? (cache: fetched, persist: fetched) : (cache: persisted, persist: persisted)
+  }
+
+  /// Pure verification logic - all inputs explicit, no instance state.
   /// Used directly by tests; the instance method below is a thin wrapper.
   static func verifyCode(
     _ code: String,
@@ -344,6 +371,10 @@ class LockCodeManager: ObservableObject {
     static let lockoutExpiresAt = "family_foqos_lock_code_lockout_expires_at"
   }
 
+  private enum CacheKey {
+    static let childLockCodes = "family_foqos_child_lock_codes"
+  }
+
   /// Throttle schedule: failed attempts -> lockout duration in seconds
   private static let throttleSchedule: [(threshold: Int, duration: TimeInterval)] = [
     (3, 30),  // 30 seconds after 3 failures
@@ -395,6 +426,7 @@ class LockCodeManager: ObservableObject {
   func overrideDefaults(_ defaults: UserDefaults?) {
     throttleDefaults = defaults ?? .standard
     loadThrottleState()
+    cachedLockCodes = loadPersistedLockCodes()
   }
 
   /// Load throttle state from UserDefaults
@@ -419,6 +451,21 @@ class LockCodeManager: ObservableObject {
         lockoutExpiresAt!.timeIntervalSinceReferenceDate,
         forKey: ThrottleKey.lockoutExpiresAt
       )
+    }
+  }
+
+  private func loadPersistedLockCodes() -> [FamilyLockCode] {
+    guard let data = throttleDefaults.data(forKey: CacheKey.childLockCodes),
+      let codes = try? JSONDecoder().decode([FamilyLockCode].self, from: data)
+    else {
+      return []
+    }
+    return codes
+  }
+
+  private func persistLockCodes(_ codes: [FamilyLockCode]) {
+    if let data = try? JSONEncoder().encode(codes) {
+      throttleDefaults.set(data, forKey: CacheKey.childLockCodes)
     }
   }
 }

@@ -534,12 +534,8 @@ func completeShareAcceptance(metadata: CKShare.Metadata, role: FamilyRole) {
     }
 
     // 4. Best-effort: fetch shared lock codes
-    do {
-      _ = try await CloudKitManager.shared.fetchSharedLockCodes()
-    } catch {
-      Log.error(
-        "Failed to fetch shared lock codes: \(error.localizedDescription)",
-        category: .cloudKit)
+    if appMode == .child {
+      await LockCodeManager.shared.refreshSharedLockCodesForVerification()
     }
 
     // 5. Show role-specific success message

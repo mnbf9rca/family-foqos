@@ -165,13 +165,7 @@ struct ChildDashboardView: View {
     guard !isFetchingLockCodes else { return }
     isFetchingLockCodes = true
     defer { isFetchingLockCodes = false }
-    do {
-      _ = try await cloudKitManager.fetchSharedLockCodes()
-    } catch {
-      Log.error(
-        "Failed to fetch shared lock codes: \(error.localizedDescription)",
-        category: .cloudKit)
-    }
+    await lockCodeManager.refreshSharedLockCodesForVerification()
   }
 
   // MARK: - Sections
@@ -196,7 +190,7 @@ struct ChildDashboardView: View {
 
   private var parentLinkSection: some View {
     let isConnected = cloudKitManager.isConnectedToFamily
-    let hasLockCode = !cloudKitManager.sharedLockCodes.isEmpty
+    let hasLockCode = lockCodeManager.canVerifyCode
 
     return HStack(spacing: 12) {
       Image(systemName: isConnected ? "link.circle.fill" : "link.circle")
@@ -238,7 +232,7 @@ struct ChildDashboardView: View {
   }
 
   private var lockedProfilesSection: some View {
-    let hasLockCodes = !cloudKitManager.sharedLockCodes.isEmpty
+    let hasLockCodes = lockCodeManager.canVerifyCode
 
     return VStack(alignment: .leading, spacing: 12) {
       HStack {
@@ -529,6 +523,8 @@ struct LockCodeEntrySheet: View {
 // MARK: - Edit Locked Profiles Sheet
 
 struct EditLockedProfilesSheet: View {
+  static let lockedProfilesFooter = "Locked profiles require the lock code to edit or delete."
+
   @Environment(\.dismiss) private var dismiss
   @Environment(\.modelContext) private var modelContext
 
@@ -573,7 +569,7 @@ struct EditLockedProfilesSheet: View {
         } header: {
           Text("Select Profiles to Lock")
         } footer: {
-          Text("Locked profiles require the lock code to edit, delete, or stop.")
+          Text(EditLockedProfilesSheet.lockedProfilesFooter)
         }
       }
       .navigationTitle("Edit Locked Profiles")
@@ -601,7 +597,7 @@ struct ChildSettingsView: View {
   @State private var showCodeEntry = false
 
   private var hasLockCode: Bool {
-    !cloudKitManager.sharedLockCodes.isEmpty
+    lockCodeManager.canVerifyCode
   }
 
   var body: some View {

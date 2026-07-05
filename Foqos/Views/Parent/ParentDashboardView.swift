@@ -52,7 +52,7 @@ struct ParentDashboardView: View {
 
   /// Tier 2: device-local settings enabled after PIN unlock
   /// Controls like emergency settings toggle that are configured on this device
-  /// Independent of iCloud — PIN verification uses cached lock codes that work offline
+  /// Independent of iCloud — PIN verification uses the last-synced lock codes cached on-device
   private var deviceSettingsEnabled: Bool {
     !isChildMode || isDashboardUnlocked
   }
@@ -164,7 +164,11 @@ struct ParentDashboardView: View {
           onSave: { code in
             Task {
               do {
+                let previousMode = appModeManager.currentMode
                 try await lockCodeManager.setLockCode(code, scope: .allChildren)
+                if let newMode = AppModeManager.modeAfterSettingLockCode(from: previousMode) {
+                  await MainActor.run { appModeManager.selectMode(newMode) }
+                }
               } catch {
                 await MainActor.run {
                   errorMessage = error.localizedDescription

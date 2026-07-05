@@ -109,11 +109,11 @@ class CloudKitManager: ObservableObject {
     return codes
   }
 
-  func fetchSharedLockCodes() async throws -> [FamilyLockCode] {
+  func fetchSharedLockCodes() async throws -> (codes: [FamilyLockCode], isConnected: Bool) {
     let result = try await networkService.fetchSharedLockCodes()
     self.isConnectedToFamily = result.isConnected
     self.sharedLockCodes = result.codes
-    return result.codes
+    return result
   }
 
   // MARK: - Family Commands
