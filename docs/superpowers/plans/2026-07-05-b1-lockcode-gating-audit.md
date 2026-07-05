@@ -50,7 +50,7 @@ Copied verbatim from AGENTS.md and the issue handovers. **Every task implicitly 
   ```
 - **Class scaffolding:** `@MainActor final class XxxTests: XCTestCase` with `@testable import FamilyFoqos`.
 - **`AppModeManager.shared` is a `@MainActor` singleton** whose `selectMode(_:)` persists `currentMode` to `UserDefaults.standard`. Tests that call `selectMode` leak global state — **capture the original mode in setUp and restore it in tearDown**.
-- **`LockCodeManager.shared.overrideDefaults(_ defaults: UserDefaults?)`** swaps the manager's persistence `UserDefaults` (used today by `LockCodeThrottleTests`). Call it in setUp with the test suite, and `overrideDefaults(nil)` in tearDown.
+- **`LockCodeManager.shared.overrideDefaults(_ defaults: UserDefaults?)`** swaps the manager's persistence `UserDefaults` (used today by `LockCodeThrottleTests`). Call it in setUp with the test suite, and `overrideDefaults(nil)` in tearDown. **Note:** today it only reloads *throttle* state; Task 4 extends it to also re-hydrate `cachedLockCodes`, so after that change it isolates the lock-code cache too. Until then, tests of the lock-code cache must not rely on it for isolation.
 - **Fixtures:**
   ```swift
   let profile = BlockedProfiles(name: "Test")           // isManaged defaults false
@@ -62,14 +62,17 @@ Copied verbatim from AGENTS.md and the issue handovers. **Every task implicitly 
 ### Running tests (from AGENTS.md — reuse a booted simulator, never a device name)
 
 ```bash
-# Boot ONCE per session (iPhone 17 UUID on this machine):
-xcrun simctl boot B9E4A679-BDF3-4541-A59F-DA4BE21F80ED
-# Run a single new test class:
+# 1) Look up the iPhone 17 simulator UUID ONCE, then export it for the session:
+xcrun simctl list devices available | grep "iPhone 17"
+export SIM_UUID=<paste-the-UUID-here>   # e.g. on the current dev machine: B9E4A679-BDF3-4541-A59F-DA4BE21F80ED
+# 2) Boot it ONCE per session:
+xcrun simctl boot "$SIM_UUID"
+# 3) Run a single new test class (reuses the booted sim):
 xcodebuild test -project FamilyFoqos.xcodeproj -scheme FamilyFoqos \
-  -destination 'platform=iOS Simulator,id=B9E4A679-BDF3-4541-A59F-DA4BE21F80ED' \
+  -destination "platform=iOS Simulator,id=$SIM_UUID" \
   -only-testing:FoqosTests/<ClassName> | xcpretty
 ```
-> Confirm the UUID with `xcrun simctl list devices available | grep "iPhone 17"` — it may differ on the executor's machine. Simulator boot takes 3-5 min; tests run in <1s. Boot once, run many times.
+> Every per-task command below uses `<SIM_UUID>` — substitute the real UUID (or `export SIM_UUID=...` once and use `$SIM_UUID`). Never use the device *name* in `-destination` (it clones a new ~16GB simulator each run). Simulator boot takes 3-5 min; tests run in <1s. Boot once, run many times.
 
 ### Task order & shared-file note
 
@@ -126,7 +129,7 @@ final class ChildDashboardCopyTests: XCTestCase {
 Run:
 ```bash
 xcodebuild test -project FamilyFoqos.xcodeproj -scheme FamilyFoqos \
-  -destination 'platform=iOS Simulator,id=B9E4A679-BDF3-4541-A59F-DA4BE21F80ED' \
+  -destination 'platform=iOS Simulator,id=<SIM_UUID>' \
   -only-testing:FoqosTests/ChildDashboardCopyTests | xcpretty
 ```
 Expected: FAIL to compile with "type 'EditLockedProfilesSheet' has no member 'lockedProfilesFooter'".
@@ -214,7 +217,7 @@ final class AppModePromotionTests: XCTestCase {
 Run:
 ```bash
 xcodebuild test -project FamilyFoqos.xcodeproj -scheme FamilyFoqos \
-  -destination 'platform=iOS Simulator,id=B9E4A679-BDF3-4541-A59F-DA4BE21F80ED' \
+  -destination 'platform=iOS Simulator,id=<SIM_UUID>' \
   -only-testing:FoqosTests/AppModePromotionTests | xcpretty
 ```
 Expected: FAIL to compile — "type 'AppModeManager' has no member 'modeAfterSettingLockCode'".
@@ -353,7 +356,7 @@ final class SavedLocationLockGateTests: XCTestCase {
 Run:
 ```bash
 xcodebuild test -project FamilyFoqos.xcodeproj -scheme FamilyFoqos \
-  -destination 'platform=iOS Simulator,id=B9E4A679-BDF3-4541-A59F-DA4BE21F80ED' \
+  -destination 'platform=iOS Simulator,id=<SIM_UUID>' \
   -only-testing:FoqosTests/SavedLocationLockGateTests | xcpretty
 ```
 Expected: FAIL to compile — "value of type 'SavedLocation' has no member 'requiresLockCodeToModify'".
@@ -470,17 +473,20 @@ git commit -m "fix(#199): gate locked-location editing behind lock code in Child
 >
 > **Accepted residual (maintainer):** after a parent changes the PIN, the child device accepts the *old* cached PIN until the next sync — this is the existing #208 staleness window, shrunk by B2's cache-refresh fix. It is **not** new exposure introduced by this decision.
 >
-> **The defect being closed:** In Child mode, `LockCodeManager.canVerifyCode` is `!cachedLockCodes.isEmpty`. `cachedLockCodes` is **in-memory-only**, populated solely by `fetchSharedLockCodes()` on launch/mode-change, **never persisted**. The CloudKit fetch layer is itself fail-open: offline, `findSharedZoneByName()` returns nil → `(codes: [], isConnected: false)` with **no throw**; a mid-flight `CKError` is swallowed → `(codes: [], isConnected: true)`. So after a cold launch in Airplane Mode (or any failed/raced fetch), `cachedLockCodes == []`, `canVerifyCode == false`, and every gate requiring `canVerifyCode` **fails open** (child can strip a managed profile, unlock banner hides, "Leave Family" skips the PIN).
+> **The defect being closed:** In Child mode, `LockCodeManager.canVerifyCode` is `!cachedLockCodes.isEmpty`. `cachedLockCodes` is **in-memory-only**, populated solely by `fetchSharedLockCodes()` on launch/mode-change, **never persisted**. The CloudKit fetch layer is itself fail-open: offline, `findSharedZoneByName()` returns nil → `(codes: [], isConnected: false)` with **no throw**; a mid-flight `CKError` is swallowed → `(codes: [], isConnected: true)` (this task **also fixes** that catch — see Step 6a — so the error case reports disconnected). So after a cold launch in Airplane Mode (or any failed/raced fetch), `cachedLockCodes == []`, `canVerifyCode == false`, and every gate requiring `canVerifyCode` **fails open** (child can strip a managed profile, unlock banner hides, "Leave Family" skips the PIN).
 
 **The fix (fail-closed-with-cache):** persist the last-synced codes to the manager's injectable `UserDefaults`, and **hydrate `cachedLockCodes` from that store** — on launch (in `init`) and whenever a fetch is *not* a trusted connected result. Because verification (`verifyCode` / `validateCode`) and `canVerifyCode` all read `cachedLockCodes`, hydration makes them correct offline **with no change to any gate expression**: the child can still enter the cached code and unlock offline, and the lock only "fails open" when no code was ever synced (i.e. no managed lock exists). A **connected** result — even an empty one — is trusted and *replaces* the cache/store (this is how "parent cleared the PIN" propagates). A **disconnected** result is ignored in favour of the persisted codes.
 
 The trust decision is extracted to a pure static so it is unit-testable.
 
 **Files:**
-- Modify: `Foqos/Utils/LockCodeManager.swift` (persistence key + `resolveLockCodes` static + persist/load helpers; hydrate in `init`; update `fetchSharedLockCodes`)
+- Modify: `Foqos/CloudKit/CloudKitNetworkService+LockCodes.swift:120-125` (make a swallowed `CKError` report `isConnected: false`, so it cannot masquerade as a trusted "parent cleared the PIN" result — **prerequisite** for `resolveLockCodes` to be sound)
+- Modify: `Foqos/Utils/LockCodeManager.swift` (persistence key + `resolveLockCodes` static + persist/load helpers; hydrate in `init`; re-hydrate in `overrideDefaults`; update `fetchSharedLockCodes`)
 - Modify: `Foqos/Views/Parent/ParentDashboardView.swift:53-58` (fix the stale "work offline" comment — the claim is now *true* for the cache, but reword to describe the persisted cache accurately)
 - Modify: `Foqos/Views/Child/ChildDashboardView.swift:603-605` (`hasLockCode` reads a *different*, non-persisted in-memory source — route it through the hydrated manager)
 - Test: `FoqosTests/LockCodeFailClosedTests.swift` (create)
+
+> **Why the network-layer fix is a prerequisite (greptile P1).** Today `CloudKitNetworkService+LockCodes.swift` swallows a `CKError` that occurs *after* the shared zone is found and falls through to `return (codes: codes, isConnected: true)` with `codes == []` — wire-identical to a genuine "parent cleared the PIN" (connected + empty). Because `resolveLockCodes` trusts `isConnected` as its sole signal, that case would resolve to `(cache: [], persist: [])` and `persistLockCodes([])` would **wipe the on-device store**, so the next offline session fails open again — the exact bypass this task closes. Fixing the catch to report `isConnected: false` cleanly separates the three cases: zone-not-found → disconnected (preserve), zone-found + CKError → disconnected (preserve), zone-found + empty + no error → connected (parent cleared). Do this **before** wiring `resolveLockCodes`.
 
 > **No change to `Foqos/Views/BlockedProfileView.swift` in this task.** `editingDisabled` (lines 129-134), the banner (lines 252-254), and `childNeedsPinCheck` (`ParentDashboardView` lines 79-82) already gate on `canVerifyCode`, which becomes correct automatically once `cachedLockCodes` is hydrated. Do **not** modify those expressions here. (`hasAnyLockCode` is `!lockCodes.isEmpty`, and `lockCodes` is always empty in Child mode, so `childNeedsPinCheck` already reduces to `isChildMode && canVerifyCode`.)
 
@@ -543,7 +549,7 @@ final class LockCodeFailClosedTests: XCTestCase {
 Run:
 ```bash
 xcodebuild test -project FamilyFoqos.xcodeproj -scheme FamilyFoqos \
-  -destination 'platform=iOS Simulator,id=B9E4A679-BDF3-4541-A59F-DA4BE21F80ED' \
+  -destination 'platform=iOS Simulator,id=<SIM_UUID>' \
   -only-testing:FoqosTests/LockCodeFailClosedTests | xcpretty
 ```
 Expected: FAIL to compile — "type 'LockCodeManager' has no member 'resolveLockCodes'".
@@ -621,9 +627,48 @@ In `Foqos/Utils/LockCodeManager.swift`, `private init(...)` (lines 30-38) curren
 
 > Hydrating unconditionally is safe: `cachedLockCodes` is only read on the child verification path (parent/individual modes read `lockCodes`).
 
-- [ ] **Step 6: Route the fetch through `resolveLockCodes` (persist trusted results, keep cache offline)**
+Also make `overrideDefaults(_:)` re-hydrate the cache, so a test that swaps in a scratch suite actually isolates the lock-code cache (today it only reloads throttle state — the cache stays hydrated from whatever `init` read). Change `overrideDefaults` (lines 395-397) from:
+```swift
+  func overrideDefaults(_ defaults: UserDefaults?) {
+    throttleDefaults = defaults ?? .standard
+    loadThrottleState()
+  }
+```
+to:
+```swift
+  func overrideDefaults(_ defaults: UserDefaults?) {
+    throttleDefaults = defaults ?? .standard
+    loadThrottleState()
+    cachedLockCodes = loadPersistedLockCodes()
+  }
+```
 
-In `fetchSharedLockCodes()` (lines 178-205), replace the `do { ... } catch { ... }` body (currently lines 195-204):
+- [ ] **Step 6: Fix the network layer, then route the fetch through `resolveLockCodes`**
+
+**(a) Make a swallowed `CKError` report disconnected (greptile P1 — do this first).** In `Foqos/CloudKit/CloudKitNetworkService+LockCodes.swift`, `fetchSharedLockCodes()` (lines 96-125), the `catch` at lines 120-124 currently logs and falls through to `return (codes: codes, isConnected: true)`:
+```swift
+    } catch {
+      Log.error(
+        "Failed to fetch lock codes from zone \(zone.zoneID): \(error)", category: .cloudKit)
+    }
+
+    return (codes: codes, isConnected: true)
+```
+Change the `catch` to return disconnected so a transient error can never masquerade as "parent cleared the PIN":
+```swift
+    } catch {
+      Log.error(
+        "Failed to fetch lock codes from zone \(zone.zoneID): \(error)", category: .cloudKit)
+      // A CKError here means we could not read the family data — report DISCONNECTED so the
+      // caller preserves the last-synced cache instead of treating [] as "parent cleared" (#197).
+      return (codes: [], isConnected: false)
+    }
+
+    return (codes: codes, isConnected: true)
+```
+> Blast radius: `isConnectedToFamily` also feeds three connection-indicator reads (`AuthorizationVerifier.swift:171`, `ParentDashboardView.swift:138`, `ChildDashboardView.swift:198`). Reporting "disconnected" on a real CKError is *more* correct for all three; confirm none rely on the old fall-through-as-connected behavior. This is a code change — it has **no** standalone unit test (it hits CloudKit); its resolved behavior is covered by the `testGivenOfflineFetch_…` case in Step 1 (disconnected → preserve cache), and the change itself is verified by build + inspection.
+
+**(b) Route the fetch through `resolveLockCodes`.** In `LockCodeManager.fetchSharedLockCodes()` (lines 178-205), replace the `do { ... } catch { ... }` body (currently lines 195-204):
 
 ```swift
     do {
@@ -693,7 +738,7 @@ Run:
 ```bash
 xcodebuild -project FamilyFoqos.xcodeproj -scheme FamilyFoqos -configuration Debug build 2>&1 | xcpretty
 xcodebuild test -project FamilyFoqos.xcodeproj -scheme FamilyFoqos \
-  -destination 'platform=iOS Simulator,id=B9E4A679-BDF3-4541-A59F-DA4BE21F80ED' \
+  -destination 'platform=iOS Simulator,id=<SIM_UUID>' \
   -only-testing:FoqosTests/LockCodeFailClosedTests -only-testing:FoqosTests/LockCodeVerifyTests \
   -only-testing:FoqosTests/LockCodeThrottleTests | xcpretty
 ```
@@ -778,7 +823,7 @@ final class ProfileEditGateTests: XCTestCase {
 Run:
 ```bash
 xcodebuild test -project FamilyFoqos.xcodeproj -scheme FamilyFoqos \
-  -destination 'platform=iOS Simulator,id=B9E4A679-BDF3-4541-A59F-DA4BE21F80ED' \
+  -destination 'platform=iOS Simulator,id=<SIM_UUID>' \
   -only-testing:FoqosTests/ProfileEditGateTests | xcpretty
 ```
 Expected: FAIL to compile — "cannot find 'ProfileEditGate' in scope".
@@ -851,7 +896,7 @@ Run:
 ```bash
 xcodebuild -project FamilyFoqos.xcodeproj -scheme FamilyFoqos -configuration Debug build 2>&1 | xcpretty
 xcodebuild test -project FamilyFoqos.xcodeproj -scheme FamilyFoqos \
-  -destination 'platform=iOS Simulator,id=B9E4A679-BDF3-4541-A59F-DA4BE21F80ED' \
+  -destination 'platform=iOS Simulator,id=<SIM_UUID>' \
   -only-testing:FoqosTests/ProfileEditGateTests | xcpretty
 ```
 Expected: BUILD SUCCEEDED; PASS.
@@ -876,42 +921,24 @@ git commit -m "fix(#211): trigger selectors reuse editingDisabled (only Child mo
 
 **Files:**
 - Modify: `Foqos/Views/BlockedProfileView.swift:364`
-- Test: covered by `FoqosTests/ProfileEditGateTests.swift` (same pure gate as #211) — add one geofence-parity assertion.
+- Test: **none added.** The gate logic is `ProfileEditGate.editingDisabled`, already fully covered by `ProfileEditGateTests` (Task 5). The #251 defect is the *view wiring* (`disabled: isBlocking` vs `disabled: editingDisabled`), a SwiftUI expression with no unit-testable surface in this codebase.
 
 **Interfaces:**
-- Consumes: `ProfileEditGate.editingDisabled(...)` and the View's `editingDisabled` property (from Task 5).
+- Consumes: the View's `editingDisabled` property (from Task 5).
 
-- [ ] **Step 1: Add the failing parity assertion**
+> **No new test (greptile P2).** A test calling `ProfileEditGate.editingDisabled(...)` with geofence-shaped inputs would be a byte-for-byte duplicate of Task 5's assertions — it passes whether or not the geofence row is wired, so it cannot catch a regression where someone re-hardcodes `isBlocking` here. Adding it would be false assurance. The honest coverage story for #251: the shared gate is unit-tested once (Task 5), and the one-line wiring below is verified by **build + code inspection**. If the team later adopts a SwiftUI view-inspection test harness, a real wiring test can be added then.
 
-In `FoqosTests/ProfileEditGateTests.swift`, add a test documenting that the geofence selector uses the identical gate (guards against a future regression where someone re-hardcodes `isBlocking` for the geofence row):
-
-```swift
-  // #251: the geofence (Location Restrictions) selector must use the SAME gate as the
-  // trigger selectors — a locked Child profile disables it; Parent mode leaves it editable.
-  func testGivenChildModeManagedProfile_WhenLocked_ThenGeofenceSelectorDisabled() {
-    XCTAssertTrue(
-      ProfileEditGate.editingDisabled(
-        isBlocking: false, isManaged: true, isUnlocked: false, mode: .child, lockActive: true))
-  }
-
-  func testGivenParentModeManagedProfile_WhenNotUnlocked_ThenGeofenceSelectorNotDisabled() {
-    XCTAssertFalse(
-      ProfileEditGate.editingDisabled(
-        isBlocking: false, isManaged: true, isUnlocked: false, mode: .parent, lockActive: true))
-  }
-```
-
-- [ ] **Step 2: Run the test — it passes for the gate but the View is not yet wired**
+- [ ] **Step 1: Confirm Task 5's gate tests are green (the shared coverage for this fix)**
 
 Run:
 ```bash
 xcodebuild test -project FamilyFoqos.xcodeproj -scheme FamilyFoqos \
-  -destination 'platform=iOS Simulator,id=B9E4A679-BDF3-4541-A59F-DA4BE21F80ED' \
+  -destination 'platform=iOS Simulator,id=<SIM_UUID>' \
   -only-testing:FoqosTests/ProfileEditGateTests | xcpretty
 ```
-Expected: PASS (the pure gate already behaves correctly). The remaining work is wiring the View call site — verified by build + code inspection, since the `disabled:` expression itself is not unit-testable.
+Expected: PASS. This is the coverage for the gate logic #251 relies on; the step below wires the geofence call site to it.
 
-- [ ] **Step 3: Route the geofence selector through `editingDisabled`**
+- [ ] **Step 2: Route the geofence selector through `editingDisabled`**
 
 In `Foqos/Views/BlockedProfileView.swift`, the geofence call site (lines 359-365) currently reads:
 
@@ -931,18 +958,18 @@ Change the `disabled:` arg from `isBlocking` to `editingDisabled`:
               disabled: editingDisabled
 ```
 
-- [ ] **Step 4: Build and run**
+- [ ] **Step 3: Build and run**
 
 Run:
 ```bash
 xcodebuild -project FamilyFoqos.xcodeproj -scheme FamilyFoqos -configuration Debug build 2>&1 | xcpretty
 xcodebuild test -project FamilyFoqos.xcodeproj -scheme FamilyFoqos \
-  -destination 'platform=iOS Simulator,id=B9E4A679-BDF3-4541-A59F-DA4BE21F80ED' \
+  -destination 'platform=iOS Simulator,id=<SIM_UUID>' \
   -only-testing:FoqosTests/ProfileEditGateTests | xcpretty
 ```
 Expected: BUILD SUCCEEDED; PASS.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
 swift-format --in-place Foqos/Views/BlockedProfileView.swift
@@ -958,7 +985,7 @@ git commit -m "fix(#251): geofence selector reuses editingDisabled for lock cons
 
 ```bash
 xcodebuild test -project FamilyFoqos.xcodeproj -scheme FamilyFoqos \
-  -destination 'platform=iOS Simulator,id=B9E4A679-BDF3-4541-A59F-DA4BE21F80ED' \
+  -destination 'platform=iOS Simulator,id=<SIM_UUID>' \
   -only-testing:FoqosTests/ChildDashboardCopyTests \
   -only-testing:FoqosTests/AppModePromotionTests \
   -only-testing:FoqosTests/SavedLocationLockGateTests \
@@ -971,7 +998,7 @@ Expected: all five new classes PASS.
 
 ```bash
 xcodebuild test -project FamilyFoqos.xcodeproj -scheme FamilyFoqos \
-  -destination 'platform=iOS Simulator,id=B9E4A679-BDF3-4541-A59F-DA4BE21F80ED' | xcpretty
+  -destination 'platform=iOS Simulator,id=<SIM_UUID>' | xcpretty
 ```
 Expected: full suite green (baseline before this branch was 621+ tests passing).
 
