@@ -16,7 +16,7 @@ enum IntentError: Error, CustomLocalizedStringResourceConvertible {
     case .sessionAlreadyActive:
       "A session is already active."
     case .durationOutOfRange:
-      "Duration must be between 15 and 1440 minutes."
+      "Duration must be between 15 minutes and 23 hours 59 minutes."
     case .noActiveSession(let name):
       "\(name) is not currently active."
     case .backgroundStopsDisabled(let name):

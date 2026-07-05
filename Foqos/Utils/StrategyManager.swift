@@ -356,8 +356,14 @@ class StrategyManager: ObservableObject {
       }
 
       if let duration = durationInMinutes {
-        if duration < 15 || duration > 1440 {
-          self.errorMessage = "Duration must be between 15 and 1440 minutes."
+        if duration < DeviceActivityLimits.minimumIntervalMinutes
+          || duration > DeviceActivityLimits.maximumTimerMinutes
+        {
+          // Plain String → interpolate the min constant and the derived
+          // human-readable max (single-sourced; no bare literals).
+          self.errorMessage =
+            "Duration must be between \(DeviceActivityLimits.minimumIntervalMinutes) minutes "
+            + "and \(DeviceActivityLimits.maximumTimerDescription)."
           throw IntentError.durationOutOfRange
         }
 
