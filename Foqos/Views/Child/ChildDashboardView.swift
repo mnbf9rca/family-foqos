@@ -196,7 +196,7 @@ struct ChildDashboardView: View {
 
   private var parentLinkSection: some View {
     let isConnected = cloudKitManager.isConnectedToFamily
-    let hasLockCode = !cloudKitManager.sharedLockCodes.isEmpty
+    let hasLockCode = lockCodeManager.canVerifyCode
 
     return HStack(spacing: 12) {
       Image(systemName: isConnected ? "link.circle.fill" : "link.circle")
@@ -238,7 +238,7 @@ struct ChildDashboardView: View {
   }
 
   private var lockedProfilesSection: some View {
-    let hasLockCodes = !cloudKitManager.sharedLockCodes.isEmpty
+    let hasLockCodes = lockCodeManager.canVerifyCode
 
     return VStack(alignment: .leading, spacing: 12) {
       HStack {
@@ -603,7 +603,7 @@ struct ChildSettingsView: View {
   @State private var showCodeEntry = false
 
   private var hasLockCode: Bool {
-    !cloudKitManager.sharedLockCodes.isEmpty
+    lockCodeManager.canVerifyCode
   }
 
   var body: some View {

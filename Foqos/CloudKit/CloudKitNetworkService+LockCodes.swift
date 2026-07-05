@@ -120,6 +120,9 @@ extension CloudKitNetworkService {
     } catch {
       Log.error(
         "Failed to fetch lock codes from zone \(zone.zoneID): \(error)", category: .cloudKit)
+      // A CKError here means we could not read the family data — report DISCONNECTED so the
+      // caller preserves the last-synced cache instead of treating [] as "parent cleared" (#197).
+      return (codes: [], isConnected: false)
     }
 
     return (codes: codes, isConnected: true)

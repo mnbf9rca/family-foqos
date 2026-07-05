@@ -52,7 +52,7 @@ struct ParentDashboardView: View {
 
   /// Tier 2: device-local settings enabled after PIN unlock
   /// Controls like emergency settings toggle that are configured on this device
-  /// Independent of iCloud — PIN verification uses cached lock codes that work offline
+  /// Independent of iCloud — PIN verification uses the last-synced lock codes cached on-device
   private var deviceSettingsEnabled: Bool {
     !isChildMode || isDashboardUnlocked
   }
