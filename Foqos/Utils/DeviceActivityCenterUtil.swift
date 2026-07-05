@@ -414,11 +414,26 @@ class DeviceActivityCenterUtil {
   static func getTimeIntervalStartAndEnd(from minutes: Int, now: Date = Date()) -> (
     intervalStart: DateComponents, intervalEnd: DateComponents
   ) {
+    // Clamp the upper bound so the computed interval can never collapse to a
+    // zero-length window: exactly 1440 minutes (24h), or any larger multiple,
+    // lands intervalEnd on the same wall-clock minute as intervalStart, which
+    // DeviceActivity silently refuses to monitor and defers ~24h (#212).
+    // NOTE: the lower bound is intentionally NOT clamped here — that would
+    // silently rewrite user-chosen break durations (see MAINTAINER DECISION 3).
+    let clampedMinutes = min(minutes, DeviceActivityLimits.maximumTimerMinutes)
+    if clampedMinutes != minutes {
+      Log.warning(
+        "Timer duration \(minutes)m exceeds DeviceActivity's honorable maximum; "
+          + "clamped to \(clampedMinutes)m",
+        category: .timer
+      )
+    }
+
     let calendar = Calendar.current
     let startComponents = calendar.dateComponents([.hour, .minute], from: now)
     let intervalStart = DateComponents(hour: startComponents.hour, minute: startComponents.minute)
 
-    let endDate = now.addingTimeInterval(Double(minutes) * 60)
+    let endDate = now.addingTimeInterval(Double(clampedMinutes) * 60)
     let endComponents = calendar.dateComponents([.hour, .minute], from: endDate)
     let intervalEnd = DateComponents(hour: endComponents.hour, minute: endComponents.minute)
 
