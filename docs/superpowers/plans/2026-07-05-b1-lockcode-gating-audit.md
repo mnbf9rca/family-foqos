@@ -182,6 +182,7 @@ git commit -m "fix(#196): correct ChildDashboardView footer — stopping is not 
 **Files:**
 - Modify: `Foqos/Models/AppMode.swift` (add pure static helper on `AppModeManager`)
 - Modify: `Foqos/Views/Parent/ParentDashboardView.swift:161-177` (call it in the `onSave` closure)
+- Modify: `AGENTS.md:305-309` (mode-table footnote — document that setting a code promotes Individual→Parent)
 - Test: `FoqosTests/AppModePromotionTests.swift` (create)
 
 **Interfaces:**
@@ -281,7 +282,22 @@ Change it to promote after a successful set:
 
 > `appModeManager` is already available in this view as `@ObservedObject private var appModeManager = AppModeManager.shared` (line 21); it already calls `appModeManager.selectMode(.individual)` at lines 212/238, so no new plumbing is needed. `selectMode` is `@MainActor`; the `await MainActor.run` keeps it main-actor-safe from the `Task`.
 
-- [ ] **Step 6: Build to verify the wiring compiles**
+- [ ] **Step 6: Document the promotion in the AGENTS.md mode table**
+
+The mode table (`AGENTS.md:305-309`) says Individual has "Lock Code: None possible" — under this fix an Individual device *can* set a code, which promotes it to Parent, so it never persists as Individual-with-a-code. Add a footnote directly under the table (after the `| **Child** | ... |` row, line 309) so the invariant is explicit:
+
+```markdown
+| **Child** | Synced from parent | Yes | No | Yes (requires code) |
+
+> **Individual → Parent promotion:** an Individual device can set a lock code via the Family
+> Controls Dashboard (the only user-initiated path to Parent — `ModeSelectionView` offers only
+> Individual/Child). Doing so **promotes the device to Parent** in the same action, so the
+> "Individual: Can Create Locked Items = No" invariant holds — a device never persists as
+> Individual *with* a lock code. The `setLockCode` guard therefore stays `!= .child` (not
+> `== .parent`), otherwise the promotion would deadlock.
+```
+
+- [ ] **Step 7: Build to verify the wiring compiles**
 
 Run:
 ```bash
@@ -289,11 +305,11 @@ xcodebuild -project FamilyFoqos.xcodeproj -scheme FamilyFoqos -configuration Deb
 ```
 Expected: BUILD SUCCEEDED.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 swift-format --in-place Foqos/Models/AppMode.swift Foqos/Views/Parent/ParentDashboardView.swift
-git add Foqos/Models/AppMode.swift Foqos/Views/Parent/ParentDashboardView.swift FoqosTests/AppModePromotionTests.swift
+git add Foqos/Models/AppMode.swift Foqos/Views/Parent/ParentDashboardView.swift AGENTS.md FoqosTests/AppModePromotionTests.swift
 git commit -m "fix(#244): promote Individual to Parent mode when a lock code is set"
 ```
 
