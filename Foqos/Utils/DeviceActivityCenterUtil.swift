@@ -120,8 +120,9 @@ class DeviceActivityCenterUtil {
     }
 
     let stopSchedule = profile.stopSchedule!
-    let intervalStart = DateComponents(hour: 0, minute: 0)
-    let intervalEnd = DateComponents(hour: stopSchedule.hour, minute: stopSchedule.minute)
+    let (intervalStart, intervalEnd) = stopScheduleInterval(
+      stopHour: stopSchedule.hour, stopMinute: stopSchedule.minute
+    )
 
     let deviceActivitySchedule = DeviceActivitySchedule(
       intervalStart: intervalStart,
@@ -437,6 +438,33 @@ class DeviceActivityCenterUtil {
     let endComponents = calendar.dateComponents([.hour, .minute], from: endDate)
     let intervalEnd = DateComponents(hour: endComponents.hour, minute: endComponents.minute)
 
+    return (intervalStart: intervalStart, intervalEnd: intervalEnd)
+  }
+
+  /// Computes the DeviceActivity interval for a stop-only schedule.
+  ///
+  /// The stop-only activity only cares about `intervalDidEnd` firing at the stop
+  /// time (`StopScheduleTimerActivity.start(for:)` is a no-op), so `intervalStart`
+  /// is a free internal artifact. Anchoring it at 00:00 (the historical default)
+  /// yields a window of `stopHour*60 + stopMinute` minutes — under DeviceActivity's
+  /// 15-minute minimum, or zero-length when stop == 00:00, whenever the stop time
+  /// is before 00:15. In that case we anchor `intervalStart` one minute AFTER the
+  /// stop so the repeating window wraps ~24h and still delivers `intervalDidEnd`
+  /// at the stop time (#228). For stop times at or after 00:15 the historical
+  /// 00:00 anchor is preserved (no behavior change).
+  static func stopScheduleInterval(stopHour: Int, stopMinute: Int) -> (
+    intervalStart: DateComponents, intervalEnd: DateComponents
+  ) {
+    let intervalEnd = DateComponents(hour: stopHour, minute: stopMinute)
+    let stopMinuteOfDay = stopHour * 60 + stopMinute
+
+    let intervalStart: DateComponents
+    if stopMinuteOfDay < DeviceActivityLimits.minimumIntervalMinutes {
+      let anchor = (stopMinuteOfDay + 1) % 1440
+      intervalStart = DateComponents(hour: anchor / 60, minute: anchor % 60)
+    } else {
+      intervalStart = DateComponents(hour: 0, minute: 0)
+    }
     return (intervalStart: intervalStart, intervalEnd: intervalEnd)
   }
 }
