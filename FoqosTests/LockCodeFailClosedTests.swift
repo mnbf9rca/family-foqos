@@ -41,4 +41,11 @@ final class LockCodeFailClosedTests: XCTestCase {
       fetched: [], isConnected: false, persisted: [])
     XCTAssertTrue(result.cache.isEmpty)
   }
+
+  func testGivenRecordFailure_WhenResolvingNetworkFetch_ThenReportsDisconnected() {
+    let result = CloudKitNetworkService.resolveSharedLockCodeFetch(
+      codes: [], hasRecordFailures: true)
+    XCTAssertTrue(result.codes.isEmpty)
+    XCTAssertFalse(result.isConnected)
+  }
 }

@@ -59,7 +59,7 @@ class LockCodeManager: ObservableObject {
       await fetchLockCodes()
     case .child:
       // Children need to fetch shared lock codes for verification
-      await fetchSharedLockCodes()
+      await refreshSharedLockCodesForVerification()
     }
   }
 
@@ -176,7 +176,7 @@ class LockCodeManager: ObservableObject {
 
   /// Fetch shared lock codes for verification (child operation)
   /// Verifies child authorization before fetching to ensure security
-  private func fetchSharedLockCodes() async {
+  func refreshSharedLockCodesForVerification() async {
     guard appModeManager.currentMode == .child else { return }
 
     isLoading = true

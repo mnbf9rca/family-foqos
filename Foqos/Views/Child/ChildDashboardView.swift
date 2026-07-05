@@ -165,13 +165,7 @@ struct ChildDashboardView: View {
     guard !isFetchingLockCodes else { return }
     isFetchingLockCodes = true
     defer { isFetchingLockCodes = false }
-    do {
-      _ = try await cloudKitManager.fetchSharedLockCodes()
-    } catch {
-      Log.error(
-        "Failed to fetch shared lock codes: \(error.localizedDescription)",
-        category: .cloudKit)
-    }
+    await lockCodeManager.refreshSharedLockCodesForVerification()
   }
 
   // MARK: - Sections

@@ -5,6 +5,13 @@ extension CloudKitNetworkService {
 
   // MARK: - Lock Code Management
 
+  static func resolveSharedLockCodeFetch(
+    codes: [FamilyLockCode],
+    hasRecordFailures: Bool
+  ) -> (codes: [FamilyLockCode], isConnected: Bool) {
+    hasRecordFailures ? (codes: [], isConnected: false) : (codes: codes, isConnected: true)
+  }
+
   func saveLockCode(_ lockCode: FamilyLockCode) async throws {
     Log.info("Saving lock code", category: .cloudKit)
 
@@ -111,10 +118,15 @@ extension CloudKitNetworkService {
       )
 
       for (_, result) in results {
-        if case .success(let record) = result,
-          let code = FamilyLockCode(from: record)
-        {
+        switch result {
+        case .success(let record):
+          guard let code = FamilyLockCode(from: record) else { continue }
           codes.append(code)
+        case .failure(let error):
+          Log.error(
+            "Failed to fetch lock code record from zone \(zone.zoneID): \(error)",
+            category: .cloudKit)
+          return Self.resolveSharedLockCodeFetch(codes: [], hasRecordFailures: true)
         }
       }
     } catch {
@@ -125,7 +137,7 @@ extension CloudKitNetworkService {
       return (codes: [], isConnected: false)
     }
 
-    return (codes: codes, isConnected: true)
+    return Self.resolveSharedLockCodeFetch(codes: codes, hasRecordFailures: false)
   }
 
   /// Delete family sharing data from the FamilyPolicies zone.
