@@ -308,6 +308,13 @@ The app has three operating modes with distinct lock code behaviors:
 | **Parent** | Can SET code | Yes | Yes | No (full access) |
 | **Child** | Synced from parent | Yes | No | Yes (requires code) |
 
+> **Individual → Parent promotion:** an Individual device can set a lock code via the Family
+> Controls Dashboard (the only user-initiated path to Parent — `ModeSelectionView` offers only
+> Individual/Child). Doing so **promotes the device to Parent** in the same action, so the
+> "Individual: Can Create Locked Items = No" invariant holds — a device never persists as
+> Individual *with* a lock code. The `setLockCode` guard therefore stays `!= .child` (not
+> `== .parent`), otherwise the promotion would deadlock.
+
 ### Critical Rule for Lock Checks
 
 When checking if lock code restrictions apply:
