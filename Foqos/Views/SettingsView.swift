@@ -172,8 +172,10 @@ struct SettingsView: View {
             }
 
             Button {
-              Task {
-                await profileSyncManager.performFullSync()
+              do {
+                try profileSyncManager.syncNow()
+              } catch {
+                syncErrorMessage = error.localizedDescription
               }
             } label: {
               HStack {
@@ -389,29 +391,17 @@ struct SettingsView: View {
       .alert("Reset Syncing", isPresented: $showResetSyncAlert) {
         Button("Cancel", role: .cancel) {}
         Button("Keep App Selections") {
-          Task {
-            do {
-              try await profileSyncManager.resetSync(clearRemoteAppSelections: false)
-            } catch {
-              Log.error(
-                "Failed to reset sync (keep selections): \(error.localizedDescription)",
-                category: .sync)
-              syncErrorMessage =
-                "Sync reset failed: \(error.localizedDescription)"
-            }
+          do {
+            try profileSyncManager.resetSync(clearRemoteAppSelections: false)
+          } catch {
+            syncErrorMessage = error.localizedDescription
           }
         }
         Button("Clear App Selections", role: .destructive) {
-          Task {
-            do {
-              try await profileSyncManager.resetSync(clearRemoteAppSelections: true)
-            } catch {
-              Log.error(
-                "Failed to reset sync (clear selections): \(error.localizedDescription)",
-                category: .sync)
-              syncErrorMessage =
-                "Sync reset failed: \(error.localizedDescription)"
-            }
+          do {
+            try profileSyncManager.resetSync(clearRemoteAppSelections: true)
+          } catch {
+            syncErrorMessage = error.localizedDescription
           }
         }
       } message: {

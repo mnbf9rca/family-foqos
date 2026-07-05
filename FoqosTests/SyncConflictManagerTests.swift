@@ -231,4 +231,35 @@ final class SyncConflictManagerTests: XCTestCase {
     XCTAssertTrue(manager.shouldShowNewerVersionBanner)
     XCTAssertTrue(manager.shouldShowOlderDeviceBanner)
   }
+
+  // MARK: - Reset Superseded Tests
+
+  func testGivenFreshManager_WhenAddingResetSupersededConflict_ThenFlagFlipsTrueAndShowsBanner() {
+    let manager = SyncConflictManager()
+
+    manager.addResetSupersededConflict()
+
+    XCTAssertTrue(manager.resetWasSuperseded)
+    XCTAssertTrue(manager.showConflictBanner)
+  }
+
+  func testGivenResetSuperseded_WhenDismissingBanner_ThenFlagClears() {
+    let manager = SyncConflictManager()
+    manager.addResetSupersededConflict()
+
+    manager.dismissBanner()
+
+    XCTAssertFalse(manager.resetWasSuperseded)
+    XCTAssertFalse(manager.showConflictBanner)
+  }
+
+  func testGivenResetSuperseded_WhenClearingAll_ThenFlagClears() {
+    let manager = SyncConflictManager()
+    manager.addResetSupersededConflict()
+
+    manager.clearAll()
+
+    XCTAssertFalse(manager.resetWasSuperseded)
+    XCTAssertFalse(manager.showConflictBanner)
+  }
 }

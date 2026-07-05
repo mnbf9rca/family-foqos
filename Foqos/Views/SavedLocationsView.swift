@@ -172,21 +172,28 @@ struct SavedLocationsView: View {
       // Remove references from profiles that use this location
       removeLocationFromProfiles(locationId)
 
-      try SavedLocation.delete(location, in: context)
-
-      // Sync deletion to other devices if sync is enabled
       if profileSyncManager.isEnabled {
-        Task {
-          do {
-            try await profileSyncManager.deleteLocation(locationId)
-          } catch {
-            Log.error(
-              "Failed to sync location deletion: \(error.localizedDescription)",
-              category: .sync)
-            errorMessage =
-              "Location deleted locally but failed to sync to other devices."
-          }
+        // Route the delete entirely through the funnel (I2): it re-reads the location
+        // itself, writes the delete-intent tombstone, performs the persisted delete, and
+        // enqueues the `.deleteRecord` — all in one call. `context` here is the SAME
+        // `ModelContext` instance the funnel uses (both are `container.mainContext`), so
+        // this view must NOT pre-delete: a committed local delete would leave the funnel's
+        // re-fetch-by-id finding nothing, producing `entityNotFound` and swallowing the
+        // tombstone with no `.deleteRecord` enqueued — the delete would never propagate to
+        // other devices.
+        do {
+          try profileSyncManager.enqueueLocationDelete(locationId)
+        } catch SyncEngineControllingError.notAttached {
+          // Engine isn't attached yet (e.g. the brief window right after cold launch) —
+          // the funnel can't own this delete, so delete locally now instead of silently
+          // leaving the location behind (review finding #4). It will propagate once the
+          // engine attaches / on the next sync.
+          try SavedLocation.delete(location, in: context)
         }
+      } else {
+        // Sync disabled — the funnel would no-op (I2 is only reachable once the engine has
+        // started), so delete locally directly.
+        try SavedLocation.delete(location, in: context)
       }
     } catch {
       errorMessage = "Failed to delete location: \(error.localizedDescription)"

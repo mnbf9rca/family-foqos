@@ -13,6 +13,14 @@ import SwiftData
 import SwiftUI
 import UserNotifications
 
+/// True when running inside the XCTest host process (hosted unit tests fully launch this
+/// app, including SwiftUI's `.onAppear`). Guards one-shot production side effects — like
+/// the I10 `attachEngine` composition root — from racing ahead of a test's own explicit
+/// call and permanently latching `ProfileSyncManager`'s idempotency guard.
+private var isRunningUnitTests: Bool {
+  NSClassFromString("XCTestCase") != nil
+}
+
 /// Redact query and fragment from URL for safe logging (may contain tokens)
 private func redactedURLString(_ url: URL) -> String {
   var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
@@ -80,7 +88,6 @@ struct FoqosApp: App {
 
   // Device sync for same-user multi-device sync
   @StateObject private var profileSyncManager = ProfileSyncManager.shared
-  @StateObject private var syncCoordinator = SyncCoordinator.shared
 
   /// Sync upgrade notice (shown when legacy session records are cleaned up)
   @State private var showSyncUpgradeAlert = false
@@ -135,6 +142,17 @@ struct FoqosApp: App {
               await CloudKitManager.shared.verifySelfFamilyMemberRecord()
               // Verify child authorization when app becomes active
               verifyChildAuthorizationIfNeeded()
+            }
+            // #201: re-drive persisted session-stop retries so a remote device doesn't see a
+            // stopped session as perpetually active
+            Task { await StrategyManager.shared.drainSessionStopOutbox() }
+            // #200: pull/push on foreground instead of the deleted notification throttle
+            if profileSyncManager.isEnabled {
+              do {
+                try profileSyncManager.syncNow()
+              } catch {
+                Log.warning("syncNow skipped: \(error.localizedDescription)", category: .sync)
+              }
             }
             // Only reschedule on warm returns — .onAppear handles cold launch
             if hasPerformedInitialSetup {
@@ -223,14 +241,16 @@ struct FoqosApp: App {
         .environmentObject(cloudKitManager)
         .environmentObject(profileSyncManager)
         .onAppear {
-          // Set up sync coordinator with model context
-          syncCoordinator.setModelContext(container.mainContext)
           // Migrate profiles to V2 trigger system if needed
           ProfileMigrationUtil.migrateProfilesIfNeeded(context: container.mainContext)
-          // Initialize sync if enabled
-          if profileSyncManager.isEnabled {
+          // Construct + wire the sync engine with the live ModelContext (I10).
+          // Skipped under the XCTest host so hosted unit tests own `attachEngine`'s
+          // one-shot idempotency guard themselves.
+          if !isRunningUnitTests {
             Task {
-              await profileSyncManager.setupSync()
+              await profileSyncManager.attachEngine(
+                modelContext: container.mainContext,
+                emergencyManager: emergencyManager)
             }
           }
           // Reschedule pre-activation reminders for today
@@ -347,10 +367,16 @@ class AppDelegate: NSObject, UIApplicationDelegate {
     if let ckNotification = CKNotification(fromRemoteNotificationDictionary: userInfo) {
       Log.info("CloudKit notification received - type: \(ckNotification.notificationType.rawValue)", category: .cloudKit)
 
-      // Handle the notification via ProfileSyncManager
-      Task {
-        await ProfileSyncManager.shared.handleRemoteNotification()
-        // Refresh heartbeats for parent monitoring (#190)
+      // Route the CloudKit push to the engine (schedules a fetch+send); the engine
+      // also owns its own database subscription. Preserve heartbeat refresh (#190).
+      Task { @MainActor in
+        if ProfileSyncManager.shared.isEnabled {
+          do {
+            try ProfileSyncManager.shared.syncNow()
+          } catch {
+            Log.warning("syncNow skipped: \(error.localizedDescription)", category: .sync)
+          }
+        }
         if AppModeManager.shared.currentMode == .parent {
           await HeartbeatManager.shared.refreshHeartbeats()
         }
