@@ -499,7 +499,7 @@ The trust decision is extracted to a pure static so it is unit-testable.
 - Modify: `Foqos/CloudKit/CloudKitNetworkService+LockCodes.swift:120-125` (make a swallowed `CKError` report `isConnected: false`, so it cannot masquerade as a trusted "parent cleared the PIN" result — **prerequisite** for `resolveLockCodes` to be sound)
 - Modify: `Foqos/Utils/LockCodeManager.swift` (persistence key + `resolveLockCodes` static + persist/load helpers; hydrate in `init`; re-hydrate in `overrideDefaults`; update `fetchSharedLockCodes`)
 - Modify: `Foqos/Views/Parent/ParentDashboardView.swift:53-58` (fix the stale "work offline" comment — the claim is now *true* for the cache, but reword to describe the persisted cache accurately)
-- Modify: `Foqos/Views/Child/ChildDashboardView.swift:603-605` (`hasLockCode` reads a *different*, non-persisted in-memory source — route it through the hydrated manager)
+- Modify: `Foqos/Views/Child/ChildDashboardView.swift` (**three** `sharedLockCodes` reads at lines 199, 241, 603-605 — all read a *different*, non-persisted in-memory source; route each through the hydrated `lockCodeManager.canVerifyCode`)
 - Test: `FoqosTests/LockCodeFailClosedTests.swift` (create)
 
 > **Why the network-layer fix is a prerequisite (greptile P1).** Today `CloudKitNetworkService+LockCodes.swift` swallows a `CKError` that occurs *after* the shared zone is found and falls through to `return (codes: codes, isConnected: true)` with `codes == []` — wire-identical to a genuine "parent cleared the PIN" (connected + empty). Because `resolveLockCodes` trusts `isConnected` as its sole signal, that case would resolve to `(cache: [], persist: [])` and `persistLockCodes([])` would **wipe the on-device store**, so the next offline session fails open again — the exact bypass this task closes. Fixing the catch to report `isConnected: false` cleanly separates the three cases: zone-not-found → disconnected (preserve), zone-found + CKError → disconnected (preserve), zone-found + empty + no error → connected (parent cleared). Do this **before** wiring `resolveLockCodes`.
@@ -728,7 +728,9 @@ with:
 
 > Do **not** touch the `guard appModeManager.currentMode == .child` at line 179, the auth-loss branch (lines 186-193), or the `!= .child` array-selector ternaries in `canVerifyCode`/`verifyCode`/`validateCode`. `cloudKitManager.fetchSharedLockCodes()` already sets `cloudKitManager.isConnectedToFamily` from the network layer's `isConnected` before returning (`CloudKitManager.swift:112-117`).
 
-- [ ] **Step 7: Fix the two remaining fail-open reads**
+- [ ] **Step 7: Fix the remaining fail-open reads**
+
+`cloudKitManager.sharedLockCodes` is a *separate*, non-persisted in-memory source (empty offline). A repo-wide grep (`grep -rn sharedLockCodes Foqos/`) confirms exactly **three** UI reads of it, all in `ChildDashboardView`, plus one stale comment in `ParentDashboardView`. Route every one of the three reads through the hydrated `lockCodeManager.canVerifyCode` so the offline UI matches fail-closed-with-cache; fix the comment. **Do not leave any of the three unchanged — they drive contradictory lock UI when offline.**
 
 (a) `Foqos/Views/Parent/ParentDashboardView.swift` — the stale comment (lines 53-58). Change the third comment line:
 ```swift
@@ -740,13 +742,39 @@ to:
 ```
 > No logic change here: `childNeedsPinCheck` (lines 79-82) already reads `canVerifyCode`, which is now hydrated-correct offline. The Leave-Family-skips-PIN hole closes automatically.
 
-(b) `Foqos/Views/Child/ChildDashboardView.swift` — `hasLockCode` (lines 603-605) currently reads the *separate*, non-persisted `cloudKitManager.sharedLockCodes`, which is empty offline → "Remove Parental lock" leaves without a PIN. Route it through the hydrated manager:
+(b) `Foqos/Views/Child/ChildDashboardView.swift` — `parentLinkSection` (line 199). Drives the "Lock code active" / "No lock code set" label + padlock icon (lines 213-215). Change:
+```swift
+    let hasLockCode = !cloudKitManager.sharedLockCodes.isEmpty
+```
+to:
+```swift
+    let hasLockCode = lockCodeManager.canVerifyCode
+```
+> Offline with a cached code, `canVerifyCode` is now true → "Lock code active" (correct, the lock is active), instead of falsely showing "No lock code set".
+
+(c) `Foqos/Views/Child/ChildDashboardView.swift` — `lockedProfilesSection` (line 241). Drives the section title "Locked Profiles" vs "Parent-Managed Profiles" (245), the lock-gated **Edit** button (251), and the "require a lock code to edit or delete" vs "can be freely edited while no lock code is set" footer (295/300). Change:
+```swift
+    let hasLockCodes = !cloudKitManager.sharedLockCodes.isEmpty
+```
+to:
+```swift
+    let hasLockCodes = lockCodeManager.canVerifyCode
+```
+> Without this, an offline child with a cached lock code would see "Parent-Managed Profiles", no Edit button, and copy claiming the profiles "can be freely edited" — directly contradicting the fail-closed lock.
+
+(d) `Foqos/Views/Child/ChildDashboardView.swift` — `hasLockCode` (lines 603-605, in the `ChildSettingsView` struct — the Leave-share path). Empty offline → "Remove Parental lock" leaves without a PIN. Change:
+```swift
+  private var hasLockCode: Bool {
+    !cloudKitManager.sharedLockCodes.isEmpty
+  }
+```
+to:
 ```swift
   private var hasLockCode: Bool {
     lockCodeManager.canVerifyCode
   }
 ```
-> Confirm this view holds `lockCodeManager` (search the file for `LockCodeManager.shared`). If it is only reachable as `LockCodeManager.shared`, use `LockCodeManager.shared.canVerifyCode`. Do not change the surrounding Leave-share flow.
+> The main `ChildDashboardView` holds `@ObservedObject private var lockCodeManager = LockCodeManager.shared` (line 15), and the `ChildSettingsView`/code-entry structs each hold their own (lines 392, 598), so `lockCodeManager` is in scope for all three reads. Do not change the surrounding Leave-share flow.
 
 - [ ] **Step 8: Build, then run the new + existing lock tests (regression)**
 
