@@ -129,4 +129,55 @@ final class ScheduleTimerActivityTests: XCTestCase {
       SharedData.getActiveSharedSession()?.blockedProfileId, victimId,
       "the protected victim session must survive; the scheduled takeover is skipped (#236)")
   }
+
+  func testGivenLegacySchedule_WhenComputingWindowStart_ThenTodayAtStartTime() {
+    let cal = Calendar(identifier: .gregorian)
+    var components = DateComponents()
+    components.year = 2026
+    components.month = 6
+    components.day = 15
+    components.hour = 12
+    components.minute = 0
+    let now = cal.date(from: components)!
+    let schedule = BlockedProfileSchedule(
+      days: Weekday.allCases, startHour: 9, startMinute: 0, endHour: 17, endMinute: 0,
+      updatedAt: .distantPast)
+
+    let windowStart = schedule.windowStart(on: now, calendar: cal)
+
+    var expected = DateComponents()
+    expected.year = 2026
+    expected.month = 6
+    expected.day = 15
+    expected.hour = 9
+    expected.minute = 0
+    XCTAssertEqual(windowStart, cal.date(from: expected))
+  }
+
+  func testGivenLegacyStoppedThisWindow_WhenStartFires_ThenSuppressed() {
+    let id = UUID()
+    let cal = Calendar.current
+    let now = Date()
+    var components = cal.dateComponents([.year, .month, .day], from: now)
+    components.hour = 10
+    components.minute = 5
+    let stoppedAt = cal.date(from: components)!
+    var snap = SharedData.ProfileSnapshot(
+      id: id, name: "Legacy", selectedActivity: .init(), createdAt: .distantPast,
+      updatedAt: .distantPast, order: 0, enableLiveActivity: false, enableBreaks: false,
+      enableStrictMode: false, enableAllowMode: false, enableAllowModeDomains: false,
+      enableSafariBlocking: false,
+      schedule: BlockedProfileSchedule(
+        days: Weekday.allCases, startHour: 9, startMinute: 0, endHour: 17, endMinute: 0,
+        updatedAt: .distantPast),
+      disableBackgroundStops: false, stopConditions: ProfileStopConditions(manual: true),
+      scheduleLastStoppedAt: stoppedAt)
+    snap.startTriggersSchedule = false
+
+    ScheduleTimerActivity().start(for: snap)
+
+    XCTAssertNil(
+      SharedData.getActiveSharedSession(),
+      "legacy branch must suppress a window already stopped this window (#229)")
+  }
 }

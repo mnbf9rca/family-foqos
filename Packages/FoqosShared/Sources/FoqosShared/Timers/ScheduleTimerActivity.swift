@@ -64,6 +64,15 @@ public class ScheduleTimerActivity: TimerActivity {
         Log.info("Start schedule timer activity for \(profileId), schedule is too new", category: .timer)
         return
       }
+      if let stoppedAt = profile.scheduleLastStoppedAt,
+        let windowStart = schedule.windowStart(),
+        windowStart <= stoppedAt
+      {
+        Log.info(
+          "Start schedule timer activity for \(profileId), window already stopped — suppressing (#229)",
+          category: .timer)
+        return
+      }
     } else {
       Log.info("Start schedule timer activity for \(profileId), no schedule found", category: .timer)
       return
