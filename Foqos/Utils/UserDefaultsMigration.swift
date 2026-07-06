@@ -55,10 +55,14 @@ enum UserDefaultsMigration {
     guard !defaults.bool(forKey: appGroupMigrationFlag) else { return }
 
     for (old, new) in appGroupKeyMapping {
-      if let value = defaults.object(forKey: old) {
+      // Copy the legacy value only when the new key is absent. An extension (DeviceActivity
+      // monitor / widget) may have written the new key through SharedData before the main app
+      // first launched and migrated; that value is fresher and must win over the legacy shadow
+      // (#217). Always drop the legacy key so it can never resurrect stale state on a later run.
+      if defaults.object(forKey: new) == nil, let value = defaults.object(forKey: old) {
         defaults.set(value, forKey: new)
-        defaults.removeObject(forKey: old)
       }
+      defaults.removeObject(forKey: old)
     }
 
     defaults.set(true, forKey: appGroupMigrationFlag)

@@ -144,6 +144,45 @@ final class UserDefaultsMigrationTests: XCTestCase {
     // Should not crash or set any flags — just returns early
   }
 
+  func testGivenNewAppGroupKeyAlreadyWritten_WhenMigrate_ThenNewValueKeptAndOldRemoved() {
+    // An extension wrote the new key before the first app launch; the legacy shadow lingers.
+    defaults.set(Data([4, 5, 6]), forKey: "family_foqos_active_schedule_session")
+    defaults.set(Data([9, 9, 9]), forKey: "activeScheduleSession")
+
+    UserDefaultsMigration.migrateAppGroupIfNeeded(defaults: defaults)
+
+    XCTAssertEqual(
+      defaults.data(forKey: "family_foqos_active_schedule_session"), Data([4, 5, 6]),
+      "fresh extension-written value must survive migration (#217)")
+    XCTAssertNil(
+      defaults.object(forKey: "activeScheduleSession"), "stale legacy key must be removed")
+  }
+
+  func testGivenNewCompletedListWithFreshSession_WhenMigrate_ThenNotClobberedByLegacyList() {
+    // Legacy completed list from before the update...
+    defaults.set(Data([1, 1]), forKey: "completedScheduleSessions")
+    // ...and the extension's appended (superset) list under the new key.
+    defaults.set(Data([1, 1, 2, 2]), forKey: "family_foqos_completed_schedule_sessions")
+
+    UserDefaultsMigration.migrateAppGroupIfNeeded(defaults: defaults)
+
+    XCTAssertEqual(
+      defaults.data(forKey: "family_foqos_completed_schedule_sessions"), Data([1, 1, 2, 2]),
+      "the just-completed session must not be lost to the stale legacy list (#217)")
+    XCTAssertNil(defaults.object(forKey: "completedScheduleSessions"))
+  }
+
+  func testGivenLegacyOnlyAppGroupKey_WhenMigrate_ThenStillCopiedToNewKey() {
+    // Normal migration path (no extension pre-write) must be unchanged.
+    defaults.set(Data([7, 8, 9]), forKey: "completedScheduleSessions")
+
+    UserDefaultsMigration.migrateAppGroupIfNeeded(defaults: defaults)
+
+    XCTAssertEqual(
+      defaults.data(forKey: "family_foqos_completed_schedule_sessions"), Data([7, 8, 9]))
+    XCTAssertNil(defaults.object(forKey: "completedScheduleSessions"))
+  }
+
   // MARK: - Synchronous contract tests
 
   func testGivenOldShowIntroScreen_WhenMigrate_ThenNewKeyPopulatedSynchronously() {
