@@ -141,46 +141,36 @@ Because of the above, **the first task of the implementing session is [Task 0](#
 
 ## MAINTAINER DECISIONS REQUIRED
 
-Anything "clever" — a unification, an early-exit, a per-channel exception, a schema choice — is surfaced here rather than chosen silently. Each has a **recommendation**; the implementing session must get a maintainer ruling on any marked ⚠️ UNRESOLVED before coding the affected task. Items already ratified by the maintainer are marked ✅ SETTLED and are not open for redesign.
+**✅ ALL SETTLED — maintainer ruling 2026-07-06 (PR #276 comment): every MDR ratified as recommended (Option A). Not open for redesign at implementation time.** The rationale/wording below is the maintainer's, recorded so the plan reads as rules, not open questions.
 
 ### MDR-0 — #261 gate on `canStop` ✅ SETTLED (Option A, 2026-07-05)
-Not open for redesign. `stopSessionFromBackground` gates on `canStop` in addition to session-match + `disableBackgroundStops` + fail-closed geofence. Profiles with `manual` stop allowed are unaffected. Implemented in Task 3. The three overstating copy strings become *true* under Option A (copy audit, Task 3 Step 6).
+`stopSessionFromBackground` gates on `canStop` in addition to session-match + `disableBackgroundStops` + fail-closed geofence. Profiles with `manual` stop allowed are unaffected. Implemented in Task 3. The three overstating copy strings become *true* under Option A (copy audit, Task 3 Step 6).
 
-### MDR-1 — App path: route through the shared policy vs. add the check inline  ⚠️ UNRESOLVED (recommend: route through)
-The maintainer's directive is "**ONE** shared background-stop policy … applied uniformly … no per-channel exceptions." Two ways to realize that for the app-side Siri/Shortcuts path:
-- **(A) Route `stopSessionFromBackground` through `BackgroundStopPolicy` (RECOMMENDED).** The app still *evaluates* geofence with real location (produces a `GeofenceState`) and still owns its typed `IntentError`s and the geofence notification, but the *decision* (disableBackgroundStops + geofence + canStop) is the shared policy's `Decision`, mapped to `IntentError`. One decision implementation, two call sites (app + extension). This is what Task 3 is written against.
-- **(B) Add only the missing `canStop(.manual)` check inline** in `stopSessionFromBackground`, leaving its other guards as bespoke code. Lower churn on a well-tested path, but the "one policy" is then a convention, not a call.
+### MDR-1 — App Shortcuts path routes through the shared policy ✅ SETTLED = A
+**App Shortcuts routes through the shared `BackgroundStopPolicy`.** Maintainer: *"Inline checks are drift sites — per-channel drift is why this bundle exists. One policy, one test surface."* The app still *evaluates* geofence with real location (producing a `GeofenceState`) and owns its typed `IntentError`s + geofence notification, but the *decision* (disableBackgroundStops + geofence + canStop) is the policy's `Decision`, mapped to `IntentError`. Task 3 is written against this. The former inline-only alternative is **dead** — do not add per-channel checks.
 
-Recommendation: **A** — it is the literal reading of the directive and single-sources the decision. Risk is contained because the app path keeps its own geofence *evaluation* and error taxonomy. If the maintainer prefers minimal churn, fall back to **B** (Task 3 notes the exact inline edit).
+### MDR-2 — Remote-stop channel is trusted-at-origin (not re-gated) ✅ SETTLED = A
+Maintainer reconciliation (recorded verbatim as the governing rule): *#261's "applied uniformly to remote stops" means every **initiation** channel is gated — the policy runs on the device where a user triggers the stop. Sync propagation of an already-authorized stop is **replication, not initiation**: the receiver cannot re-verify the origin's stop method (e.g. a physical NFC scan), and refusing replicated state breaks convergence. Same principle as the D2 delete decision on #203 — the local gate at the origin device is the enforcement point; sync propagates already-authorized operations.* Therefore D1's policy applies to the Shortcuts/Siri channel (#261) and the extension schedule channels (#206/#239/#236); the remote-stop path (`stopRemoteSession` / D2's `deleteLocalProfile` teardown) is **not** re-gated by D1. This is not an exception to "one policy" — it is the initiation-vs-replication rule.
 
-### MDR-2 — Remote-stop channel: trust-at-origin vs. re-gate on the receiver  ⚠️ UNRESOLVED (recommend: trust-at-origin — do NOT re-gate)
-The #261 comment says apply the policy "uniformly to Shortcuts/Siri, schedule stops, **and remote stops**." That collides with **D2 MAINTAINER DECISION 2** (settled 2026-07-05): remote operations are **trusted-at-origin** — every propagated stop/delete was authorized locally where it originated, so the wire needs no re-validation. Re-running `canStop` on the *receiving* device is also **semantically impossible and unsafe**: (a) the receiver does not know the origin's stop *method* (it only sees "session ended"), so it cannot reconstruct the correct `StopMethod`; (b) if the receiver refused what the origin allowed, the two devices would **diverge** (origin unblocked, receiver still blocked) — breaking sync convergence. The #261 comment's own stop-path matrix lists the remote-stop row as gated "no (sync propagation of a stop validated at origin)", i.e. it contradicts its own "uniformly … remote stops" phrasing.
-Recommendation: **the shared policy applies to the Shortcuts/Siri channel (#261) and the extension schedule channels (#206/#239/#236) only. The remote-stop path (`stopRemoteSession` / D2's `deleteLocalProfile` teardown) is trusted-at-origin and is NOT re-gated by D1.** This is the one deliberate, documented exception to "no per-channel exceptions," justified by D2 MD2 and convergence. **Get explicit maintainer sign-off** that this reconciles #261's "remote stops" phrasing with D2 MD2.
+### MDR-3 — Geofence omitted for the `.schedule` channel ✅ SETTLED = A
+**Geofence is omitted for the `.schedule` channel; fail-closed is retained for `.shortcut` and `.takeover`.** Maintainer rule (state it as a rule): *geofence stop rules bind **user-initiated** stops (the commitment ritual); a scheduled stop is the profile's own configuration executing — time is the authority on that channel.* Uniform fail-closed would let a location-evaluation failure make a geofenced+scheduled profile permanently un-stoppable (the **#215 bug class**). This is one policy implementation with **one documented rules matrix carrying a channel-class dimension** (initiation channels are geofence-gated; the time-authoritative schedule channel is not):
 
-### MDR-3 — Geofence on the schedule-stop channel  ⚠️ UNRESOLVED (recommend: omit geofence from the `.schedule` channel)
-A geofence rule means "you may only *stop* this profile when [within/outside] these locations." The extension cannot evaluate location, so a strict "fail-closed geofence, uniformly" would make the `.schedule` channel **refuse the scheduled stop whenever a geofence rule exists** — and because the in-app manual stop *also* requires the geofence, a geofenced+scheduled profile could become **permanently un-stoppable in the background** (a lock-in the product does not intend). Today, schedule stops never check geofence (the #261 matrix lists schedule-stop geofence as ❌).
-Options for the `.schedule` channel geofence input:
-- **(A) Omit geofence from the `.schedule` channel (RECOMMENDED).** A scheduled stop is *time-authoritative*; geofence gates user-initiated/manual stops, not the clock. Matches current behavior; no lock-in. The `.shortcut` and `.takeover` channels keep fail-closed geofence.
-- **(B) Fail-closed uniformly.** Purest reading of "uniform," but risks the permanent-trap above and changes behavior for geofence+schedule profiles.
-Recommendation: **A.** Task 4/5 pass `geofence: .noRule` for the `.schedule` channel regardless of `snapshot.geofenceRule` (documented in code). **Confirm with the maintainer.**
+| Channel (class) | session-match | disableBackgroundStops | geofence | canStop |
+|---|---|---|---|---|
+| `.shortcut` (user-initiated) | ✅ | ✅ | ✅ fail-closed (real eval) | `.manual` |
+| `.takeover` (user-initiated, on victim) | ✅ | ✅ (victim) | ✅ fail-closed (`.unavailable` if rule present) | `.manual` (victim) |
+| `.schedule` (time-authoritative) | ✅ | ✅ | ➖ omitted (`.noRule`) | `.schedule` |
 
-### MDR-4 — #206 synthetic daily interval: guard in the extension vs. fix the scheduler  ⚠️ UNRESOLVED (recommend: guard in the extension, primary; scheduler cleanup optional)
-Root cause of #206's daily fire is the scheduler synthesizing `intervalEnd = start − 1 min` for manual-only-stop profiles (`DeviceActivityCenterUtil.swift:46-53`, `repeats: true`). Two fix locations:
-- **(A) Guard in `ScheduleTimerActivity.stop` (RECOMMENDED, primary).** Reject the stop when `!snapshot.stopConditions.schedule` (canStop(.schedule) fails) or not `isTodayScheduled`. This is **in the evaluable process** and robust to the #260 flakiness (idempotent, self-defending). Task 5 implements this.
-- **(B) Also stop synthesizing a daily-firing interval** in `DeviceActivityCenterUtil.scheduleTimerActivity` for manual-only-stop profiles. Reduces spurious callbacks but is in the app process and cannot be relied on by the extension.
-Recommendation: **A now (Task 5); B as an optional follow-up** (not in D1 scope unless the maintainer wants it). The extension guard makes the fix correct even if B never lands.
+Task 4/5 pass `geofence: .noRule` for the `.schedule` channel.
 
-### MDR-5 — #236 takeover: skip vs. defer  ⚠️ UNRESOLVED (recommend: skip — keep the victim)
-When `ScheduleTimerActivity.start` finds a *different* profile's session active and the shared policy says that session may **not** be stopped in the background (victim has `disableBackgroundStops` or non-manual stop conditions), what happens to the scheduled profile?
-- **(A) Skip the takeover (RECOMMENDED).** Keep the victim session; do **not** start the scheduled profile; log. The scheduled profile simply does not start this window (it will re-evaluate next window). Simplest, no new state.
-- **(B) Defer** the scheduled start until the victim ends. Requires new deferral bookkeeping in the extension; more complex; interacts with the flaky-callback model.
-Recommendation: **A.** Task 6 implements skip.
+### MDR-4 — #206 guard lives in the extension ✅ SETTLED = A
+**Extension-side guard (Task 5), robust to #260 callback flakiness.** *Defense lives at the point of enforcement.* The scheduler-side cleanup (stop synthesizing a daily-firing `intervalEnd = start − 1 min` for manual-only-stop profiles, `DeviceActivityCenterUtil.swift:46-53`) is an **optional follow-up only if logs show noise** — not in D1 scope. The extension guard makes the fix correct even if the follow-up never lands.
 
-### MDR-6 — Snapshot schema: move `ProfileStopConditions` vs. add a mirror type  ⚠️ UNRESOLVED (recommend: move it)
-The extension needs the stop-condition booleans. `ProfileStopConditions` is a pure `Codable` value (only `import Foundation`) but is referenced by ~9 app files + 6 test files.
-- **(A) Move it into `FoqosShared` (RECOMMENDED).** DRY, single source; the ~9 app files already largely `import FoqosShared` (they use `SharedData`); the compiler flags any missing import. The JSON shape is unchanged (same fields), so `stopConditionsData` (`BlockedProfiles.swift:143`) and `SyncModels` wire format are unaffected. Pre-release, no live users, so no migration constraint.
-- **(B) Keep it in the app; add a `FoqosShared` mirror struct** on the snapshot. Fully decoupled, zero import churn, but duplicates 10 booleans and risks drift.
-Recommendation: **A** (matches the project's "prefer structural fixes" stance and the `GeofenceRule`-in-`FoqosShared` precedent). Task 1 is written for **A**; if the maintainer prefers **B**, Task 1's note gives the mirror shape.
+### MDR-5 — #236 takeover skips (keep the victim) + posts a notification ✅ SETTLED = A (+ notification)
+**Skip the takeover** — keep the victim session, do not start the scheduled profile this window (it re-evaluates next window). No deferral bookkeeping, no new race surface. **Addition (maintainer):** when a scheduled start skips because a protected session is active, **post a local notification** ("*X didn't start — Y is active*"). Visibility without deferral state. Implemented in Task 6 (`postSkippedStartNotification`).
+
+### MDR-6 — Move `ProfileStopConditions` into FoqosShared ✅ SETTLED = A
+**Move it** (`GeofenceRule`-in-`FoqosShared` precedent). Maintainer: *"A mirrored 10-boolean struct is a drift bomb and app/extension drift is a recurring audit defect class; the import churn is mechanical and we are pre-release with no migration constraints."* The JSON shape is unchanged (same fields), so `stopConditionsData` (`BlockedProfiles.swift:143`) and `SyncModels` wire format are unaffected. Task 1 implements the move; the mirror alternative is **dead**.
 
 ---
 
@@ -1376,6 +1366,11 @@ Expected: `testGivenProtectedVictim…` FAILS — current takeover ends the vict
           "Start schedule timer for \(profileId), NOT taking over protected session for "
             + "\(existingSession.blockedProfileId.uuidString): \(decision)",
           category: .timer)
+        // MDR-5 addition: surface the skip so the user knows why the scheduled profile
+        // didn't start (visibility without deferral bookkeeping).
+        Self.postSkippedStartNotification(
+          scheduledProfileName: profile.name,
+          activeProfileName: victimSnapshot?.name ?? "another profile")
         return
       }
     }
@@ -1393,6 +1388,29 @@ Expected: `testGivenProtectedVictim…` FAILS — current takeover ends the vict
       return
     }
     appBlocker.activateRestrictions(for: profile)
+```
+
+Add the notification helper to the same `ScheduleTimerActivity` class (`import UserNotifications` is already at the top of this file, used for reminder cleanup):
+
+```swift
+  /// MDR-5: tell the user a scheduled profile did not start because a protected session is active.
+  /// Fire-and-forget; not unit-asserted (UNUserNotificationCenter side effect), same as the
+  /// reminder-cleanup calls in `start`. The identifier is per scheduled profile so repeated
+  /// windows coalesce rather than stack.
+  private static func postSkippedStartNotification(
+    scheduledProfileName: String, activeProfileName: String
+  ) {
+    let content = UNMutableNotificationContent()
+    content.title = "Scheduled profile didn't start"
+    content.body =
+      "\(scheduledProfileName) didn't start — \(activeProfileName) is active and can't be "
+      + "stopped in the background."
+    let request = UNNotificationRequest(
+      identifier: "scheduled-start-skipped-\(scheduledProfileName)",
+      content: content,
+      trigger: nil)
+    UNUserNotificationCenter.current().add(request)
+  }
 ```
 
 > **Geofence (F4, resolved):** the extension cannot evaluate the victim's location, so a geofence-locked victim (which may be un-stoppable right now because the user is away from the allowed zone) is treated **fail-closed** — `geofence: .unavailable` when `victimSnapshot.geofenceRule?.hasLocations == true`. This keeps the takeover channel consistent with the Shortcuts channel (both refuse to background-stop a geofenced profile whose location can't be confirmed) and prevents a scheduled start from silently bypassing a victim's location lock. Cost: a geofenced profile is never taken over by another profile's schedule — it simply keeps blocking, and the scheduled profile does not start this window (MDR-5 = A skip). This is the safe default; confirm under [MDR-3](#mdr-3).
@@ -1718,9 +1736,9 @@ Expected: 0 failures. Confirm the new/edited suites are included: `ProfileSnapsh
 
 - [ ] **⚠️ MANDATORY — refresh every `file:line` citation and re-verify the stop-channel matrix against post-D2 `main` before the implementing session begins.** Every anchor in this plan is from `18904b6`; D2, C2, F, and I merge first. For each of the eight tasks, re-open the cited symbol by NAME (not line), confirm the gap still exists, and update the anchor. Re-derive the #261 stop-channel matrix on then-current `main` and confirm: (a) the Shortcuts row now goes through `BackgroundStopPolicy`; (b) the schedule-stop rows (#206/#239) go through it; (c) the remote-stop row is UNCHANGED (trusted-at-origin per MDR-2 / D2 MD2); (d) no bundle merged between now and implementation already closed one of these gaps (if so, re-scope that task). This step is a gate — do not write code until it is done.
 
-- [ ] **Confirm the MAINTAINER DECISIONS.** Get explicit rulings on the ⚠️ UNRESOLVED items before coding the affected task: **MDR-1** (Task 3 structure), **MDR-2** (Task-nothing — confirm remote stops stay un-gated), **MDR-3** (Task 4/5/6 geofence-on-schedule), **MDR-4** (Task 5 approach), **MDR-5** (Task 6 skip-vs-defer), **MDR-6** (Task 1 move-vs-mirror). MDR-0 (#261 Option A) is already settled.
+- [ ] **MAINTAINER DECISIONS are all settled (2026-07-06).** No rulings to seek — implement MDR-0…6 exactly as ratified (all = Option A): route the app path through the policy (MDR-1); remote stops trusted-at-origin, not re-gated (MDR-2); geofence omitted for the `.schedule` channel, fail-closed for shortcut/takeover (MDR-3); #206 guarded in the extension (MDR-4); #236 skip **and** post the skipped-start notification (MDR-5); move `ProfileStopConditions` into FoqosShared (MDR-6). The dead alternatives (inline checks, receiver re-gating, uniform geofence, mirror struct) must NOT be implemented.
 
-- [ ] **Request code review** (AGENTS.md requirement) before merging. Restate in the PR: this bundle applies **one** shared `BackgroundStopPolicy` to the Shortcuts/Siri and extension schedule channels; the remote-stop channel is deliberately trusted-at-origin (MDR-2, composing with D2 MD2); #261 is Option A (settled).
+- [ ] **Request code review** (AGENTS.md requirement) before merging. Restate in the PR: this bundle applies **one** shared `BackgroundStopPolicy` (initiation-vs-replication rule per MDR-2) to the Shortcuts/Siri and extension schedule channels; the remote-stop channel is trusted-at-origin (D2 MD2); #261 is Option A. All six MDRs settled 2026-07-06.
 
 ---
 
@@ -1747,7 +1765,7 @@ Three independent attackers probed the draft for cross-process races, missed/dup
 - **A1 — Extension read-then-end TOCTOU (stale-snapshot).** `ScheduleTimerActivity.stop` / `StopScheduleTimerActivity.stop` read the active session, evaluate, then call `endActiveSharedSession()` — but the app could swap `activeSharedSession` between the read and the end, so the extension would end the *wrong* session. D2 gated the six in-app mutators but explicitly left `endActiveSharedSession` un-gated. **Folded in:** Task 2 adds `endActiveSharedSession(expectedSessionId:)` and every extension stop path passes the id it evaluated (Tasks 4/5/6). Composes with D2's identity-gating philosophy.
 - **A2 — Duplicate/dropped callbacks (#260).** Every changed handler must be safe under a callback firing 0, 1, or N times. **Verified:** `BackgroundStopPolicy.evaluate` is pure; `endActiveSharedSession(expectedSessionId:)` is a no-op once the session is gone or swapped; the #206/#239 guards reject stale fires; the #229 suppression is a pure comparison. No handler depends on a callback definitely firing (the app-side merge #243 and in-app stop paths are the reconciliation triggers, not the callbacks).
 - **A3 — `nil stopConditions` on older snapshots.** A snapshot encoded before Task 1 decodes `stopConditions == nil`. **Folded in:** `BackgroundStopPolicy` treats `nil` as `ProfileStopConditions()` (nothing allowed) → **fails closed** (never allows a background stop it can't justify). Covered by `testGivenNilStopConditions_WhenSchedule_ThenDenied` and the back-compat decode test.
-- **A4 — #261 "remote stops" vs D2 MD2 conflict.** The #261 comment says apply the policy to remote stops; D2 MD2 says remote ops are trusted-at-origin, and re-gating on the receiver is semantically impossible (no origin stop-method) and breaks convergence. **Folded in:** MDR-2 surfaces the conflict with a strong recommendation (trust-at-origin) and requires maintainer sign-off; D1 does not touch the remote-stop path.
+- **A4 — #261 "remote stops" vs D2 MD2 conflict.** The #261 comment says apply the policy to remote stops; D2 MD2 says remote ops are trusted-at-origin, and re-gating on the receiver is semantically impossible (no origin stop-method) and breaks convergence. **Resolved:** MDR-2 is settled (2026-07-06) as the initiation-vs-replication rule — every *initiation* channel is gated; sync *replication* of an already-authorized stop is not re-gated. D1 does not touch the remote-stop path.
 - **A5 — Geofence permanent-trap on schedule stops.** Uniform fail-closed geofence could make a geofenced+scheduled profile un-stoppable in the background forever. **Folded in:** MDR-3 (schedule channel omits geofence; recommended) with maintainer confirmation required.
 - **A6 — #236 victim-snapshot availability.** The takeover branch only holds the incoming profile's snapshot. **Verified:** the victim's snapshot is fetchable in-process via `SharedData.snapshot(for: victimProfileId)` (Task 6 Step 3), so the policy is evaluable; the victim's geofence is not, hence the documented `.noRule` (the `canStop(.manual)` gate already protects commitment victims).
 - **A7 — Synthetic-interval fix location.** Fixing only the scheduler (app) would leave the extension trusting a daily callback. **Folded in:** MDR-4 puts the primary guard in the extension (`ScheduleTimerActivity.stop`), robust to flakiness; the scheduler cleanup is optional.
