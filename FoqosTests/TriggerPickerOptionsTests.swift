@@ -1,4 +1,5 @@
 // FoqosTests/TriggerPickerOptionsTests.swift
+import FoqosShared
 import XCTest
 
 @testable import FamilyFoqos

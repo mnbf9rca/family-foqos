@@ -1,4 +1,4 @@
-// Foqos/Models/TriggerConfigurationModel.swift
+import FoqosShared
 import Foundation
 import SwiftUI
 

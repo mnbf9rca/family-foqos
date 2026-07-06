@@ -1,4 +1,4 @@
-// Foqos/Utils/TriggerMigration.swift
+import FoqosShared
 import Foundation
 
 /// Handles migration from legacy blockingStrategyId to new trigger system

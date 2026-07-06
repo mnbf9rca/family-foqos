@@ -1,3 +1,4 @@
+import FoqosShared
 import Foundation
 
 /// Pure functions for determining start/stop actions and validating stop methods.
