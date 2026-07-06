@@ -135,6 +135,15 @@ public enum SharedData {
     return suite.bool(forKey: legacyKey.rawValue)
   }
 
+  /// Removes the pre-migration (legacy) key on every write, so a stale legacy value can never
+  /// shadow or resurrect state after the main-app app-group migration runs (#217). Pairs with
+  /// `UserDefaultsMigration`'s copy-only-when-new-absent guard.
+  /// MUST NOT take `withLock` — it is called from setters already inside a caller's `withLock`,
+  /// which is non-reentrant.
+  private static func clearLegacy(_ legacyKey: LegacyKey) {
+    suite.removeObject(forKey: legacyKey.rawValue)
+  }
+
   // MARK: – Serializable snapshot of a profile (no sessions)
 
   public struct ProfileSnapshot: Codable, Equatable {
@@ -315,6 +324,7 @@ public enum SharedData {
       } else {
         suite.removeObject(forKey: Key.profileSnapshots.rawValue)
       }
+      clearLegacy(.profileSnapshots)
     }
   }
 
@@ -351,6 +361,7 @@ public enum SharedData {
       } else {
         suite.removeObject(forKey: Key.completedScheduleSessions.rawValue)
       }
+      clearLegacy(.completedScheduleSessions)
     }
   }
 
@@ -367,6 +378,7 @@ public enum SharedData {
       } else {
         suite.removeObject(forKey: Key.activeScheduleSession.rawValue)
       }
+      clearLegacy(.activeScheduleSession)
     }
   }
 
@@ -556,12 +568,14 @@ public enum SharedData {
         // Generate new ID if none exists
         let newId = UUID()
         suite.set(newId.uuidString, forKey: Key.deviceSyncId.rawValue)
+        clearLegacy(.deviceSyncId)
         return newId
       }
     }
     set {
       withLock {
         suite.set(newValue.uuidString, forKey: Key.deviceSyncId.rawValue)
+        clearLegacy(.deviceSyncId)
       }
     }
   }
@@ -573,6 +587,7 @@ public enum SharedData {
     }
     set {
       suite.set(newValue, forKey: Key.deviceSyncEnabled.rawValue)
+      clearLegacy(.deviceSyncEnabled)
     }
   }
 }
