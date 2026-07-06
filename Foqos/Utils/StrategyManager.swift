@@ -118,7 +118,8 @@ class StrategyManager: ObservableObject {
       // #237 / MD3: reconcile against cross-process state before ending a possibly stale
       // on-screen session. The next Stop acts on the refreshed state.
       if let displayed = activeSession,
-        SharedData.getActiveSharedSession()?.id != displayed.id
+        let sharedSession = SharedData.getActiveSharedSession(),
+        sharedSession.id != displayed.id
       {
         try? loadActiveSession(context: context)
         errorMessage =

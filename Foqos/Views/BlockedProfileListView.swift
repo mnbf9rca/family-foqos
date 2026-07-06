@@ -41,7 +41,8 @@ struct BlockedProfileListView: View {
       case .activeProfile:
         "You cannot delete a profile that is currently active. Please switch to a different profile first."
       case .lockedProfile:
-        "This profile is locked. Open it and enter the lock code to delete it."
+        "This profile is locked. Open the profile, enter the lock code, "
+          + "then delete it from the profile screen."
       case .fetchFailed:
         "Something went wrong while checking profile status. Please try again."
       case .syncFailed(let message):

@@ -412,9 +412,26 @@ public enum SharedData {
     }
   }
 
+  private static func activeSharedSessionMatchesExpected(
+    _ expectedSessionId: String, operation: String
+  ) -> Bool {
+    guard activeSharedSession?.id == expectedSessionId else {
+      let activeSessionId = activeSharedSession?.id ?? "nil"
+      Log.debug(
+        "SharedData \(operation) skipped: expected session \(expectedSessionId), "
+          + "active session \(activeSessionId)",
+        category: .session
+      )
+      return false
+    }
+
+    return true
+  }
+
   public static func flushActiveSession(expectedSessionId: String) {
     withLock {
-      guard activeSharedSession?.id == expectedSessionId else { return }
+      guard activeSharedSessionMatchesExpected(expectedSessionId, operation: "flushActiveSession")
+      else { return }
       activeSharedSession = nil
     }
   }
@@ -432,28 +449,33 @@ public enum SharedData {
 
   public static func setBreakStartTime(date: Date, expectedSessionId: String) {
     withLock {
-      guard activeSharedSession?.id == expectedSessionId else { return }
+      guard activeSharedSessionMatchesExpected(expectedSessionId, operation: "setBreakStartTime")
+      else { return }
       activeSharedSession?.breakStartTime = date
     }
   }
 
   public static func setBreakEndTime(date: Date, expectedSessionId: String) {
     withLock {
-      guard activeSharedSession?.id == expectedSessionId else { return }
+      guard activeSharedSessionMatchesExpected(expectedSessionId, operation: "setBreakEndTime")
+      else { return }
       activeSharedSession?.breakEndTime = date
     }
   }
 
   public static func setEndTime(date: Date, expectedSessionId: String) {
     withLock {
-      guard activeSharedSession?.id == expectedSessionId else { return }
+      guard activeSharedSessionMatchesExpected(expectedSessionId, operation: "setEndTime")
+      else { return }
       activeSharedSession?.endTime = date
     }
   }
 
   public static func setOneMoreMinuteStartTime(date: Date, expectedSessionId: String) {
     withLock {
-      guard var session = activeSharedSession, session.id == expectedSessionId else { return }
+      guard activeSharedSessionMatchesExpected(expectedSessionId, operation: "setOneMoreMinuteStartTime"),
+        var session = activeSharedSession
+      else { return }
       session.oneMoreMinuteStartTime = date
       session.oneMoreMinuteUsed = true
       activeSharedSession = session
@@ -462,7 +484,9 @@ public enum SharedData {
 
   public static func clearOneMoreMinuteStartTime(expectedSessionId: String) {
     withLock {
-      guard var session = activeSharedSession, session.id == expectedSessionId else { return }
+      guard activeSharedSessionMatchesExpected(expectedSessionId, operation: "clearOneMoreMinuteStartTime"),
+        var session = activeSharedSession
+      else { return }
       session.oneMoreMinuteStartTime = nil
       activeSharedSession = session
     }
