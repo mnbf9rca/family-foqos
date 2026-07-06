@@ -31,6 +31,10 @@ public class ScheduleTimerActivity: TimerActivity {
     }
   }
 
+  public static func skippedStartNotificationIdentifier(for scheduledProfileId: UUID) -> String {
+    return "scheduled-start-skipped-\(scheduledProfileId.uuidString)"
+  }
+
   public func start(for profile: SharedData.ProfileSnapshot) {
     let profileId = profile.id.uuidString
 
@@ -102,6 +106,7 @@ public class ScheduleTimerActivity: TimerActivity {
             + "\(existingSession.blockedProfileId.uuidString): \(decision)",
           category: .timer)
         Self.postSkippedStartNotification(
+          scheduledProfileId: profile.id,
           scheduledProfileName: profile.name,
           activeProfileName: victimSnapshot?.name ?? "another profile")
         return
@@ -151,6 +156,7 @@ public class ScheduleTimerActivity: TimerActivity {
   }
 
   private static func postSkippedStartNotification(
+    scheduledProfileId: UUID,
     scheduledProfileName: String,
     activeProfileName: String
   ) {
@@ -160,7 +166,7 @@ public class ScheduleTimerActivity: TimerActivity {
       "\(scheduledProfileName) didn't start — \(activeProfileName) is active and can't be "
       + "stopped in the background."
     let request = UNNotificationRequest(
-      identifier: "scheduled-start-skipped-\(scheduledProfileName)",
+      identifier: skippedStartNotificationIdentifier(for: scheduledProfileId),
       content: content,
       trigger: nil)
     UNUserNotificationCenter.current().add(request)

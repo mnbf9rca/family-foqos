@@ -130,6 +130,23 @@ final class ScheduleTimerActivityTests: XCTestCase {
       "the protected victim session must survive; the scheduled takeover is skipped (#236)")
   }
 
+  func testGivenSameProfileName_WhenBuildingSkippedStartNotificationIds_ThenIdsUseProfileUUID() {
+    let firstProfileId = UUID()
+    let secondProfileId = UUID()
+
+    let firstIdentifier = ScheduleTimerActivity.skippedStartNotificationIdentifier(
+      for: firstProfileId)
+    let secondIdentifier = ScheduleTimerActivity.skippedStartNotificationIdentifier(
+      for: secondProfileId)
+
+    XCTAssertEqual(firstIdentifier, "scheduled-start-skipped-\(firstProfileId.uuidString)")
+    XCTAssertEqual(secondIdentifier, "scheduled-start-skipped-\(secondProfileId.uuidString)")
+    XCTAssertNotEqual(
+      firstIdentifier,
+      secondIdentifier,
+      "profiles with the same display name must not replace each other's skipped-start notices")
+  }
+
   func testGivenLegacySchedule_WhenComputingWindowStart_ThenTodayAtStartTime() {
     let cal = Calendar(identifier: .gregorian)
     var components = DateComponents()

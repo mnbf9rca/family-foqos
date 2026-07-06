@@ -473,6 +473,8 @@ class StrategyManager: ObservableObject {
         geofenceState = .noRule
       }
 
+      // App-side typed guards above preserve existing IntentError mapping; the shared policy
+      // evaluates only stop conditions and geofence for this already-matched, stoppable session.
       let decision = BackgroundStopPolicy.evaluate(
         channel: .shortcut,
         sessionMatchesProfile: true,
@@ -507,7 +509,12 @@ class StrategyManager: ObservableObject {
           category: .strategy)
         self.errorMessage = reason
         throw IntentError.stopConditionsNotMet(reason: reason)
-      case .denied(.backgroundStopsDisabled), .denied(.noMatchingSession):
+      case .denied(.backgroundStopsDisabled):
+        // Defensive only: disableBackgroundStops is handled before the policy call above.
+        self.errorMessage = "\(profile.name) cannot be stopped in the background."
+        throw IntentError.backgroundStopsDisabled(profileName: profile.name)
+      case .denied(.noMatchingSession):
+        // Defensive only: session/profile matching is handled before the policy call above.
         self.errorMessage = "\(profile.name) cannot be stopped in the background."
         throw IntentError.backgroundStopsDisabled(profileName: profile.name)
       }
