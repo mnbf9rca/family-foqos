@@ -120,8 +120,9 @@ class DeviceActivityCenterUtil {
     }
 
     let stopSchedule = profile.stopSchedule!
-    let intervalStart = DateComponents(hour: 0, minute: 0)
-    let intervalEnd = DateComponents(hour: stopSchedule.hour, minute: stopSchedule.minute)
+    let (intervalStart, intervalEnd) = stopScheduleInterval(
+      stopHour: stopSchedule.hour, stopMinute: stopSchedule.minute
+    )
 
     let deviceActivitySchedule = DeviceActivitySchedule(
       intervalStart: intervalStart,
@@ -414,14 +415,56 @@ class DeviceActivityCenterUtil {
   static func getTimeIntervalStartAndEnd(from minutes: Int, now: Date = Date()) -> (
     intervalStart: DateComponents, intervalEnd: DateComponents
   ) {
+    // Clamp the upper bound so the computed interval can never collapse to a
+    // zero-length window: exactly 1440 minutes (24h), or any larger multiple,
+    // lands intervalEnd on the same wall-clock minute as intervalStart, which
+    // DeviceActivity silently refuses to monitor and defers ~24h (#212).
+    // NOTE: the lower bound is intentionally NOT clamped here — that would
+    // silently rewrite user-chosen break durations (see MAINTAINER DECISION 3).
+    let clampedMinutes = min(minutes, DeviceActivityLimits.maximumTimerMinutes)
+    if clampedMinutes != minutes {
+      Log.warning(
+        "Timer duration \(minutes)m exceeds DeviceActivity's honorable maximum; "
+          + "clamped to \(clampedMinutes)m",
+        category: .timer
+      )
+    }
+
     let calendar = Calendar.current
     let startComponents = calendar.dateComponents([.hour, .minute], from: now)
     let intervalStart = DateComponents(hour: startComponents.hour, minute: startComponents.minute)
 
-    let endDate = now.addingTimeInterval(Double(minutes) * 60)
+    let endDate = now.addingTimeInterval(Double(clampedMinutes) * 60)
     let endComponents = calendar.dateComponents([.hour, .minute], from: endDate)
     let intervalEnd = DateComponents(hour: endComponents.hour, minute: endComponents.minute)
 
+    return (intervalStart: intervalStart, intervalEnd: intervalEnd)
+  }
+
+  /// Computes the DeviceActivity interval for a stop-only schedule.
+  ///
+  /// The stop-only activity only cares about `intervalDidEnd` firing at the stop
+  /// time (`StopScheduleTimerActivity.start(for:)` is a no-op), so `intervalStart`
+  /// is a free internal artifact. Anchoring it at 00:00 (the historical default)
+  /// yields a window of `stopHour*60 + stopMinute` minutes — under DeviceActivity's
+  /// 15-minute minimum, or zero-length when stop == 00:00, whenever the stop time
+  /// is before 00:15. In that case we anchor `intervalStart` one minute AFTER the
+  /// stop so the repeating window wraps ~24h and still delivers `intervalDidEnd`
+  /// at the stop time (#228). For stop times at or after 00:15 the historical
+  /// 00:00 anchor is preserved (no behavior change).
+  static func stopScheduleInterval(stopHour: Int, stopMinute: Int) -> (
+    intervalStart: DateComponents, intervalEnd: DateComponents
+  ) {
+    let intervalEnd = DateComponents(hour: stopHour, minute: stopMinute)
+    let stopMinuteOfDay = stopHour * 60 + stopMinute
+
+    let intervalStart: DateComponents
+    if stopMinuteOfDay < DeviceActivityLimits.minimumIntervalMinutes {
+      let anchor = (stopMinuteOfDay + 1) % 1440
+      intervalStart = DateComponents(hour: anchor / 60, minute: anchor % 60)
+    } else {
+      intervalStart = DateComponents(hour: 0, minute: 0)
+    }
     return (intervalStart: intervalStart, intervalEnd: intervalEnd)
   }
 }

@@ -12,13 +12,13 @@ struct TimerDurationView: View {
   @State private var isSliding = false
 
   // Constants
-  private let minMinutes: Double = 15
-  private let maxMinutes: Double = 1439  // 23h 59m
+  private let minMinutes = Double(DeviceActivityLimits.minimumIntervalMinutes)
+  private let maxMinutes = Double(DeviceActivityLimits.maximumTimerMinutes)
   private let smallIncrement: Double = 5
   private let largeIncrement: Double = 15
 
   // Common snap points (in minutes)
-  private let snapPoints: [Double] = [15, 30, 45, 60, 90, 120, 180, 240, 360, 480, 720, 1440]
+  private let snapPoints: [Double] = [15, 30, 45, 60, 90, 120, 180, 240, 360, 480, 720]
   private let snapThreshold: Double = 10  // How close to snap (in minutes)
 
   var body: some View {
@@ -171,15 +171,32 @@ struct TimerDurationView: View {
     }
   }
 
+  /// Returns the snap target for a slider value: the nearest snap point if one is
+  /// within `threshold`, otherwise the value itself — always clamped to
+  /// `maxMinutes` so the result can never exceed the slider's honorable range (#212).
+  static func snappedDuration(
+    for value: Double,
+    snapPoints: [Double],
+    threshold: Double,
+    maxMinutes: Double
+  ) -> Double {
+    guard let closest = snapPoints.min(by: { abs($0 - value) < abs($1 - value) }) else {
+      return min(value, maxMinutes)
+    }
+    let snapped = abs(closest - value) <= threshold ? closest : value
+    return min(snapped, maxMinutes)
+  }
+
   private func snapToNearestPreset() {
-    // Find the closest snap point
-    if let closest = snapPoints.min(by: { abs($0 - durationMinutes) < abs($1 - durationMinutes) }) {
-      let distance = abs(closest - durationMinutes)
-      if distance <= snapThreshold {
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-          durationMinutes = closest
-        }
-      }
+    let target = Self.snappedDuration(
+      for: durationMinutes,
+      snapPoints: snapPoints,
+      threshold: snapThreshold,
+      maxMinutes: maxMinutes
+    )
+    guard target != durationMinutes else { return }
+    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+      durationMinutes = target
     }
   }
 

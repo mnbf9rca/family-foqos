@@ -93,6 +93,23 @@ final class StrategyManagerBackgroundTests: XCTestCase {
     }
   }
 
+  func testGivenDurationExactly1440_WhenStartingFromBackground_ThenThrowsDurationOutOfRange() throws {
+    let profile = BlockedProfiles(name: "Test")
+    context.insert(profile)
+    try context.save()
+
+    XCTAssertThrowsError(
+      try manager.startSessionFromBackground(
+        profile.id, context: context, durationInMinutes: 1440
+      )
+    ) { error in
+      if case IntentError.durationOutOfRange = error {
+      } else {
+        XCTFail("Expected durationOutOfRange, got \(error)")
+      }
+    }
+  }
+
   // MARK: - stopSessionFromBackground
 
   func testGivenNoProfile_WhenStoppingFromBackground_ThenThrowsProfileNotFound() async {

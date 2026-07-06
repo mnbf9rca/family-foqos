@@ -107,3 +107,17 @@ final class TriggerValidator {
       .map { $0.message }
   }
 }
+
+extension TriggerValidator {
+  /// Length, in minutes, of the repeating DeviceActivity window a start/stop
+  /// time pair produces. Computed modulo a 24h day so it is correct for both
+  /// same-day windows (stop after start) and cross-midnight windows (stop before
+  /// start). Returns 0 when the two times are identical.
+  static func scheduleWindowMinutes(
+    startHour: Int, startMinute: Int, stopHour: Int, stopMinute: Int
+  ) -> Int {
+    let startMin = startHour * 60 + startMinute
+    let stopMin = stopHour * 60 + stopMinute
+    return ((stopMin - startMin) % 1440 + 1440) % 1440
+  }
+}

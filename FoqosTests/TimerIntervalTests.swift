@@ -76,4 +76,37 @@ final class TimerIntervalTests: XCTestCase {
     XCTAssertEqual(end.hour, 9)
     XCTAssertEqual(end.minute, 30)
   }
+
+  // MARK: - #212 upper-bound clamp (24h zero-length collapse guard)
+
+  func testGiven1440Minutes_WhenComputingInterval_ThenClampedToNonZeroWindow() {
+    let now = referenceDateAt(hour: 8, minute: 0)
+    let (start, end) = DeviceActivityCenterUtil.getTimeIntervalStartAndEnd(from: 1440, now: now)
+    // 24h would collapse to 08:00–08:00; clamp to 1439 → ends 07:59.
+    XCTAssertEqual(start.hour, 8)
+    XCTAssertEqual(start.minute, 0)
+    XCTAssertEqual(end.hour, 7)
+    XCTAssertEqual(end.minute, 59)
+    XCTAssertFalse(
+      start.hour == end.hour && start.minute == end.minute,
+      "Interval must never be zero-length"
+    )
+  }
+
+  func testGiven1439Minutes_WhenComputingInterval_ThenEndIsOneMinuteBeforeStart() {
+    let now = referenceDateAt(hour: 8, minute: 0)
+    let (start, end) = DeviceActivityCenterUtil.getTimeIntervalStartAndEnd(from: 1439, now: now)
+    XCTAssertEqual(start.hour, 8)
+    XCTAssertEqual(start.minute, 0)
+    XCTAssertEqual(end.hour, 7)
+    XCTAssertEqual(end.minute, 59)
+  }
+
+  func testGivenMultipleOfDay_WhenComputingInterval_ThenClampedNonZero() {
+    let now = referenceDateAt(hour: 8, minute: 0)
+    let (start, end) = DeviceActivityCenterUtil.getTimeIntervalStartAndEnd(from: 2880, now: now)
+    XCTAssertFalse(start.hour == end.hour && start.minute == end.minute)
+    XCTAssertEqual(end.hour, 7)
+    XCTAssertEqual(end.minute, 59)
+  }
 }

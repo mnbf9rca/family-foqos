@@ -17,7 +17,7 @@ struct StartProfileIntent: AppIntent {
   nonisolated(unsafe) static var title: LocalizedStringResource = "Start Family Foqos Profile"  // SAFETY: AppIntents requires static var; immutable after init
 
   nonisolated(unsafe) static var description = IntentDescription(  // SAFETY: AppIntents requires static var; immutable after init
-    "Start a Family Foqos blocking profile. Optionally specify a timer duration in minutes (15-1440)."
+    "Start a Family Foqos blocking profile. Optionally specify a timer duration between 15 minutes and 23 hours 59 minutes."
   )
 
   @MainActor
