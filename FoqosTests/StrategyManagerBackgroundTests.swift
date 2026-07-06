@@ -190,4 +190,37 @@ final class StrategyManagerBackgroundTests: XCTestCase {
       XCTFail("Expected IntentError, got \(error)")
     }
   }
+
+  func testGivenNFCOnlyStopProfile_WhenStoppingFromBackground_ThenThrowsStopConditionsNotMet()
+    async throws
+  {
+    let profile = BlockedProfiles(name: "Commitment")
+    profile.disableBackgroundStops = false
+    profile.stopConditions = ProfileStopConditions(manual: false, anyNFC: true)
+    context.insert(profile)
+    let session = BlockedProfileSession(tag: "test", blockedProfile: profile)
+    context.insert(session)
+    try context.save()
+
+    do {
+      try await manager.stopSessionFromBackground(profile.id, context: context)
+      XCTFail("Expected the NFC-only profile to refuse a background stop (#261)")
+    } catch let error as IntentError {
+      if case .stopConditionsNotMet = error {
+      } else {
+        XCTFail("Expected stopConditionsNotMet, got \(error)")
+      }
+    }
+  }
+
+  func testGivenManualStopProfile_WhenStoppingFromBackground_ThenSucceeds() async throws {
+    let profile = BlockedProfiles(name: "Casual")
+    profile.stopConditions = ProfileStopConditions(manual: true)
+    context.insert(profile)
+    let session = BlockedProfileSession(tag: "test", blockedProfile: profile)
+    context.insert(session)
+    try context.save()
+
+    try await manager.stopSessionFromBackground(profile.id, context: context)
+  }
 }
