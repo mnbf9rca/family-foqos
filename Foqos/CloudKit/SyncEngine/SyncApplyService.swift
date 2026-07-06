@@ -108,6 +108,11 @@ final class SyncApplyService {
         clearDeletionBookkeeping(recordName: recordName)  // intent already satisfied
         return .notPresent
       }
+      // §5.2 / #203: if the deleted profile owns the active session, stop it first so
+      // restrictions are deactivated and the manager does not retain a deleted model.
+      if sessionController.activeSession?.blockedProfile.id == id {
+        sessionController.stopRemoteSession(context: modelContext, profileId: id)
+      }
       try BlockedProfiles.deleteProfile(profile, in: modelContext)  // defers save
       try commit()
       clearDeletionBookkeeping(recordName: recordName)

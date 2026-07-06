@@ -59,4 +59,25 @@ final class StrategyManagerRemoteSessionTests: XCTestCase {
     XCTAssertNil(manager.activeSession, "cannot start remotely without local app selection")
     XCTAssertNil(manager.timerTask)
   }
+
+  // #203 payload: the real stopRemoteSession must clear the manager's active session and stop
+  // the timer. The SyncApplyService mock only proves the deletion path calls this seam.
+  func testGivenRealActiveSession_WhenStopRemoteSession_ThenActiveSessionClearedAndTimerStopped()
+    throws
+  {
+    let profile = BlockedProfiles(name: "Focus")
+    context.insert(profile)
+    let session = BlockedProfileSession(tag: "local", blockedProfile: profile)
+    context.insert(session)
+    try context.save()
+    manager.activeSession = session
+    manager.startTimer()
+    XCTAssertNotNil(manager.timerTask, "precondition: timer running")
+
+    manager.stopRemoteSession(context: context, profileId: profile.id)
+
+    XCTAssertNil(manager.activeSession, "real stopRemoteSession clears the active session (#203)")
+    XCTAssertNil(manager.timerTask, "real stopRemoteSession stops the timer (#203)")
+    XCTAssertNotNil(session.endTime, "the session is ended")
+  }
 }

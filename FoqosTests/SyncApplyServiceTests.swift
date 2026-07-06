@@ -459,6 +459,56 @@ final class SyncApplyServiceTests: XCTestCase {
     XCTAssertEqual(sessionController.stopRemoteSessionProfileId, id)
   }
 
+  // #203: a remote profile deletion for the active profile must stop the session
+  // before deleting the profile.
+  func testGivenActiveSessionProfile_WhenProfileDeletionApplied_ThenSessionStoppedThenDeleted()
+    throws
+  {
+    let id = UUID()
+    let profile = BlockedProfiles(id: id, name: "Focus", syncVersion: 1)
+    context.insert(profile)
+    let session = BlockedProfileSession(tag: "local", blockedProfile: profile)
+    context.insert(session)
+    try context.save()
+    sessionController.activeSession = session
+
+    let outcome = makeService().applyFetchedDeletion(
+      recordID: CKRecord.ID(recordName: id.uuidString, zoneID: zoneID),
+      recordType: SyncedProfile.recordType)
+
+    XCTAssertEqual(outcome, .deleted)
+    XCTAssertTrue(
+      sessionController.stopRemoteSessionCalled,
+      "the owned session must be stopped before the profile is deleted (#203)")
+    XCTAssertEqual(sessionController.stopRemoteSessionProfileId, id)
+    XCTAssertNil(
+      try BlockedProfiles.findProfile(byID: id, in: context), "profile is still deleted")
+  }
+
+  // Negative: a remote profile deletion for a non-active profile must not touch the session.
+  func testGivenDeletionForNonActiveProfile_WhenApplied_ThenNoSessionStop() throws {
+    let activeId = UUID()
+    let deleteId = UUID()
+    let activeProfile = BlockedProfiles(id: activeId, name: "Active", syncVersion: 1)
+    let deleteProfile = BlockedProfiles(id: deleteId, name: "Delete", syncVersion: 1)
+    context.insert(activeProfile)
+    context.insert(deleteProfile)
+    let activeSession = BlockedProfileSession(tag: "local", blockedProfile: activeProfile)
+    context.insert(activeSession)
+    try context.save()
+    sessionController.activeSession = activeSession
+
+    XCTAssertEqual(
+      makeService().applyFetchedDeletion(
+        recordID: CKRecord.ID(recordName: deleteId.uuidString, zoneID: zoneID),
+        recordType: SyncedProfile.recordType),
+      .deleted)
+    XCTAssertFalse(
+      sessionController.stopRemoteSessionCalled, "unrelated profile deletion never stops the session")
+    XCTAssertNil(try BlockedProfiles.findProfile(byID: deleteId, in: context))
+    XCTAssertNotNil(try BlockedProfiles.findProfile(byID: activeId, in: context))
+  }
+
   // MARK: - S-2
 
   func testGivenEmptyFetch_WhenApplied_ThenZeroLocalMutations() throws {
