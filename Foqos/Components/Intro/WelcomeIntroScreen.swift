@@ -43,7 +43,7 @@ struct WelcomeIntroScreen: View {
           .resizable()
           .scaledToFit()
           .frame(width: 50, height: 50)
-          .offset(x: ORBIT_OFFSET)  // Orbit radius
+          .offset(x: orbitOffset)  // Orbit radius
           .rotationEffect(.degrees(orbitRotation + 90))
           .opacity(showIcons ? 1 : 0)
 
@@ -52,7 +52,7 @@ struct WelcomeIntroScreen: View {
           .resizable()
           .scaledToFit()
           .frame(width: 50, height: 50)
-          .offset(x: ORBIT_OFFSET)  // Orbit radius
+          .offset(x: orbitOffset)  // Orbit radius
           .rotationEffect(.degrees(orbitRotation + 180))
           .opacity(showIcons ? 1 : 0)
 
@@ -61,7 +61,7 @@ struct WelcomeIntroScreen: View {
           .resizable()
           .scaledToFit()
           .frame(width: 50, height: 50)
-          .offset(x: ORBIT_OFFSET)  // Orbit radius
+          .offset(x: orbitOffset)  // Orbit radius
           .rotationEffect(.degrees(orbitRotation + 270))
           .opacity(showIcons ? 1 : 0)
 
