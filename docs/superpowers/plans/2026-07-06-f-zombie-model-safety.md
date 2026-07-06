@@ -8,7 +8,7 @@
 
 **Tech Stack:** Swift 6, SwiftUI, SwiftData, XCTest. iOS app target module name is `FamilyFoqos`.
 
-**Source commit (current `main` at authoring):** `6ffb8c22b52c4b47da610b978783ccc69774f712`
+**Source commit (current `main` refreshed after PR #279):** `8c86df2520702ae37752644f8b8bd7000be6b4db`
 
 **Epic:** #263 (defect-audit follow-ups). Bundle F. Issues: #213 (high), #235 (medium).
 
@@ -51,7 +51,7 @@ extension Array where Element: PersistentModel {
 }
 ```
 
-`Foqos/Utils/SafeModelView.swift`:
+`Foqos/Utils/SafeModelView.swift:19`:
 ```swift
 struct SafeModelView<Model: PersistentModel, Content: View>: View {
   let model: Model
@@ -68,11 +68,11 @@ struct SafeModelView<Model: PersistentModel, Content: View>: View {
 }
 ```
 
-`BlockedProfileSession` (`Foqos/Models/BlockedProfileSessions.swift`) relevant surface:
+`BlockedProfileSession` (`Foqos/Models/BlockedProfileSessions.swift:5`) relevant surface:
 ```swift
-init(tag: String, blockedProfile: BlockedProfiles, forceStarted: Bool = false, startTime: Date = Date())
-func duration(now: Date = Date()) -> TimeInterval   // endTime ?? now, minus startTime
-var startTime: Date; var endTime: Date?; var blockedProfile: BlockedProfiles
+init(tag: String, blockedProfile: BlockedProfiles, forceStarted: Bool = false, startTime: Date = Date()) // line 51
+func duration(now: Date = Date()) -> TimeInterval   // line 46; endTime ?? now, minus startTime
+var startTime: Date; var endTime: Date?; var blockedProfile: BlockedProfiles // lines 9, 11-12
 ```
 `BlockedProfiles` convenience init used in tests: `BlockedProfiles(name: "…")` and
 `BlockedProfiles(id: UUID(), name: "…", selectedActivity: .init(), blockingStrategyId: "manual")`.
@@ -276,7 +276,7 @@ git commit -m "fix(#213): guard ProfileInsightsUtil against deleted profile"
 - Consumes: `SafeModelView` (`Foqos/Utils/SafeModelView.swift`), `viewModel.profile`.
 - Produces: no API change. When the profile is deleted while the sheet is open, the body renders nothing (the close button stays available) instead of crashing.
 
-**Why (not covered by F1):** `ProfileInsightsView.nerdStatsItems` reads `viewModel.profile` properties **directly** (`profile.createdAt`, `profile.updatedAt`, `profile.id`, `profile.selectedActivity`, `profile.sessions.count`, `profile.activeScheduleTimerActivity`) — these bypass `ProfileInsightsUtil`, so F1 does not cover them. Wrapping the body in `SafeModelView` is the codebase's documented render-time guard (layer 3). This view is presented as a `.sheet` from `HomeView.swift:319` and `BlockedProfileView.swift:703` with no `SafeModelView`, unlike sibling session views.
+**Why (not covered by F1):** `ProfileInsightsView.nerdStatsItems` (`Foqos/Views/ProfileInsightsView.swift:489`) reads `viewModel.profile` properties **directly** (`profile.createdAt`, `profile.updatedAt`, `profile.id`, `profile.selectedActivity`, `profile.sessions.count`, `profile.activeScheduleTimerActivity`) — these bypass `ProfileInsightsUtil`, so F1 does not cover them. Wrapping the body in `SafeModelView` is the codebase's documented render-time guard (layer 3). This view is presented as a `.sheet` from `HomeView.swift:319` and `BlockedProfileView.swift:703` with no `SafeModelView`, unlike sibling session views.
 
 > **No unit test for this task.** A SwiftUI sheet body is not unit-testable here; `SafeModelView`'s guard is already covered by `FoqosTests/SafeModelViewTests.swift` (`testSafeModelViewWithDeletedModel`). F1's tests cover the data-path regression. F2 is a mechanical, inspection-verified application of the existing guard. Verification is a clean build (Step 3).
 
@@ -314,7 +314,7 @@ Replace that with
       .toolbar {
 ```
 
-Net effect: `SafeModelView(viewModel.profile) { _ in ScrollView { … }.background(…) }` becomes the `NavigationStack`'s content, and `.navigationTitle`/`.toolbar` (with the Close button) stay on the `SafeModelView` so the user can always dismiss even when the profile is gone. Leave the entire inner `VStack` (all chart cards, lines ~15–452 of the original body) **exactly as-is** — only the two brace/indent boundaries above change. Re-run swift-format to normalize the added indentation level:
+Net effect: `SafeModelView(viewModel.profile) { _ in ScrollView { … }.background(…) }` becomes the `NavigationStack`'s content, and `.navigationTitle`/`.toolbar` (with the Close button) stay on the `SafeModelView` so the user can always dismiss even when the profile is gone. Leave the entire inner `VStack` (all chart cards, current lines 15–452 of the original body) **exactly as-is** — only the two brace/indent boundaries above change. Re-run swift-format to normalize the added indentation level:
 ```bash
 swift-format --in-place Foqos/Views/ProfileInsightsView.swift
 ```
@@ -344,9 +344,9 @@ git commit -m "fix(#213): guard ProfileInsightsView render with SafeModelView"
 
 **Interfaces:**
 - Consumes: `Array.valid`, `BlockedProfileSession.duration(now:)`, the `sessions: [BlockedProfileSession]` input (passed by `HomeView.swift:164` from a `@SafeQuery`-backed `recentCompletedSessions`).
-- Produces: new **internal static** `BlockedSessionsHabitTracker.sessionsForDate(_ date: Date, in sessions: [BlockedProfileSession], now: Date) -> [BlockedProfileSession]` (pure, `.valid`-filtering, `now`-injectable — the unit-testable seam). Removes the `@State selectedSessions` cache; `selectedDate` + `showingSessionDetails` remain.
+- Produces: new **internal static** `BlockedSessionsHabitTracker.sessionsForDate(_ date: Date, in sessions: [BlockedProfileSession], now: Date) -> [BlockedProfileSession]` (pure, `.valid`-filtering, `now`-injectable — the unit-testable seam). Removes the `@State selectedSessions` cache currently at `Foqos/Components/Dashboard/BlockedSessionsHabitTracker.swift:10`; `selectedDate` + `showingSessionDetails` remain.
 
-**Root cause:** `handleDateTap` stored `selectedSessions = sessionsForDate(date)` in `@State`. Because `@State` persists across re-renders (stable view identity), that snapshot outlives deletion of the underlying `BlockedProfileSession` objects (profile deletion cascades to its sessions — `BlockedProfiles.deleteProfile` deletes every session). The next render then reads `session.blockedProfile.name` on a zombie → `EXC_BREAKPOINT`. Fix: never cache; derive the day's sessions fresh from the always-current `sessions` input each render, `.valid`-filtered.
+**Root cause:** `handleDateTap` currently stores `selectedSessions = sessionsForDate(date)` at `Foqos/Components/Dashboard/BlockedSessionsHabitTracker.swift:143` in `@State`. Because `@State` persists across re-renders (stable view identity), that snapshot outlives deletion of the underlying `BlockedProfileSession` objects (profile deletion cascades to its sessions — `BlockedProfiles.deleteProfile` deletes every session). The next render then reads `session.blockedProfile.name` (`Foqos/Components/Dashboard/BlockedSessionsHabitTracker.swift:250`) on a zombie → `EXC_BREAKPOINT`. Fix: never cache; derive the day's sessions fresh from the always-current `sessions` input each render, `.valid`-filtered.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -463,7 +463,7 @@ xcodebuild test -project FamilyFoqos.xcodeproj -scheme FamilyFoqos \
   -destination 'platform=iOS Simulator,id=<UUID>' \
   -only-testing:FoqosTests/BlockedSessionsHabitTrackerTests | xcpretty
 ```
-Expected: **compile failure** — `BlockedSessionsHabitTracker.sessionsForDate(_:in:now:)` does not exist yet (the current method is a `private` instance method with a different signature).
+Expected: **compile failure** — `BlockedSessionsHabitTracker.sessionsForDate(_:in:now:)` does not exist yet (the current method is a `private` instance method with a different signature at `Foqos/Components/Dashboard/BlockedSessionsHabitTracker.swift:43`).
 
 - [ ] **Step 3: Remove the `@State` cache**
 

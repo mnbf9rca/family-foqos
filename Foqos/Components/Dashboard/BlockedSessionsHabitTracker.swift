@@ -7,7 +7,6 @@ struct BlockedSessionsHabitTracker: View {
 
   let sessions: [BlockedProfileSession]
   @State private var selectedDate: Date?
-  @State private var selectedSessions: [BlockedProfileSession] = []
   @State private var showingSessionDetails = false
   @AppStorage("family_foqos_show_habit_tracker") private var showHabitTracker = true
 
@@ -22,7 +21,7 @@ struct BlockedSessionsHabitTracker: View {
     let dayStart = calendar.startOfDay(for: date)
     guard let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) else { return 0 }
 
-    let totalSeconds = sessions.reduce(0.0) { total, session in
+    let totalSeconds = validSessions.reduce(0.0) { total, session in
       // Calculate overlap between session and this specific day
       let sessionStart = session.startTime
       let sessionEnd = session.endTime ?? Date()
@@ -39,20 +38,50 @@ struct BlockedSessionsHabitTracker: View {
     return totalSeconds / 3600  // Convert to hours
   }
 
-  /// Gets sessions that have any overlap with the specified date
-  private func sessionsForDate(_ date: Date) -> [BlockedProfileSession] {
+  /// The input sessions, defensively `.valid`-filtered to drop any SwiftData zombie models
+  /// per AGENTS.md (components receiving model arrays must filter with `.valid`). #235.
+  private var validSessions: [BlockedProfileSession] {
+    sessions.valid
+  }
+
+  /// Sessions that have any overlap with the specified date.
+  /// Pure and `now`-injectable so it is unit-testable, and `.valid`-filters zombies *before*
+  /// any property access. Derived fresh from `sessions` on every render — never cached in
+  /// `@State`, which is the #235 crash (a cached array outlives the models' deletion).
+  static func sessionsForDate(
+    _ date: Date,
+    in sessions: [BlockedProfileSession],
+    now: Date
+  ) -> [BlockedProfileSession] {
     let calendar = Calendar.current
     let dayStart = calendar.startOfDay(for: date)
     guard let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) else { return [] }
 
-    let now = Date()
-    return sessions.filter { session in
+    return sessions.valid.filter { session in
       let sessionStart = session.startTime
       let sessionEnd = session.endTime ?? now
 
       // Check if session overlaps with this day
       return sessionStart < dayEnd && sessionEnd > dayStart
-    }.sorted { $0.duration(now: now) > $1.duration(now: now) }
+    }.sorted {
+      Self.sessionDuration($0, overlapping: dayStart, dayEnd: dayEnd, now: now)
+        > Self.sessionDuration($1, overlapping: dayStart, dayEnd: dayEnd, now: now)
+    }
+  }
+
+  private static func sessionDuration(
+    _ session: BlockedProfileSession,
+    overlapping dayStart: Date,
+    dayEnd: Date,
+    now: Date
+  ) -> TimeInterval {
+    let sessionStart = session.startTime
+    let sessionEnd = session.endTime ?? now
+
+    let overlapStart = max(sessionStart, dayStart)
+    let overlapEnd = min(sessionEnd, dayEnd)
+
+    return max(0, overlapEnd.timeIntervalSince(overlapStart))
   }
 
   /// Determines if a session spans multiple days (for display purposes)
@@ -70,13 +99,7 @@ struct BlockedSessionsHabitTracker: View {
     let dayStart = calendar.startOfDay(for: date)
     guard let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) else { return 0 }
 
-    let sessionStart = session.startTime
-    let sessionEnd = session.endTime ?? Date()
-
-    let overlapStart = max(sessionStart, dayStart)
-    let overlapEnd = min(sessionEnd, dayEnd)
-
-    return max(0, overlapEnd.timeIntervalSince(overlapStart))
+    return Self.sessionDuration(session, overlapping: dayStart, dayEnd: dayEnd, now: Date())
   }
 
   private func dates() -> [Date] {
@@ -135,12 +158,11 @@ struct BlockedSessionsHabitTracker: View {
     if isCurrentlySelected {
       // Deselect if already selected
       selectedDate = nil
-      selectedSessions = []
       showingSessionDetails = false
     } else {
-      // Select a new date
+      // Select a new date — the day's sessions are derived fresh from `sessions` at render
+      // time (see sessionDetailsView), never cached in @State (#235).
       selectedDate = date
-      selectedSessions = sessionsForDate(date)
       showingSessionDetails = true
     }
   }
@@ -202,17 +224,18 @@ struct BlockedSessionsHabitTracker: View {
   }
 
   private func sessionDetailsView(for date: Date) -> some View {
-    VStack(alignment: .leading, spacing: 10) {
+    let daySessions = Self.sessionsForDate(date, in: sessions, now: Date())
+    return VStack(alignment: .leading, spacing: 10) {
       Text(formatDate(date))
         .font(.subheadline)
         .fontWeight(.medium)
 
-      if selectedSessions.isEmpty {
+      if daySessions.isEmpty {
         Text("No sessions on this day")
           .font(.caption)
           .foregroundColor(.secondary)
       } else {
-        sessionListView(for: date)
+        sessionListView(daySessions, for: date)
       }
     }
     .padding(.top, 8)
@@ -220,9 +243,9 @@ struct BlockedSessionsHabitTracker: View {
     .animation(.easeInOut, value: showingSessionDetails)
   }
 
-  private func sessionListView(for date: Date) -> some View {
+  private func sessionListView(_ daySessions: [BlockedProfileSession], for date: Date) -> some View {
     VStack(alignment: .leading, spacing: 8) {
-      let displayedSessions = Array(selectedSessions.prefix(3))
+      let displayedSessions = Array(daySessions.prefix(3))
 
       ForEach(displayedSessions, id: \.id) { session in
         sessionRowView(for: session, on: date)
@@ -232,8 +255,8 @@ struct BlockedSessionsHabitTracker: View {
         }
       }
 
-      if selectedSessions.count > 3 {
-        Text("+ \(selectedSessions.count - 3) more sessions")
+      if daySessions.count > 3 {
+        Text("+ \(daySessions.count - 3) more sessions")
           .font(.caption)
           .foregroundColor(.secondary)
           .padding(.top, 4)

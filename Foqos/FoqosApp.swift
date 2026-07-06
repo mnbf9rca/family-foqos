@@ -423,8 +423,8 @@ class SceneDelegate: NSObject, UIWindowSceneDelegate {
   }
 
   /// Called when app is already running and receives URLs
-  func scene(_: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
-    for context in URLContexts {
+  func scene(_: UIScene, openURLContexts urlContexts: Set<UIOpenURLContext>) {
+    for context in urlContexts {
       Log.debug("openURLContexts - \(redactedURLString(context.url))", category: .app)
     }
   }

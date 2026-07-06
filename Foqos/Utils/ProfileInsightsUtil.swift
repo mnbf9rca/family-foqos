@@ -88,12 +88,26 @@ class ProfileInsightsUtil: ObservableObject {
     )
   }
 
+  /// Zombie-safe access to the profile's sessions. Returns `[]` when the profile has been
+  /// deleted (e.g. via CloudKit sync) while this util is retained by an open sheet — accessing
+  /// the sessions relationship on a deleted model raises EXC_BREAKPOINT (#213). Also `.valid`-filters
+  /// any individually cascade-deleted sessions. Mirrors the SafeModelView render guard in the
+  /// data path so the fix is unit-testable. See AGENTS.md (@SafeQuery / `.valid`).
+  private static func validSessions(of model: BlockedProfiles) -> [BlockedProfileSession] {
+    guard model.modelContext != nil && !model.isDeleted else { return [] }
+    return model.sessions.valid
+  }
+
+  private var validSessions: [BlockedProfileSession] {
+    Self.validSessions(of: profile)
+  }
+
   private static func computeMetrics(
     for profile: BlockedProfiles,
     from startDate: Date? = nil,
     to endDate: Date? = nil
   ) -> ProfileInsightsMetrics {
-    let completed = profile.sessions.filter { session in
+    let completed = validSessions(of: profile).filter { session in
       guard let end = session.endTime else { return false }
       if let startDate = startDate, session.startTime < startDate { return false }
       if let endDate = endDate, end > endDate { return false }
@@ -174,7 +188,7 @@ class ProfileInsightsUtil: ObservableObject {
     let startOfWindow = calendar.startOfDay(for: effectiveStart)
     let endOfWindow = calendar.startOfDay(for: effectiveEnd)
 
-    let completed = profile.sessions.filter { session in
+    let completed = validSessions.filter { session in
       guard let sessionEnd = session.endTime else { return false }
       return sessionEnd >= startOfWindow
         && sessionEnd <= calendar.date(byAdding: .day, value: 1, to: endOfWindow)!
@@ -216,7 +230,7 @@ class ProfileInsightsUtil: ObservableObject {
     let endOfWindowExclusive = calendar.date(
       byAdding: .day, value: 1, to: calendar.startOfDay(for: effectiveEnd))!
 
-    let completed = profile.sessions.filter { session in
+    let completed = validSessions.filter { session in
       guard let sessionEnd = session.endTime else { return false }
       return sessionEnd >= startOfWindow && sessionEnd < endOfWindowExclusive
     }
@@ -315,7 +329,7 @@ class ProfileInsightsUtil: ObservableObject {
     let startOfWindow = calendar.startOfDay(for: effectiveStart)
     let endOfWindow = calendar.startOfDay(for: effectiveEnd)
 
-    let sessionsWithBreaks = profile.sessions.filter { session in
+    let sessionsWithBreaks = validSessions.filter { session in
       guard let breakStart = session.breakStartTime else { return false }
       return breakStart >= startOfWindow
         && breakStart <= calendar.date(byAdding: .day, value: 1, to: endOfWindow)!
@@ -366,7 +380,7 @@ class ProfileInsightsUtil: ObservableObject {
     let endOfWindowExclusive = calendar.date(
       byAdding: .day, value: 1, to: calendar.startOfDay(for: effectiveEnd))!
 
-    let sessionsWithBreaks = profile.sessions.filter { session in
+    let sessionsWithBreaks = validSessions.filter { session in
       guard let breakStart = session.breakStartTime else { return false }
       return breakStart >= startOfWindow && breakStart < endOfWindowExclusive
     }
@@ -419,7 +433,7 @@ class ProfileInsightsUtil: ObservableObject {
     let endOfWindowExclusive = calendar.date(
       byAdding: .day, value: 1, to: calendar.startOfDay(for: effectiveEnd))!
 
-    let completedSessions = profile.sessions.filter { session in
+    let completedSessions = validSessions.filter { session in
       guard let sessionEnd = session.endTime else { return false }
       return sessionEnd >= startOfWindow && sessionEnd < endOfWindowExclusive
     }
@@ -461,7 +475,7 @@ class ProfileInsightsUtil: ObservableObject {
     let endOfWindowExclusive = calendar.date(
       byAdding: .day, value: 1, to: calendar.startOfDay(for: effectiveEnd))!
 
-    let sessionsWithBreaks = profile.sessions.filter { session in
+    let sessionsWithBreaks = validSessions.filter { session in
       guard let breakStart = session.breakStartTime else { return false }
       return breakStart >= startOfWindow && breakStart < endOfWindowExclusive
     }
@@ -503,7 +517,7 @@ class ProfileInsightsUtil: ObservableObject {
     let endOfWindowExclusive = calendar.date(
       byAdding: .day, value: 1, to: calendar.startOfDay(for: effectiveEnd))!
 
-    let sessionsWithCompletedBreaks = profile.sessions.filter { session in
+    let sessionsWithCompletedBreaks = validSessions.filter { session in
       guard let breakEnd = session.breakEndTime else { return false }
       return breakEnd >= startOfWindow && breakEnd < endOfWindowExclusive
     }
