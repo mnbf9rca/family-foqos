@@ -1,3 +1,4 @@
+import FoqosShared
 import SwiftData
 import SwiftUI
 import WidgetKit
@@ -457,13 +458,35 @@ class StrategyManager: ObservableObject {
         throw IntentError.backgroundStopsDisabled(profileName: profile.name)
       }
 
-      // Check geofence rule — fail-closed if location can't be determined
+      // Evaluate geofence with real location, then map to the shared policy.
       let geofenceResult = await geofenceEvaluator.evaluateGeofenceForStop(
         profile: profile,
         context: context
       )
-      if let geofenceResult, !geofenceResult.isSatisfied {
-        let reason = geofenceResult.failureMessage ?? "Location restriction not met."
+      let geofenceState: BackgroundStopPolicy.GeofenceState
+      if let geofenceResult {
+        geofenceState =
+          geofenceResult.isSatisfied
+          ? .satisfied
+          : .notSatisfied(reason: geofenceResult.failureMessage ?? "Location restriction not met.")
+      } else {
+        geofenceState = .noRule
+      }
+
+      // App-side typed guards above preserve existing IntentError mapping; the shared policy
+      // evaluates only stop conditions and geofence for this already-matched, stoppable session.
+      let decision = BackgroundStopPolicy.evaluate(
+        channel: .shortcut,
+        sessionMatchesProfile: true,
+        disableBackgroundStops: false,
+        geofence: geofenceState,
+        stopConditions: profile.stopConditions
+      )
+
+      switch decision {
+      case .allowed:
+        break
+      case .denied(.geofenceNotSatisfied(let reason)):
         Log.info(
           "Geofence blocked background stop for profile: \(profile.name) — \(reason)",
           category: .strategy)
@@ -471,6 +494,29 @@ class StrategyManager: ObservableObject {
           profileId: profile.id, profileName: profile.name, reason: reason)
         self.errorMessage = "Cannot stop — \(reason)"
         throw IntentError.geofenceBlocked(reason: reason)
+      case .denied(.geofenceUnavailable):
+        let reason = "Your location can't be confirmed right now."
+        Log.info(
+          "Geofence blocked background stop for profile: \(profile.name) — \(reason)",
+          category: .strategy)
+        geofenceEvaluator.postGeofenceBlockedNotification(
+          profileId: profile.id, profileName: profile.name, reason: reason)
+        self.errorMessage = "Cannot stop — \(reason)"
+        throw IntentError.geofenceBlocked(reason: reason)
+      case .denied(.stopConditionNotMet(let reason)):
+        Log.info(
+          "Background stop refused for profile: \(profile.name) — stop conditions not met",
+          category: .strategy)
+        self.errorMessage = reason
+        throw IntentError.stopConditionsNotMet(reason: reason)
+      case .denied(.backgroundStopsDisabled):
+        // Defensive only: disableBackgroundStops is handled before the policy call above.
+        self.errorMessage = "\(profile.name) cannot be stopped in the background."
+        throw IntentError.backgroundStopsDisabled(profileName: profile.name)
+      case .denied(.noMatchingSession):
+        // Defensive only: session/profile matching is handled before the policy call above.
+        self.errorMessage = "\(profile.name) cannot be stopped in the background."
+        throw IntentError.backgroundStopsDisabled(profileName: profile.name)
       }
 
       let _ = manualStrategy.stopBlocking(

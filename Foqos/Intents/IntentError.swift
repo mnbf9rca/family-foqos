@@ -7,6 +7,7 @@ enum IntentError: Error, CustomLocalizedStringResourceConvertible {
   case noActiveSession(profileName: String)
   case backgroundStopsDisabled(profileName: String)
   case geofenceBlocked(reason: String)
+  case stopConditionsNotMet(reason: String)
   case unexpected(String)
 
   var localizedStringResource: LocalizedStringResource {
@@ -23,6 +24,8 @@ enum IntentError: Error, CustomLocalizedStringResourceConvertible {
       "\(name) cannot be stopped remotely."
     case .geofenceBlocked(let reason):
       "Cannot stop — \(reason)"
+    case .stopConditionsNotMet(let reason):
+      "\(reason)"
     case .unexpected(let message):
       "\(message)"
     }

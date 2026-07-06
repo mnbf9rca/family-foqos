@@ -27,11 +27,6 @@ public class StopScheduleTimerActivity: TimerActivity {
       return
     }
 
-    if activeSession.blockedProfileId != profile.id {
-      Log.info("Stop schedule timer for \(profileId), active session profile does not match", category: .timer)
-      return
-    }
-
     // Check if today is a scheduled stop day
     if let stopSchedule = profile.stopSchedule {
       if !stopSchedule.isTodayScheduled() {
@@ -40,9 +35,24 @@ public class StopScheduleTimerActivity: TimerActivity {
       }
     }
 
+    let decision = BackgroundStopPolicy.evaluate(
+      channel: .schedule,
+      sessionMatchesProfile: activeSession.blockedProfileId == profile.id,
+      disableBackgroundStops: profile.disableBackgroundStops ?? false,
+      geofence: .noRule,
+      stopConditions: profile.stopConditions
+    )
+    guard case .allowed = decision else {
+      Log.info(
+        "Stop schedule timer for \(profileId) refused by background-stop policy: \(decision)",
+        category: .timer)
+      return
+    }
+
     Log.info("Stop schedule timer firing for \(profileId), ending session", category: .timer)
 
-    appBlocker.deactivateRestrictions()
-    SharedData.endActiveSharedSession()
+    if SharedData.endActiveSharedSession(expectedSessionId: activeSession.id) {
+      appBlocker.deactivateRestrictions()
+    }
   }
 }

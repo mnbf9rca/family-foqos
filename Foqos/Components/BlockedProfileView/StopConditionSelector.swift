@@ -1,4 +1,4 @@
-// Foqos/Components/BlockedProfileView/StopConditionSelector.swift
+import FoqosShared
 import SwiftUI
 
 /// Selector for profile stop conditions

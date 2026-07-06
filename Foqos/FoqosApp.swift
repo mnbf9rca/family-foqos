@@ -156,6 +156,8 @@ struct FoqosApp: App {
             }
             // Only reschedule on warm returns — .onAppear handles cold launch
             if hasPerformedInitialSetup {
+              PreActivationReminderScheduler.mergeExtensionScheduleSuppression(
+                context: container.mainContext)
               PreActivationReminderScheduler.rescheduleAllReminders(context: container.mainContext)
               PreActivationReminderScheduler.catchUpMissedScheduleStarts(context: container.mainContext)
             }
@@ -254,6 +256,7 @@ struct FoqosApp: App {
             }
           }
           // Reschedule pre-activation reminders for today
+          PreActivationReminderScheduler.mergeExtensionScheduleSuppression(context: container.mainContext)
           PreActivationReminderScheduler.rescheduleAllReminders(context: container.mainContext)
           // Catch up any missed schedule starts
           PreActivationReminderScheduler.catchUpMissedScheduleStarts(context: container.mainContext)

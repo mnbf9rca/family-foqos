@@ -1,5 +1,6 @@
 import DeviceActivity
 import FamilyControls
+import FoqosShared
 import Foundation
 import ManagedSettings
 @preconcurrency import SwiftData  // ReferenceWritableKeyPath in SortDescriptor lacks Sendable conformance
@@ -527,6 +528,7 @@ class BlockedProfiles {
       stopConditionsSchedule: profile.stopConditions.schedule,
       geofenceRule: profile.geofenceRule,
       disableBackgroundStops: profile.disableBackgroundStops,
+      stopConditions: profile.stopConditions,
       isManaged: profile.isManaged,
       managedByChildId: profile.managedByChildId,
       syncVersion: profile.syncVersion,

@@ -31,6 +31,10 @@ public class ScheduleTimerActivity: TimerActivity {
     }
   }
 
+  public static func skippedStartNotificationIdentifier(for scheduledProfileId: UUID) -> String {
+    return "scheduled-start-skipped-\(scheduledProfileId.uuidString)"
+  }
+
   public func start(for profile: SharedData.ProfileSnapshot) {
     let profileId = profile.id.uuidString
 
@@ -64,6 +68,15 @@ public class ScheduleTimerActivity: TimerActivity {
         Log.info("Start schedule timer activity for \(profileId), schedule is too new", category: .timer)
         return
       }
+      if let stoppedAt = profile.scheduleLastStoppedAt,
+        let windowStart = schedule.windowStart(),
+        windowStart <= stoppedAt
+      {
+        Log.info(
+          "Start schedule timer activity for \(profileId), window already stopped — suppressing (#229)",
+          category: .timer)
+        return
+      }
     } else {
       Log.info("Start schedule timer activity for \(profileId), no schedule found", category: .timer)
       return
@@ -71,17 +84,46 @@ public class ScheduleTimerActivity: TimerActivity {
 
     Log.info("Start schedule timer activity for \(profileId)", category: .timer)
 
-    if let existingSession = SharedData.getActiveSharedSession() {
-      if existingSession.blockedProfileId == profile.id {
-        Log.info("Start schedule timer for \(profileId), continuing active session", category: .timer)
+    let existingSession = SharedData.getActiveSharedSession()
+    if let existingSession, existingSession.blockedProfileId == profile.id {
+      Log.info("Start schedule timer for \(profileId), continuing active session", category: .timer)
+      return
+    }
+    if let existingSession {
+      let victimSnapshot = SharedData.snapshot(for: existingSession.blockedProfileId.uuidString)
+      let victimGeofence: BackgroundStopPolicy.GeofenceState =
+        (victimSnapshot?.geofenceRule?.hasLocations == true) ? .unavailable : .noRule
+      let decision = BackgroundStopPolicy.evaluate(
+        channel: .takeover,
+        sessionMatchesProfile: true,
+        disableBackgroundStops: victimSnapshot?.disableBackgroundStops ?? false,
+        geofence: victimGeofence,
+        stopConditions: victimSnapshot?.stopConditions
+      )
+      guard case .allowed = decision else {
+        Log.info(
+          "Start schedule timer for \(profileId), NOT taking over protected session for "
+            + "\(existingSession.blockedProfileId.uuidString): \(decision)",
+          category: .timer)
+        Self.postSkippedStartNotification(
+          scheduledProfileId: profile.id,
+          scheduledProfileName: profile.name,
+          activeProfileName: victimSnapshot?.name ?? "another profile")
         return
-      } else {
-        Log.info("Start schedule timer for \(profileId), ending different active session", category: .timer)
-        SharedData.endActiveSharedSession()
       }
     }
 
-    SharedData.createSessionForScheduler(for: profile.id)
+    guard
+      SharedData.startSchedulerSessionTakingOver(
+        profileId: profile.id,
+        expectedVictimId: existingSession?.id
+      )
+    else {
+      Log.info(
+        "Start schedule timer for \(profileId), aborting takeover — active session changed under us",
+        category: .timer)
+      return
+    }
     appBlocker.activateRestrictions(for: profile)
   }
 
@@ -93,20 +135,41 @@ public class ScheduleTimerActivity: TimerActivity {
       return
     }
 
-    // Check to make sure the active session is the same as the profile before disabling restrictions
-    if activeSession.blockedProfileId != profile.id {
+    let decision = BackgroundStopPolicy.evaluate(
+      channel: .schedule,
+      sessionMatchesProfile: activeSession.blockedProfileId == profile.id,
+      disableBackgroundStops: profile.disableBackgroundStops ?? false,
+      geofence: .noRule,
+      stopConditions: profile.stopConditions
+    )
+    guard case .allowed = decision else {
       Log.info(
-        "Stop schedule timer activity for \(profileId), active session profile does not match device activity profile",
+        "Stop schedule timer activity for \(profileId) refused by policy: \(decision)",
         category: .timer
       )
       return
     }
 
-    // End restrictions
-    appBlocker.deactivateRestrictions()
+    if SharedData.endActiveSharedSession(expectedSessionId: activeSession.id) {
+      appBlocker.deactivateRestrictions()
+    }
+  }
 
-    // End the active scheduled session
-    SharedData.endActiveSharedSession()
+  private static func postSkippedStartNotification(
+    scheduledProfileId: UUID,
+    scheduledProfileName: String,
+    activeProfileName: String
+  ) {
+    let content = UNMutableNotificationContent()
+    content.title = "Scheduled profile didn't start"
+    content.body =
+      "\(scheduledProfileName) didn't start — \(activeProfileName) is active and can't be "
+      + "stopped in the background."
+    let request = UNNotificationRequest(
+      identifier: skippedStartNotificationIdentifier(for: scheduledProfileId),
+      content: content,
+      trigger: nil)
+    UNUserNotificationCenter.current().add(request)
   }
 
 }

@@ -1,4 +1,5 @@
 import CloudKit
+import FoqosShared
 import Foundation
 
 // MARK: - CloudKit Constants

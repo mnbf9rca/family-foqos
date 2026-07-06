@@ -1,3 +1,4 @@
+import FoqosShared
 // Foqos/Models/TriggerValidator.swift
 import Foundation
 

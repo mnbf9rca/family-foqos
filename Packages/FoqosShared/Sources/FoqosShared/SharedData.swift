@@ -174,6 +174,7 @@ public enum SharedData {
     public var geofenceRule: ProfileGeofenceRule?
 
     public var disableBackgroundStops: Bool?
+    public var stopConditions: ProfileStopConditions?
 
     // Managed profile fields
     public var isManaged: Bool?
@@ -214,6 +215,7 @@ public enum SharedData {
       stopConditionsSchedule: Bool? = nil,
       geofenceRule: ProfileGeofenceRule? = nil,
       disableBackgroundStops: Bool? = nil,
+      stopConditions: ProfileStopConditions? = nil,
       isManaged: Bool? = nil,
       managedByChildId: String? = nil,
       syncVersion: Int? = nil,
@@ -248,6 +250,7 @@ public enum SharedData {
       self.stopConditionsSchedule = stopConditionsSchedule
       self.geofenceRule = geofenceRule
       self.disableBackgroundStops = disableBackgroundStops
+      self.stopConditions = stopConditions
       self.isManaged = isManaged
       self.managedByChildId = managedByChildId
       self.syncVersion = syncVersion
@@ -397,6 +400,52 @@ public enum SharedData {
       completedSessionsInScheduler.append(existingScheduledSession)
 
       activeSharedSession = nil
+    }
+  }
+
+  @discardableResult
+  public static func endActiveSharedSession(expectedSessionId: String) -> Bool {
+    withLock {
+      guard var existingScheduledSession = activeSharedSession,
+        existingScheduledSession.id == expectedSessionId
+      else { return false }
+
+      existingScheduledSession.endTime = Date()
+      completedSessionsInScheduler.append(existingScheduledSession)
+
+      activeSharedSession = nil
+      return true
+    }
+  }
+
+  @discardableResult
+  public static func startSchedulerSessionTakingOver(
+    profileId: UUID,
+    expectedVictimId: String?
+  ) -> Bool {
+    withLock {
+      if let current = activeSharedSession {
+        if current.blockedProfileId == profileId {
+          return true
+        }
+
+        guard let victimId = expectedVictimId, current.id == victimId else {
+          return false
+        }
+
+        var victim = current
+        victim.endTime = Date()
+        completedSessionsInScheduler.append(victim)
+      }
+
+      activeSharedSession = SessionSnapshot(
+        id: UUID().uuidString,
+        tag: profileId.uuidString,
+        blockedProfileId: profileId,
+        startTime: Date(),
+        forceStarted: true
+      )
+      return true
     }
   }
 

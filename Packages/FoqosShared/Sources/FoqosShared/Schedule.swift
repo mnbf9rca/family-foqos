@@ -123,6 +123,14 @@ public struct BlockedProfileSchedule: Codable, Equatable {
     return now.timeIntervalSince(updatedAt) > 1 * 60
   }
 
+  public func windowStart(on date: Date = Date(), calendar: Calendar = .current) -> Date? {
+    var components = calendar.dateComponents([.year, .month, .day], from: date)
+    components.hour = startHour
+    components.minute = startMinute
+    components.second = 0
+    return calendar.date(from: components)
+  }
+
   private func formattedTimeString(hour24: Int, minute: Int) -> String {
     var hour = hour24 % 12
     if hour == 0 { hour = 12 }

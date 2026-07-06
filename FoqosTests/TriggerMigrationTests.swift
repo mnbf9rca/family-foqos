@@ -1,4 +1,5 @@
 // FoqosTests/TriggerMigrationTests.swift
+import FoqosShared
 import XCTest
 
 @testable import FamilyFoqos

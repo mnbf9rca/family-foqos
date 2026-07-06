@@ -1,4 +1,4 @@
-// Foqos/Models/TriggerPickerOptions.swift
+import FoqosShared
 import Foundation
 
 // MARK: - NFC Start
