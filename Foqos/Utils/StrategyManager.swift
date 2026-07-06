@@ -1183,8 +1183,10 @@ class StrategyManager: ObservableObject {
         startTime: startTime
       )
 
-      // Set as active session
-      self.activeSession = activeSession
+      // Converge on the single activation path so remote-started sessions get the same
+      // side effects as local starts. syncSessionStart is suppressed while processingRemoteChange
+      // is true, so this does not echo a session record back to CloudKit (#204).
+      activateSession(activeSession, context: context)
 
       Log.info(
         "Started remote session for profile '\(profile.name)' with synced startTime",
