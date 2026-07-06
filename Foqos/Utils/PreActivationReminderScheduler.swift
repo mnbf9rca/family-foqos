@@ -1,3 +1,4 @@
+import FoqosShared
 import Foundation
 import SwiftData
 
@@ -5,6 +6,28 @@ import SwiftData
 /// Call this on app launch and when returning to foreground to ensure
 /// daily notifications are scheduled.
 enum PreActivationReminderScheduler {
+  static func mergeExtensionScheduleSuppression(context: ModelContext) {
+    do {
+      let profiles = try BlockedProfiles.fetchProfiles(in: context)
+      var changed = false
+      for profile in profiles {
+        guard
+          let snapStopped = SharedData.snapshot(for: profile.id.uuidString)?.scheduleLastStoppedAt
+        else { continue }
+        let current = profile.scheduleLastStoppedAt
+        if current == nil || snapStopped > current! {
+          profile.scheduleLastStoppedAt = snapStopped
+          changed = true
+        }
+      }
+      if changed { try context.save() }
+    } catch {
+      Log.error(
+        "Failed to merge extension schedule suppression: \(error.localizedDescription)",
+        category: .timer)
+    }
+  }
+
   /// Reschedule all pre-activation reminders for profiles with active schedules.
   /// This should be called on app launch to ensure today's reminders are set.
   static func rescheduleAllReminders(context: ModelContext) {
