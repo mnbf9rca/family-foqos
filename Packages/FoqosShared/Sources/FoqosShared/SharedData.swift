@@ -403,6 +403,52 @@ public enum SharedData {
     }
   }
 
+  @discardableResult
+  public static func endActiveSharedSession(expectedSessionId: String) -> Bool {
+    withLock {
+      guard var existingScheduledSession = activeSharedSession,
+        existingScheduledSession.id == expectedSessionId
+      else { return false }
+
+      existingScheduledSession.endTime = Date()
+      completedSessionsInScheduler.append(existingScheduledSession)
+
+      activeSharedSession = nil
+      return true
+    }
+  }
+
+  @discardableResult
+  public static func startSchedulerSessionTakingOver(
+    profileId: UUID,
+    expectedVictimId: String?
+  ) -> Bool {
+    withLock {
+      if let current = activeSharedSession {
+        if current.blockedProfileId == profileId {
+          return true
+        }
+
+        guard let victimId = expectedVictimId, current.id == victimId else {
+          return false
+        }
+
+        var victim = current
+        victim.endTime = Date()
+        completedSessionsInScheduler.append(victim)
+      }
+
+      activeSharedSession = SessionSnapshot(
+        id: UUID().uuidString,
+        tag: profileId.uuidString,
+        blockedProfileId: profileId,
+        startTime: Date(),
+        forceStarted: true
+      )
+      return true
+    }
+  }
+
   /// Sets scheduleLastStoppedAt on the profile snapshot in SharedData.
   /// Called from extension processes that cannot access SwiftData.
   public static func setLastStoppedAt(for profileID: String, at date: Date) {
