@@ -1,6 +1,6 @@
 import SwiftUI
 
-let ORBIT_OFFSET: CGFloat = 145
+let orbitOffset: CGFloat = 145
 
 struct WelcomeIntroScreen: View {
   @State private var logoScale: CGFloat = 0.5
@@ -34,7 +34,7 @@ struct WelcomeIntroScreen: View {
           .resizable()
           .scaledToFit()
           .frame(width: 50, height: 50)
-          .offset(x: ORBIT_OFFSET)  // Orbit radius
+          .offset(x: orbitOffset)  // Orbit radius
           .rotationEffect(.degrees(orbitRotation))
           .opacity(showIcons ? 1 : 0)
 
