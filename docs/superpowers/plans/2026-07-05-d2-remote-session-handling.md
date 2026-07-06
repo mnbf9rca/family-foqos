@@ -341,7 +341,7 @@ Expected: `testGivenExtensionSessionForOtherProfile…` FAILS — on current cod
   }
 
   func endSession(now: Date = Date()) {
-    // Set the end time in shared data in case its being saved
+    // Set the end time in shared data in case it's being saved
     SharedData.setEndTime(date: now, expectedSessionId: id)
     self.endTime = now
 
