@@ -48,7 +48,7 @@ final class BlockedSessionsHabitTrackerTests: XCTestCase {
     XCTAssertEqual(result.first?.tag, "live")
   }
 
-  func testGivenSessionsOverlappingDate_WhenSessionsForDate_ThenReturnsSortedByDurationDescending()
+  func testGivenSessionsOverlappingDate_WhenSessionsForDate_ThenReturnsSortedByDayDurationDescending()
     throws
   {
     let now = Date()
@@ -66,6 +66,11 @@ final class BlockedSessionsHabitTrackerTests: XCTestCase {
     let long = BlockedProfileSession(
       tag: "long", blockedProfile: profile, startTime: dayStart.addingTimeInterval(7200))
     long.endTime = dayStart.addingTimeInterval(7200 + 7200)
+    // Multi-day session: 25h total, but only 10 min overlap with the selected day.
+    let multiDaySmallOverlap = BlockedProfileSession(
+      tag: "multi-day-small-overlap", blockedProfile: profile,
+      startTime: dayStart.addingTimeInterval(-24 * 3600))
+    multiDaySmallOverlap.endTime = dayStart.addingTimeInterval(600)
     // Other-day session: excluded.
     let other = BlockedProfileSession(
       tag: "other", blockedProfile: profile,
@@ -73,13 +78,14 @@ final class BlockedSessionsHabitTrackerTests: XCTestCase {
     other.endTime = dayStart.addingTimeInterval(-2 * 86400 + 1800)
     context.insert(short)
     context.insert(long)
+    context.insert(multiDaySmallOverlap)
     context.insert(other)
     try context.save()
 
     let result = BlockedSessionsHabitTracker.sessionsForDate(
-      now, in: [short, long, other], now: now)
+      now, in: [multiDaySmallOverlap, short, long, other], now: now)
 
-    XCTAssertEqual(result.map { $0.tag }, ["long", "short"])
+    XCTAssertEqual(result.map { $0.tag }, ["long", "short", "multi-day-small-overlap"])
   }
 
   func testGivenActiveSessionStartedToday_WhenSessionsForDate_ThenIncludedUsingInjectedNow() throws {

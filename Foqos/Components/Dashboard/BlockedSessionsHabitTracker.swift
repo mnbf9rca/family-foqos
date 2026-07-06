@@ -63,7 +63,25 @@ struct BlockedSessionsHabitTracker: View {
 
       // Check if session overlaps with this day
       return sessionStart < dayEnd && sessionEnd > dayStart
-    }.sorted { $0.duration(now: now) > $1.duration(now: now) }
+    }.sorted {
+      Self.sessionDuration($0, overlapping: dayStart, dayEnd: dayEnd, now: now)
+        > Self.sessionDuration($1, overlapping: dayStart, dayEnd: dayEnd, now: now)
+    }
+  }
+
+  private static func sessionDuration(
+    _ session: BlockedProfileSession,
+    overlapping dayStart: Date,
+    dayEnd: Date,
+    now: Date
+  ) -> TimeInterval {
+    let sessionStart = session.startTime
+    let sessionEnd = session.endTime ?? now
+
+    let overlapStart = max(sessionStart, dayStart)
+    let overlapEnd = min(sessionEnd, dayEnd)
+
+    return max(0, overlapEnd.timeIntervalSince(overlapStart))
   }
 
   /// Determines if a session spans multiple days (for display purposes)
@@ -81,13 +99,7 @@ struct BlockedSessionsHabitTracker: View {
     let dayStart = calendar.startOfDay(for: date)
     guard let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) else { return 0 }
 
-    let sessionStart = session.startTime
-    let sessionEnd = session.endTime ?? Date()
-
-    let overlapStart = max(sessionStart, dayStart)
-    let overlapEnd = min(sessionEnd, dayEnd)
-
-    return max(0, overlapEnd.timeIntervalSince(overlapStart))
+    return Self.sessionDuration(session, overlapping: dayStart, dayEnd: dayEnd, now: Date())
   }
 
   private func dates() -> [Date] {
