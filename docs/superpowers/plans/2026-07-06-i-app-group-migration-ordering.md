@@ -10,6 +10,8 @@
 
 **Source commit (current `main` at authoring):** `6ffb8c22b52c4b47da610b978783ccc69774f712`
 
+**Citations refreshed before implementation:** `66ba422241c2c75115451929866516e02cdf90f7`
+
 **Epic:** #263 (defect-audit follow-ups). Bundle I. Issue: #217 (high).
 
 ## Implementation Sequencing (read first)
@@ -37,15 +39,18 @@ Bundle **F** (zombie-model safety, #213/#235) and Bundle **I** are implemented a
 
 ---
 
-## The defect (re-verified against the source commit)
+## The defect (re-verified against refreshed `main`)
 
-Confirmed intact on current `main` — PR #277 (D2) added session-**identity** gating to the `SharedData` mutators but did **not** touch the migration, the legacy-key fallback readers, the write-only-new-key setters, or `endActiveSharedSession`.
+Confirmed intact on current `main` — PR #277 (D2) added session-**identity** gating to the
+`SharedData` mutators, and PR #279 (D1) routed schedule-stop through
+`endActiveSharedSession(expectedSessionId:)`; neither touched the migration, the legacy-key
+fallback readers, or the write-only-new-key setters.
 
 1. `migrateAppGroupIfNeeded` (`Foqos/Utils/UserDefaultsMigration.swift:57-62`) unconditionally copies each legacy app-group key over the new prefixed key, guarded only by a one-time flag that is unset until the first launch after update. It runs **only** in the main app (`FoqosApp.swift:109`).
-2. `SharedData` setters write **only** the new prefixed keys and never remove the legacy keys (`SharedData.swift`: `profileSnapshots` set → 311/313; `completedSessionsInScheduler` set → 347/349; `activeSharedSession` set → 363/365; `deviceSyncId`/`deviceSyncEnabled` → 509/515/526). Its getters fall back to the legacy key (`data/string/bool(forKey:legacyKey:)`, 122-136).
+2. `SharedData` setters write **only** the new prefixed keys and never remove the legacy keys (`SharedData.swift`: `profileSnapshots` set → 312-318; `completedSessionsInScheduler` set → 348-354; `activeSharedSession` set → 364-370; `deviceSyncId`/`deviceSyncEnabled` → 556-565/574-576). Its getters fall back to the legacy key (`data/string/bool(forKey:legacyKey:)`, 122-136).
 3. `SharedData.swift:111-113` explicitly documents that extensions may run before the app migrates — but only the **read** path was handled, not the **write** path.
 
-**Failure chain:** pre-rename app has an active schedule session under legacy `"activeScheduleSession"`. App updates via the App Store overnight. The DeviceActivity interval ends **before** first app launch: `DeviceActivityMonitorExtension.intervalDidEnd → ScheduleTimerActivity.stop` (`ScheduleTimerActivity.swift:88-109`) deactivates restrictions and calls `SharedData.endActiveSharedSession()`, which appends the completed session under the **new** key and clears only the **new** active key — the legacy `"activeScheduleSession"` still holds the session. On first app launch, `migrateAppGroupIfNeeded` copies that stale legacy session over the new active key (resurrecting an ended session as "active" while ManagedSettings restrictions are off) and copies the stale legacy completed list over the new list (losing the just-completed session from stats/insights/sync).
+**Failure chain:** pre-rename app has an active schedule session under legacy `"activeScheduleSession"`. App updates via the App Store overnight. The DeviceActivity interval ends **before** first app launch: `DeviceActivityMonitorExtension.intervalDidEnd` (`FoqosDeviceMonitor/DeviceActivityMonitorExtension.swift:37-41`) routes through `TimerActivityUtil.stopTimerActivity` (`Packages/FoqosShared/Sources/FoqosShared/Timers/TimerActivityUtil.swift:16-25`) to `ScheduleTimerActivity.stop` (`Packages/FoqosShared/Sources/FoqosShared/Timers/ScheduleTimerActivity.swift:130-156`), which deactivates restrictions after calling `SharedData.endActiveSharedSession(expectedSessionId:)`. That appends the completed session under the **new** key and clears only the **new** active key — the legacy `"activeScheduleSession"` still holds the session. On first app launch, `migrateAppGroupIfNeeded` copies that stale legacy session over the new active key (resurrecting an ended session as "active" while ManagedSettings restrictions are off) and copies the stale legacy completed list over the new list (losing the just-completed session from stats/insights/sync).
 
 ---
 
