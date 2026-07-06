@@ -30,6 +30,19 @@ final class ScheduleTimerActivityTests: XCTestCase {
       disableBackgroundStops: disableBackgroundStops, stopConditions: stopConditions)
   }
 
+  private func startScheduledSnapshot(
+    id: UUID,
+    stopConditions: ProfileStopConditions,
+    stopSchedule: ProfileScheduleTime? = nil
+  ) -> SharedData.ProfileSnapshot {
+    SharedData.ProfileSnapshot(
+      id: id, name: "P", selectedActivity: .init(), createdAt: .distantPast,
+      updatedAt: .distantPast, order: 0, enableLiveActivity: false, enableBreaks: false,
+      enableStrictMode: false, enableAllowMode: false, enableAllowModeDomains: false,
+      enableSafariBlocking: false, stopSchedule: stopSchedule,
+      disableBackgroundStops: false, stopConditions: stopConditions)
+  }
+
   func testGivenBackgroundStopsDisabled_WhenStopScheduleFires_ThenSessionSurvives() {
     let id = UUID()
     SharedData.createSessionForScheduler(for: id)
@@ -59,5 +72,33 @@ final class ScheduleTimerActivityTests: XCTestCase {
     StopScheduleTimerActivity().stop(for: snap)
 
     XCTAssertNotNil(SharedData.getActiveSharedSession(), "unrelated session untouched")
+  }
+
+  func testGivenManualOnlyStopProfile_WhenScheduleStopFires_ThenSessionSurvives() {
+    let id = UUID()
+    SharedData.createActiveSharedSession(
+      for: SharedData.SessionSnapshot(
+        id: UUID().uuidString, tag: "manual", blockedProfileId: id,
+        startTime: .distantPast, forceStarted: false))
+    let snap = startScheduledSnapshot(id: id, stopConditions: ProfileStopConditions(manual: true))
+
+    ScheduleTimerActivity().stop(for: snap)
+
+    XCTAssertNotNil(
+      SharedData.getActiveSharedSession(),
+      "manual-only-stop profile must not be ended by the synthetic schedule interval (#206)")
+  }
+
+  func testGivenScheduleStopProfileToday_WhenScheduleStopFires_ThenSessionEnds() {
+    let id = UUID()
+    SharedData.createSessionForScheduler(for: id)
+    let everyDayStop = ProfileScheduleTime(
+      days: Weekday.allCases, hour: 17, minute: 0, updatedAt: .distantPast)
+    let snap = startScheduledSnapshot(
+      id: id, stopConditions: ProfileStopConditions(schedule: true), stopSchedule: everyDayStop)
+
+    ScheduleTimerActivity().stop(for: snap)
+
+    XCTAssertNil(SharedData.getActiveSharedSession(), "schedule-stop profile ends on its interval")
   }
 }

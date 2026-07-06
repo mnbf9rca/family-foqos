@@ -93,20 +93,24 @@ public class ScheduleTimerActivity: TimerActivity {
       return
     }
 
-    // Check to make sure the active session is the same as the profile before disabling restrictions
-    if activeSession.blockedProfileId != profile.id {
+    let decision = BackgroundStopPolicy.evaluate(
+      channel: .schedule,
+      sessionMatchesProfile: activeSession.blockedProfileId == profile.id,
+      disableBackgroundStops: profile.disableBackgroundStops ?? false,
+      geofence: .noRule,
+      stopConditions: profile.stopConditions
+    )
+    guard case .allowed = decision else {
       Log.info(
-        "Stop schedule timer activity for \(profileId), active session profile does not match device activity profile",
+        "Stop schedule timer activity for \(profileId) refused by policy: \(decision)",
         category: .timer
       )
       return
     }
 
-    // End restrictions
-    appBlocker.deactivateRestrictions()
-
-    // End the active scheduled session
-    SharedData.endActiveSharedSession()
+    if SharedData.endActiveSharedSession(expectedSessionId: activeSession.id) {
+      appBlocker.deactivateRestrictions()
+    }
   }
 
 }
