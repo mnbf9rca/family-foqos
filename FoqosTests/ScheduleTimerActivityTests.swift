@@ -101,4 +101,32 @@ final class ScheduleTimerActivityTests: XCTestCase {
 
     XCTAssertNil(SharedData.getActiveSharedSession(), "schedule-stop profile ends on its interval")
   }
+
+  func testGivenProtectedVictim_WhenScheduledStartTakesOver_ThenVictimSurvives() throws {
+    let victimId = UUID()
+    SharedData.createActiveSharedSession(
+      for: SharedData.SessionSnapshot(
+        id: UUID().uuidString, tag: "nfc:abc", blockedProfileId: victimId,
+        startTime: .distantPast, forceStarted: false))
+    SharedData.setSnapshot(
+      startScheduledSnapshot(id: victimId, stopConditions: ProfileStopConditions(anyNFC: true)),
+      for: victimId.uuidString)
+
+    let incomingId = UUID()
+    let now = Date()
+    let components = Calendar.current.dateComponents([.hour, .minute], from: now)
+    let startNow = ProfileScheduleTime(
+      days: Weekday.allCases, hour: components.hour!, minute: components.minute!,
+      updatedAt: .distantPast)
+    var incoming = startScheduledSnapshot(
+      id: incomingId, stopConditions: ProfileStopConditions(schedule: true))
+    incoming.startSchedule = startNow
+    incoming.startTriggersSchedule = true
+
+    ScheduleTimerActivity().start(for: incoming)
+
+    XCTAssertEqual(
+      SharedData.getActiveSharedSession()?.blockedProfileId, victimId,
+      "the protected victim session must survive; the scheduled takeover is skipped (#236)")
+  }
 }

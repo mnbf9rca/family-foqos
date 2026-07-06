@@ -71,17 +71,45 @@ public class ScheduleTimerActivity: TimerActivity {
 
     Log.info("Start schedule timer activity for \(profileId)", category: .timer)
 
-    if let existingSession = SharedData.getActiveSharedSession() {
-      if existingSession.blockedProfileId == profile.id {
-        Log.info("Start schedule timer for \(profileId), continuing active session", category: .timer)
+    let existingSession = SharedData.getActiveSharedSession()
+    if let existingSession, existingSession.blockedProfileId == profile.id {
+      Log.info("Start schedule timer for \(profileId), continuing active session", category: .timer)
+      return
+    }
+    if let existingSession {
+      let victimSnapshot = SharedData.snapshot(for: existingSession.blockedProfileId.uuidString)
+      let victimGeofence: BackgroundStopPolicy.GeofenceState =
+        (victimSnapshot?.geofenceRule?.hasLocations == true) ? .unavailable : .noRule
+      let decision = BackgroundStopPolicy.evaluate(
+        channel: .takeover,
+        sessionMatchesProfile: true,
+        disableBackgroundStops: victimSnapshot?.disableBackgroundStops ?? false,
+        geofence: victimGeofence,
+        stopConditions: victimSnapshot?.stopConditions
+      )
+      guard case .allowed = decision else {
+        Log.info(
+          "Start schedule timer for \(profileId), NOT taking over protected session for "
+            + "\(existingSession.blockedProfileId.uuidString): \(decision)",
+          category: .timer)
+        Self.postSkippedStartNotification(
+          scheduledProfileName: profile.name,
+          activeProfileName: victimSnapshot?.name ?? "another profile")
         return
-      } else {
-        Log.info("Start schedule timer for \(profileId), ending different active session", category: .timer)
-        SharedData.endActiveSharedSession()
       }
     }
 
-    SharedData.createSessionForScheduler(for: profile.id)
+    guard
+      SharedData.startSchedulerSessionTakingOver(
+        profileId: profile.id,
+        expectedVictimId: existingSession?.id
+      )
+    else {
+      Log.info(
+        "Start schedule timer for \(profileId), aborting takeover — active session changed under us",
+        category: .timer)
+      return
+    }
     appBlocker.activateRestrictions(for: profile)
   }
 
@@ -111,6 +139,22 @@ public class ScheduleTimerActivity: TimerActivity {
     if SharedData.endActiveSharedSession(expectedSessionId: activeSession.id) {
       appBlocker.deactivateRestrictions()
     }
+  }
+
+  private static func postSkippedStartNotification(
+    scheduledProfileName: String,
+    activeProfileName: String
+  ) {
+    let content = UNMutableNotificationContent()
+    content.title = "Scheduled profile didn't start"
+    content.body =
+      "\(scheduledProfileName) didn't start — \(activeProfileName) is active and can't be "
+      + "stopped in the background."
+    let request = UNNotificationRequest(
+      identifier: "scheduled-start-skipped-\(scheduledProfileName)",
+      content: content,
+      trigger: nil)
+    UNUserNotificationCenter.current().add(request)
   }
 
 }
