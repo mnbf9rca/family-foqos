@@ -138,8 +138,8 @@ public enum SharedData {
   /// Removes the pre-migration (legacy) key on every write, so a stale legacy value can never
   /// shadow or resurrect state after the main-app app-group migration runs (#217). Pairs with
   /// `UserDefaultsMigration`'s copy-only-when-new-absent guard.
-  /// MUST NOT take `withLock` — it is called from setters already inside a caller's `withLock`,
-  /// which is non-reentrant.
+  /// MUST NOT take `withLock` because the lock is non-reentrant. Callers that need cross-process
+  /// synchronization must hold the relevant outer `withLock` around their whole write.
   private static func clearLegacy(_ legacyKey: LegacyKey) {
     suite.removeObject(forKey: legacyKey.rawValue)
   }
@@ -583,11 +583,15 @@ public enum SharedData {
   /// Whether device sync is enabled for this device.
   public static var deviceSyncEnabled: Bool {
     get {
-      return bool(forKey: .deviceSyncEnabled, legacyKey: .deviceSyncEnabled)
+      withLock {
+        return bool(forKey: .deviceSyncEnabled, legacyKey: .deviceSyncEnabled)
+      }
     }
     set {
-      suite.set(newValue, forKey: Key.deviceSyncEnabled.rawValue)
-      clearLegacy(.deviceSyncEnabled)
+      withLock {
+        suite.set(newValue, forKey: Key.deviceSyncEnabled.rawValue)
+        clearLegacy(.deviceSyncEnabled)
+      }
     }
   }
 }

@@ -1,3 +1,4 @@
+import FamilyControls
 @preconcurrency import FoqosShared
 import XCTest
 
@@ -27,6 +28,35 @@ final class SharedDataLegacyKeyClearingTests: XCTestCase {
     return SharedData.SessionSnapshot(
       id: id, tag: "t", blockedProfileId: UUID(), startTime: now,
       endTime: ended ? now : nil, forceStarted: true)
+  }
+
+  func testGivenLegacyProfileSnapshotsKey_WhenSnapshotWritten_ThenLegacyKeyCleared() {
+    suite.set(Data([1, 2, 3]), forKey: "profileSnapshots")  // pre-migration legacy shadow
+    let profileId = UUID().uuidString
+    let now = Date()  // pin time: one Date() per test path (AGENTS.md)
+    let snapshot = SharedData.ProfileSnapshot(
+      id: UUID(),
+      name: "Focus",
+      selectedActivity: FamilyActivitySelection(),
+      createdAt: now,
+      updatedAt: now,
+      blockingStrategyId: nil,
+      strategyData: nil,
+      order: 0,
+      enableLiveActivity: false,
+      enableBreaks: false,
+      enableStrictMode: false,
+      enableAllowMode: false,
+      enableAllowModeDomains: false,
+      enableSafariBlocking: false
+    )
+
+    SharedData.setSnapshot(snapshot, for: profileId)
+
+    XCTAssertNil(
+      suite.object(forKey: "profileSnapshots"),
+      "legacy profileSnapshots key must be cleared on write (#217)")
+    XCTAssertEqual(SharedData.profileSnapshots[profileId], snapshot)
   }
 
   func testGivenLegacyActiveKey_WhenActiveSharedSessionWritten_ThenLegacyKeyCleared() {
