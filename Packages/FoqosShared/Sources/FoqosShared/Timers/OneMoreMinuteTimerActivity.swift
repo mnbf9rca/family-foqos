@@ -52,7 +52,7 @@ public class OneMoreMinuteTimerActivity: TimerActivity {
       appBlocker.activateRestrictions(for: profile)
 
       // Clear the one more minute start time so the session knows it's no longer active
-      SharedData.clearOneMoreMinuteStartTime()
+      SharedData.clearOneMoreMinuteStartTime(expectedSessionId: activeSession.id)
     }
   }
 }

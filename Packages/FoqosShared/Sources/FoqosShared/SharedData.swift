@@ -412,8 +412,9 @@ public enum SharedData {
     }
   }
 
-  public static func flushActiveSession() {
+  public static func flushActiveSession(expectedSessionId: String) {
     withLock {
+      guard activeSharedSession?.id == expectedSessionId else { return }
       activeSharedSession = nil
     }
   }
@@ -429,36 +430,39 @@ public enum SharedData {
     }
   }
 
-  public static func setBreakStartTime(date: Date) {
+  public static func setBreakStartTime(date: Date, expectedSessionId: String) {
     withLock {
+      guard activeSharedSession?.id == expectedSessionId else { return }
       activeSharedSession?.breakStartTime = date
     }
   }
 
-  public static func setBreakEndTime(date: Date) {
+  public static func setBreakEndTime(date: Date, expectedSessionId: String) {
     withLock {
+      guard activeSharedSession?.id == expectedSessionId else { return }
       activeSharedSession?.breakEndTime = date
     }
   }
 
-  public static func setEndTime(date: Date) {
+  public static func setEndTime(date: Date, expectedSessionId: String) {
     withLock {
+      guard activeSharedSession?.id == expectedSessionId else { return }
       activeSharedSession?.endTime = date
     }
   }
 
-  public static func setOneMoreMinuteStartTime(date: Date) {
+  public static func setOneMoreMinuteStartTime(date: Date, expectedSessionId: String) {
     withLock {
-      guard var session = activeSharedSession else { return }
+      guard var session = activeSharedSession, session.id == expectedSessionId else { return }
       session.oneMoreMinuteStartTime = date
       session.oneMoreMinuteUsed = true
       activeSharedSession = session
     }
   }
 
-  public static func clearOneMoreMinuteStartTime() {
+  public static func clearOneMoreMinuteStartTime(expectedSessionId: String) {
     withLock {
-      guard var session = activeSharedSession else { return }
+      guard var session = activeSharedSession, session.id == expectedSessionId else { return }
       session.oneMoreMinuteStartTime = nil
       activeSharedSession = session
     }
