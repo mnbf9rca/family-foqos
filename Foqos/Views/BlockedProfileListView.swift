@@ -6,6 +6,8 @@ struct BlockedProfileListView: View {
   @Environment(\.modelContext) private var context
   @Environment(\.dismiss) private var dismiss
   @EnvironmentObject private var profileSyncManager: ProfileSyncManager
+  @ObservedObject private var appModeManager = AppModeManager.shared
+  @ObservedObject private var lockCodeManager = LockCodeManager.shared
 
   @SafeQuery(sort: [
     SortDescriptor(\BlockedProfiles.order, order: .forward),
@@ -21,12 +23,14 @@ struct BlockedProfileListView: View {
 
   private enum DeleteError {
     case activeProfile
+    case lockedProfile
     case fetchFailed
     case syncFailed(String)
 
     var title: String {
       switch self {
       case .activeProfile: "Cannot Delete Active Profile"
+      case .lockedProfile: "Profile Locked"
       case .fetchFailed: "Unable to Delete"
       case .syncFailed: "Sync Error"
       }
@@ -36,6 +40,8 @@ struct BlockedProfileListView: View {
       switch self {
       case .activeProfile:
         "You cannot delete a profile that is currently active. Please switch to a different profile first."
+      case .lockedProfile:
+        "This profile is locked. Open it and enter the lock code to delete it."
       case .fetchFailed:
         "Something went wrong while checking profile status. Please try again."
       case .syncFailed(let message):
@@ -149,11 +155,15 @@ struct BlockedProfileListView: View {
     }
     let profilesToDelete = profiles
 
-    // Check if any of the profiles to delete are active
+    // Check if any of the profiles to delete are active or locked
     for index in offsets {
       let profile = profilesToDelete[index]
       if profile.id == activeSession?.blockedProfile.id {
         deleteError = .activeProfile
+        return
+      }
+      if lockCodeManager.isEditLocked(profile) {
+        deleteError = .lockedProfile
         return
       }
     }
