@@ -115,6 +115,18 @@ class StrategyManager: ObservableObject {
 
   func toggleBlocking(context: ModelContext, activeProfile: BlockedProfiles?) {
     if isBlocking {
+      // #237 / MD3: reconcile against cross-process state before ending a possibly stale
+      // on-screen session. The next Stop acts on the refreshed state.
+      if let displayed = activeSession,
+        SharedData.getActiveSharedSession()?.id != displayed.id
+      {
+        try? loadActiveSession(context: context)
+        errorMessage =
+          "This session was changed by a scheduled timer. The view has been refreshed. "
+          + "Tap Stop again if a session is still active."
+        return
+      }
+
       // Check geofence rule if one exists
       if let session = activeSession,
         let geofenceRule = session.blockedProfile.geofenceRule,
