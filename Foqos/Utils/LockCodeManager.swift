@@ -358,6 +358,24 @@ class LockCodeManager: ObservableObject {
     return unlockedProfileId == profileId
   }
 
+  /// Pure gate for user-initiated edit/delete of a profile. Uses `== .child` so Individual
+  /// mode is not gated (AGENTS.md). Sync-applied deletes must not consult this gate.
+  nonisolated static func isEditLocked(
+    isManaged: Bool,
+    mode: AppMode,
+    isUnlocked: Bool
+  ) -> Bool {
+    isManaged && mode == .child && !isUnlocked
+  }
+
+  /// Gate `profile` against this device's current mode and temporary unlock state.
+  func isEditLocked(_ profile: BlockedProfiles) -> Bool {
+    LockCodeManager.isEditLocked(
+      isManaged: profile.isManaged,
+      mode: appModeManager.currentMode,
+      isUnlocked: isUnlocked(profile.id))
+  }
+
   /// Revoke temporary unlock (called when profile view is dismissed)
   func revokeUnlock() {
     unlockedProfileId = nil

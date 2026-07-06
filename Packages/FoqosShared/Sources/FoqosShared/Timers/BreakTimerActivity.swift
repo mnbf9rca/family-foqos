@@ -40,7 +40,7 @@ public class BreakTimerActivity: TimerActivity {
 
     // End the active scheduled session
     let now = Date()
-    SharedData.setBreakStartTime(date: now)
+    SharedData.setBreakStartTime(date: now, expectedSessionId: activeSession.id)
   }
 
   public func stop(for profile: SharedData.ProfileSnapshot) {
@@ -69,7 +69,8 @@ public class BreakTimerActivity: TimerActivity {
 
       // Set the break end time
       let now = Date()
-      SharedData.setBreakEndTime(date: now)
+      // If the shared session changed since the read above, this no-ops for the foreign session.
+      SharedData.setBreakEndTime(date: now, expectedSessionId: activeSession.id)
     }
   }
 }

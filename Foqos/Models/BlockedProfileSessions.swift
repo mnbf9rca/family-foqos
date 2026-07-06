@@ -65,7 +65,7 @@ class BlockedProfileSession: BreakDurationCalculable {
   }
 
   func startBreak(now: Date = Date()) {
-    SharedData.setBreakStartTime(date: now)
+    SharedData.setBreakStartTime(date: now, expectedSessionId: id)
     self.breakStartTime = now
   }
 
@@ -74,12 +74,12 @@ class BlockedProfileSession: BreakDurationCalculable {
     oneMoreMinuteStartTime = now
 
     // Sync to SharedData for background/foreground transitions
-    SharedData.setOneMoreMinuteStartTime(date: now)
+    SharedData.setOneMoreMinuteStartTime(date: now, expectedSessionId: id)
   }
 
   func endSession(now: Date = Date()) {
     // Set the end time in shared data in case its being saved
-    SharedData.setEndTime(date: now)
+    SharedData.setEndTime(date: now, expectedSessionId: id)
     self.endTime = now
 
     // If this was a schedule-started session, record when it stopped.
@@ -91,7 +91,7 @@ class BlockedProfileSession: BreakDurationCalculable {
       BlockedProfiles.updateSnapshot(for: blockedProfile)
     }
 
-    SharedData.flushActiveSession()
+    SharedData.flushActiveSession(expectedSessionId: id)
   }
 
   func toSnapshot() -> SharedData.SessionSnapshot {

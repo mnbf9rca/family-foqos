@@ -282,7 +282,8 @@ final class OneMoreMinuteTests: XCTestCase {
 
     // Act: Call the real API
     let oneMoreMinuteStart = Date()
-    SharedData.setOneMoreMinuteStartTime(date: oneMoreMinuteStart)
+    SharedData.setOneMoreMinuteStartTime(
+      date: oneMoreMinuteStart, expectedSessionId: "test-session")
 
     // Assert: SharedData is updated
     let afterSession = SharedData.getActiveSharedSession()
@@ -293,9 +294,30 @@ final class OneMoreMinuteTests: XCTestCase {
 
   func testGivenNoActiveSession_WhenSettingOneMoreMinuteStartTime_ThenNoOp() {
     // Act: Call the API with no active session (should not crash)
-    SharedData.setOneMoreMinuteStartTime(date: Date())
+    SharedData.setOneMoreMinuteStartTime(date: Date(), expectedSessionId: "any-id")
 
     // Assert: Still no session
     XCTAssertNil(SharedData.getActiveSharedSession())
+  }
+
+  func testGivenDifferentActiveSession_WhenSettingOneMoreMinute_ThenNoOp() {
+    let now = Date()
+    let profileId = UUID()
+    let stored = SharedData.SessionSnapshot(
+      id: "stored-session",
+      tag: "tag",
+      blockedProfileId: profileId,
+      startTime: now,
+      forceStarted: false
+    )
+    SharedData.createActiveSharedSession(for: stored)
+
+    // A different session tries to stamp one-more-minute.
+    SharedData.setOneMoreMinuteStartTime(date: now, expectedSessionId: "other-session")
+
+    let after = SharedData.getActiveSharedSession()
+    XCTAssertEqual(after?.id, "stored-session", "stored session untouched")
+    XCTAssertFalse(after?.oneMoreMinuteUsed ?? true, "mismatch is a no-op (#237)")
+    XCTAssertNil(after?.oneMoreMinuteStartTime)
   }
 }

@@ -115,6 +115,19 @@ class StrategyManager: ObservableObject {
 
   func toggleBlocking(context: ModelContext, activeProfile: BlockedProfiles?) {
     if isBlocking {
+      // #237 / MD3: reconcile against cross-process state before ending a possibly stale
+      // on-screen session. The next Stop acts on the refreshed state.
+      if let displayed = activeSession,
+        let sharedSession = SharedData.getActiveSharedSession(),
+        sharedSession.id != displayed.id
+      {
+        try? loadActiveSession(context: context)
+        errorMessage =
+          "This session was changed by a scheduled timer. The view has been refreshed. "
+          + "Tap Stop again if a session is still active."
+        return
+      }
+
       // Check geofence rule if one exists
       if let session = activeSession,
         let geofenceRule = session.blockedProfile.geofenceRule,
@@ -1171,8 +1184,10 @@ class StrategyManager: ObservableObject {
         startTime: startTime
       )
 
-      // Set as active session
-      self.activeSession = activeSession
+      // Converge on the single activation path so remote-started sessions get the same
+      // side effects as local starts. syncSessionStart is suppressed while processingRemoteChange
+      // is true, so this does not echo a session record back to CloudKit (#204).
+      activateSession(activeSession, context: context)
 
       Log.info(
         "Started remote session for profile '\(profile.name)' with synced startTime",
