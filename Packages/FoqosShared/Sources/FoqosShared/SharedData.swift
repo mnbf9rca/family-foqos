@@ -285,6 +285,12 @@ public enum SharedData {
 
     public var oneMoreMinuteUsed: Bool = false
     public var oneMoreMinuteStartTime: Date?
+    /// C2 (D-C2-1): absolute wall-clock deadline for an open break grant.
+    public var breakEndDeadline: Date?
+    /// C2 (D-C2-1): absolute wall-clock deadline for an open one-more-minute grant.
+    public var oneMoreMinuteDeadline: Date?
+    /// C2 (§6.1a): re-block config pinned at grant-open for post-close wakes.
+    public var pinnedProfileConfig: ProfileSnapshot?
 
     public init(
       id: String,
@@ -296,7 +302,10 @@ public enum SharedData {
       breakEndTime: Date? = nil,
       forceStarted: Bool,
       oneMoreMinuteUsed: Bool = false,
-      oneMoreMinuteStartTime: Date? = nil
+      oneMoreMinuteStartTime: Date? = nil,
+      breakEndDeadline: Date? = nil,
+      oneMoreMinuteDeadline: Date? = nil,
+      pinnedProfileConfig: ProfileSnapshot? = nil
     ) {
       self.id = id
       self.tag = tag
@@ -308,6 +317,9 @@ public enum SharedData {
       self.forceStarted = forceStarted
       self.oneMoreMinuteUsed = oneMoreMinuteUsed
       self.oneMoreMinuteStartTime = oneMoreMinuteStartTime
+      self.breakEndDeadline = breakEndDeadline
+      self.oneMoreMinuteDeadline = oneMoreMinuteDeadline
+      self.pinnedProfileConfig = pinnedProfileConfig
     }
   }
 
