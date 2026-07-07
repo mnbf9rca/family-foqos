@@ -98,6 +98,82 @@ public enum SharedData {
     return body()
   }
 
+  /// Result of a C2 critical-section acquisition. `.degraded` means the body ran unlocked.
+  public enum LockOutcome: Equatable {
+    case acquired
+    case degraded
+  }
+
+  /// Like `withLock`, but reports whether a real flock was acquired. Non-blocking mode uses a
+  /// bounded retry so extension wakes do not wedge behind a suspended lock holder.
+  public static func withLockStatus<T>(blocking: Bool, _ body: (LockOutcome) -> T) -> T {
+    guard let lockPath else {
+      lockLog.warning("SharedData: no lockPath (test mode?) — proceeding unlocked")
+      return body(.degraded)
+    }
+    let fd = open(lockPath, O_CREAT | O_RDWR, 0o644)
+    guard fd >= 0 else {
+      lockLog.warning("SharedData: open() failed, errno \(errno) — proceeding unlocked")
+      return body(.degraded)
+    }
+    defer { close(fd) }
+
+    if blocking {
+      var ret: Int32
+      repeat {
+        ret = flock(fd, LOCK_EX)
+      } while ret != 0 && errno == EINTR
+      guard ret == 0 else {
+        lockLog.warning("SharedData: flock(LOCK_EX) failed, errno \(errno) — proceeding unlocked")
+        return body(.degraded)
+      }
+    } else {
+      var acquired = false
+      for _ in 0..<50 {
+        let ret = flock(fd, LOCK_NB | LOCK_EX)
+        if ret == 0 {
+          acquired = true
+          break
+        }
+        if errno != EWOULDBLOCK && errno != EINTR { break }
+        usleep(10_000)
+      }
+      guard acquired else {
+        lockLog.warning("SharedData: LOCK_NB timed out — proceeding unlocked")
+        return body(.degraded)
+      }
+    }
+    defer { flock(fd, LOCK_UN) }
+    return body(.acquired)
+  }
+
+  /// Raw active-session read for use inside an existing critical section.
+  internal static var rawActiveSession: SessionSnapshot? {
+    activeSharedSession
+  }
+
+  /// Encode-then-commit raw active-session write. On encode failure, storage is left untouched.
+  @discardableResult
+  internal static func rawCommitActiveSession(
+    _ snapshot: SessionSnapshot?,
+    encode: (SessionSnapshot) throws -> Data = { try JSONEncoder().encode($0) }
+  ) -> Bool {
+    guard let snapshot else {
+      suite.removeObject(forKey: Key.activeScheduleSession.rawValue)
+      clearLegacy(.activeScheduleSession)
+      return true
+    }
+    guard let data = try? encode(snapshot) else {
+      Log.error(
+        "rawCommitActiveSession: encode failed — leaving stored session untouched",
+        category: .session)
+      return false
+    }
+    suite.set(data, forKey: Key.activeScheduleSession.rawValue)
+    clearLegacy(.activeScheduleSession)
+    return true
+  }
+
   // MARK: – Keys
 
   private enum Key: String {
