@@ -706,6 +706,7 @@ final class SyncEngineController: SyncEngineDriverDelegate {
             store.removeFailedApply(recordName: entry.recordName)
           }
         case .found:
+          applyDeletionSideEffects(recordID: id)
           store.removeFailedApply(recordName: entry.recordName)  // recreated ⇒ drop, never delete
         case .transientError:
           break  // retry next cycle

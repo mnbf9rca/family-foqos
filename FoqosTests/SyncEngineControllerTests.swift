@@ -513,6 +513,9 @@ final class SyncEngineControllerTests: XCTestCase {
     let p = BlockedProfiles(id: deletePresentId, name: "KeepMe")
     context.insert(p)
     try? context.save()
+    store.setSystemFields(Data("cached".utf8), for: deletePresentId.uuidString)
+    store.setTombstone(recordName: deletePresentId.uuidString, changeTag: "stale-delete-tag")
+    driver.add(pendingRecordZoneChanges: [.deleteRecord(recordID(deletePresentId.uuidString))])
 
     let controller = makeController()
     controller.start()
@@ -531,6 +534,15 @@ final class SyncEngineControllerTests: XCTestCase {
       store.failedApplies.first { $0.recordName == deletePresentId.uuidString },
       "delete verified present ⇒ entry dropped")
     XCTAssertNotNil(try? fetchProfile(deletePresentId), "present record NOT deleted (S-35)")
+    XCTAssertNil(
+      store.deleteTombstones[deletePresentId.uuidString] ?? nil,
+      "verified-present retry drops stale delete tombstone")
+    XCTAssertNil(
+      store.systemFields(for: deletePresentId.uuidString),
+      "verified-present retry drops stale delete system fields")
+    XCTAssertFalse(
+      pendingDeleteNames().contains(deletePresentId.uuidString),
+      "verified-present retry removes stale pending delete")
   }
 
   func
