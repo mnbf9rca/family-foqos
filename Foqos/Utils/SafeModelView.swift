@@ -26,8 +26,14 @@ struct SafeModelView<Model: PersistentModel, Content: View>: View {
   }
 
   var body: some View {
+    let state = model.debugPersistentModelStateFor285
+    let _ = Log.debug("[#285 PROBE] SafeModelView.body evaluate \(state)", category: .ui)
     if model.isPersistentModelValid {
+      let _ = Log.debug("[#285 PROBE] SafeModelView.body allow content \(state)", category: .ui)
       content(model)
+    } else {
+      let _ = Log.debug("[#285 PROBE] SafeModelView.body suppress content \(state)", category: .ui)
+      EmptyView()
     }
   }
 }
