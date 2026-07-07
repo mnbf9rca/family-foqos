@@ -112,8 +112,8 @@ final class MutationFunnel {
         category: .sync
       )
       let deleteZoneID = zoneID
-      Task { @MainActor [modelContext, store, driver, recordName, deleteZoneID] in
-        try? await Task.sleep(for: .milliseconds(50))
+      Task { @MainActor [modelContext, driver, recordName, deleteZoneID] in
+        await Task.yield()
         do {
           Log.debug("[#285 PROBE] Funnel deferred save begin recordName=\(recordName)", category: .sync)
           try modelContext.save()
@@ -124,8 +124,6 @@ final class MutationFunnel {
             category: .sync
           )
         } catch {
-          store.clearTombstone(recordName: recordName)
-          modelContext.rollback()
           Log.error(
             "[#285 PROBE] Funnel deferred save failed recordName=\(recordName): \(error.localizedDescription)",
             category: .sync

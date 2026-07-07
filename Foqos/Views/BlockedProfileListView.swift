@@ -200,9 +200,8 @@ struct BlockedProfileListView: View {
         }
       }
 
-      Log.debug("[#285 PROBE] List delete scheduling deferred reorder save", category: .ui)
       Task { @MainActor in
-        try? await Task.sleep(for: .milliseconds(50))
+        await Task.yield()
         do {
           // [#285 PROBE] Temporarily defer the reorder save so SwiftUI can settle pending deletes.
           let remainingProfiles = try BlockedProfiles.fetchProfiles(in: context)
