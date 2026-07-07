@@ -286,4 +286,35 @@ extension SharedData {
       return decision
     }
   }
+
+  /// §7.5 reconciler core. Never mutates DeviceActivity registrations.
+  public static func reconcileExpiredGrants(
+    process: RestrictionProcess,
+    now: Date,
+    liveSnapshot: ProfileSnapshot?,
+    breakDurationMinutes: Int?,
+    applier: RestrictionApplying = AppBlockerUtil()
+  ) {
+    if let session = rawActiveSession, session.endTime == nil {
+      let sid = session.id
+      _ = closeOneMoreMinuteGrantIfExpired(
+        expectedSessionId: sid,
+        now: now,
+        process: process,
+        liveSnapshot: liveSnapshot,
+        applier: applier)
+      _ = closeBreakGrantIfExpiredOrExplicit(
+        expectedSessionId: sid,
+        explicit: false,
+        now: now,
+        process: process,
+        durationMinutes: breakDurationMinutes,
+        liveSnapshot: liveSnapshot,
+        applier: applier)
+    }
+    applyRestrictionsForCurrentState(
+      process: process,
+      liveSnapshot: liveSnapshot,
+      applier: applier)
+  }
 }
