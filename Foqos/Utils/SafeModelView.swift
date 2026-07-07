@@ -26,7 +26,7 @@ struct SafeModelView<Model: PersistentModel, Content: View>: View {
   }
 
   var body: some View {
-    if model.modelContext != nil && !model.isDeleted {
+    if model.isPersistentModelValid {
       content(model)
     }
   }

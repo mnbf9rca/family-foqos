@@ -136,6 +136,41 @@ final class SafeModelViewTests: XCTestCase {
     XCTAssertFalse(contentCalled, "Content closure should not be called for a deleted model")
   }
 
+  func testGivenModelDeletedThenSaved_WhenRenderingSafeModelView_ThenContentNotCalled() throws {
+    // Post-save window regression for #285: the render-time guard must reject the
+    // saved-deleted model so BlockedProfileCard never reads its stored attributes.
+    let profile = BlockedProfiles(
+      id: UUID(), name: "PostSaveGone", selectedActivity: .init(),
+      blockingStrategyId: "manual")
+    context.insert(profile)
+    try context.save()
+
+    context.delete(profile)
+    try context.save()
+
+    var contentCalled = false
+    let view = SafeModelView(profile) { _ in
+      contentCalled = true
+      return Text("Should not render")
+    }
+
+    if profile.modelContext == nil || profile.isDeleted {
+      // Contingency Mode C: this in-memory test store does not reproduce the device post-save
+      // window, so Task 4 device verification remains the authoritative proof for #285.
+      let _ = view.body
+      XCTAssertFalse(contentCalled)
+      return
+    }
+
+    // Evaluating body reads only model metadata (safe); the content closure — which would
+    // read stored attributes and trap — must not run.
+    let _ = view.body
+
+    XCTAssertFalse(
+      contentCalled,
+      "Content closure must not run for a deleted-and-saved model (isDeleted == false)")
+  }
+
   func testSafeModelViewWithValidModel() throws {
     let profile = BlockedProfiles(
       id: UUID(), name: "Valid", selectedActivity: .init(),
