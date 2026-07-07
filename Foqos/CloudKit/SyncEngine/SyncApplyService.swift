@@ -124,12 +124,23 @@ final class SyncApplyService {
       let saveOverride = saveOverride
       let profileDeleteCommitObserver = profileDeleteCommitObserver
       scheduleProfileDeleteCommit {
-        [modelContext, store, recordName, saveOverride, profileDeleteCommitObserver] in
+        [modelContext, store, id, recordName, saveOverride, profileDeleteCommitObserver] in
         do {
           if let saveOverride {
             try saveOverride()
           } else {
             try modelContext.save()
+          }
+          guard try BlockedProfiles.findProfile(byID: id, in: modelContext) == nil else {
+            store.addFailedApply(
+              FailedApply(
+                recordName: recordName, recordType: SyncedProfile.recordType, op: .delete)
+            )
+            Log.error(
+              "Deferred remote profile delete save completed but \(recordName) is still present",
+              category: .sync
+            )
+            return
           }
           store.setSystemFields(nil, for: recordName)
           store.clearTombstone(recordName: recordName)

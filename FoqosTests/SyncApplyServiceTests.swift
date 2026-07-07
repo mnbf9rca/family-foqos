@@ -579,6 +579,51 @@ final class SyncApplyServiceTests: XCTestCase {
     XCTAssertEqual(store.deleteTombstones[id.uuidString] ?? nil, "tag-1")
   }
 
+  func testGivenTwoRemoteProfileDeletions_WhenFirstDeferredCommitRollsBackSecond_ThenSecondBookkeepingIsRetained()
+    throws
+  {
+    struct BoomError: Error {}
+
+    let firstId = UUID()
+    let secondId = UUID()
+    context.insert(BlockedProfiles(id: firstId, name: "FirstRemoteDelete", syncVersion: 1))
+    context.insert(BlockedProfiles(id: secondId, name: "SecondRemoteDelete", syncVersion: 1))
+    try context.save()
+    store.setSystemFields(Data("first-cached".utf8), for: firstId.uuidString)
+    store.setSystemFields(Data("second-cached".utf8), for: secondId.uuidString)
+    store.setTombstone(recordName: firstId.uuidString, changeTag: "first-tag")
+    store.setTombstone(recordName: secondId.uuidString, changeTag: "second-tag")
+
+    let scheduler = ManualProfileDeleteCommitScheduler()
+    let service = makeService(scheduleProfileDeleteCommit: scheduler.schedule)
+    var committedNames: [String] = []
+    service.profileDeleteCommitObserver = { committedNames.append($0) }
+
+    service.saveOverride = { throw BoomError() }
+    XCTAssertEqual(
+      service.applyFetchedDeletion(
+        recordID: CKRecord.ID(recordName: firstId.uuidString, zoneID: zoneID),
+        recordType: SyncedProfile.recordType),
+      .deleted)
+
+    service.saveOverride = nil
+    XCTAssertEqual(
+      service.applyFetchedDeletion(
+        recordID: CKRecord.ID(recordName: secondId.uuidString, zoneID: zoneID),
+        recordType: SyncedProfile.recordType),
+      .deleted)
+
+    scheduler.runNext()
+    scheduler.runNext()
+
+    XCTAssertTrue(committedNames.isEmpty)
+    XCTAssertNotNil(
+      store.systemFields(for: secondId.uuidString),
+      "rollback restored the second profile, so remote delete bookkeeping must remain")
+    XCTAssertEqual(store.deleteTombstones[secondId.uuidString] ?? nil, "second-tag")
+    XCTAssertNotNil(try BlockedProfiles.findProfile(byID: secondId, in: context))
+  }
+
   // Negative: a remote profile deletion for a non-active profile must not touch the session.
   func testGivenDeletionForNonActiveProfile_WhenApplied_ThenNoSessionStop() throws {
     let activeId = UUID()

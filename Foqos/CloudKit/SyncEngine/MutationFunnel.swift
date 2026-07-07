@@ -21,6 +21,8 @@ final class MutationFunnel {
   private let driver: SyncEngineDriver
   private let deviceId: String
   private let scheduleProfileDeleteCommit: (@escaping @MainActor () -> Void) -> Void
+  /// Test seam: overrides the durable save so deferred-delete rollback is exercisable.
+  var saveOverride: (() throws -> Void)?
 
   init(
     modelContext: ModelContext,
@@ -111,9 +113,23 @@ final class MutationFunnel {
       }
       try BlockedProfiles.deleteProfile(profile, in: modelContext)
       let deleteZoneID = zoneID
-      scheduleProfileDeleteCommit { [modelContext, store, driver, recordName, deleteZoneID] in
+      let saveOverride = saveOverride
+      scheduleProfileDeleteCommit {
+        [modelContext, store, driver, profileId, recordName, deleteZoneID, saveOverride] in
         do {
-          try modelContext.save()
+          if let saveOverride {
+            try saveOverride()
+          } else {
+            try modelContext.save()
+          }
+          guard try BlockedProfiles.findProfile(byID: profileId, in: modelContext) == nil else {
+            store.clearTombstone(recordName: recordName)
+            Log.error(
+              "Deferred profile delete save completed but \(recordName) is still present",
+              category: .sync
+            )
+            return
+          }
           let recordID = CKRecord.ID(recordName: recordName, zoneID: deleteZoneID)
           driver.add(pendingRecordZoneChanges: [.deleteRecord(recordID)])
         } catch {
