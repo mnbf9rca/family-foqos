@@ -28,7 +28,8 @@ class StrategyManager: ObservableObject {
   @Published var errorMessage: String?
 
   private let timersUtil = TimersUtil()
-  private let appBlocker = AppBlockerUtil()
+  private let appBlocker: RestrictionApplying
+  private let backstopRegistrar: BackstopRegistering
 
   init(
     geofenceEvaluator: GeofenceEvaluator = .shared,
@@ -36,7 +37,9 @@ class StrategyManager: ObservableObject {
     liveActivityManager: LiveActivityManager = .shared,
     profileSyncManager: ProfileSyncManager = .shared,
     sessionSyncService: SessionSyncService = .shared,
-    locationManager: LocationManager = .shared
+    locationManager: LocationManager = .shared,
+    appBlocker: RestrictionApplying = AppBlockerUtil(),
+    backstopRegistrar: BackstopRegistering = DeviceActivityBackstopRegistrar()
   ) {
     self.geofenceEvaluator = geofenceEvaluator
     self.emergencyUnblockManager = emergencyUnblockManager
@@ -44,6 +47,8 @@ class StrategyManager: ObservableObject {
     self.profileSyncManager = profileSyncManager
     self.sessionSyncService = sessionSyncService
     self.locationManager = locationManager
+    self.appBlocker = appBlocker
+    self.backstopRegistrar = backstopRegistrar
   }
 
   // Track if we're currently processing a remote session change
@@ -220,6 +225,20 @@ class StrategyManager: ObservableObject {
   func stopTimer() {
     timerTask?.cancel()
     timerTask = nil
+  }
+
+  private func mirrorGrantFieldsFromShared(_ session: BlockedProfileSession) {
+    guard let shared = SharedData.getActiveSharedSession(), shared.id == session.id else { return }
+    session.breakStartTime = shared.breakStartTime
+    session.breakEndTime = shared.breakEndTime
+    session.breakEndDeadline = shared.breakEndDeadline
+    session.oneMoreMinuteStartTime = shared.oneMoreMinuteStartTime
+    session.oneMoreMinuteDeadline = shared.oneMoreMinuteDeadline
+    session.oneMoreMinuteUsed = shared.oneMoreMinuteUsed
+    session.pinnedProfileConfigData = shared.pinnedProfileConfig.flatMap {
+      try? JSONEncoder().encode($0)
+    }
+    try? session.modelContext?.save()
   }
 
   func toggleSessionFromDeeplink(
@@ -763,22 +782,44 @@ class StrategyManager: ObservableObject {
       return
     }
 
-    if !session.isBreakAvailable {
+    guard session.isBreakAvailable else {
       Log.info("Breaks is not available", category: .strategy)
       return
     }
 
-    // Start the break timer activity
-    DeviceActivityCenterUtil.startBreakTimerActivity(for: session.blockedProfile)
+    let now = Date()
+    let profile = session.blockedProfile
+    let deadline = now.addingTimeInterval(TimeInterval(profile.breakTimeInMinutes * 60))
+    let live = BlockedProfiles.getSnapshot(for: profile)
+
+    do {
+      try backstopRegistrar.replaceBreakBackstop(profileId: profile.id, deadline: deadline, now: now)
+    } catch {
+      errorMessage = "Couldn't start your break. Please try again."
+      Log.error("startBreak: backstop registration failed: \(error.localizedDescription)", category: .timer)
+      return
+    }
+
+    let opened = SharedData.openBreakGrant(
+      startDate: now,
+      deadline: deadline,
+      expectedSessionId: session.id,
+      liveSnapshot: live,
+      applier: appBlocker)
+    guard opened else {
+      backstopRegistrar.removeBreakBackstop(profileId: profile.id)
+      try? loadActiveSession(context: context)
+      errorMessage = "This session changed. Please try again."
+      return
+    }
+    backstopRegistrar.removeOneMoreMinuteBackstop(profileId: profile.id)
+    mirrorGrantFieldsFromShared(session)
 
     // Schedule a reminder to get back to the profile after the break
-    scheduleBreakReminder(profile: session.blockedProfile)
+    scheduleBreakReminder(profile: profile)
 
     // Refresh widgets when break starts
     WidgetCenter.shared.reloadTimelines(ofKind: "ProfileControlWidget")
-
-    // Load the active session since the break start time was set in a different thread
-    try? loadActiveSession(context: context)
 
     // Update live activity to show break state
     liveActivityManager.updateBreakState(session: session)
