@@ -124,4 +124,62 @@ final class SafeModelViewTests: XCTestCase {
 
     XCTAssertTrue(contentCalled, "Content closure should be called for a valid model")
   }
+
+  // MARK: - isPersistentModelValid predicate (both deletion windows)
+
+  func testGivenLiveSavedModel_WhenCheckingValidity_ThenValid() throws {
+    let profile = BlockedProfiles(
+      id: UUID(), name: "Live", selectedActivity: .init(),
+      blockingStrategyId: "manual")
+    context.insert(profile)
+    try context.save()
+
+    XCTAssertTrue(profile.isPersistentModelValid)
+  }
+
+  func testGivenInsertedUnsavedModel_WhenCheckingValidity_ThenValid() throws {
+    // False-negative guard: a freshly inserted, not-yet-saved model is alive.
+    let profile = BlockedProfiles(
+      id: UUID(), name: "Fresh", selectedActivity: .init(),
+      blockingStrategyId: "manual")
+    context.insert(profile)
+
+    XCTAssertTrue(profile.isPersistentModelValid)
+  }
+
+  func testGivenModelDeletedWithoutSave_WhenCheckingValidity_ThenInvalid() throws {
+    // Pre-save window: isDeleted == true.
+    let profile = BlockedProfiles(
+      id: UUID(), name: "PreSaveGone", selectedActivity: .init(),
+      blockingStrategyId: "manual")
+    context.insert(profile)
+    try context.save()
+
+    context.delete(profile)
+
+    XCTAssertFalse(profile.isPersistentModelValid)
+  }
+
+  func testGivenModelDeletedThenSaved_WhenCheckingValidity_ThenInvalid() throws {
+    // Post-save window: isDeleted flips back to false — the gap #285 shipped through.
+    let profile = BlockedProfiles(
+      id: UUID(), name: "PostSaveGone", selectedActivity: .init(),
+      blockingStrategyId: "manual")
+    context.insert(profile)
+    try context.save()
+
+    context.delete(profile)
+    try context.save()
+
+    if profile.modelContext == nil || profile.isDeleted {
+      // Contingency Mode C: this in-memory test store does not reproduce the device post-save
+      // window, so Task 4 device verification remains the authoritative proof for #285.
+      XCTAssertFalse(profile.isPersistentModelValid)
+      return
+    }
+
+    XCTAssertFalse(
+      profile.isPersistentModelValid,
+      "A deleted-and-saved model must be rejected even though isDeleted == false")
+  }
 }
