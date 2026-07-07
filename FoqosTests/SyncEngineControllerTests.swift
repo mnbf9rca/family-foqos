@@ -16,6 +16,7 @@ final class SyncEngineControllerTests: XCTestCase {
   var provider: RecordProvider!
   var sessionSync: MockSessionSyncFlushing!
   var sessionController: MockSessionController!
+  var profileDeleteCommitScheduler: ManualProfileDeleteCommitScheduler!
   let deviceId = "device-A"
   let userRecordName = "user-A"
   let zoneID = CKRecordZone.ID(
@@ -31,10 +32,12 @@ final class SyncEngineControllerTests: XCTestCase {
     store = SyncEngineStore(userRecordName: userRecordName, defaults: defaults)
     driver = MockSyncEngineDriver()
     sessionController = MockSessionController()
+    profileDeleteCommitScheduler = ManualProfileDeleteCommitScheduler()
     let emergency = EmergencyUnblockManager()
     apply = SyncApplyService(
       modelContext: context, store: store, sessionController: sessionController,
-      emergencyManager: emergency, deviceId: deviceId)
+      emergencyManager: emergency, deviceId: deviceId,
+      scheduleProfileDeleteCommit: profileDeleteCommitScheduler.schedule)
     provider = RecordProvider(
       modelContext: context, store: store, emergencyManager: emergency, deviceId: deviceId)
     sessionSync = MockSessionSyncFlushing()
@@ -509,6 +512,9 @@ final class SyncEngineControllerTests: XCTestCase {
     let p = BlockedProfiles(id: deletePresentId, name: "KeepMe")
     context.insert(p)
     try? context.save()
+    store.setSystemFields(Data("cached".utf8), for: deletePresentId.uuidString)
+    store.setTombstone(recordName: deletePresentId.uuidString, changeTag: "stale-delete-tag")
+    driver.add(pendingRecordZoneChanges: [.deleteRecord(recordID(deletePresentId.uuidString))])
 
     let controller = makeController()
     controller.start()
@@ -527,6 +533,15 @@ final class SyncEngineControllerTests: XCTestCase {
       store.failedApplies.first { $0.recordName == deletePresentId.uuidString },
       "delete verified present ⇒ entry dropped")
     XCTAssertNotNil(try? fetchProfile(deletePresentId), "present record NOT deleted (S-35)")
+    XCTAssertNil(
+      store.deleteTombstones[deletePresentId.uuidString] ?? nil,
+      "verified-present retry drops stale delete tombstone")
+    XCTAssertNil(
+      store.systemFields(for: deletePresentId.uuidString),
+      "verified-present retry drops stale delete system fields")
+    XCTAssertFalse(
+      pendingDeleteNames().contains(deletePresentId.uuidString),
+      "verified-present retry removes stale pending delete")
   }
 
   func
@@ -557,6 +572,38 @@ final class SyncEngineControllerTests: XCTestCase {
     XCTAssertNil(
       store.failedApplies.first { $0.recordName == id.uuidString },
       "later successful apply clears the entry (supersession)")
+  }
+
+  func testGivenFailedRemoteDeleteRetryFindsServerRecordButLocalDeletePending_WhenRetried_ThenLocalDeleteIntentSurvives()
+    async
+  {
+    store.engineState = Data([0x01])
+    let id = UUID()
+    store.addFailedApply(
+      FailedApply(recordName: id.uuidString, recordType: SyncedProfile.recordType, op: .delete))
+    store.setSystemFields(Data("cached".utf8), for: id.uuidString)
+    store.setTombstone(recordName: id.uuidString, changeTag: "local-delete-tag")
+    driver.add(pendingRecordZoneChanges: [.deleteRecord(recordID(id.uuidString))])
+    driver.fetchRecordResults[id.uuidString] = .found(
+      makeProfileRecord(id: id, version: 1, name: "ServerStillHasIt"),
+      changeTag: "local-delete-tag")
+
+    let controller = makeController()
+    controller.start()
+    await controller.startupTask?.value
+
+    XCTAssertNil(
+      store.failedApplies.first { $0.recordName == id.uuidString },
+      "verified-present retry drops the stale remote failed apply")
+    XCTAssertNotNil(
+      store.deleteTombstones[id.uuidString],
+      "newer local delete tombstone must survive the remote failed-apply cleanup")
+    XCTAssertNotNil(
+      store.systemFields(for: id.uuidString),
+      "newer local delete keeps cached system fields until delete confirmation")
+    XCTAssertTrue(
+      pendingDeleteNames().contains(id.uuidString),
+      "newer local pending delete must still propagate")
   }
 
   // MARK: - AB-3 fetch-cycle delimiters (T2, S-37)
@@ -645,6 +692,12 @@ final class SyncEngineControllerTests: XCTestCase {
         deletions: [(recordID: recordID(id.uuidString), recordType: SyncedProfile.recordType)]))
 
     XCTAssertNil(try? fetchProfile(id), "local profile deleted (§5.2)")
+    XCTAssertNotNil(store.deleteTombstones[id.uuidString], "tombstone retained until durable delete")
+    XCTAssertNotNil(store.systemFields(for: id.uuidString))
+    XCTAssertTrue(pendingDeleteNames().contains(id.uuidString), "pending delete retained until commit")
+
+    profileDeleteCommitScheduler.runNext()
+
     XCTAssertNil(store.deleteTombstones[id.uuidString], "tombstone cleared (I12)")
     XCTAssertNil(store.systemFields(for: id.uuidString))
     XCTAssertFalse(pendingDeleteNames().contains(id.uuidString), "pending .deleteRecord removed (§5.2)")

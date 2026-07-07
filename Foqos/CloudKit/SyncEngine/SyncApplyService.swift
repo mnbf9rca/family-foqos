@@ -15,6 +15,7 @@ final class SyncApplyService {
   private let sessionController: SessionController
   private let emergencyManager: EmergencyUnblockManager
   private let deviceId: String
+  private let scheduleProfileDeleteCommit: (@escaping @MainActor () -> Void) -> Void
 
   /// In-memory confirmed-delete echo guard (§5.1). Populated by the controller on §5.3 confirmation.
   var recentlyConfirmedDeletes: Set<String> = []
@@ -26,18 +27,24 @@ final class SyncApplyService {
   /// Test seam: overrides the durable save so §5.1 rollback (S-30) is exercisable.
   var saveOverride: (() throws -> Void)?
 
+  /// Called only after a deferred remote profile delete has been durably committed.
+  var profileDeleteCommitObserver: ((String) -> Void)?
+
   init(
     modelContext: ModelContext,
     store: SyncEngineStore,
     sessionController: SessionController,
     emergencyManager: EmergencyUnblockManager,
-    deviceId: String
+    deviceId: String,
+    scheduleProfileDeleteCommit: @escaping (@escaping @MainActor () -> Void) -> Void =
+      BlockedProfiles.scheduleProfileDeleteCommit
   ) {
     self.modelContext = modelContext
     self.store = store
     self.sessionController = sessionController
     self.emergencyManager = emergencyManager
     self.deviceId = deviceId
+    self.scheduleProfileDeleteCommit = scheduleProfileDeleteCommit
   }
 
   func drainReenqueues() -> [CKRecord.ID] {
@@ -114,8 +121,44 @@ final class SyncApplyService {
         sessionController.stopRemoteSession(context: modelContext, profileId: id)
       }
       try BlockedProfiles.deleteProfile(profile, in: modelContext)  // defers save
-      try commit()
-      clearDeletionBookkeeping(recordName: recordName)
+      let saveOverride = saveOverride
+      let profileDeleteCommitObserver = profileDeleteCommitObserver
+      scheduleProfileDeleteCommit {
+        [modelContext, store, id, recordName, saveOverride, profileDeleteCommitObserver] in
+        do {
+          // Remote apply failures are persisted as failedApplies and retried by the sync
+          // controller, not surfaced as UI action errors. Controller side effects wait until
+          // this deferred commit succeeds.
+          if let saveOverride {
+            try saveOverride()
+          } else {
+            try modelContext.save()
+          }
+          guard try BlockedProfiles.findProfile(byID: id, in: modelContext) == nil else {
+            store.addFailedApply(
+              FailedApply(
+                recordName: recordName, recordType: SyncedProfile.recordType, op: .delete)
+            )
+            Log.error(
+              "Deferred remote profile delete save completed but \(recordName) is still present",
+              category: .sync
+            )
+            return
+          }
+          store.setSystemFields(nil, for: recordName)
+          store.clearTombstone(recordName: recordName)
+          store.removeFailedApply(recordName: recordName)
+          profileDeleteCommitObserver?(recordName)
+        } catch {
+          modelContext.rollback()
+          store.addFailedApply(
+            FailedApply(
+              recordName: recordName, recordType: SyncedProfile.recordType, op: .delete))
+          Log.error(
+            "Failed to apply profile deletion \(recordName): \(error.localizedDescription)",
+            category: .sync)
+        }
+      }
       return .deleted
     } catch {
       modelContext.rollback()

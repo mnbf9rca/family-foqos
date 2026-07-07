@@ -20,17 +20,23 @@ final class MutationFunnel {
   private let store: SyncEngineStore
   private let driver: SyncEngineDriver
   private let deviceId: String
+  private let scheduleProfileDeleteCommit: (@escaping @MainActor () -> Void) -> Void
+  /// Test seam: overrides the durable save so deferred-delete rollback is exercisable.
+  var saveOverride: (() throws -> Void)?
 
   init(
     modelContext: ModelContext,
     store: SyncEngineStore,
     driver: SyncEngineDriver,
-    deviceId: String
+    deviceId: String,
+    scheduleProfileDeleteCommit: @escaping (@escaping @MainActor () -> Void) -> Void =
+      BlockedProfiles.scheduleProfileDeleteCommit
   ) {
     self.modelContext = modelContext
     self.store = store
     self.driver = driver
     self.deviceId = deviceId
+    self.scheduleProfileDeleteCommit = scheduleProfileDeleteCommit
   }
 
   private var zoneID: CKRecordZone.ID {
@@ -106,14 +112,44 @@ final class MutationFunnel {
         throw MutationFunnelError.entityNotFound
       }
       try BlockedProfiles.deleteProfile(profile, in: modelContext)
-      try modelContext.save()
+      let deleteZoneID = zoneID
+      let saveOverride = saveOverride
+      scheduleProfileDeleteCommit {
+        [modelContext, store, driver, profileId, recordName, deleteZoneID, saveOverride] in
+        do {
+          // The caller has already returned; post-boundary failures are logged and converted
+          // back into tombstone cleanup plus rollback, and the remote delete is enqueued only
+          // after the save and target-absence check both succeed.
+          if let saveOverride {
+            try saveOverride()
+          } else {
+            try modelContext.save()
+          }
+          guard try BlockedProfiles.findProfile(byID: profileId, in: modelContext) == nil else {
+            store.clearTombstone(recordName: recordName)
+            Log.error(
+              "Deferred profile delete save completed but \(recordName) is still present",
+              category: .sync
+            )
+            return
+          }
+          let recordID = CKRecord.ID(recordName: recordName, zoneID: deleteZoneID)
+          driver.add(pendingRecordZoneChanges: [.deleteRecord(recordID)])
+        } catch {
+          store.clearTombstone(recordName: recordName)
+          modelContext.rollback()
+          Log.error(
+            "Deferred profile delete save failed for \(recordName): \(error.localizedDescription)",
+            category: .sync
+          )
+        }
+      }
+      return
     } catch {
       store.clearTombstone(recordName: recordName)
       modelContext.rollback()
       throw error
     }
-    let recordID = CKRecord.ID(recordName: recordName, zoneID: zoneID)
-    driver.add(pendingRecordZoneChanges: [.deleteRecord(recordID)])
   }
 
   /// Persist a delete-intent tombstone before the location delete; `SavedLocation.delete(_:in:)`

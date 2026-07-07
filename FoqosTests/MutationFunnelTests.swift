@@ -263,6 +263,81 @@ final class MutationFunnelTests: XCTestCase {
 
   // MARK: - S-15 / S-29: delete writes a tombstone carrying the change tag, enqueues once
 
+  func testGivenSyncedProfile_WhenEnqueueDelete_ThenDeleteIsMarkedBeforeDeferredSaveAndEnqueuedAfterCommit()
+    throws
+  {
+    let profileId = UUID()
+    let recordName = profileId.uuidString
+    let container = try TestModelContainer.create()
+    let context = ModelContext(container)
+    try insertProfile(in: context, id: profileId, name: "Homework", syncVersion: 2)
+
+    let store = makeStore()
+    let driver = MockSyncEngineDriver()
+    let scheduler = ManualProfileDeleteCommitScheduler()
+    let funnel = MutationFunnel(
+      modelContext: context,
+      store: store,
+      driver: driver,
+      deviceId: "device-A",
+      scheduleProfileDeleteCommit: scheduler.schedule
+    )
+
+    try funnel.enqueueDelete(profileId: profileId)
+
+    XCTAssertTrue(store.deleteTombstones.keys.contains(recordName), "tombstone is durable immediately")
+    XCTAssertEqual(scheduler.scheduledOperations.count, 1, "save is deferred one UI turn")
+    XCTAssertTrue(driver.pendingRecordZoneChanges.isEmpty, "deleteRecord is not enqueued before save")
+    XCTAssertNil(
+      try BlockedProfiles.findProfile(byID: profileId, in: context),
+      "same context excludes the pending-deleted profile before save")
+
+    let verifyBeforeSave = ModelContext(container)
+    XCTAssertNotNil(
+      try BlockedProfiles.findProfile(byID: profileId, in: verifyBeforeSave),
+      "delete is not persisted until the deferred commit runs")
+
+    scheduler.runNext()
+
+    let verifyAfterSave = ModelContext(container)
+    XCTAssertNil(try BlockedProfiles.findProfile(byID: profileId, in: verifyAfterSave))
+    XCTAssertEqual(driver.pendingRecordZoneChanges, [.deleteRecord(recordID(recordName))])
+  }
+
+  func testGivenDeleteScheduledButCommitNotRun_WhenStoreReloads_ThenTombstoneSurvivesAndEntityStillExists()
+    throws
+  {
+    let profileId = UUID()
+    let recordName = profileId.uuidString
+    let container = try TestModelContainer.create()
+    let context = ModelContext(container)
+    try insertProfile(in: context, id: profileId, name: "Homework", syncVersion: 2)
+
+    let store = makeStore()
+    let driver = MockSyncEngineDriver()
+    let scheduler = ManualProfileDeleteCommitScheduler()
+    let funnel = MutationFunnel(
+      modelContext: context,
+      store: store,
+      driver: driver,
+      deviceId: "device-A",
+      scheduleProfileDeleteCommit: scheduler.schedule
+    )
+
+    try funnel.enqueueDelete(profileId: profileId)
+
+    let reloadedStore = makeStore()
+    XCTAssertTrue(
+      reloadedStore.deleteTombstones.keys.contains(recordName),
+      "the tombstone is durable before the deferred save runs")
+
+    let verifyContext = ModelContext(container)
+    XCTAssertNotNil(
+      try BlockedProfiles.findProfile(byID: profileId, in: verifyContext),
+      "a process death before deferred save leaves the profile present")
+    XCTAssertTrue(driver.pendingRecordZoneChanges.isEmpty)
+  }
+
   func testGivenSyncedProfile_WhenEnqueueDelete_ThenWritesTombstoneWithTagAndEnqueuesOnce() throws {
     // Given: a synced profile whose last-known server system-fields are cached in the store.
     let now = Date()
@@ -278,20 +353,20 @@ final class MutationFunnelTests: XCTestCase {
 
     let syncContext = ModelContext(container)
     let driver = MockSyncEngineDriver()
+    let scheduler = ManualProfileDeleteCommitScheduler()
     let funnel = MutationFunnel(
       modelContext: syncContext,
       store: store,
       driver: driver,
-      deviceId: "device-A"
+      deviceId: "device-A",
+      scheduleProfileDeleteCommit: scheduler.schedule
     )
 
     // When
     try funnel.enqueueDelete(profileId: profileId)
 
-    // Then: the entity is gone (locally and persisted)...
+    // Then: the entity is marked deleted on the funnel context...
     XCTAssertNil(try BlockedProfiles.findProfile(byID: profileId, in: syncContext))
-    let verifyContext = ModelContext(container)
-    XCTAssertNil(try BlockedProfiles.findProfile(byID: profileId, in: verifyContext))
 
     // ...a tombstone exists carrying exactly the change tag derived from the cached system fields...
     XCTAssertTrue(store.deleteTombstones.keys.contains(recordName), "tombstone must be written")
@@ -300,6 +375,11 @@ final class MutationFunnelTests: XCTestCase {
       MutationFunnel.changeTag(fromSystemFields: systemFields),
       "tombstone tag must come from the record's cached systemFields (I12)"
     )
+
+    scheduler.runNext()
+
+    let verifyAfterCommit = ModelContext(container)
+    XCTAssertNil(try BlockedProfiles.findProfile(byID: profileId, in: verifyAfterCommit))
 
     // ...and exactly one pending .deleteRecord was enqueued.
     XCTAssertEqual(driver.pendingRecordZoneChanges, [.deleteRecord(recordID(recordName))])
@@ -322,11 +402,13 @@ final class MutationFunnelTests: XCTestCase {
     let store = makeStore()
     let syncContext = ModelContext(container)
     let driver = MockSyncEngineDriver()
+    let scheduler = ManualProfileDeleteCommitScheduler()
     let funnel = MutationFunnel(
       modelContext: syncContext,
       store: store,
       driver: driver,
-      deviceId: "device-A"
+      deviceId: "device-A",
+      scheduleProfileDeleteCommit: scheduler.schedule
     )
 
     // When
@@ -342,9 +424,51 @@ final class MutationFunnelTests: XCTestCase {
       "a never-synced record has no change tag"
     )
 
+    scheduler.runNext()
+
     // ...and exactly one pending .deleteRecord was enqueued.
     XCTAssertEqual(driver.pendingRecordZoneChanges, [.deleteRecord(recordID(recordName))])
     _ = now
+  }
+
+  func testGivenTwoProfileDeletes_WhenFirstDeferredCommitRollsBackSecond_ThenSecondDeleteIsNotEnqueued()
+    throws
+  {
+    struct BoomError: Error {}
+
+    let firstId = UUID()
+    let secondId = UUID()
+    let container = try TestModelContainer.create()
+    let userContext = ModelContext(container)
+    try insertProfile(in: userContext, id: firstId, name: "FirstDelete", syncVersion: 1)
+    try insertProfile(in: userContext, id: secondId, name: "SecondDelete", syncVersion: 1)
+
+    let store = makeStore()
+    let syncContext = ModelContext(container)
+    let driver = MockSyncEngineDriver()
+    let scheduler = ManualProfileDeleteCommitScheduler()
+    let funnel = MutationFunnel(
+      modelContext: syncContext,
+      store: store,
+      driver: driver,
+      deviceId: "device-A",
+      scheduleProfileDeleteCommit: scheduler.schedule
+    )
+
+    funnel.saveOverride = { throw BoomError() }
+    try funnel.enqueueDelete(profileId: firstId)
+
+    funnel.saveOverride = nil
+    try funnel.enqueueDelete(profileId: secondId)
+
+    scheduler.runNext()
+    scheduler.runNext()
+
+    XCTAssertTrue(driver.pendingRecordZoneChanges.isEmpty)
+    XCTAssertFalse(store.deleteTombstones.keys.contains(secondId.uuidString))
+    XCTAssertNotNil(
+      try BlockedProfiles.findProfile(byID: secondId, in: syncContext),
+      "rollback restored the second profile, so it must not be enqueued for remote deletion")
   }
 
   // MARK: - S-15: failed entity delete removes the tombstone before returning and enqueues nothing
@@ -406,11 +530,13 @@ final class MutationFunnelTests: XCTestCase {
 
     let syncContext = ModelContext(container)
     let driver = MockSyncEngineDriver()
+    let scheduler = ManualProfileDeleteCommitScheduler()
     let funnel = MutationFunnel(
       modelContext: syncContext,
       store: store,
       driver: driver,
-      deviceId: "device-A"
+      deviceId: "device-A",
+      scheduleProfileDeleteCommit: scheduler.schedule
     )
 
     // When
@@ -419,6 +545,7 @@ final class MutationFunnelTests: XCTestCase {
     // Then: tombstone written with a nil change tag, delete enqueued once.
     XCTAssertTrue(store.deleteTombstones.keys.contains(recordName))
     XCTAssertNil(store.deleteTombstones[recordName] ?? nil, "never-synced ⇒ tombstone tag is nil (I12)")
+    scheduler.runNext()
     XCTAssertEqual(driver.pendingRecordZoneChanges, [.deleteRecord(recordID(recordName))])
     _ = now
   }
@@ -448,23 +575,28 @@ final class MutationFunnelTests: XCTestCase {
 
     let store = makeStore()
     let driver = MockSyncEngineDriver()
+    let scheduler = ManualProfileDeleteCommitScheduler()
     let funnel = MutationFunnel(
       modelContext: context,
       store: store,
       driver: driver,
-      deviceId: "device-A"
+      deviceId: "device-A",
+      scheduleProfileDeleteCommit: scheduler.schedule
     )
 
     // When: the funnel alone performs the delete on the shared context — no caller pre-delete.
     try funnel.enqueueDelete(profileId: profileId)
 
-    // Then: the entity is actually gone (locally and persisted)...
+    // Then: the entity is marked deleted on the shared context...
     XCTAssertNil(try BlockedProfiles.findProfile(byID: profileId, in: context))
-    let verifyContext = ModelContext(container)
-    XCTAssertNil(try BlockedProfiles.findProfile(byID: profileId, in: verifyContext))
 
     // ...a tombstone was written...
     XCTAssertTrue(store.deleteTombstones.keys.contains(recordName), "tombstone must be written")
+
+    scheduler.runNext()
+
+    let verifyAfterCommit = ModelContext(container)
+    XCTAssertNil(try BlockedProfiles.findProfile(byID: profileId, in: verifyAfterCommit))
 
     // ...and exactly one pending .deleteRecord was enqueued.
     XCTAssertEqual(driver.pendingRecordZoneChanges, [.deleteRecord(recordID(recordName))])
@@ -481,11 +613,13 @@ final class MutationFunnelTests: XCTestCase {
 
     let store = makeStore()
     let driver = MockSyncEngineDriver()
+    let scheduler = ManualProfileDeleteCommitScheduler()
     let funnel = MutationFunnel(
       modelContext: context,
       store: store,
       driver: driver,
-      deviceId: "device-A"
+      deviceId: "device-A",
+      scheduleProfileDeleteCommit: scheduler.schedule
     )
 
     try BlockedProfiles.deleteProfile(profile, in: context)
@@ -627,23 +761,28 @@ final class MutationFunnelTests: XCTestCase {
 
     let store = makeStore()
     let driver = MockSyncEngineDriver()
+    let scheduler = ManualProfileDeleteCommitScheduler()
     let funnel = MutationFunnel(
       modelContext: context,
       store: store,
       driver: driver,
-      deviceId: "device-A"
+      deviceId: "device-A",
+      scheduleProfileDeleteCommit: scheduler.schedule
     )
 
     // When: the funnel alone performs the delete on the shared context — no caller pre-delete.
     try funnel.enqueueDelete(profileId: profileId)
 
-    // Then: the entity is actually gone (locally and persisted)...
+    // Then: the entity is marked deleted on the shared context...
     XCTAssertNil(try BlockedProfiles.findProfile(byID: profileId, in: context))
-    let verifyContext = ModelContext(container)
-    XCTAssertNil(try BlockedProfiles.findProfile(byID: profileId, in: verifyContext))
 
     // ...a tombstone was written...
     XCTAssertTrue(store.deleteTombstones.keys.contains(recordName), "tombstone must be written")
+
+    scheduler.runNext()
+
+    let verifyAfterCommit = ModelContext(container)
+    XCTAssertNil(try BlockedProfiles.findProfile(byID: profileId, in: verifyAfterCommit))
 
     // ...and exactly one pending .deleteRecord was enqueued.
     XCTAssertEqual(driver.pendingRecordZoneChanges, [.deleteRecord(recordID(recordName))])
