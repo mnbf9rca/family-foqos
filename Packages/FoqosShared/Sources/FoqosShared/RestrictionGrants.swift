@@ -1,0 +1,113 @@
+import Foundation
+
+extension SharedData {
+  /// Thin applier for a derived decision.
+  static func applyDecision(_ decision: RestrictionDecision, applier: RestrictionApplying) {
+    switch decision {
+    case .deactivate:
+      applier.deactivateRestrictions()
+    case .activate(let profile):
+      applier.activateRestrictions(for: profile)
+    case .bailPreserve:
+      break
+    }
+  }
+
+  @discardableResult
+  public static func openBreakGrant(
+    startDate: Date,
+    deadline: Date,
+    expectedSessionId: String,
+    liveSnapshot: ProfileSnapshot?,
+    applier: RestrictionApplying = AppBlockerUtil()
+  ) -> Bool {
+    openBreakGrant(
+      startDate: startDate,
+      deadline: deadline,
+      expectedSessionId: expectedSessionId,
+      liveSnapshot: liveSnapshot,
+      applier: applier,
+      commit: { rawCommitActiveSession($0) })
+  }
+
+  /// §6.2 — open a break grant in one main-app critical section.
+  @discardableResult
+  internal static func openBreakGrant(
+    startDate: Date,
+    deadline: Date,
+    expectedSessionId: String,
+    liveSnapshot: ProfileSnapshot?,
+    applier: RestrictionApplying = AppBlockerUtil(),
+    commit: (SessionSnapshot?) -> Bool
+  ) -> Bool {
+    withLockStatus(blocking: true) { outcome in
+      guard outcome == .acquired else { return false }
+      guard var session = rawActiveSession, session.endTime == nil,
+        session.id == expectedSessionId
+      else { return false }
+      guard session.breakStartTime == nil else { return false }
+      guard let pinned = liveSnapshot else { return false }
+
+      session.breakStartTime = startDate
+      session.breakEndDeadline = deadline
+      session.pinnedProfileConfig = pinned
+      session.oneMoreMinuteStartTime = nil
+      session.oneMoreMinuteDeadline = nil
+
+      guard commit(session) else { return false }
+      applyDecision(
+        deriveRestriction(session: session, liveSnapshot: pinned, process: .mainApp),
+        applier: applier)
+      return true
+    }
+  }
+
+  @discardableResult
+  public static func openOneMoreMinuteGrant(
+    startDate: Date,
+    deadline: Date,
+    expectedSessionId: String,
+    liveSnapshot: ProfileSnapshot?,
+    applier: RestrictionApplying = AppBlockerUtil()
+  ) -> Bool {
+    openOneMoreMinuteGrant(
+      startDate: startDate,
+      deadline: deadline,
+      expectedSessionId: expectedSessionId,
+      liveSnapshot: liveSnapshot,
+      applier: applier,
+      commit: { rawCommitActiveSession($0) })
+  }
+
+  /// §6.3 — open a one-more-minute grant in one main-app critical section.
+  @discardableResult
+  internal static func openOneMoreMinuteGrant(
+    startDate: Date,
+    deadline: Date,
+    expectedSessionId: String,
+    liveSnapshot: ProfileSnapshot?,
+    applier: RestrictionApplying = AppBlockerUtil(),
+    commit: (SessionSnapshot?) -> Bool
+  ) -> Bool {
+    withLockStatus(blocking: true) { outcome in
+      guard outcome == .acquired else { return false }
+      guard var session = rawActiveSession, session.endTime == nil,
+        session.id == expectedSessionId
+      else { return false }
+      guard !(session.breakStartTime != nil && session.breakEndTime == nil) else { return false }
+      guard session.oneMoreMinuteStartTime == nil else { return false }
+      guard let pinned = liveSnapshot else { return false }
+
+      session.oneMoreMinuteStartTime = startDate
+      session.oneMoreMinuteDeadline = deadline
+      session.oneMoreMinuteUsed = true
+      session.pinnedProfileConfig = pinned
+
+      guard commit(session) else { return false }
+      applyDecision(
+        deriveRestriction(session: session, liveSnapshot: pinned, process: .mainApp),
+        applier: applier)
+      return true
+    }
+  }
+}
