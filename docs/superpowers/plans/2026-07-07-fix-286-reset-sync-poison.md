@@ -19,6 +19,7 @@
 - **House rules:** 2-space indent; `Log` (never `print`); never force-commit/amend — new commits only; run `swift-format` (pre-commit hook auto-formats); request code review before merge.
 - **Tests:** boot the iPhone 17 simulator ONCE and reuse its UUID in `-destination 'platform=iOS Simulator,id=<UUID>'` (never the device name — it clones a new sim each run). Pin `now`: one `let now = Date()` per test.
 - **Build note (already applied in this worktree):** `git config core.hooksPath .githooks` (was an absolute path that hard-failed the "Configure Git Hooks" build phase for every checkout). Keep it relative.
+- **Diagnostic tooling (removed from the plan PR per review):** the Phase-1 `[#286 DIAGNOSTIC]` logging + `CKSyncEnginePoisonProbeTests` were removed from this PR (commit `bd2edb4` adds them, reverted in `b5a7064`) so the plan PR ships no temporary instrumentation. To reproduce/verify on-device (Task 5), re-introduce them with `git cherry-pick bd2edb4` at the start of that task, then remove them again (`git revert` the cherry-pick, or re-apply `b5a7064`) before the fix PR (Task 6). The logging + probe are NOT part of the shipped fix.
 
 ## Conformance notes (reset-flow steps changed)
 
@@ -41,16 +42,17 @@ The reset acceptance contract for the CKSyncEngine path is `docs/plans/2026-07-0
 - **Modify** `Foqos/CloudKit/SyncEngine/SyncEngineController.swift`
   - `start()`: discard a poisoned restored serialization + rebuild the driver with `nil`.
   - Add private `restoredStateIsPoisoned() -> Bool`.
-  - Remove the `[#286 DIAGNOSTIC]` logging (final cleanup task).
-- **Modify** `Foqos/CloudKit/SyncEngine/CKSyncEngineDriver.swift`
-  - Remove the `[#286 DIAGNOSTIC]` logging + `describePending`/`describePendingRecords` (final cleanup task).
+- **Modify** `Foqos/CloudKit/SyncEngine/SyncEngineController+Reset.swift`
+  - `DriverResetOutbox`: implement `clearPendingChangesForReset()`.
+- **Modify** `Foqos/CloudKit/SyncEngine/ResetController.swift`
+  - `ResetOutbox`: add `clearPendingChangesForReset()`; call it in `beginReset` + `reenqueueDeleting`.
 - **Modify** `FoqosTests/Mocks/ResetSeamMocks.swift`
   - `MockResetOutbox`: add `clearPendingChangesForReset()` (counter).
 - **Modify** `FoqosTests/SyncEngineResetTests.swift`
   - Add Task 1 + Task 2 driver-level coexistence tests.
 - **Modify** `FoqosTests/SyncEngineControllerTests.swift`
   - Add Task 3 self-heal tests.
-- **Delete** `FoqosTests/CKSyncEnginePoisonProbeTests.swift` (Phase 1 throwaway; final cleanup task).
+- **Diagnostic tooling (re-added for Task 5, removed for Task 6):** the `[#286 DIAGNOSTIC]` logging in `CKSyncEngineDriver.swift`/`SyncEngineController.swift` and `FoqosTests/CKSyncEnginePoisonProbeTests.swift` are NOT on this branch — cherry-pick `bd2edb4` to restore them for device verification, then drop them again before the fix PR.
 
 ---
 
@@ -362,7 +364,7 @@ Not a code task by itself — a written adversarial review the implementer perfo
 
 ### Task 5: Device verification — two-device checklist (reset scenarios) [MAINTAINER-ASSISTED]
 
-The exit criterion is `docs/sync-engine-two-device-checklist.md`, run on-device (it has never been executed). The `[#286 DIAGNOSTIC]` logging is still present at this point — use it to confirm the fix on-device, THEN remove it in Task 6.
+The exit criterion is `docs/sync-engine-two-device-checklist.md`, run on-device (it has never been executed). **First re-add the diagnostic instrumentation** so you can confirm the fix's pending-queue shapes on-device: `git cherry-pick bd2edb4` (restores the `[#286 DIAGNOSTIC]` logging + probe). Remove it again in Task 6.
 
 - [ ] **Step 1: Build the worktree to a device (iOS 27) and reproduce the original steps**
 
@@ -387,36 +389,29 @@ Two devices on the same iCloud account. Tick every row. Pay special attention to
 
 ### Task 6: Remove diagnostic instrumentation and the probe; final green suite
 
-**Files:**
-- Modify: `Foqos/CloudKit/SyncEngine/CKSyncEngineDriver.swift` (remove `[#286 DIAGNOSTIC]` log in `sendChanges()` + `describePending`/`describePendingRecords`)
-- Modify: `Foqos/CloudKit/SyncEngine/SyncEngineController.swift` (remove `[#286 DIAGNOSTIC]` logs in `performStrip()` and `runStartupSequence`; keep the `[#286]` self-heal `Log.warning` from Task 3 — it is intentional, not diagnostic scaffolding)
-- Delete: `FoqosTests/CKSyncEnginePoisonProbeTests.swift`
+The `[#286 DIAGNOSTIC]` logging + probe were re-added in Task 5 via `git cherry-pick bd2edb4`. Remove them now. **Do not** remove the Task 3 self-heal `Log.warning("[#286] …")` in `start()` — that is intentional operational logging, not diagnostic scaffolding, and it does not contain the `#286 DIAGNOSTIC` marker.
 
-- [ ] **Step 1: Remove the diagnostic logging**
+- [ ] **Step 1: Revert the diagnostics**
 
-In `CKSyncEngineDriver.sendChanges()`, restore it to:
+```bash
+# Revert the cherry-pick from Task 5 (removes the [#286 DIAGNOSTIC] logging in
+# CKSyncEngineDriver.swift + SyncEngineController.swift and deletes the probe test).
+git revert --no-edit <sha-of-Task-5-cherry-pick>
+```
+Resolve any conflict by keeping the Task 3 self-heal code and dropping only the `[#286 DIAGNOSTIC]` blocks + `describePending`/`describePendingRecords` helpers + the probe file. Confirm `CKSyncEngineDriver.sendChanges()` is back to:
 ```swift
   func sendChanges() {
     let engine = self.engine!
     Task { try? await engine.sendChanges() }
   }
 ```
-and delete the `describePending(_:)` and `describePendingRecords(_:)` static helpers.
 
-In `SyncEngineController.swift`, delete the three `[#286 DIAGNOSTIC]` `Log.error` blocks (`strip BEFORE`, `strip AFTER`, `resume reset`), restoring `performStrip()` and the resume site to their pre-instrumentation bodies. **Do not** remove the Task 3 self-heal `Log.warning` in `start()`.
-
-- [ ] **Step 2: Delete the probe test**
-
-```bash
-git rm FoqosTests/CKSyncEnginePoisonProbeTests.swift
-```
-
-- [ ] **Step 3: Run the FULL test suite**
+- [ ] **Step 2: Run the FULL test suite**
 
 Run: `xcodebuild test -project FamilyFoqos.xcodeproj -scheme FamilyFoqos -destination 'platform=iOS Simulator,id=<UUID>' | xcpretty`
 Expected: BUILD SUCCEEDS, all tests PASS, and `grep -rn "#286 DIAGNOSTIC" Foqos` returns nothing.
 
-- [ ] **Step 4: Format + commit**
+- [ ] **Step 3: Format + commit**
 
 ```bash
 swift-format --in-place --recursive Foqos
@@ -424,7 +419,7 @@ git add -A
 git commit -m "chore(#286): remove diagnostic instrumentation and probe after fix verified"
 ```
 
-- [ ] **Step 5: Open the PR**
+- [ ] **Step 4: Open the PR**
 
 ```bash
 gh pr create --title "Fix #286: Reset Sync poisons CKSyncEngine state (crash-loop)" \
