@@ -102,6 +102,7 @@ class StrategyManager: ObservableObject {
 
     if activeSession?.isActive == true {
       startTimer()
+      reconcileGrants(context: context)
 
       // Start live activity for existing session if one exists
       // live activities can only be started when the app is in the foreground
@@ -293,6 +294,103 @@ class StrategyManager: ObservableObject {
       return max(0, deadline.timeIntervalSince(now))
     }
     return nil
+  }
+
+  func reconcileGrants(context: ModelContext, now: Date = Date()) {
+    guard let session = activeSession else {
+      SharedData.applyRestrictionsForCurrentState(
+        process: .mainApp,
+        liveSnapshot: nil,
+        applier: appBlocker)
+      return
+    }
+
+    let profile = session.blockedProfile
+    BlockedProfiles.updateSnapshot(for: profile)
+    let live = BlockedProfiles.getSnapshot(for: profile)
+
+    SharedData.reconcileExpiredGrants(
+      process: .mainApp,
+      now: now,
+      liveSnapshot: live,
+      breakDurationMinutes: profile.breakTimeInMinutes,
+      applier: appBlocker)
+    mirrorGrantFieldsFromShared(session)
+
+    if let shared = SharedData.getActiveSharedSession(), shared.id == session.id,
+      shared.endTime == nil, SharedData.hasOpenGrant(shared)
+    {
+      SharedData.completeGrantMigration(
+        expectedSessionId: session.id,
+        breakDurationMinutes: profile.breakTimeInMinutes,
+        pinned: live,
+        now: now)
+      mirrorGrantFieldsFromShared(session)
+      rearmBackstopsIfNeeded(profileId: profile.id, now: now)
+    }
+
+    DeviceActivityCenterUtil.removeC2BackstopsExcept(profileId: profile.id)
+  }
+
+  private func rearmBackstopsIfNeeded(profileId: UUID, now: Date) {
+    guard let shared = SharedData.getActiveSharedSession() else { return }
+    if shared.breakStartTime != nil, shared.breakEndTime == nil,
+      let deadline = shared.breakEndDeadline, now < deadline
+    {
+      do {
+        _ = try backstopRegistrar.registerBreakBackstopIfAbsent(
+          profileId: profileId,
+          deadline: deadline,
+          now: now)
+      } catch {
+        failClosedCloseBreak(profileId: profileId, now: now)
+      }
+    }
+    if shared.oneMoreMinuteStartTime != nil,
+      let deadline = shared.oneMoreMinuteDeadline, now < deadline
+    {
+      do {
+        _ = try backstopRegistrar.registerOneMoreMinuteBackstopIfAbsent(
+          profileId: profileId,
+          deadline: deadline,
+          now: now)
+      } catch {
+        failClosedCloseOMM(profileId: profileId, now: now)
+      }
+    }
+  }
+
+  private func failClosedCloseBreak(profileId: UUID, now: Date) {
+    guard let session = activeSession else { return }
+    let live = BlockedProfiles.getSnapshot(for: session.blockedProfile)
+    _ = SharedData.closeBreakGrantIfExpiredOrExplicit(
+      expectedSessionId: session.id,
+      explicit: true,
+      now: now,
+      process: .mainApp,
+      durationMinutes: session.blockedProfile.breakTimeInMinutes,
+      liveSnapshot: live,
+      applier: appBlocker)
+    mirrorGrantFieldsFromShared(session)
+    backstopRegistrar.removeBreakBackstop(profileId: profileId)
+    timersUtil.cancelAllNotifications()
+    errorMessage = "Your break ended early — it couldn't be scheduled in the background."
+  }
+
+  private func failClosedCloseOMM(profileId: UUID, now: Date) {
+    guard let session = activeSession else { return }
+    let live = BlockedProfiles.getSnapshot(for: session.blockedProfile)
+    _ = SharedData.closeOneMoreMinuteGrantIfExpired(
+      expectedSessionId: session.id,
+      now: now,
+      process: .mainApp,
+      liveSnapshot: live,
+      force: true,
+      applier: appBlocker)
+    mirrorGrantFieldsFromShared(session)
+    backstopRegistrar.removeOneMoreMinuteBackstop(profileId: profileId)
+    timersUtil.cancelAllNotifications()
+    errorMessage = "One more minute ended early — it couldn't be scheduled in the background."
   }
 
   func toggleSessionFromDeeplink(

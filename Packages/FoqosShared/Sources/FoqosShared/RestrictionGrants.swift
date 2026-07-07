@@ -317,4 +317,60 @@ extension SharedData {
       liveSnapshot: liveSnapshot,
       applier: applier)
   }
+
+  @discardableResult
+  public static func completeGrantMigration(
+    expectedSessionId: String,
+    breakDurationMinutes: Int,
+    pinned: ProfileSnapshot?,
+    now: Date
+  ) -> Bool {
+    completeGrantMigration(
+      expectedSessionId: expectedSessionId,
+      breakDurationMinutes: breakDurationMinutes,
+      pinned: pinned,
+      now: now,
+      commit: { rawCommitActiveSession($0) })
+  }
+
+  /// §7.5.1 M full migration: complete any missing deadline/pin pieces for an open grant.
+  @discardableResult
+  internal static func completeGrantMigration(
+    expectedSessionId: String,
+    breakDurationMinutes: Int,
+    pinned: ProfileSnapshot?,
+    now: Date,
+    commit: (SessionSnapshot?) -> Bool
+  ) -> Bool {
+    withLockStatus(blocking: true) { _ in
+      guard var session = rawActiveSession, session.endTime == nil,
+        session.id == expectedSessionId
+      else { return false }
+
+      var changed = false
+      if session.breakStartTime != nil && session.breakEndTime == nil {
+        if session.breakEndDeadline == nil, let start = session.breakStartTime {
+          session.breakEndDeadline = start.addingTimeInterval(
+            TimeInterval(breakDurationMinutes * 60))
+          changed = true
+        }
+        if session.pinnedProfileConfig == nil, let pinned {
+          session.pinnedProfileConfig = pinned
+          changed = true
+        }
+      }
+      if session.oneMoreMinuteStartTime != nil {
+        if session.oneMoreMinuteDeadline == nil, let start = session.oneMoreMinuteStartTime {
+          session.oneMoreMinuteDeadline = start.addingTimeInterval(60)
+          changed = true
+        }
+        if session.pinnedProfileConfig == nil, let pinned {
+          session.pinnedProfileConfig = pinned
+          changed = true
+        }
+      }
+      guard changed else { return false }
+      return commit(session)
+    }
+  }
 }

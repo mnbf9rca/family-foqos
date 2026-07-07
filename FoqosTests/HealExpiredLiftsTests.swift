@@ -168,4 +168,50 @@ final class HealExpiredLiftsTests: XCTestCase {
       applier: spy)
     XCTAssertTrue(spy.calls.contains(.activate(profileId: pid)))
   }
+
+  func testGivenLegacyOpenBreakNoDeadlineNoPin_WhenCompleteMigration_ThenStampsAndPins() {
+    let now = Date()
+    let pid = UUID()
+    let pinned = snap(pid)
+    seed({ $0.breakStartTime = now.addingTimeInterval(-60) }, pid: pid)
+    let changed = SharedData.completeGrantMigration(
+      expectedSessionId: "s", breakDurationMinutes: 5, pinned: pinned, now: now)
+    XCTAssertTrue(changed)
+    let s = SharedData.getActiveSharedSession()
+    XCTAssertEqual(s?.breakEndDeadline, now.addingTimeInterval(-60).addingTimeInterval(300))
+    XCTAssertEqual(s?.pinnedProfileConfig?.id, pid)
+  }
+
+  func testGivenXAlreadyStampedDeadlineButNoPin_WhenCompleteMigration_ThenStillPins() {
+    let now = Date()
+    let pid = UUID()
+    let pinned = snap(pid)
+    seed(
+      {
+        $0.breakStartTime = now.addingTimeInterval(-60)
+        $0.breakEndDeadline = now.addingTimeInterval(240)
+      },
+      pid: pid)
+    let changed = SharedData.completeGrantMigration(
+      expectedSessionId: "s", breakDurationMinutes: 5, pinned: pinned, now: now)
+    XCTAssertTrue(changed)
+    XCTAssertEqual(SharedData.getActiveSharedSession()?.pinnedProfileConfig?.id, pid)
+    XCTAssertEqual(SharedData.getActiveSharedSession()?.breakEndDeadline, now.addingTimeInterval(240))
+  }
+
+  func testGivenFullyMigratedGrant_WhenCompleteMigration_ThenNoChange() {
+    let now = Date()
+    let pid = UUID()
+    let pinned = snap(pid)
+    seed(
+      {
+        $0.breakStartTime = now.addingTimeInterval(-60)
+        $0.breakEndDeadline = now.addingTimeInterval(240)
+        $0.pinnedProfileConfig = pinned
+      },
+      pid: pid)
+    XCTAssertFalse(
+      SharedData.completeGrantMigration(
+        expectedSessionId: "s", breakDurationMinutes: 5, pinned: pinned, now: now))
+  }
 }

@@ -562,4 +562,20 @@ class DeviceActivityCenterUtil {
   static func hasOneMoreMinuteBackstop(profileId: UUID) -> Bool {
     DeviceActivityCenter().activities.contains(ommBackstopName(profileId))
   }
+
+  static func removeC2BackstopsExcept(profileId: UUID) {
+    let keepBreak = "\(BreakDeadlineBackstopActivity.id):\(profileId.uuidString)"
+    let keepOMM = "\(OneMoreMinuteDeadlineBackstopActivity.id):\(profileId.uuidString)"
+    let center = DeviceActivityCenter()
+    let stale = center.activities.filter {
+      let raw = $0.rawValue
+      let isC2 =
+        raw.starts(with: BreakDeadlineBackstopActivity.id)
+        || raw.starts(with: OneMoreMinuteDeadlineBackstopActivity.id)
+      return isC2 && raw != keepBreak && raw != keepOMM
+    }
+    if !stale.isEmpty {
+      center.stopMonitoring(Array(stale))
+    }
+  }
 }

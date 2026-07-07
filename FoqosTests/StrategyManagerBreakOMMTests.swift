@@ -39,6 +39,8 @@ final class StrategyManagerBreakOMMTests: XCTestCase {
     let session = BlockedProfileSession.createSession(in: context, withTag: "t", withProfile: profile)
     try context.save()
     try manager.loadActiveSession(context: context)
+    applier.clearForAssertion()
+    registrar.clearForAssertion()
     return session
   }
 
@@ -148,5 +150,24 @@ final class StrategyManagerBreakOMMTests: XCTestCase {
     try? context.save()
     let r2 = manager.grantCountdownRemaining(now: now)
     XCTAssertEqual(r2!, 300, accuracy: 2)
+  }
+
+  func testGivenOpenUnexpiredBreakBackstopAbsent_WhenReconcile_ThenRearmsIfAbsent() {
+    let session = try! seedActiveSession()
+    manager.toggleBreak(context: context)
+    registrar.hasBreakBackstopReturns = false
+    registrar.clearForAssertion()
+    manager.reconcileGrants(context: context)
+    XCTAssertTrue(registrar.calls.contains(.registerBreakIfAbsent(session.blockedProfile.id)))
+  }
+
+  func testGivenRearmThrows_WhenReconcile_ThenFailClosedClosesBreak() {
+    let session = try! seedActiveSession()
+    manager.toggleBreak(context: context)
+    registrar.throwOnRegisterIfAbsent = true
+    manager.reconcileGrants(context: context)
+    XCTAssertNotNil(SharedData.getActiveSharedSession()?.breakEndTime)
+    XCTAssertNotNil(manager.errorMessage)
+    _ = session
   }
 }
