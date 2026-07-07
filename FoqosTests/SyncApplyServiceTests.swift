@@ -548,6 +548,37 @@ final class SyncApplyServiceTests: XCTestCase {
     XCTAssertNil(store.systemFields(for: id.uuidString))
   }
 
+  func testGivenRemoteProfileDeletionSaveFails_WhenDeferredCommitRuns_ThenCommitObserverNotCalled()
+    throws
+  {
+    struct BoomError: Error {}
+
+    let id = UUID()
+    let profile = BlockedProfiles(id: id, name: "RemoteDelete", syncVersion: 1)
+    context.insert(profile)
+    try context.save()
+    store.setSystemFields(Data("cached".utf8), for: id.uuidString)
+    store.setTombstone(recordName: id.uuidString, changeTag: "tag-1")
+
+    let scheduler = ManualProfileDeleteCommitScheduler()
+    let service = makeService(scheduleProfileDeleteCommit: scheduler.schedule)
+    var committedNames: [String] = []
+    service.profileDeleteCommitObserver = { committedNames.append($0) }
+    service.saveOverride = { throw BoomError() }
+
+    XCTAssertEqual(
+      service.applyFetchedDeletion(
+        recordID: CKRecord.ID(recordName: id.uuidString, zoneID: zoneID),
+        recordType: SyncedProfile.recordType),
+      .deleted)
+
+    scheduler.runNext()
+
+    XCTAssertTrue(committedNames.isEmpty)
+    XCTAssertNotNil(store.systemFields(for: id.uuidString), "failed commit keeps deletion bookkeeping")
+    XCTAssertEqual(store.deleteTombstones[id.uuidString] ?? nil, "tag-1")
+  }
+
   // Negative: a remote profile deletion for a non-active profile must not touch the session.
   func testGivenDeletionForNonActiveProfile_WhenApplied_ThenNoSessionStop() throws {
     let activeId = UUID()

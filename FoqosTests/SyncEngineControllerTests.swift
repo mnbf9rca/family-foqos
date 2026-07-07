@@ -60,6 +60,10 @@ final class SyncEngineControllerTests: XCTestCase {
       deviceId: deviceId)
   }
 
+  func drainDeferredProfileDeleteCommit() async {
+    for _ in 0..<10 { await Task.yield() }
+  }
+
   func recordID(_ name: String) -> CKRecord.ID {
     CKRecord.ID(recordName: name, zoneID: zoneID)
   }
@@ -626,7 +630,7 @@ final class SyncEngineControllerTests: XCTestCase {
     XCTAssertNil(try? fetchProfile(id), "pending-delete-wins ⇒ modification skipped (S-32)")
   }
 
-  func testGivenFetchedDeletion_WhenHandled_ThenTombstoneClearedAndPendingDeleteRemoved() {
+  func testGivenFetchedDeletion_WhenHandled_ThenTombstoneClearedAndPendingDeleteRemoved() async {
     let id = UUID()
     let p = BlockedProfiles(id: id, name: "A")
     context.insert(p)
@@ -645,6 +649,12 @@ final class SyncEngineControllerTests: XCTestCase {
         deletions: [(recordID: recordID(id.uuidString), recordType: SyncedProfile.recordType)]))
 
     XCTAssertNil(try? fetchProfile(id), "local profile deleted (§5.2)")
+    XCTAssertNotNil(store.deleteTombstones[id.uuidString], "tombstone retained until durable delete")
+    XCTAssertNotNil(store.systemFields(for: id.uuidString))
+    XCTAssertTrue(pendingDeleteNames().contains(id.uuidString), "pending delete retained until commit")
+
+    await drainDeferredProfileDeleteCommit()
+
     XCTAssertNil(store.deleteTombstones[id.uuidString], "tombstone cleared (I12)")
     XCTAssertNil(store.systemFields(for: id.uuidString))
     XCTAssertFalse(pendingDeleteNames().contains(id.uuidString), "pending .deleteRecord removed (§5.2)")

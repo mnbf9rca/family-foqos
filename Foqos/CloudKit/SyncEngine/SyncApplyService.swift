@@ -27,6 +27,9 @@ final class SyncApplyService {
   /// Test seam: overrides the durable save so §5.1 rollback (S-30) is exercisable.
   var saveOverride: (() throws -> Void)?
 
+  /// Called only after a deferred remote profile delete has been durably committed.
+  var profileDeleteCommitObserver: ((String) -> Void)?
+
   init(
     modelContext: ModelContext,
     store: SyncEngineStore,
@@ -119,7 +122,9 @@ final class SyncApplyService {
       }
       try BlockedProfiles.deleteProfile(profile, in: modelContext)  // defers save
       let saveOverride = saveOverride
-      scheduleProfileDeleteCommit { [modelContext, store, recordName, saveOverride] in
+      let profileDeleteCommitObserver = profileDeleteCommitObserver
+      scheduleProfileDeleteCommit {
+        [modelContext, store, recordName, saveOverride, profileDeleteCommitObserver] in
         do {
           if let saveOverride {
             try saveOverride()
@@ -129,6 +134,7 @@ final class SyncApplyService {
           store.setSystemFields(nil, for: recordName)
           store.clearTombstone(recordName: recordName)
           store.removeFailedApply(recordName: recordName)
+          profileDeleteCommitObserver?(recordName)
         } catch {
           modelContext.rollback()
           store.addFailedApply(

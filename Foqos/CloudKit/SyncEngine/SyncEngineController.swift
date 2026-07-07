@@ -89,6 +89,12 @@ final class SyncEngineController: SyncEngineDriverDelegate {
     self.provider = provider
     self.sessionSync = sessionSync
     self.deviceId = deviceId
+    self.apply.profileDeleteCommitObserver = { [weak self] recordName in
+      guard let self else { return }
+      let recordID = CKRecord.ID(recordName: recordName, zoneID: self.zoneID)
+      self.applyDeletionSideEffects(recordID: recordID)
+      self.store.removeFailedApply(recordName: recordName)
+    }
   }
 
   func start() {
@@ -329,7 +335,8 @@ final class SyncEngineController: SyncEngineDriverDelegate {
       driver.add(pendingRecordZoneChanges: [.saveRecord(recordID)])
     }
     for (recordID, recordType) in deletions {
-      _ = apply.applyFetchedDeletion(recordID: recordID, recordType: recordType)
+      let outcome = apply.applyFetchedDeletion(recordID: recordID, recordType: recordType)
+      guard !(recordType == SyncedProfile.recordType && outcome == .deleted) else { continue }
       applyDeletionSideEffects(recordID: recordID)
       store.removeFailedApply(recordName: recordID.recordName)  // supersession
     }
@@ -693,9 +700,11 @@ final class SyncEngineController: SyncEngineDriverDelegate {
       case .delete:
         switch result {
         case .notFound, .zoneNotFound:
-          _ = apply.applyFetchedDeletion(recordID: id, recordType: entry.recordType)
-          applyDeletionSideEffects(recordID: id)
-          store.removeFailedApply(recordName: entry.recordName)
+          let outcome = apply.applyFetchedDeletion(recordID: id, recordType: entry.recordType)
+          if !(entry.recordType == SyncedProfile.recordType && outcome == .deleted) {
+            applyDeletionSideEffects(recordID: id)
+            store.removeFailedApply(recordName: entry.recordName)
+          }
         case .found:
           store.removeFailedApply(recordName: entry.recordName)  // recreated ⇒ drop, never delete
         case .transientError:
