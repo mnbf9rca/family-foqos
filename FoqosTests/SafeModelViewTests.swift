@@ -41,6 +41,36 @@ final class SafeModelViewTests: XCTestCase {
     XCTAssertEqual(result.first?.name, "Keep")
   }
 
+  func testGivenDeletedThenSavedModel_WhenFilteringValid_ThenExcluded() throws {
+    // Post-save window regression for #285 — the existing .valid tests only delete
+    // without saving, so they never exercised this window.
+    let keep = BlockedProfiles(
+      id: UUID(), name: "Keep", selectedActivity: .init(),
+      blockingStrategyId: "manual")
+    let gone = BlockedProfiles(
+      id: UUID(), name: "Gone", selectedActivity: .init(),
+      blockingStrategyId: "manual")
+    context.insert(keep)
+    context.insert(gone)
+    try context.save()
+
+    context.delete(gone)
+    try context.save()
+
+    if gone.modelContext == nil || gone.isDeleted {
+      // Contingency Mode C: this in-memory test store does not reproduce the device post-save
+      // window, so Task 4 device verification remains the authoritative proof for #285.
+      let result = [keep, gone].valid
+      XCTAssertEqual(result.count, 1)
+      XCTAssertEqual(result.first?.name, "Keep")
+      return
+    }
+
+    let result = [keep, gone].valid
+    XCTAssertEqual(result.count, 1)
+    XCTAssertEqual(result.first?.name, "Keep")
+  }
+
   func testValidReturnsAllWhenNoneDeleted() throws {
     let profile1 = BlockedProfiles(
       id: UUID(), name: "A", selectedActivity: .init(),

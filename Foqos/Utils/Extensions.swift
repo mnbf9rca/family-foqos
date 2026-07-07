@@ -11,12 +11,11 @@ extension Collection {
 // MARK: - SwiftData Model Validation
 
 extension Array where Element: PersistentModel {
-  /// Filters out zombie SwiftData models — those whose `modelContext` has become nil or whose
-  /// `isDeleted` flag is set after CloudKit sync. Accessing properties on such models causes
-  /// `EXC_BREAKPOINT`. This defensive filter handles the timing window between deletion and
-  /// SwiftUI re-render. Used by `@SafeQuery` internally and by views receiving plain arrays.
+  /// Filters out zombie SwiftData models across both deletion windows (see
+  /// `PersistentModel.isPersistentModelValid`). Used by `@SafeQuery` internally and by
+  /// views receiving plain arrays.
   var valid: [Element] {
-    filter { $0.modelContext != nil && !$0.isDeleted }
+    filter { $0.isPersistentModelValid }
   }
 }
 
