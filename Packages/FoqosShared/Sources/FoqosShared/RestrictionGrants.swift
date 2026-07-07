@@ -268,4 +268,22 @@ extension SharedData {
     let breakOpen = s.breakStartTime != nil && s.breakEndTime == nil
     return breakOpen || s.oneMoreMinuteStartTime != nil
   }
+
+  /// D-C2-4 standalone derive-and-apply. Main app also flushes ended-but-present stale entries.
+  @discardableResult
+  public static func applyRestrictionsForCurrentState(
+    process: RestrictionProcess,
+    liveSnapshot: ProfileSnapshot?,
+    applier: RestrictionApplying = AppBlockerUtil()
+  ) -> RestrictionDecision {
+    withLockStatus(blocking: process == .mainApp) { _ in
+      let session = rawActiveSession
+      if process == .mainApp, let session, session.endTime != nil {
+        _ = rawCommitActiveSession(nil)
+      }
+      let decision = deriveRestriction(session: session, liveSnapshot: liveSnapshot, process: process)
+      applyDecision(decision, applier: applier)
+      return decision
+    }
+  }
 }
