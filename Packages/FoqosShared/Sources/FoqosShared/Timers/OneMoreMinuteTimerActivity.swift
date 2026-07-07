@@ -1,4 +1,5 @@
 import DeviceActivity
+import Foundation
 
 public class OneMoreMinuteTimerActivity: TimerActivity {
   public static let id: String = "OneMoreMinuteActivity"
@@ -27,32 +28,13 @@ public class OneMoreMinuteTimerActivity: TimerActivity {
   }
 
   public func stop(for profile: SharedData.ProfileSnapshot) {
-    let profileId = profile.id.uuidString
-
-    guard let activeSession = SharedData.getActiveSharedSession() else {
-      Log.info(
-        "Stop one more minute activity for \(profileId), no active session found to stop one more minute",
-        category: .timer
-      )
-      return
-    }
-
-    // Check to make sure the active session is the same as the profile before stopping one more minute
-    if activeSession.blockedProfileId != profile.id {
-      Log.info(
-        "Stop one more minute activity for \(profileId), active session profile does not match profile to stop one more minute",
-        category: .timer
-      )
-      return
-    }
-
-    // Check if one more minute is active before stopping
-    if activeSession.oneMoreMinuteStartTime != nil {
-      // Start restrictions again since one more minute is ended
-      appBlocker.activateRestrictions(for: profile)
-
-      // Clear the one more minute start time so the session knows it's no longer active
-      SharedData.clearOneMoreMinuteStartTime(expectedSessionId: activeSession.id)
-    }
+    guard let session = SharedData.getActiveSharedSession() else { return }
+    let live = SharedData.snapshot(for: session.blockedProfileId.uuidString)
+    SharedData.closeOneMoreMinuteGrantIfExpired(
+      expectedSessionId: session.id,
+      now: Date(),
+      process: .monitorExtension,
+      liveSnapshot: live,
+      applier: appBlocker)
   }
 }
