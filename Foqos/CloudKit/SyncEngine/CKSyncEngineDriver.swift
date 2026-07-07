@@ -63,37 +63,7 @@ final class CKSyncEngineDriver: NSObject, SyncEngineDriver, CKSyncEngineDelegate
 
   func sendChanges() {
     let engine = self.engine!
-    // [#286 DIAGNOSTIC — remove before the fix ships] Log the exact pending-queue shape
-    // handed to CloudKit at every send. The crash reports show a synchronous CloudKit
-    // assertion at the top of engine.sendChanges(); the last line logged before the abort
-    // is the poison shape. Grep Console for "#286".
-    Log.error(
-      "[#286] sendChanges pending: db=\(Self.describePending(engine.state.pendingDatabaseChanges)) "
-        + "rec=\(Self.describePendingRecords(engine.state.pendingRecordZoneChanges))",
-      category: .sync)
     Task { try? await engine.sendChanges() }
-  }
-
-  /// [#286 DIAGNOSTIC] Human-readable pending database-change summary.
-  static func describePending(_ changes: [CKSyncEngine.PendingDatabaseChange]) -> String {
-    changes.map {
-      switch $0 {
-      case .saveZone(let z): return "saveZone(\(z.zoneID.zoneName))"
-      case .deleteZone(let id): return "deleteZone(\(id.zoneName))"
-      @unknown default: return "?"
-      }
-    }.joined(separator: ",")
-  }
-
-  /// [#286 DIAGNOSTIC] Human-readable pending record-change summary.
-  static func describePendingRecords(_ changes: [CKSyncEngine.PendingRecordZoneChange]) -> String {
-    changes.map {
-      switch $0 {
-      case .saveRecord(let id): return "save(\(id.recordName))"
-      case .deleteRecord(let id): return "del(\(id.recordName))"
-      @unknown default: return "?"
-      }
-    }.joined(separator: ",")
   }
 
   func fetchRecord(_ id: CKRecord.ID) async -> FetchRecordResult {

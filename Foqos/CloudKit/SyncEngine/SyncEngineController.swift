@@ -194,15 +194,6 @@ final class SyncEngineController: SyncEngineDriverDelegate {
   /// / I11 seeding. Runs in the same synchronous main-actor region as driver init (B-7):
   /// no `await` before this returns, so no engine event can interleave.
   private func performStrip() {
-    // [#286 DIAGNOSTIC — remove before the fix ships] The restored engine state as handed
-    // back by CloudKit, BEFORE the strip prunes it. Reveals whether a poisoned reset-path
-    // serialization survives launch (grep Console for "#286").
-    Log.error(
-      "[#286] strip BEFORE: db=\(CKSyncEngineDriver.describePending(driver.pendingDatabaseChanges)) "
-        + "rec=\(CKSyncEngineDriver.describePendingRecords(driver.pendingRecordZoneChanges)) "
-        + "resetIntent=\(String(describing: store.resetIntent)) "
-        + "pendingSeedIntent=\(store.pendingSeedIntent)",
-      category: .sync)
     let legacy = store.legacyCleanupIds
     let deletesToRemove = driver.pendingRecordZoneChanges.filter {
       if case .deleteRecord(let id) = $0 { return !legacy.contains(id.recordName) }
@@ -215,12 +206,6 @@ final class SyncEngineController: SyncEngineDriverDelegate {
     if !dbChanges.isEmpty {
       driver.remove(pendingDatabaseChanges: dbChanges)
     }
-    // [#286 DIAGNOSTIC — remove before the fix ships] Post-strip pending state: what the
-    // startup resume/seed then rebuilds ON TOP of this is what reaches sendChanges().
-    Log.error(
-      "[#286] strip AFTER: db=\(CKSyncEngineDriver.describePending(driver.pendingDatabaseChanges)) "
-        + "rec=\(CKSyncEngineDriver.describePendingRecords(driver.pendingRecordZoneChanges))",
-      category: .sync)
   }
 
   // MARK: - SyncEngineDriverDelegate
@@ -665,16 +650,7 @@ final class SyncEngineController: SyncEngineDriverDelegate {
     reEnqueueLegacyCleanup()
     await applySeedDecision()
     guard generation == namespaceGeneration else { return }
-    if let intent = store.resetIntent {
-      // [#286 DIAGNOSTIC — remove before the fix ships] Which stage the persisted reset is
-      // resumed from on every launch — the driver of the deterministic crash-loop.
-      Log.error(
-        "[#286] resume reset stage=\(intent.stage) clear=\(intent.clear) "
-          + "pending BEFORE resume: db=\(CKSyncEngineDriver.describePending(driver.pendingDatabaseChanges)) "
-          + "rec=\(CKSyncEngineDriver.describePendingRecords(driver.pendingRecordZoneChanges))",
-        category: .sync)
-      onResumeReset?(intent)  // §8.1 (Phase E)
-    }
+    if let intent = store.resetIntent { onResumeReset?(intent) }  // §8.1 (Phase E)
     driver.fetchChanges()
   }
 
