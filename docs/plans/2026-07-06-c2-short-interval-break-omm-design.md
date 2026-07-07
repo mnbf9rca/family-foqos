@@ -252,16 +252,18 @@ Invocation points: (a) `loadActiveSession` (launch + every foreground pass); (b)
 
 ---
 
-## 8. MAINTAINER DECISIONS (open — product calls, not design calls)
+## 8. MAINTAINER DECISIONS
 
-### MD-C2-1 — Do the 5- and 10-minute break options survive?
+**✅ ALL SETTLED — maintainer ratification 2026-07-07 (PR #282 comment): every MD ratified as recommended (Option A). Not open for redesign at plan/implementation time.** A negative §10 probe #2 result reopens MD-C2-1 only.
+
+### MD-C2-1 — Do the 5- and 10-minute break options survive? ✅ SETTLED = A (keep)
 
 The wrap-anchor mechanism makes them honorable: `intervalDidEnd` at a deadline 5 minutes out is legal (G2), foreground expiry is exact (7.4b), background expiry is late by ≤59s + delivery latency.
 
 - **Option A (recommended): keep 5/10/15/30.** The mechanism now honors them; removing them was only ever a workaround for G4. No copy changes needed (the "Break almost over" reminder already guards `breakTimeInMinutes >= 2`).
 - **Option B: raise the floor to 15.** Smaller test surface; hides the ±1-minute background precision; but it degrades a shipped affordance to dodge a mechanism this contract must build anyway for OMM's 60 seconds.
 
-### MD-C2-2 — Semantics of OMM expiry during a break (#205)
+### MD-C2-2 — Semantics of OMM expiry during a break (#205) ✅ SETTLED = A (break absorbs OMM)
 
 - **Option A (recommended): starting a break absorbs the open OMM grant** (one atomic composite, §6.2/I9; `oneMoreMinuteUsed` stays true — the user has spent their OMM either way, and its remaining seconds are exchanged for the break's longer unblocked window; note honestly that a user who then *early-ends* the break forfeits whatever OMM remainder was absorbed — the exchange is one-way, which the recommended UX accepts as the natural meaning of "starting a break"). There is then no OMM-expiry event to mishandle; no overlapping-grant state exists.
 - **Option B: grants run concurrently; OMM expiry defers to the break.** Behaviorally identical for the user; structurally keeps a dead 60-second timer alive during a 5–30-minute break purely to be ignored. More states, no benefit.
@@ -269,7 +271,7 @@ The wrap-anchor mechanism makes them honorable: `intervalDidEnd` at a deadline 5
 
 Whichever option is chosen, the break-active branch in the OMM closer (7.3) ships as defense in depth — under A it also covers the removal-raced-with-callback interleaving (§9 X7).
 
-### MD-C2-3 — Accept bounded background overrun for OMM?
+### MD-C2-3 — Accept bounded background overrun for OMM? ✅ SETTLED = A (accept)
 
 Deviation #1's as-designed says OMM enforces "exactly 60 seconds … regardless of app state". On iOS this is not strictly achievable: no third process exists, DeviceActivity's honored resolution is the minute, and delivery latency is nonzero.
 
