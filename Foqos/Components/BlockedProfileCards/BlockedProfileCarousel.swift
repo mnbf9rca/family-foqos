@@ -39,18 +39,7 @@ struct BlockedProfileCarousel: View {
 
   /// Filtered profiles excluding deleted models
   private var validProfiles: [BlockedProfiles] {
-    let result = profiles.valid
-    Log.debug(
-      "[#285 PROBE] Carousel.validProfiles input=\(profiles.count) output=\(result.count)",
-      category: .ui
-    )
-    for profile in profiles {
-      Log.debug("[#285 PROBE] Carousel.input \(profile.debugPersistentModelStateFor285)", category: .ui)
-    }
-    for profile in result {
-      Log.debug("[#285 PROBE] Carousel.output \(profile.debugPersistentModelStateFor285)", category: .ui)
-    }
-    return result
+    profiles.valid
   }
 
   private var titleMessage: String {
@@ -152,10 +141,6 @@ struct BlockedProfileCarousel: View {
         ScrollView(.horizontal) {
           LazyHStack(spacing: cardSpacing) {
             ForEach(validProfiles) { profile in
-              let _ = Log.debug(
-                "[#285 PROBE] Carousel.ForEach child \(profile.debugPersistentModelStateFor285)",
-                category: .ui
-              )
               SafeModelView(profile) { profile in
                 BlockedProfileCard(
                   profile: profile,

@@ -34,13 +34,4 @@ extension PersistentModel {
     let registered: Self? = context.registeredModel(for: persistentModelID)
     return registered != nil
   }
-
-  var debugPersistentModelStateFor285: String {
-    guard let context = modelContext else {
-      return "persistentModelID=\(persistentModelID) context=false isDeleted=\(isDeleted) registered=nil valid=false"
-    }
-    let registered: Self? = context.registeredModel(for: persistentModelID)
-    return
-      "persistentModelID=\(persistentModelID) context=true isDeleted=\(isDeleted) registered=\(registered != nil) valid=\(isPersistentModelValid)"
-  }
 }

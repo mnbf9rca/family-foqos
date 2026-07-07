@@ -31,10 +31,6 @@ struct BlockedProfileCard: View {
   }
 
   var body: some View {
-    let _ = Log.debug(
-      "[#285 PROBE] BlockedProfileCard.body begin \(profile.debugPersistentModelStateFor285)",
-      category: .ui
-    )
     ZStack {
       // Use the CardBackground component
       cardBackground
