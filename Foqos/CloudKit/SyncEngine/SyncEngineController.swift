@@ -706,12 +706,26 @@ final class SyncEngineController: SyncEngineDriverDelegate {
             store.removeFailedApply(recordName: entry.recordName)
           }
         case .found:
-          applyDeletionSideEffects(recordID: id)
+          if deleteRetryLocalEntityExists(entry) {
+            applyDeletionSideEffects(recordID: id)
+          }
           store.removeFailedApply(recordName: entry.recordName)  // recreated ⇒ drop, never delete
         case .transientError:
           break  // retry next cycle
         }
       }
+    }
+  }
+
+  private func deleteRetryLocalEntityExists(_ entry: FailedApply) -> Bool {
+    guard let id = UUID(uuidString: entry.recordName) else { return true }
+    switch entry.recordType {
+    case SyncedProfile.recordType:
+      return (try? BlockedProfiles.findProfile(byID: id, in: modelContext)) != nil
+    case SyncedLocation.recordType:
+      return (try? SavedLocation.find(byID: id, in: modelContext)) != nil
+    default:
+      return true
     }
   }
 

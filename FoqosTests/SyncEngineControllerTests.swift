@@ -575,6 +575,38 @@ final class SyncEngineControllerTests: XCTestCase {
       "later successful apply clears the entry (supersession)")
   }
 
+  func testGivenFailedRemoteDeleteRetryFindsServerRecordButLocalDeletePending_WhenRetried_ThenLocalDeleteIntentSurvives()
+    async
+  {
+    store.engineState = Data([0x01])
+    let id = UUID()
+    store.addFailedApply(
+      FailedApply(recordName: id.uuidString, recordType: SyncedProfile.recordType, op: .delete))
+    store.setSystemFields(Data("cached".utf8), for: id.uuidString)
+    store.setTombstone(recordName: id.uuidString, changeTag: "local-delete-tag")
+    driver.add(pendingRecordZoneChanges: [.deleteRecord(recordID(id.uuidString))])
+    driver.fetchRecordResults[id.uuidString] = .found(
+      makeProfileRecord(id: id, version: 1, name: "ServerStillHasIt"),
+      changeTag: "local-delete-tag")
+
+    let controller = makeController()
+    controller.start()
+    await controller.startupTask?.value
+
+    XCTAssertNil(
+      store.failedApplies.first { $0.recordName == id.uuidString },
+      "verified-present retry drops the stale remote failed apply")
+    XCTAssertNotNil(
+      store.deleteTombstones[id.uuidString],
+      "newer local delete tombstone must survive the remote failed-apply cleanup")
+    XCTAssertNotNil(
+      store.systemFields(for: id.uuidString),
+      "newer local delete keeps cached system fields until delete confirmation")
+    XCTAssertTrue(
+      pendingDeleteNames().contains(id.uuidString),
+      "newer local pending delete must still propagate")
+  }
+
   // MARK: - AB-3 fetch-cycle delimiters (T2, S-37)
 
   func testGivenFetchCycle_WhenDidFetchChanges_ThenSteadyAndCycleDelimited() async {
