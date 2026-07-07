@@ -13,9 +13,12 @@ class BlockedProfileSession: BreakDurationCalculable {
 
   var breakStartTime: Date?
   var breakEndTime: Date?
+  var breakEndDeadline: Date?
 
   var oneMoreMinuteUsed: Bool = false
   var oneMoreMinuteStartTime: Date?
+  var oneMoreMinuteDeadline: Date?
+  var pinnedProfileConfigData: Data?
 
   var forceStarted: Bool = false
 
@@ -34,13 +37,17 @@ class BlockedProfileSession: BreakDurationCalculable {
       && breakEndTime == nil
   }
 
+  var isBreakOpenRawFields: Bool {
+    return breakStartTime != nil && breakEndTime == nil
+  }
+
   func isOneMoreMinuteActive(now: Date = Date()) -> Bool {
     guard let startTime = oneMoreMinuteStartTime else { return false }
     return now.timeIntervalSince(startTime) < 60
   }
 
   var isOneMoreMinuteAvailable: Bool {
-    return !oneMoreMinuteUsed && !isBreakActive
+    return !oneMoreMinuteUsed && !isBreakOpenRawFields
   }
 
   func duration(now: Date = Date()) -> TimeInterval {
@@ -78,6 +85,13 @@ class BlockedProfileSession: BreakDurationCalculable {
   }
 
   func endSession(now: Date = Date()) {
+    SharedData.closeGrantsForSessionEnd(expectedSessionId: id, now: now)
+    if breakStartTime != nil && breakEndTime == nil {
+      breakEndTime = now
+    }
+    oneMoreMinuteStartTime = nil
+    oneMoreMinuteDeadline = nil
+
     // Set the end time in shared data in case its being saved
     SharedData.setEndTime(date: now, expectedSessionId: id)
     self.endTime = now
@@ -105,7 +119,12 @@ class BlockedProfileSession: BreakDurationCalculable {
       breakEndTime: breakEndTime,
       forceStarted: forceStarted,
       oneMoreMinuteUsed: oneMoreMinuteUsed,
-      oneMoreMinuteStartTime: oneMoreMinuteStartTime
+      oneMoreMinuteStartTime: oneMoreMinuteStartTime,
+      breakEndDeadline: breakEndDeadline,
+      oneMoreMinuteDeadline: oneMoreMinuteDeadline,
+      pinnedProfileConfig: pinnedProfileConfigData.flatMap {
+        try? JSONDecoder().decode(SharedData.ProfileSnapshot.self, from: $0)
+      }
     )
   }
 
@@ -143,8 +162,10 @@ class BlockedProfileSession: BreakDurationCalculable {
 
   static func upsertSessionFromSnapshot(
     in context: ModelContext,
-    withSnapshot snapshot: SharedData.SessionSnapshot
+    withSnapshot rawSnapshot: SharedData.SessionSnapshot
   ) {
+    let snapshot =
+      rawSnapshot.endTime != nil ? SharedData.normalizedForEnd(rawSnapshot) : rawSnapshot
     let profileID = snapshot.blockedProfileId
 
     guard let existingProfile = try? BlockedProfiles.findProfile(byID: profileID, in: context)
@@ -163,6 +184,11 @@ class BlockedProfileSession: BreakDurationCalculable {
       existingSession.forceStarted = snapshot.forceStarted
       existingSession.oneMoreMinuteUsed = snapshot.oneMoreMinuteUsed
       existingSession.oneMoreMinuteStartTime = snapshot.oneMoreMinuteStartTime
+      existingSession.breakEndDeadline = snapshot.breakEndDeadline
+      existingSession.oneMoreMinuteDeadline = snapshot.oneMoreMinuteDeadline
+      existingSession.pinnedProfileConfigData = snapshot.pinnedProfileConfig.flatMap {
+        try? JSONEncoder().encode($0)
+      }
 
       // manually save to ensure changes are persisted
       do {
@@ -189,6 +215,11 @@ class BlockedProfileSession: BreakDurationCalculable {
     newSession.breakEndTime = snapshot.breakEndTime
     newSession.oneMoreMinuteUsed = snapshot.oneMoreMinuteUsed
     newSession.oneMoreMinuteStartTime = snapshot.oneMoreMinuteStartTime
+    newSession.breakEndDeadline = snapshot.breakEndDeadline
+    newSession.oneMoreMinuteDeadline = snapshot.oneMoreMinuteDeadline
+    newSession.pinnedProfileConfigData = snapshot.pinnedProfileConfig.flatMap {
+      try? JSONEncoder().encode($0)
+    }
 
     // Let auto-save handle inserts
     context.insert(newSession)

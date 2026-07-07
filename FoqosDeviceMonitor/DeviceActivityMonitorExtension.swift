@@ -32,6 +32,7 @@ class DeviceActivityMonitorExtension: DeviceActivityMonitor {
 
     log.info("intervalDidStart for activity: \(activity.rawValue)")
     TimerActivityUtil.startTimerActivity(for: activity)
+    reconcileAfterWake()
   }
 
   override func intervalDidEnd(for activity: DeviceActivityName) {
@@ -39,5 +40,17 @@ class DeviceActivityMonitorExtension: DeviceActivityMonitor {
 
     log.info("intervalDidEnd for activity: \(activity.rawValue)")
     TimerActivityUtil.stopTimerActivity(for: activity)
+    reconcileAfterWake()
+  }
+
+  private func reconcileAfterWake() {
+    guard let session = SharedData.getActiveSharedSession(), session.endTime == nil else { return }
+    let live = SharedData.snapshot(for: session.blockedProfileId.uuidString)
+    SharedData.reconcileExpiredGrants(
+      process: .monitorExtension,
+      now: Date(),
+      liveSnapshot: live,
+      breakDurationMinutes: live?.breakTimeInMinutes,
+      applier: appBlocker)
   }
 }

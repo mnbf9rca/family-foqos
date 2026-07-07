@@ -53,6 +53,10 @@ public class TimerActivityUtil {
       return StopScheduleTimerActivity()
     case OneMoreMinuteTimerActivity.id:
       return OneMoreMinuteTimerActivity()
+    case BreakDeadlineBackstopActivity.id:
+      return BreakDeadlineBackstopActivity()
+    case OneMoreMinuteDeadlineBackstopActivity.id:
+      return OneMoreMinuteDeadlineBackstopActivity()
     default:
       return nil
     }

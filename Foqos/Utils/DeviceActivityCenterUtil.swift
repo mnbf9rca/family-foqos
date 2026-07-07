@@ -467,4 +467,117 @@ class DeviceActivityCenterUtil {
     }
     return (intervalStart: intervalStart, intervalEnd: intervalEnd)
   }
+
+  /// D-C2-2 wrap-anchor backstop interval for an absolute deadline.
+  /// Produces a repeating window whose end is ceil-to-minute of `deadline` and whose start is
+  /// one minute later modulo 24h. Ceil guarantees callbacks can be late, never early.
+  static func wrapAnchorInterval(
+    endingAt deadline: Date,
+    now: Date,
+    calendar: Calendar = .current
+  ) -> (intervalStart: DateComponents, intervalEnd: DateComponents) {
+    if deadline <= now {
+      Log.warning(
+        "wrapAnchorInterval: deadline is not in the future; closer gate will expire it",
+        category: .timer)
+    }
+    let hour = calendar.component(.hour, from: deadline)
+    let minute = calendar.component(.minute, from: deadline)
+    let second = calendar.component(.second, from: deadline)
+    let nanosecond = calendar.component(.nanosecond, from: deadline)
+
+    var endMinuteOfDay = hour * 60 + minute
+    if second > 0 || nanosecond > 0 {
+      endMinuteOfDay = (endMinuteOfDay + 1) % 1440
+    }
+    let anchor = (endMinuteOfDay + 1) % 1440
+    let intervalEnd = DateComponents(hour: endMinuteOfDay / 60, minute: endMinuteOfDay % 60)
+    let intervalStart = DateComponents(hour: anchor / 60, minute: anchor % 60)
+    return (intervalStart: intervalStart, intervalEnd: intervalEnd)
+  }
+
+  // MARK: - C2 deadline backstops
+
+  private static func breakBackstopName(_ profileId: UUID) -> DeviceActivityName {
+    DeviceActivityName(rawValue: "\(BreakDeadlineBackstopActivity.id):\(profileId.uuidString)")
+  }
+
+  private static func ommBackstopName(_ profileId: UUID) -> DeviceActivityName {
+    DeviceActivityName(rawValue: "\(OneMoreMinuteDeadlineBackstopActivity.id):\(profileId.uuidString)")
+  }
+
+  private static func backstopSchedule(deadline: Date, now: Date) -> DeviceActivitySchedule {
+    let (start, end) = wrapAnchorInterval(endingAt: deadline, now: now)
+    return DeviceActivitySchedule(intervalStart: start, intervalEnd: end, repeats: true)
+  }
+
+  static func replaceBreakBackstop(profileId: UUID, deadline: Date, now: Date) throws {
+    let name = breakBackstopName(profileId)
+    let center = DeviceActivityCenter()
+    center.stopMonitoring([name])
+    try center.startMonitoring(name, during: backstopSchedule(deadline: deadline, now: now))
+  }
+
+  static func replaceOneMoreMinuteBackstop(profileId: UUID, deadline: Date, now: Date) throws {
+    let name = ommBackstopName(profileId)
+    let center = DeviceActivityCenter()
+    center.stopMonitoring([name])
+    try center.startMonitoring(name, during: backstopSchedule(deadline: deadline, now: now))
+  }
+
+  static func registerBreakBackstopIfAbsent(
+    profileId: UUID,
+    deadline: Date,
+    now: Date
+  ) throws -> Bool {
+    let name = breakBackstopName(profileId)
+    let center = DeviceActivityCenter()
+    if center.activities.contains(name) { return false }
+    try center.startMonitoring(name, during: backstopSchedule(deadline: deadline, now: now))
+    return true
+  }
+
+  static func registerOneMoreMinuteBackstopIfAbsent(
+    profileId: UUID,
+    deadline: Date,
+    now: Date
+  ) throws -> Bool {
+    let name = ommBackstopName(profileId)
+    let center = DeviceActivityCenter()
+    if center.activities.contains(name) { return false }
+    try center.startMonitoring(name, during: backstopSchedule(deadline: deadline, now: now))
+    return true
+  }
+
+  static func removeBreakBackstop(profileId: UUID) {
+    DeviceActivityCenter().stopMonitoring([breakBackstopName(profileId)])
+  }
+
+  static func removeOneMoreMinuteBackstop(profileId: UUID) {
+    DeviceActivityCenter().stopMonitoring([ommBackstopName(profileId)])
+  }
+
+  static func hasBreakBackstop(profileId: UUID) -> Bool {
+    DeviceActivityCenter().activities.contains(breakBackstopName(profileId))
+  }
+
+  static func hasOneMoreMinuteBackstop(profileId: UUID) -> Bool {
+    DeviceActivityCenter().activities.contains(ommBackstopName(profileId))
+  }
+
+  static func removeC2BackstopsExcept(profileId: UUID) {
+    let keepBreak = "\(BreakDeadlineBackstopActivity.id):\(profileId.uuidString)"
+    let keepOMM = "\(OneMoreMinuteDeadlineBackstopActivity.id):\(profileId.uuidString)"
+    let center = DeviceActivityCenter()
+    let stale = center.activities.filter {
+      let raw = $0.rawValue
+      let isC2 =
+        raw.starts(with: BreakDeadlineBackstopActivity.id)
+        || raw.starts(with: OneMoreMinuteDeadlineBackstopActivity.id)
+      return isC2 && raw != keepBreak && raw != keepOMM
+    }
+    if !stale.isEmpty {
+      center.stopMonitoring(Array(stale))
+    }
+  }
 }

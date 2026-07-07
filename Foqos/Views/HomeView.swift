@@ -185,6 +185,7 @@ struct HomeView: View {
             isBlocking: isBlocking,
             isBreakAvailable: isBreakAvailable,
             isBreakActive: isBreakActive,
+            isBreakOpenRawFields: strategyManager.activeSession?.isBreakOpenRawFields == true,
             activeSessionProfileId: activeSessionProfileId,
             elapsedTime: strategyManager.elapsedTime,
             startingProfileId: navigateToProfileId,

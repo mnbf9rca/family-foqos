@@ -1,23 +1,28 @@
 import DeviceActivity
 import Foundation
 
-public class BreakTimerActivity: TimerActivity {
-  public static let id: String = "BreakScheduleActivity"
+/// C2-owned break deadline backstop. The in-process lift owns grant opening; this only closes.
+public class BreakDeadlineBackstopActivity: TimerActivity {
+  public static let id: String = "BreakDeadlineBackstop"
 
   private let appBlocker: AppBlockerUtil
 
-  public init() { self.appBlocker = AppBlockerUtil() }
-
-  public func getDeviceActivityName(from profileId: String) -> DeviceActivityName {
-    return DeviceActivityName(rawValue: "\(BreakTimerActivity.id):\(profileId)")
+  public init() {
+    self.appBlocker = AppBlockerUtil()
   }
 
-  public func getAllBreakTimerActivities(from activities: [DeviceActivityName]) -> [DeviceActivityName] {
-    return activities.filter { $0.rawValue.starts(with: BreakTimerActivity.id) }
+  public func getDeviceActivityName(from profileId: String) -> DeviceActivityName {
+    DeviceActivityName(rawValue: "\(BreakDeadlineBackstopActivity.id):\(profileId)")
+  }
+
+  public func getAllBreakDeadlineBackstopActivities(
+    from activities: [DeviceActivityName]
+  ) -> [DeviceActivityName] {
+    activities.filter { $0.rawValue.starts(with: BreakDeadlineBackstopActivity.id) }
   }
 
   public func start(for profile: SharedData.ProfileSnapshot) {
-    Log.info("Break intervalDidStart - no-op (in-process lift owns the grant)", category: .timer)
+    Log.info("Break deadline backstop intervalDidStart - no-op", category: .timer)
   }
 
   public func stop(for profile: SharedData.ProfileSnapshot) {
