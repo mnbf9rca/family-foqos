@@ -25,6 +25,12 @@ final class RecordingBackstopRegistrar: BackstopRegistering {
     case configured
   }
 
+  func clearForAssertion() {
+    calls.removeAll()
+    didStartMonitoringBreak = false
+    didStartMonitoringOMM = false
+  }
+
   func replaceBreakBackstop(profileId: UUID, deadline: Date, now: Date) throws {
     calls.append(.replaceBreak(profileId))
     if throwOnReplaceBreak { throw Err.configured }

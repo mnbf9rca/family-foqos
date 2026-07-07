@@ -1,8 +1,8 @@
-@preconcurrency import FoqosShared
 import SwiftData
 import XCTest
 
 @testable import FamilyFoqos
+@testable import FoqosShared
 
 @MainActor
 final class StrategyManagerBreakOMMTests: XCTestCase {
@@ -110,5 +110,43 @@ final class StrategyManagerBreakOMMTests: XCTestCase {
     try? context.save()
     manager.toggleBreak(context: context)
     XCTAssertNotNil(SharedData.getActiveSharedSession()?.breakEndTime)
+  }
+
+  func testGivenExpiredBreak_WhenEvaluateGrantExpiry_ThenClosesAndRemovesBackstop() {
+    let session = try! seedActiveSession()
+    let now = Date()
+    manager.toggleBreak(context: context)
+    if var shared = SharedData.getActiveSharedSession() {
+      shared.breakEndDeadline = now.addingTimeInterval(-1)
+      SharedData.rawCommitActiveSession(shared)
+    }
+    session.breakEndDeadline = now.addingTimeInterval(-1)
+    applier.clearForAssertion()
+    registrar.clearForAssertion()
+    manager.evaluateGrantExpiry(now: now)
+    XCTAssertNotNil(SharedData.getActiveSharedSession()?.breakEndTime)
+    XCTAssertEqual(registrar.calls, [.removeBreak(session.blockedProfile.id)])
+  }
+
+  func testGivenUnexpiredBreak_WhenEvaluateGrantExpiry_ThenNoOp() {
+    let session = try! seedActiveSession()
+    let now = Date()
+    manager.toggleBreak(context: context)
+    manager.evaluateGrantExpiry(now: now)
+    XCTAssertNil(SharedData.getActiveSharedSession()?.breakEndTime)
+    _ = session
+  }
+
+  func testGivenBreakDeadline_WhenGrantCountdownRemaining_ThenFromDeadlineNotProfileDuration() {
+    let session = try! seedActiveSession(breakMinutes: 5)
+    let now = Date()
+    manager.toggleBreak(context: context)
+    let r1 = manager.grantCountdownRemaining(now: now)
+    XCTAssertNotNil(r1)
+    XCTAssertEqual(r1!, 300, accuracy: 2)
+    session.blockedProfile.breakTimeInMinutes = 1
+    try? context.save()
+    let r2 = manager.grantCountdownRemaining(now: now)
+    XCTAssertEqual(r2!, 300, accuracy: 2)
   }
 }

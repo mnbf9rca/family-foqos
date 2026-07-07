@@ -212,23 +212,20 @@ class StrategyManager: ObservableObject {
 
   func startTimer() {
     stopTimer()
-    timerTask = Task {
+    timerTask = Task { [weak self] in
       while !Task.isCancelled {
         try? await Task.sleep(for: .seconds(1))
         guard !Task.isCancelled else { break }
-        guard let session = activeSession else { break }
+        guard let self, let session = self.activeSession else { break }
 
-        if session.isBreakActive {
-          // Calculate break time remaining (countdown)
-          guard let breakStartTime = session.breakStartTime else { continue }
-          let timeSinceBreakStart = Date().timeIntervalSince(breakStartTime)
-          let breakDurationInSeconds = TimeInterval(session.blockedProfile.breakTimeInMinutes * 60)
-          elapsedTime = max(0, breakDurationInSeconds - timeSinceBreakStart)
+        let now = Date()
+        self.evaluateGrantExpiry(now: now)
+        if let remaining = self.grantCountdownRemaining(now: now) {
+          self.elapsedTime = remaining
         } else {
-          // Calculate session elapsed time
-          let rawElapsedTime = Date().timeIntervalSince(session.startTime)
+          let rawElapsedTime = now.timeIntervalSince(session.startTime)
           let breakDuration = session.calculateBreakDuration()
-          elapsedTime = rawElapsedTime - breakDuration
+          self.elapsedTime = rawElapsedTime - breakDuration
         }
       }
     }
@@ -251,6 +248,51 @@ class StrategyManager: ObservableObject {
       try? JSONEncoder().encode($0)
     }
     try? session.modelContext?.save()
+  }
+
+  func evaluateGrantExpiry(now: Date = Date()) {
+    guard let session = activeSession else { return }
+    let profile = session.blockedProfile
+    let live = BlockedProfiles.getSnapshot(for: profile)
+    if session.oneMoreMinuteStartTime != nil {
+      let closed = SharedData.closeOneMoreMinuteGrantIfExpired(
+        expectedSessionId: session.id,
+        now: now,
+        process: .mainApp,
+        liveSnapshot: live,
+        applier: appBlocker)
+      if closed {
+        backstopRegistrar.removeOneMoreMinuteBackstop(profileId: profile.id)
+        mirrorGrantFieldsFromShared(session)
+      }
+    }
+    if session.breakStartTime != nil && session.breakEndTime == nil {
+      let closed = SharedData.closeBreakGrantIfExpiredOrExplicit(
+        expectedSessionId: session.id,
+        explicit: false,
+        now: now,
+        process: .mainApp,
+        durationMinutes: profile.breakTimeInMinutes,
+        liveSnapshot: live,
+        applier: appBlocker)
+      if closed {
+        backstopRegistrar.removeBreakBackstop(profileId: profile.id)
+        mirrorGrantFieldsFromShared(session)
+      }
+    }
+  }
+
+  func grantCountdownRemaining(now: Date = Date()) -> TimeInterval? {
+    guard let session = activeSession else { return nil }
+    if session.breakStartTime != nil && session.breakEndTime == nil,
+      let deadline = session.breakEndDeadline
+    {
+      return max(0, deadline.timeIntervalSince(now))
+    }
+    if session.oneMoreMinuteStartTime != nil, let deadline = session.oneMoreMinuteDeadline {
+      return max(0, deadline.timeIntervalSince(now))
+    }
+    return nil
   }
 
   func toggleSessionFromDeeplink(

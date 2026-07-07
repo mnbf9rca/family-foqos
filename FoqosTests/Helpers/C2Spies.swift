@@ -11,6 +11,10 @@ final class RecordingRestrictionApplier: RestrictionApplying {
   var onActivate: ((SharedData.ProfileSnapshot) -> Void)?
   var onDeactivate: (() -> Void)?
 
+  func clearForAssertion() {
+    calls.removeAll()
+  }
+
   func activateRestrictions(for profile: SharedData.ProfileSnapshot) {
     calls.append(.activate(profileId: profile.id))
     onActivate?(profile)
