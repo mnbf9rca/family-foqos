@@ -295,6 +295,8 @@ extension SharedData {
     breakDurationMinutes: Int?,
     applier: RestrictionApplying = AppBlockerUtil()
   ) {
+    // Intentional lockless id peek: the child closers re-acquire and re-check session identity
+    // inside their own non-reentrant lock sections. Wrapping this function would nest locks.
     if let session = rawActiveSession, session.endTime == nil {
       let sid = session.id
       _ = closeOneMoreMinuteGrantIfExpired(

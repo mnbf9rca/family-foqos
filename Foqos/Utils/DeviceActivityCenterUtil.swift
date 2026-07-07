@@ -531,8 +531,9 @@ class DeviceActivityCenterUtil {
     now: Date
   ) throws -> Bool {
     let name = breakBackstopName(profileId)
-    if DeviceActivityCenter().activities.contains(name) { return false }
-    try DeviceActivityCenter().startMonitoring(name, during: backstopSchedule(deadline: deadline, now: now))
+    let center = DeviceActivityCenter()
+    if center.activities.contains(name) { return false }
+    try center.startMonitoring(name, during: backstopSchedule(deadline: deadline, now: now))
     return true
   }
 
@@ -542,8 +543,9 @@ class DeviceActivityCenterUtil {
     now: Date
   ) throws -> Bool {
     let name = ommBackstopName(profileId)
-    if DeviceActivityCenter().activities.contains(name) { return false }
-    try DeviceActivityCenter().startMonitoring(name, during: backstopSchedule(deadline: deadline, now: now))
+    let center = DeviceActivityCenter()
+    if center.activities.contains(name) { return false }
+    try center.startMonitoring(name, during: backstopSchedule(deadline: deadline, now: now))
     return true
   }
 

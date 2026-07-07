@@ -47,7 +47,7 @@ class BlockedProfileSession: BreakDurationCalculable {
   }
 
   var isOneMoreMinuteAvailable: Bool {
-    return !oneMoreMinuteUsed && !isBreakActive
+    return !oneMoreMinuteUsed && !isBreakOpenRawFields
   }
 
   func duration(now: Date = Date()) -> TimeInterval {
@@ -89,6 +89,8 @@ class BlockedProfileSession: BreakDurationCalculable {
     if breakStartTime != nil && breakEndTime == nil {
       breakEndTime = now
     }
+    oneMoreMinuteStartTime = nil
+    oneMoreMinuteDeadline = nil
 
     // Set the end time in shared data in case its being saved
     SharedData.setEndTime(date: now, expectedSessionId: id)

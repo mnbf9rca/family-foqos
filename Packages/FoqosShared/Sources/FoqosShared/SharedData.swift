@@ -65,6 +65,8 @@ public enum SharedData {
   private static let lockLog = Logger(
     subsystem: "com.cynexia.family-foqos", category: "SharedData"
   )
+  private static let nonblockingLockRetryCount = 50
+  private static let nonblockingLockRetrySleepMicroseconds: useconds_t = 10_000
 
   /// Cross-process file lock for compound UserDefaults operations.
   /// Uses POSIX flock() — works across app and extension processes.
@@ -129,14 +131,14 @@ public enum SharedData {
       }
     } else {
       var acquired = false
-      for _ in 0..<50 {
+      for _ in 0..<nonblockingLockRetryCount {
         let ret = flock(fd, LOCK_NB | LOCK_EX)
         if ret == 0 {
           acquired = true
           break
         }
         if errno != EWOULDBLOCK && errno != EINTR { break }
-        usleep(10_000)
+        usleep(nonblockingLockRetrySleepMicroseconds)
       }
       guard acquired else {
         lockLog.warning("SharedData: LOCK_NB timed out — proceeding unlocked")

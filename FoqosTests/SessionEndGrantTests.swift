@@ -88,4 +88,25 @@ final class SessionEndGrantTests: XCTestCase {
     XCTAssertNotNil(fetched?.breakEndTime)
     XCTAssertNil(fetched?.oneMoreMinuteStartTime)
   }
+
+  @MainActor
+  func testGivenLocalSessionWithOMM_WhenEndSession_ThenLocalOMMFieldsCleared() throws {
+    let now = Date()
+    let container = try TestModelContainer.create()
+    let context = ModelContext(container)
+    let profile = BlockedProfiles(name: "P")
+    context.insert(profile)
+    let session = BlockedProfileSession.createSession(in: context, withTag: "t", withProfile: profile)
+    session.oneMoreMinuteUsed = true
+    session.oneMoreMinuteStartTime = now.addingTimeInterval(-30)
+    session.oneMoreMinuteDeadline = now.addingTimeInterval(30)
+    try context.save()
+    SharedData.createActiveSharedSession(for: session.toSnapshot())
+
+    session.endSession(now: now)
+
+    XCTAssertNil(session.oneMoreMinuteStartTime)
+    XCTAssertNil(session.oneMoreMinuteDeadline)
+    XCTAssertTrue(session.oneMoreMinuteUsed)
+  }
 }
