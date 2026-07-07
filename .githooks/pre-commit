@@ -8,6 +8,17 @@ if [ "$branch" = "main" ] || [ "$branch" = "release/v1" ]; then
   exit 1
 fi
 
+# --- Repo guard scripts ---
+if ! scripts/check-sync-guards.sh; then
+  echo "ERROR: sync guard checks failed."
+  exit 1
+fi
+
+if ! scripts/check-c2-guards.sh; then
+  echo "ERROR: C2 guard checks failed."
+  exit 1
+fi
+
 # --- Auto-format staged Swift files ---
 STAGED_SWIFT=$(git diff --cached --name-only --diff-filter=ACMR -- '*.swift')
 if [ -n "$STAGED_SWIFT" ]; then
