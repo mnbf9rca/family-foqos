@@ -494,11 +494,13 @@ class BlockedProfiles {
     // Defer context saving as the reference to the profile might be used
   }
 
+  /// Returns before the durable save, then commits one main-actor turn after `context.delete(_:)`.
+  /// Callers must handle save failures inside `operation`; the scheduling boundary exists
+  /// so SwiftUI can invalidate views while the model is still in the pending-delete window.
   static func scheduleProfileDeleteCommit(_ operation: @escaping @MainActor () -> Void) {
-    DispatchQueue.main.async {
-      Task { @MainActor in
-        operation()
-      }
+    Task { @MainActor in
+      await Task.yield()
+      operation()
     }
   }
 

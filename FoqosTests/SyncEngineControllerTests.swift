@@ -16,6 +16,7 @@ final class SyncEngineControllerTests: XCTestCase {
   var provider: RecordProvider!
   var sessionSync: MockSessionSyncFlushing!
   var sessionController: MockSessionController!
+  var profileDeleteCommitScheduler: ManualProfileDeleteCommitScheduler!
   let deviceId = "device-A"
   let userRecordName = "user-A"
   let zoneID = CKRecordZone.ID(
@@ -31,10 +32,12 @@ final class SyncEngineControllerTests: XCTestCase {
     store = SyncEngineStore(userRecordName: userRecordName, defaults: defaults)
     driver = MockSyncEngineDriver()
     sessionController = MockSessionController()
+    profileDeleteCommitScheduler = ManualProfileDeleteCommitScheduler()
     let emergency = EmergencyUnblockManager()
     apply = SyncApplyService(
       modelContext: context, store: store, sessionController: sessionController,
-      emergencyManager: emergency, deviceId: deviceId)
+      emergencyManager: emergency, deviceId: deviceId,
+      scheduleProfileDeleteCommit: profileDeleteCommitScheduler.schedule)
     provider = RecordProvider(
       modelContext: context, store: store, emergencyManager: emergency, deviceId: deviceId)
     sessionSync = MockSessionSyncFlushing()
@@ -58,10 +61,6 @@ final class SyncEngineControllerTests: XCTestCase {
       provider: provider,
       sessionSync: sessionSync,
       deviceId: deviceId)
-  }
-
-  func drainDeferredProfileDeleteCommit() async {
-    for _ in 0..<10 { await Task.yield() }
   }
 
   func recordID(_ name: String) -> CKRecord.ID {
@@ -674,7 +673,7 @@ final class SyncEngineControllerTests: XCTestCase {
     XCTAssertNil(try? fetchProfile(id), "pending-delete-wins ⇒ modification skipped (S-32)")
   }
 
-  func testGivenFetchedDeletion_WhenHandled_ThenTombstoneClearedAndPendingDeleteRemoved() async {
+  func testGivenFetchedDeletion_WhenHandled_ThenTombstoneClearedAndPendingDeleteRemoved() {
     let id = UUID()
     let p = BlockedProfiles(id: id, name: "A")
     context.insert(p)
@@ -697,7 +696,7 @@ final class SyncEngineControllerTests: XCTestCase {
     XCTAssertNotNil(store.systemFields(for: id.uuidString))
     XCTAssertTrue(pendingDeleteNames().contains(id.uuidString), "pending delete retained until commit")
 
-    await drainDeferredProfileDeleteCommit()
+    profileDeleteCommitScheduler.runNext()
 
     XCTAssertNil(store.deleteTombstones[id.uuidString], "tombstone cleared (I12)")
     XCTAssertNil(store.systemFields(for: id.uuidString))

@@ -126,6 +126,9 @@ final class SyncApplyService {
       scheduleProfileDeleteCommit {
         [modelContext, store, id, recordName, saveOverride, profileDeleteCommitObserver] in
         do {
+          // Remote apply failures are persisted as failedApplies and retried by the sync
+          // controller, not surfaced as UI action errors. Controller side effects wait until
+          // this deferred commit succeeds.
           if let saveOverride {
             try saveOverride()
           } else {

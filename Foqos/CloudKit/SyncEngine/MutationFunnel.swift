@@ -117,6 +117,9 @@ final class MutationFunnel {
       scheduleProfileDeleteCommit {
         [modelContext, store, driver, profileId, recordName, deleteZoneID, saveOverride] in
         do {
+          // The caller has already returned; post-boundary failures are logged and converted
+          // back into tombstone cleanup plus rollback, and the remote delete is enqueued only
+          // after the save and target-absence check both succeed.
           if let saveOverride {
             try saveOverride()
           } else {

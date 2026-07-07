@@ -61,20 +61,6 @@ final class MutationFunnelTests: XCTestCase {
     return archiver.encodedData
   }
 
-  @MainActor
-  private final class ManualProfileDeleteCommitScheduler {
-    private(set) var scheduledOperations: [@MainActor () -> Void] = []
-
-    func schedule(_ operation: @escaping @MainActor () -> Void) {
-      scheduledOperations.append(operation)
-    }
-
-    func runNext() {
-      let operation = scheduledOperations.removeFirst()
-      operation()
-    }
-  }
-
   // MARK: - S-15 / S-16: save bumps in the same write, enqueues once
 
   func testGivenProfile_WhenEnqueueSave_ThenBumpsVersionInSameWriteAndEnqueuesOnce() throws {
