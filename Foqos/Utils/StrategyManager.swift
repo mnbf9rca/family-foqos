@@ -173,29 +173,41 @@ class StrategyManager: ObservableObject {
       return
     }
 
-    if !session.isOneMoreMinuteAvailable {
+    guard session.isOneMoreMinuteAvailable else {
       Log.info("One more minute already used this session", category: .strategy)
       return
     }
 
-    // Schedule DeviceActivity enforcement FIRST — if this fails, don't lift restrictions
+    let now = Date()
+    let profile = session.blockedProfile
+    let deadline = now.addingTimeInterval(60)
+    let live = BlockedProfiles.getSnapshot(for: profile)
+
     do {
-      try DeviceActivityCenterUtil.startOneMoreMinuteActivity(for: session.blockedProfile)
+      try backstopRegistrar.replaceOneMoreMinuteBackstop(
+        profileId: profile.id, deadline: deadline, now: now)
     } catch {
-      Log.error(
-        "Failed to schedule one more minute activity: \(error.localizedDescription)",
-        category: .strategy
-      )
+      errorMessage = "Couldn't grant one more minute. Please try again."
+      Log.error("startOneMoreMinute: backstop registration failed: \(error.localizedDescription)", category: .timer)
       return
     }
 
-    // Monitoring scheduled successfully — now safe to lift restrictions
-    session.startOneMoreMinute()
-    appBlocker.deactivateRestrictions()
+    let opened = SharedData.openOneMoreMinuteGrant(
+      startDate: now,
+      deadline: deadline,
+      expectedSessionId: session.id,
+      liveSnapshot: live,
+      applier: appBlocker)
+    guard opened else {
+      backstopRegistrar.removeOneMoreMinuteBackstop(profileId: profile.id)
+      try? loadActiveSession(context: context)
+      errorMessage = "This session changed. Please try again."
+      return
+    }
+
+    mirrorGrantFieldsFromShared(session)
     liveActivityManager.updateOneMoreMinuteState(session: session)
     WidgetCenter.shared.reloadTimelines(ofKind: "ProfileControlWidget")
-
-    Log.info("Started one more minute - restrictions lifted for 60s", category: .strategy)
   }
 
   func startTimer() {

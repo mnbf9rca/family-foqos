@@ -67,4 +67,27 @@ final class StrategyManagerBreakOMMTests: XCTestCase {
     XCTAssertNotNil(manager.errorMessage)
     _ = session
   }
+
+  func testGivenBlockingSession_WhenStartOneMoreMinute_ThenRegistersAndOpensGrant() {
+    let session = try! seedActiveSession()
+    let pid = session.blockedProfile.id
+    manager.startOneMoreMinute(context: context)
+    XCTAssertEqual(registrar.calls.first, .replaceOMM(pid))
+    XCTAssertEqual(applier.calls, [.deactivate])
+    let shared = SharedData.getActiveSharedSession()
+    XCTAssertNotNil(shared?.oneMoreMinuteStartTime)
+    XCTAssertNotNil(shared?.oneMoreMinuteDeadline)
+    XCTAssertTrue(shared?.oneMoreMinuteUsed ?? false)
+    XCTAssertNil(manager.errorMessage)
+    _ = session
+  }
+
+  func testGivenBackstopThrows_WhenStartOneMoreMinute_ThenFailClosedNoLift() {
+    _ = try! seedActiveSession()
+    registrar.throwOnReplaceOMM = true
+    manager.startOneMoreMinute(context: context)
+    XCTAssertNil(SharedData.getActiveSharedSession()?.oneMoreMinuteStartTime)
+    XCTAssertTrue(applier.calls.isEmpty)
+    XCTAssertNotNil(manager.errorMessage)
+  }
 }
