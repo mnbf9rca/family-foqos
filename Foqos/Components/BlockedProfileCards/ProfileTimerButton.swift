@@ -7,6 +7,7 @@ struct ProfileTimerButton: View {
 
   let isBreakAvailable: Bool
   let isBreakActive: Bool
+  let isBreakOpenRawFields: Bool
 
   let elapsedTime: TimeInterval?
 
@@ -22,7 +23,8 @@ struct ProfileTimerButton: View {
   let onOneMoreMinuteTapped: () -> Void
 
   var breakMessage: String {
-    return "Hold to" + (isBreakActive ? " Stop Break" : " Start Break")
+    let showingStop = isBreakActive || isBreakOpenRawFields
+    return "Hold to" + (showingStop ? " Stop Break" : " Start Break")
   }
 
   var breakColor: Color? {
@@ -79,7 +81,7 @@ struct ProfileTimerButton: View {
         }
       }
 
-      if isBreakAvailable {
+      if isBreakAvailable || isBreakOpenRawFields {
         GlassButton(
           title: breakMessage,
           icon: "cup.and.heat.waves.fill",
@@ -118,6 +120,7 @@ struct ProfileTimerButton: View {
       isActive: false,
       isBreakAvailable: false,
       isBreakActive: false,
+      isBreakOpenRawFields: false,
       elapsedTime: nil,
       onStartTapped: {},
       onStopTapped: {},
@@ -132,6 +135,7 @@ struct ProfileTimerButton: View {
       isActive: true,
       isBreakAvailable: true,
       isBreakActive: false,
+      isBreakOpenRawFields: false,
       elapsedTime: 3665,
       onStartTapped: {},
       onStopTapped: {},
@@ -146,6 +150,7 @@ struct ProfileTimerButton: View {
       isActive: true,
       isBreakAvailable: false,
       isBreakActive: false,
+      isBreakOpenRawFields: false,
       elapsedTime: 3665,
       onStartTapped: {},
       onStopTapped: {},

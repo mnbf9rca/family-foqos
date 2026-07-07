@@ -6,6 +6,7 @@ struct BlockedProfileCarousel: View {
   let isBlocking: Bool
   let isBreakAvailable: Bool
   let isBreakActive: Bool
+  let isBreakOpenRawFields: Bool
   let activeSessionProfileId: UUID?
   let elapsedTime: TimeInterval
   let startingProfileId: UUID?
@@ -62,6 +63,7 @@ struct BlockedProfileCarousel: View {
     isBlocking: Bool,
     isBreakAvailable: Bool,
     isBreakActive: Bool,
+    isBreakOpenRawFields: Bool = false,
     activeSessionProfileId: UUID?,
     elapsedTime: TimeInterval,
     startingProfileId: UUID? = nil,
@@ -82,6 +84,7 @@ struct BlockedProfileCarousel: View {
     self.isBlocking = isBlocking
     self.isBreakAvailable = isBreakAvailable
     self.isBreakActive = isBreakActive
+    self.isBreakOpenRawFields = isBreakOpenRawFields
     self.activeSessionProfileId = activeSessionProfileId
     self.elapsedTime = elapsedTime
     self.startingProfileId = startingProfileId
@@ -144,6 +147,7 @@ struct BlockedProfileCarousel: View {
                   isActive: profile.id == activeSessionProfileId,
                   isBreakAvailable: isBreakAvailable,
                   isBreakActive: isBreakActive,
+                  isBreakOpenRawFields: isBreakOpenRawFields,
                   elapsedTime: elapsedTime,
                   onStartTapped: { onStartTapped(profile) },
                   onStopTapped: { onStopTapped(profile) },

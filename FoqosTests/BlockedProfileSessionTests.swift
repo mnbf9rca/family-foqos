@@ -56,6 +56,16 @@ final class BlockedProfileSessionTests: XCTestCase {
     XCTAssertFalse(session.isBreakActive)
   }
 
+  func testGivenBreakOpenRawFields_WhenEnableBreaksOff_ThenIsBreakOpenRawFieldsStaysTrue() {
+    let profile = BlockedProfiles(name: "P")
+    profile.enableBreaks = false
+    let session = BlockedProfileSession(tag: "t", blockedProfile: profile)
+    session.breakStartTime = Date()
+    session.breakEndTime = nil
+    XCTAssertTrue(session.isBreakOpenRawFields)
+    XCTAssertFalse(session.isBreakActive)
+  }
+
   // MARK: - isBreakAvailable
 
   func testGivenBreaksEnabledAndNoBreakTaken_WhenCheckingIsBreakAvailable_ThenReturnsTrue() {

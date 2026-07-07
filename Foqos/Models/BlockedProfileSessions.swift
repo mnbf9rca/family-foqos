@@ -37,6 +37,10 @@ class BlockedProfileSession: BreakDurationCalculable {
       && breakEndTime == nil
   }
 
+  var isBreakOpenRawFields: Bool {
+    return breakStartTime != nil && breakEndTime == nil
+  }
+
   func isOneMoreMinuteActive(now: Date = Date()) -> Bool {
     guard let startTime = oneMoreMinuteStartTime else { return false }
     return now.timeIntervalSince(startTime) < 60

@@ -160,7 +160,7 @@ class StrategyManager: ObservableObject {
       return
     }
 
-    if session.isBreakActive {
+    if session.isBreakOpenRawFields {
       stopBreak(context: context)
     } else {
       startBreak(context: context)
@@ -843,22 +843,37 @@ class StrategyManager: ObservableObject {
       return
     }
 
-    if !session.isBreakAvailable {
-      Log.info("Breaks is not available", category: .strategy)
+    guard session.isBreakOpenRawFields else {
+      Log.info("No open break to stop", category: .strategy)
       return
     }
 
-    // Remove the break timer activity
-    DeviceActivityCenterUtil.removeBreakTimerActivity(for: session.blockedProfile)
+    let now = Date()
+    let profile = session.blockedProfile
+    let live = BlockedProfiles.getSnapshot(for: profile)
+
+    let closed = SharedData.closeBreakGrantIfExpiredOrExplicit(
+      expectedSessionId: session.id,
+      explicit: true,
+      now: now,
+      process: .mainApp,
+      durationMinutes: profile.breakTimeInMinutes,
+      liveSnapshot: live,
+      applier: appBlocker)
+    guard closed else {
+      try? loadActiveSession(context: context)
+      errorMessage = "This session changed. Please try again."
+      return
+    }
+    mirrorGrantFieldsFromShared(session)
+
+    backstopRegistrar.removeBreakBackstop(profileId: profile.id)
 
     // Cancel pending notifications and clean up any delivered pre-activation reminders
     timersUtil.cancelAllNotifications()
 
     // Refresh widgets when break ends
     WidgetCenter.shared.reloadTimelines(ofKind: "ProfileControlWidget")
-
-    // Load the active session since the break end time was set in a different thread
-    try? loadActiveSession(context: context)
 
     // Update live activity to show break has ended
     liveActivityManager.updateBreakState(session: session)

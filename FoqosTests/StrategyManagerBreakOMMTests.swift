@@ -90,4 +90,25 @@ final class StrategyManagerBreakOMMTests: XCTestCase {
     XCTAssertTrue(applier.calls.isEmpty)
     XCTAssertNotNil(manager.errorMessage)
   }
+
+  func testGivenBreakStarted_WhenToggleBreakAgain_ThenClosesReblocksAndDeregisters() {
+    let session = try! seedActiveSession()
+    let pid = session.blockedProfile.id
+    manager.toggleBreak(context: context)
+    manager.toggleBreak(context: context)
+    let shared = SharedData.getActiveSharedSession()
+    XCTAssertNotNil(shared?.breakEndTime)
+    XCTAssertEqual(applier.calls, [.deactivate, .activate(profileId: pid)])
+    XCTAssertEqual(registrar.calls, [.replaceBreak(pid), .removeOMM(pid), .removeBreak(pid)])
+    XCTAssertFalse(session.isBreakAvailable)
+  }
+
+  func testGivenBreakOpenAndEnableBreaksOff_WhenToggleBreak_ThenStillRoutesToStop() {
+    let session = try! seedActiveSession()
+    manager.toggleBreak(context: context)
+    session.blockedProfile.enableBreaks = false
+    try? context.save()
+    manager.toggleBreak(context: context)
+    XCTAssertNotNil(SharedData.getActiveSharedSession()?.breakEndTime)
+  }
 }

@@ -9,6 +9,7 @@ struct BlockedProfileCard: View {
   var isActive: Bool = false
   var isBreakAvailable: Bool = false
   var isBreakActive: Bool = false
+  var isBreakOpenRawFields: Bool = false
 
   var elapsedTime: TimeInterval? = nil
 
@@ -159,6 +160,7 @@ struct BlockedProfileCard: View {
             isActive: isActive,
             isBreakAvailable: isBreakAvailable,
             isBreakActive: isBreakActive,
+            isBreakOpenRawFields: isBreakOpenRawFields,
             elapsedTime: elapsedTime,
             onStartTapped: onStartTapped,
             onStopTapped: onStopTapped,
