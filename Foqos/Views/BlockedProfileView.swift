@@ -828,11 +828,25 @@ struct BlockedProfileView: View {
                         // delete locally now instead of silently leaving the profile behind
                         // (review finding #5). It will propagate once the engine attaches.
                         try BlockedProfiles.deleteProfile(profileToDelete, in: modelContext)
+                        BlockedProfiles.scheduleProfileDeleteCommit {
+                          do {
+                            try modelContext.save()
+                          } catch {
+                            showError(message: error.localizedDescription)
+                          }
+                        }
                       }
                     } else {
                       // Sync disabled — the funnel would no-op (I2 is only reachable once the
                       // engine has started), so delete locally directly.
                       try BlockedProfiles.deleteProfile(profileToDelete, in: modelContext)
+                      BlockedProfiles.scheduleProfileDeleteCommit {
+                        do {
+                          try modelContext.save()
+                        } catch {
+                          showError(message: error.localizedDescription)
+                        }
+                      }
                     }
                   } catch {
                     showError(message: error.localizedDescription)

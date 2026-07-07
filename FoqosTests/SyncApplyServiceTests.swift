@@ -54,6 +54,29 @@ final class SyncApplyServiceTests: XCTestCase {
       emergencyManager: emergencyManager, deviceId: deviceId)
   }
 
+  @MainActor
+  private final class ManualProfileDeleteCommitScheduler {
+    private(set) var scheduledOperations: [@MainActor () -> Void] = []
+
+    func schedule(_ operation: @escaping @MainActor () -> Void) {
+      scheduledOperations.append(operation)
+    }
+
+    func runNext() {
+      let operation = scheduledOperations.removeFirst()
+      operation()
+    }
+  }
+
+  private func makeService(
+    scheduleProfileDeleteCommit: @escaping (@escaping @MainActor () -> Void) -> Void
+  ) -> SyncApplyService {
+    SyncApplyService(
+      modelContext: context, store: store, sessionController: sessionController,
+      emergencyManager: emergencyManager, deviceId: deviceId,
+      scheduleProfileDeleteCommit: scheduleProfileDeleteCommit)
+  }
+
   private func makeProfileRecord(
     id: UUID, name: String, version: Int, originDeviceId: String, schemaVersion: Int? = nil,
     now: Date
@@ -407,13 +430,21 @@ final class SyncApplyServiceTests: XCTestCase {
     store.setSystemFields(Data([0x01]), for: dropId.uuidString)
     store.setTombstone(recordName: dropId.uuidString, changeTag: "tag-1")
 
-    let outcome = makeService().applyFetchedDeletion(
+    let scheduler = ManualProfileDeleteCommitScheduler()
+    let service = makeService(scheduleProfileDeleteCommit: scheduler.schedule)
+
+    let outcome = service.applyFetchedDeletion(
       recordID: CKRecord.ID(recordName: dropId.uuidString, zoneID: zoneID),
       recordType: SyncedProfile.recordType)
 
     XCTAssertEqual(outcome, .deleted)
     XCTAssertNil(try BlockedProfiles.findProfile(byID: dropId, in: context))
     XCTAssertNotNil(try BlockedProfiles.findProfile(byID: keepId, in: context), "only the named id is deleted")
+    XCTAssertNotNil(store.systemFields(for: dropId.uuidString), "bookkeeping waits for durable delete")
+    XCTAssertEqual(store.deleteTombstones[dropId.uuidString] ?? nil, "tag-1")
+
+    scheduler.runNext()
+
     XCTAssertNil(store.systemFields(for: dropId.uuidString))
     XCTAssertNil(store.deleteTombstones[dropId.uuidString] ?? nil, "matching tombstone cleared (I12)")
   }
@@ -483,6 +514,38 @@ final class SyncApplyServiceTests: XCTestCase {
     XCTAssertEqual(sessionController.stopRemoteSessionProfileId, id)
     XCTAssertNil(
       try BlockedProfiles.findProfile(byID: id, in: context), "profile is still deleted")
+  }
+
+  func testGivenRemoteProfileDeletion_WhenApplied_ThenDeleteIsMarkedBeforeDeferredSaveAndBookkeepingClearedAfterCommit()
+    throws
+  {
+    let id = UUID()
+    let profile = BlockedProfiles(id: id, name: "RemoteDelete", syncVersion: 1)
+    context.insert(profile)
+    try context.save()
+    store.setSystemFields(Data("cached".utf8), for: id.uuidString)
+
+    let scheduler = ManualProfileDeleteCommitScheduler()
+    let service = makeService(scheduleProfileDeleteCommit: scheduler.schedule)
+
+    let outcome = service.applyFetchedDeletion(
+      recordID: CKRecord.ID(recordName: id.uuidString, zoneID: zoneID),
+      recordType: SyncedProfile.recordType)
+
+    XCTAssertEqual(outcome, .deleted)
+    XCTAssertEqual(scheduler.scheduledOperations.count, 1, "remote profile delete save is deferred")
+    XCTAssertNil(
+      try BlockedProfiles.findProfile(byID: id, in: context),
+      "same context excludes the pending-deleted profile before save")
+    XCTAssertNotNil(
+      try BlockedProfiles.findProfile(byID: id, in: ModelContext(container)),
+      "remote profile delete is not persisted until the deferred commit runs")
+    XCTAssertNotNil(store.systemFields(for: id.uuidString), "bookkeeping waits for durable delete")
+
+    scheduler.runNext()
+
+    XCTAssertNil(try BlockedProfiles.findProfile(byID: id, in: ModelContext(container)))
+    XCTAssertNil(store.systemFields(for: id.uuidString))
   }
 
   // Negative: a remote profile deletion for a non-active profile must not touch the session.

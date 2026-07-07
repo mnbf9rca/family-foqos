@@ -20,17 +20,21 @@ final class MutationFunnel {
   private let store: SyncEngineStore
   private let driver: SyncEngineDriver
   private let deviceId: String
+  private let scheduleProfileDeleteCommit: (@escaping @MainActor () -> Void) -> Void
 
   init(
     modelContext: ModelContext,
     store: SyncEngineStore,
     driver: SyncEngineDriver,
-    deviceId: String
+    deviceId: String,
+    scheduleProfileDeleteCommit: @escaping (@escaping @MainActor () -> Void) -> Void =
+      BlockedProfiles.scheduleProfileDeleteCommit
   ) {
     self.modelContext = modelContext
     self.store = store
     self.driver = driver
     self.deviceId = deviceId
+    self.scheduleProfileDeleteCommit = scheduleProfileDeleteCommit
   }
 
   private var zoneID: CKRecordZone.ID {
@@ -106,14 +110,27 @@ final class MutationFunnel {
         throw MutationFunnelError.entityNotFound
       }
       try BlockedProfiles.deleteProfile(profile, in: modelContext)
-      try modelContext.save()
+      let deleteZoneID = zoneID
+      scheduleProfileDeleteCommit { [modelContext, store, driver, recordName, deleteZoneID] in
+        do {
+          try modelContext.save()
+          let recordID = CKRecord.ID(recordName: recordName, zoneID: deleteZoneID)
+          driver.add(pendingRecordZoneChanges: [.deleteRecord(recordID)])
+        } catch {
+          store.clearTombstone(recordName: recordName)
+          modelContext.rollback()
+          Log.error(
+            "Deferred profile delete save failed for \(recordName): \(error.localizedDescription)",
+            category: .sync
+          )
+        }
+      }
+      return
     } catch {
       store.clearTombstone(recordName: recordName)
       modelContext.rollback()
       throw error
     }
-    let recordID = CKRecord.ID(recordName: recordName, zoneID: zoneID)
-    driver.add(pendingRecordZoneChanges: [.deleteRecord(recordID)])
   }
 
   /// Persist a delete-intent tombstone before the location delete; `SavedLocation.delete(_:in:)`

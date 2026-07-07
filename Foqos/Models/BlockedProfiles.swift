@@ -494,6 +494,14 @@ class BlockedProfiles {
     // Defer context saving as the reference to the profile might be used
   }
 
+  static func scheduleProfileDeleteCommit(_ operation: @escaping @MainActor () -> Void) {
+    DispatchQueue.main.async {
+      Task { @MainActor in
+        operation()
+      }
+    }
+  }
+
   static func getProfileDeepLink(_ profile: BlockedProfiles) -> String {
     return "https://family-foqos.app/profile/" + profile.id.uuidString
   }

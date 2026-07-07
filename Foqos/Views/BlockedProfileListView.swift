@@ -199,16 +199,23 @@ struct BlockedProfileListView: View {
         }
       }
 
-      // Reorder remaining profiles to fix gaps in ordering
-      let remainingProfiles = try BlockedProfiles.fetchProfiles(in: context)
-      try BlockedProfiles.reorderProfiles(remainingProfiles, in: context)
-      // The `order` field is synced state — bump syncVersion + enqueue a save for each
-      // surviving profile so the gap-fix reaches other devices (I2).
-      for profile in remainingProfiles {
+      BlockedProfiles.scheduleProfileDeleteCommit {
         do {
-          try profileSyncManager.enqueueProfileSave(profile.id)
-        } catch SyncEngineControllingError.notAttached {
-          Log.warning("Profile reorder saved locally; sync engine not attached yet", category: .sync)
+          // Reorder remaining profiles to fix gaps in ordering after SwiftUI settles pending deletes.
+          let remainingProfiles = try BlockedProfiles.fetchProfiles(in: context)
+          try BlockedProfiles.reorderProfiles(remainingProfiles, in: context)
+          // The `order` field is synced state — bump syncVersion + enqueue a save for each
+          // surviving profile so the gap-fix reaches other devices (I2).
+          for profile in remainingProfiles {
+            do {
+              try profileSyncManager.enqueueProfileSave(profile.id)
+            } catch SyncEngineControllingError.notAttached {
+              Log.warning("Profile reorder saved locally; sync engine not attached yet", category: .sync)
+            }
+          }
+        } catch {
+          Log.error("Failed to delete or reorder profiles: \(error)", category: .ui)
+          deleteError = .syncFailed(error.localizedDescription)
         }
       }
     } catch {

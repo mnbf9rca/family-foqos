@@ -15,6 +15,7 @@ final class SyncApplyService {
   private let sessionController: SessionController
   private let emergencyManager: EmergencyUnblockManager
   private let deviceId: String
+  private let scheduleProfileDeleteCommit: (@escaping @MainActor () -> Void) -> Void
 
   /// In-memory confirmed-delete echo guard (§5.1). Populated by the controller on §5.3 confirmation.
   var recentlyConfirmedDeletes: Set<String> = []
@@ -31,13 +32,16 @@ final class SyncApplyService {
     store: SyncEngineStore,
     sessionController: SessionController,
     emergencyManager: EmergencyUnblockManager,
-    deviceId: String
+    deviceId: String,
+    scheduleProfileDeleteCommit: @escaping (@escaping @MainActor () -> Void) -> Void =
+      BlockedProfiles.scheduleProfileDeleteCommit
   ) {
     self.modelContext = modelContext
     self.store = store
     self.sessionController = sessionController
     self.emergencyManager = emergencyManager
     self.deviceId = deviceId
+    self.scheduleProfileDeleteCommit = scheduleProfileDeleteCommit
   }
 
   func drainReenqueues() -> [CKRecord.ID] {
@@ -114,8 +118,27 @@ final class SyncApplyService {
         sessionController.stopRemoteSession(context: modelContext, profileId: id)
       }
       try BlockedProfiles.deleteProfile(profile, in: modelContext)  // defers save
-      try commit()
-      clearDeletionBookkeeping(recordName: recordName)
+      let saveOverride = saveOverride
+      scheduleProfileDeleteCommit { [modelContext, store, recordName, saveOverride] in
+        do {
+          if let saveOverride {
+            try saveOverride()
+          } else {
+            try modelContext.save()
+          }
+          store.setSystemFields(nil, for: recordName)
+          store.clearTombstone(recordName: recordName)
+          store.removeFailedApply(recordName: recordName)
+        } catch {
+          modelContext.rollback()
+          store.addFailedApply(
+            FailedApply(
+              recordName: recordName, recordType: SyncedProfile.recordType, op: .delete))
+          Log.error(
+            "Failed to apply profile deletion \(recordName): \(error.localizedDescription)",
+            category: .sync)
+        }
+      }
       return .deleted
     } catch {
       modelContext.rollback()
