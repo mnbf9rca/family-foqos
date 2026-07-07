@@ -110,4 +110,130 @@ extension SharedData {
       return true
     }
   }
+
+  @discardableResult
+  public static func closeBreakGrantIfExpiredOrExplicit(
+    expectedSessionId: String,
+    explicit: Bool,
+    now: Date,
+    process: RestrictionProcess,
+    durationMinutes: Int?,
+    liveSnapshot: ProfileSnapshot?,
+    applier: RestrictionApplying = AppBlockerUtil()
+  ) -> Bool {
+    closeBreakGrantIfExpiredOrExplicit(
+      expectedSessionId: expectedSessionId,
+      explicit: explicit,
+      now: now,
+      process: process,
+      durationMinutes: durationMinutes,
+      liveSnapshot: liveSnapshot,
+      applier: applier,
+      commit: { rawCommitActiveSession($0) })
+  }
+
+  /// §6.5 — close a break grant if expired, or explicitly early-ended.
+  @discardableResult
+  internal static func closeBreakGrantIfExpiredOrExplicit(
+    expectedSessionId: String,
+    explicit: Bool,
+    now: Date,
+    process: RestrictionProcess,
+    durationMinutes: Int?,
+    liveSnapshot: ProfileSnapshot?,
+    applier: RestrictionApplying = AppBlockerUtil(),
+    commit: (SessionSnapshot?) -> Bool
+  ) -> Bool {
+    withLockStatus(blocking: process == .mainApp) { _ in
+      guard var session = rawActiveSession, session.endTime == nil,
+        session.id == expectedSessionId
+      else { return false }
+      guard session.breakStartTime != nil, session.breakEndTime == nil else { return false }
+
+      var didStamp = false
+      if !explicit {
+        var deadline = session.breakEndDeadline
+        if deadline == nil {
+          guard let minutes = durationMinutes, let start = session.breakStartTime else {
+            return false
+          }
+          deadline = start.addingTimeInterval(TimeInterval(minutes * 60))
+          session.breakEndDeadline = deadline
+          didStamp = true
+        }
+        guard let deadline, now >= deadline else {
+          if didStamp { _ = commit(session) }
+          return false
+        }
+      }
+
+      session.breakEndTime = now
+      guard commit(session) else { return false }
+      applyDecision(
+        deriveRestriction(session: session, liveSnapshot: liveSnapshot, process: process),
+        applier: applier)
+      return true
+    }
+  }
+
+  @discardableResult
+  public static func closeOneMoreMinuteGrantIfExpired(
+    expectedSessionId: String,
+    now: Date,
+    process: RestrictionProcess,
+    liveSnapshot: ProfileSnapshot?,
+    force: Bool = false,
+    applier: RestrictionApplying = AppBlockerUtil()
+  ) -> Bool {
+    closeOneMoreMinuteGrantIfExpired(
+      expectedSessionId: expectedSessionId,
+      now: now,
+      process: process,
+      liveSnapshot: liveSnapshot,
+      force: force,
+      applier: applier,
+      commit: { rawCommitActiveSession($0) })
+  }
+
+  /// §6.5 — close a one-more-minute grant if expired. Break-active branch clears without re-blocking.
+  @discardableResult
+  internal static func closeOneMoreMinuteGrantIfExpired(
+    expectedSessionId: String,
+    now: Date,
+    process: RestrictionProcess,
+    liveSnapshot: ProfileSnapshot?,
+    force: Bool = false,
+    applier: RestrictionApplying = AppBlockerUtil(),
+    commit: (SessionSnapshot?) -> Bool
+  ) -> Bool {
+    withLockStatus(blocking: process == .mainApp) { _ in
+      guard var session = rawActiveSession, session.endTime == nil,
+        session.id == expectedSessionId
+      else { return false }
+      guard session.oneMoreMinuteStartTime != nil else { return false }
+
+      let breakOpen = session.breakStartTime != nil && session.breakEndTime == nil
+      var didStamp = false
+      if !breakOpen && !force {
+        var deadline = session.oneMoreMinuteDeadline
+        if deadline == nil, let start = session.oneMoreMinuteStartTime {
+          deadline = start.addingTimeInterval(60)
+          session.oneMoreMinuteDeadline = deadline
+          didStamp = true
+        }
+        guard let deadline, now >= deadline else {
+          if didStamp { _ = commit(session) }
+          return false
+        }
+      }
+
+      session.oneMoreMinuteStartTime = nil
+      session.oneMoreMinuteDeadline = nil
+      guard commit(session) else { return false }
+      applyDecision(
+        deriveRestriction(session: session, liveSnapshot: liveSnapshot, process: process),
+        applier: applier)
+      return true
+    }
+  }
 }
