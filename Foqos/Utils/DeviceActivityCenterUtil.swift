@@ -467,4 +467,32 @@ class DeviceActivityCenterUtil {
     }
     return (intervalStart: intervalStart, intervalEnd: intervalEnd)
   }
+
+  /// D-C2-2 wrap-anchor backstop interval for an absolute deadline.
+  /// Produces a repeating window whose end is ceil-to-minute of `deadline` and whose start is
+  /// one minute later modulo 24h. Ceil guarantees callbacks can be late, never early.
+  static func wrapAnchorInterval(
+    endingAt deadline: Date,
+    now: Date,
+    calendar: Calendar = .current
+  ) -> (intervalStart: DateComponents, intervalEnd: DateComponents) {
+    if deadline <= now {
+      Log.warning(
+        "wrapAnchorInterval: deadline is not in the future; closer gate will expire it",
+        category: .timer)
+    }
+    let hour = calendar.component(.hour, from: deadline)
+    let minute = calendar.component(.minute, from: deadline)
+    let second = calendar.component(.second, from: deadline)
+    let nanosecond = calendar.component(.nanosecond, from: deadline)
+
+    var endMinuteOfDay = hour * 60 + minute
+    if second > 0 || nanosecond > 0 {
+      endMinuteOfDay = (endMinuteOfDay + 1) % 1440
+    }
+    let anchor = (endMinuteOfDay + 1) % 1440
+    let intervalEnd = DateComponents(hour: endMinuteOfDay / 60, minute: endMinuteOfDay % 60)
+    let intervalStart = DateComponents(hour: anchor / 60, minute: anchor % 60)
+    return (intervalStart: intervalStart, intervalEnd: intervalEnd)
+  }
 }
