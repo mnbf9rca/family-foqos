@@ -105,37 +105,15 @@ final class MutationFunnel {
       guard let profile = try BlockedProfiles.findProfile(byID: profileId, in: modelContext) else {
         throw MutationFunnelError.entityNotFound
       }
-      Log.debug("[#285 PROBE] Funnel profile delete begin recordName=\(recordName)", category: .sync)
       try BlockedProfiles.deleteProfile(profile, in: modelContext)
-      Log.debug(
-        "[#285 PROBE] Funnel profile delete marked; scheduling deferred save recordName=\(recordName)",
-        category: .sync
-      )
-      let deleteZoneID = zoneID
-      Task { @MainActor [modelContext, driver, recordName, deleteZoneID] in
-        await Task.yield()
-        do {
-          Log.debug("[#285 PROBE] Funnel deferred save begin recordName=\(recordName)", category: .sync)
-          try modelContext.save()
-          let recordID = CKRecord.ID(recordName: recordName, zoneID: deleteZoneID)
-          driver.add(pendingRecordZoneChanges: [.deleteRecord(recordID)])
-          Log.debug(
-            "[#285 PROBE] Funnel deferred save + enqueue complete recordName=\(recordName)",
-            category: .sync
-          )
-        } catch {
-          Log.error(
-            "[#285 PROBE] Funnel deferred save failed recordName=\(recordName): \(error.localizedDescription)",
-            category: .sync
-          )
-        }
-      }
-      return
+      try modelContext.save()
     } catch {
       store.clearTombstone(recordName: recordName)
       modelContext.rollback()
       throw error
     }
+    let recordID = CKRecord.ID(recordName: recordName, zoneID: zoneID)
+    driver.add(pendingRecordZoneChanges: [.deleteRecord(recordID)])
   }
 
   /// Persist a delete-intent tombstone before the location delete; `SavedLocation.delete(_:in:)`

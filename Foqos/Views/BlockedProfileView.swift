@@ -810,7 +810,6 @@ struct BlockedProfileView: View {
                 dismiss()
                 if let profileToDelete = profile {
                   let profileId = profileToDelete.id
-                  Log.debug("[#285 PROBE] Editor delete selected profileId=\(profileId)", category: .ui)
                   do {
                     if profileSyncManager.isEnabled {
                       // Route the delete entirely through the funnel (I2): it re-reads the

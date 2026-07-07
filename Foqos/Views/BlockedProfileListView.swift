@@ -174,7 +174,6 @@ struct BlockedProfileListView: View {
       for index in offsets {
         let profile = profilesToDelete[index]
         let profileId = profile.id
-        Log.debug("[#285 PROBE] List delete selected profileId=\(profileId)", category: .ui)
         if profileSyncManager.isEnabled {
           // Route the delete entirely through the funnel (I2): it re-reads the profile
           // itself, writes the delete-intent tombstone, performs the persisted delete, and
@@ -200,28 +199,16 @@ struct BlockedProfileListView: View {
         }
       }
 
-      Task { @MainActor in
-        await Task.yield()
+      // Reorder remaining profiles to fix gaps in ordering
+      let remainingProfiles = try BlockedProfiles.fetchProfiles(in: context)
+      try BlockedProfiles.reorderProfiles(remainingProfiles, in: context)
+      // The `order` field is synced state — bump syncVersion + enqueue a save for each
+      // surviving profile so the gap-fix reaches other devices (I2).
+      for profile in remainingProfiles {
         do {
-          // [#285 PROBE] Temporarily defer the reorder save so SwiftUI can settle pending deletes.
-          let remainingProfiles = try BlockedProfiles.fetchProfiles(in: context)
-          Log.debug("[#285 PROBE] List delete reorder save about to run", category: .ui)
-          try BlockedProfiles.reorderProfiles(remainingProfiles, in: context)
-          // The `order` field is synced state — bump syncVersion + enqueue a save for each
-          // surviving profile so the gap-fix reaches other devices (I2).
-          for profile in remainingProfiles {
-            do {
-              try profileSyncManager.enqueueProfileSave(profile.id)
-            } catch SyncEngineControllingError.notAttached {
-              Log.warning(
-                "Profile reorder saved locally; sync engine not attached yet",
-                category: .sync
-              )
-            }
-          }
-        } catch {
-          Log.error("Failed to delete or reorder profiles: \(error)", category: .ui)
-          deleteError = .syncFailed(error.localizedDescription)
+          try profileSyncManager.enqueueProfileSave(profile.id)
+        } catch SyncEngineControllingError.notAttached {
+          Log.warning("Profile reorder saved locally; sync engine not attached yet", category: .sync)
         }
       }
     } catch {
