@@ -236,4 +236,36 @@ extension SharedData {
       return true
     }
   }
+
+  /// §6.4 — normalize open grant fields at session end for bookkeeping only.
+  public static func closeGrantsForSessionEnd(expectedSessionId: String, now: Date) {
+    withLockStatus(blocking: true) { _ in
+      guard var session = rawActiveSession, session.id == expectedSessionId else { return }
+      if session.breakStartTime != nil && session.breakEndTime == nil {
+        session.breakEndTime = now
+      }
+      session.oneMoreMinuteStartTime = nil
+      session.oneMoreMinuteDeadline = nil
+      _ = rawCommitActiveSession(session)
+    }
+  }
+
+  /// §6.4 — pure normalization for an ended incoming snapshot.
+  public static func normalizedForEnd(_ s: SessionSnapshot) -> SessionSnapshot {
+    guard let end = s.endTime else { return s }
+    var out = s
+    if out.breakStartTime != nil && out.breakEndTime == nil {
+      out.breakEndTime = min(end, out.breakEndDeadline ?? end)
+    }
+    out.oneMoreMinuteStartTime = nil
+    out.oneMoreMinuteDeadline = nil
+    return out
+  }
+
+  /// True iff an ended snapshot still carried an open break or OMM grant.
+  public static func endedSessionHadOpenGrant(_ s: SessionSnapshot) -> Bool {
+    guard s.endTime != nil else { return false }
+    let breakOpen = s.breakStartTime != nil && s.breakEndTime == nil
+    return breakOpen || s.oneMoreMinuteStartTime != nil
+  }
 }

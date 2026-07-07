@@ -81,6 +81,11 @@ class BlockedProfileSession: BreakDurationCalculable {
   }
 
   func endSession(now: Date = Date()) {
+    SharedData.closeGrantsForSessionEnd(expectedSessionId: id, now: now)
+    if breakStartTime != nil && breakEndTime == nil {
+      breakEndTime = now
+    }
+
     // Set the end time in shared data in case its being saved
     SharedData.setEndTime(date: now, expectedSessionId: id)
     self.endTime = now
@@ -151,8 +156,10 @@ class BlockedProfileSession: BreakDurationCalculable {
 
   static func upsertSessionFromSnapshot(
     in context: ModelContext,
-    withSnapshot snapshot: SharedData.SessionSnapshot
+    withSnapshot rawSnapshot: SharedData.SessionSnapshot
   ) {
+    let snapshot =
+      rawSnapshot.endTime != nil ? SharedData.normalizedForEnd(rawSnapshot) : rawSnapshot
     let profileID = snapshot.blockedProfileId
 
     guard let existingProfile = try? BlockedProfiles.findProfile(byID: profileID, in: context)

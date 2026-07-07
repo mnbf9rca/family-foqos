@@ -828,8 +828,13 @@ class StrategyManager: ObservableObject {
   }
 
   private func syncScheduleSessions(context: ModelContext) {
+    var hadDanglingGrant = false
+
     // Process any active scheduled sessions
     if let activeScheduledSession = SharedData.getActiveSharedSession() {
+      if SharedData.endedSessionHadOpenGrant(activeScheduledSession) {
+        hadDanglingGrant = true
+      }
       BlockedProfileSession.upsertSessionFromSnapshot(
         in: context,
         withSnapshot: activeScheduledSession
@@ -880,6 +885,9 @@ class StrategyManager: ObservableObject {
     // Process any completed scheduled sessions
     let completedScheduleSessions = SharedData.getAndFlushCompletedSessionsForScheduler()
     for completedScheduleSession in completedScheduleSessions {
+      if SharedData.endedSessionHadOpenGrant(completedScheduleSession) {
+        hadDanglingGrant = true
+      }
       BlockedProfileSession.upsertSessionFromSnapshot(
         in: context,
         withSnapshot: completedScheduleSession
@@ -907,6 +915,9 @@ class StrategyManager: ObservableObject {
       }
     }
 
+    if hadDanglingGrant {
+      timersUtil.cancelAllNotifications()
+    }
   }
 
   /// Start blocking for the given profile.
