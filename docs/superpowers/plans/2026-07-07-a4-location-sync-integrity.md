@@ -328,26 +328,39 @@ Replace the body (lines 157-173):
     let recordName = locationId.uuidString
     let changeTag = Self.changeTag(fromSystemFields: store.systemFields(for: recordName))
     store.setTombstone(recordName: recordName, changeTag: changeTag)
+    let repaired: [UUID]
     do {
       guard let location = try SavedLocation.find(byID: locationId, in: modelContext) else {
         throw MutationFunnelError.entityNotFound
       }
       // #216: strip the location from referencing profiles (pending — the helper does NOT save),
       // then let SavedLocation.delete's own save commit the strip AND the delete together, so a
-      // delete failure rolls back the pending strip too (genuinely atomic on this context). Then
-      // re-push each repaired profile so peers converge.
-      let repaired = try BlockedProfiles.removeLocationReference(locationId, in: modelContext)
+      // failure BEFORE this point rolls the pending strip back (genuinely atomic on this context).
+      repaired = try BlockedProfiles.removeLocationReference(locationId, in: modelContext)
       try SavedLocation.delete(location, in: modelContext)  // one save commits strip + delete
-      for profileId in repaired {
-        try enqueueSave(profileId: profileId)  // bump syncVersion + persist + enqueue .saveRecord
-      }
     } catch {
       store.clearTombstone(recordName: recordName)
       modelContext.rollback()
       throw error
     }
+    // Point of no return: the location delete is committed and cannot be rolled back. Enqueue its
+    // .deleteRecord (keeping the tombstone) BEFORE the fallible profile re-pushes, so a repaired-
+    // profile save failure can never orphan the location delete (clear its tombstone / skip its
+    // .deleteRecord, leaving it deleted-locally-but-unreplicated and open to resurrection).
     let recordID = CKRecord.ID(recordName: recordName, zoneID: zoneID)
     driver.add(pendingRecordZoneChanges: [.deleteRecord(recordID)])
+    // #216: re-push each repaired profile so peers converge — BEST-EFFORT. A failure here leaves
+    // that profile's (already-persisted) strip un-replicated until its next edit; the Task 1 #215
+    // evaluator net keeps sessions stoppable meanwhile. It must NOT abort the location delete.
+    for profileId in repaired {
+      do {
+        try enqueueSave(profileId: profileId)  // bump syncVersion + persist + enqueue .saveRecord
+      } catch {
+        Log.warning(
+          "Location-delete profile repair re-push failed for \(profileId): "
+            + error.localizedDescription, category: .sync)
+      }
+    }
   }
 ```
 
@@ -424,6 +437,32 @@ Add this method **inside `FoqosTests/SyncApplyServiceTests.swift`** — it alrea
       apply.drainReenqueues(), [CKRecord.ID(recordName: pid.uuidString, zoneID: zoneID)],
       "repaired profile queued for re-push via the I2 exception")
   }
+
+  // Copilot review comment #2: the deletion event is authoritative — a dangling reference must be
+  // repaired even when the SavedLocation row is already gone (local-delete-first / retry window).
+  func testGivenDanglingProfileButLocationAlreadyAbsent_WhenDeletionApplied_ThenStillRepairs() throws {
+    let apply = makeService()
+    let locId = UUID()  // no SavedLocation row inserted — it is already absent
+    let pid = UUID()
+    let profile = BlockedProfiles(id: pid, name: "Homework", syncVersion: 4)
+    profile.geofenceRule = ProfileGeofenceRule(
+      ruleType: .outside,
+      locationReferences: [ProfileLocationReference(savedLocationId: locId)],
+      allowEmergencyOverride: true)
+    context.insert(profile)
+    try context.save()
+
+    let outcome = apply.applyFetchedDeletion(
+      recordID: CKRecord.ID(recordName: locId.uuidString, zoneID: zoneID),
+      recordType: SyncedLocation.recordType)
+
+    XCTAssertEqual(outcome, .deleted, "repaired a dangling ref ⇒ not a no-op")
+    let reread = try XCTUnwrap(BlockedProfiles.findProfile(byID: pid, in: context))
+    XCTAssertNil(reread.geofenceRule, "dangling ref repaired even though the row was already gone")
+    XCTAssertEqual(reread.syncVersion, 5)
+    XCTAssertEqual(
+      apply.drainReenqueues(), [CKRecord.ID(recordName: pid.uuidString, zoneID: zoneID)])
+  }
 ```
 > `zoneID` is the test class's existing stored property (`SyncApplyServiceTests.swift:18`); do not redeclare it.
 
@@ -450,14 +489,17 @@ Replace the success arm (lines 178-184):
 ```
 with:
 ```swift
-      guard let location = try SavedLocation.find(byID: id, in: modelContext) else {
-        clearDeletionBookkeeping(recordName: recordName)
-        return .notPresent
+      // #216: the deletion event is AUTHORITATIVE, so repair referencing profiles whether or not
+      // the location row is still present. A dangling reference can outlive the row (local-delete-
+      // first, or a prior apply whose location delete committed but whose repair commit then
+      // failed and was retried) — repairing only in the present case would re-skip that window.
+      let location = try SavedLocation.find(byID: id, in: modelContext)
+      if let location {
+        try SavedLocation.delete(location, in: modelContext)  // saves internally
       }
-      try SavedLocation.delete(location, in: modelContext)  // saves internally
-      // #216: strip the deleted location from referencing profiles and re-push them so peers
-      // converge. Re-push rides the pendingReenqueues I2 exception (inbound apply never pushes
-      // directly). Rides the explicit deletion event; no orphan inference.
+      // Strip the deleted location from referencing profiles and re-push them so peers converge.
+      // Re-push rides the pendingReenqueues I2 exception (inbound apply never pushes directly);
+      // rides the explicit deletion event; no orphan inference.
       let repaired = try BlockedProfiles.removeLocationReference(id, in: modelContext)
       for profileId in repaired {
         guard let profile = try BlockedProfiles.findProfile(byID: profileId, in: modelContext)
@@ -465,11 +507,13 @@ with:
         profile.syncVersion += 1
         pendingReenqueues.append(CKRecord.ID(recordName: profileId.uuidString, zoneID: zoneID))
       }
-      if !repaired.isEmpty { try commit() }
+      if !repaired.isEmpty { try commit() }  // SavedLocation.delete already saved any row removal
       clearDeletionBookkeeping(recordName: recordName)
-      return .deleted
+      // .deleted if anything was actually removed/repaired; .notPresent only when the row was
+      // already gone AND no profile still referenced it (a genuine no-op).
+      return (location == nil && repaired.isEmpty) ? .notPresent : .deleted
 ```
-> The helper leaves the strip pending; the single `commit()` here persists the strips **and** the `syncVersion += 1` bumps together (the bump makes the re-push a genuine advance the peer accepts, `synced.version > local`). **Residual window (flag in PR):** `SavedLocation.delete` commits the location deletion *before* the repair commit. If `commit()` then throws, the location is gone but the profiles are un-repaired, and the `retryFailedApplies` path re-enters `deleteLocalLocation`, finds the location already absent, returns `.notPresent`, and does NOT re-repair — so that rare window relies on the Task 1 #215 evaluator net (dangling-only rule ⇒ satisfied) to keep sessions stoppable. Acceptable given SwiftData saves rarely fail mid-context and the net fully covers the symptom; note it for maintainer sign-off.
+> The helper leaves the strip pending; the single `commit()` here persists the strips **and** the `syncVersion += 1` bumps together (the bump makes the re-push a genuine advance the peer accepts, `synced.version > local`). **Delete-then-repair-fail window (now closed):** `SavedLocation.delete` commits the location deletion *before* the repair commit, so if `commit()` throws the location is gone but the profiles are momentarily un-repaired (the outer `catch` records a `FailedApply(.delete)`). Because this method now repairs referencing profiles **even when the location row is already absent** (Copilot review comment #2), the `retryFailedApplies` re-entry finds the row gone and *still* strips + re-pushes the dangling references — so the window self-heals on the next retry cycle rather than relying on the Task 1 #215 net. The #215 evaluator net remains as belt-and-suspenders for the brief pre-retry interval.
 
 - [ ] **Step 5: Drain reenqueues after the deletions loop AND after the retry loop** (`SyncEngineController.swift`)
 
