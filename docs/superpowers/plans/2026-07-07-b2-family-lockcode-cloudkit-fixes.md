@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Fix (or lock in) five epic-#263 defects in the child/parent lock-code and CloudKit-sharing surfaces — #241 (fail-safe participant deletion), #232 (transition-keyed permission-lost notification), #230 (process parent commands on child foreground), #231 (await the real authorization result), and #208 (already fixed by #271 — add a regression guard).
+**Goal:** Fix (or lock in) five epic-#263 defects in the child/parent lock-code and CloudKit-sharing surfaces — #241 (fail-safe participant deletion), #232 (transition-keyed permission-lost notification), #230 (rescue a locked-out child by processing the parent's reset at the PIN dialog), #231 (await the real authorization result), and #208 (already fixed by #271 — add a regression guard).
 
 **Architecture:** iOS/SwiftUI app, SwiftData models with a **custom** CloudKit sync layer (SwiftData auto-CloudKit is disabled, `cloudKitDatabase: .none`). Lock codes and parent→child commands sync via `FamilyCommand`/`FamilyLockCode` records in the **shared** CloudKit database; profiles sync via `CKSyncEngine` in the **private** DB. Managers (`LockCodeManager`, `HeartbeatManager`, `CloudKitManager`, `RequestAuthorizer`, `AuthorizationVerifier`) are hard singletons/`ObservableObject`s with **no dependency-injection seam for network I/O** — so, per the pattern PR #271 established, every fix extracts its decision logic into a `nonisolated static`/pure helper and unit-tests that, rather than mocking CloudKit.
 
@@ -32,7 +32,7 @@ Copied verbatim from AGENTS.md — every task's requirements implicitly include 
 | Issue | Handover claim status on current `main` | Plan decision |
 |---|---|---|
 | **#208** — two divergent lock-code caches | **STALE — already fixed by #271.** `fetchSharedLockCodes()` was renamed to the single-writer `refreshSharedLockCodesForVerification()` (`LockCodeManager.swift:179`); `ChildDashboardView` refresh/onAppear (`ChildDashboardView.swift:168`) and share-acceptance (`FoqosApp.swift:541`) all route through it, so a runtime refresh now updates the **verification** cache. A changed PIN is accepted after a pull-to-refresh. | **Task 5 — regression test only.** No production change. Lock in the fix so it can't regress. |
-| **#230** — parent commands only at launch | **Partially stale — defect persists.** Commands now process on dashboard `onAppear`, pull-to-refresh, mode-change, and share-accept (via `refreshSharedLockCodesForVerification` → `processPendingCommands`). But **not** on plain foreground of an already-open dashboard (`FoqosApp.swift:135` scenePhase `.active` handler skips lock-code refresh) and **not** on push (no shared-DB `CKSubscription`). | **Task 3 — fix (pure-code foreground path).** Push subscription is a **maintainer decision** (see below). |
+| **#230** — parent commands only at launch | **Partially stale — defect persists.** Commands now process on dashboard `onAppear`, pull-to-refresh, mode-change, and share-accept (via `refreshSharedLockCodesForVerification` → `processPendingCommands`). But — critically — **not while the child sits on the locked-out PIN dialog and the parent resets from a *separate* device** (the child app never backgrounds, so neither foreground nor dashboard-appear fires), and **not** on push (no shared-DB `CKSubscription`). | **Task 3 — fix at the enforcement point** (poll the parent reset in `LockCodeEntryView` while locked out) + foreground/emergency complements. Push subscription is a **maintainer decision** (see below). |
 | **#232** — duplicate permission-lost notification | **Confirmed, unchanged.** `scheduleNotification(for:)` fires the immediate alert unconditionally whenever `device.isAuthRevoked` (`HeartbeatManager.swift:140–145`). `MonitoredDevice` is a **local-only** `Codable` struct (UserDefaults), not a CloudKit record — no schema impact. | **Task 2 — fix (transition-keyed dedupe).** |
 | **#241** — participant deleted on unresolved `userRecordID` | **Confirmed verbatim.** `currentParticipantRecordNames` compactMaps away nil-`userRecordID` participants (`+Sharing.swift:199–201`); the removal loop (`:226–240`) then deletes their still-valid `FamilyMember`. No schema impact. | **Task 1 — fix (fail-safe keep-don't-delete).** |
 | **#231** — mode committed after fixed 1s timer | **Confirmed; line numbers still accurate.** `continueWithSelectedMode()` fires an unawaited request then reads `isAuthorized` after `DispatchQueue.main.asyncAfter(1.0)` (`ModeSelectionView.swift:121,124`). `isAuthorized` is seeded from a possibly-stale pre-existing approval. No schema impact. | **Task 4 — fix (await the real result).** |
@@ -45,7 +45,7 @@ Copied verbatim from AGENTS.md — every task's requirements implicitly include 
 
 ## Maintainer Decisions Surfaced
 
-- **MD-B2-1 (#230): true push delivery via a shared-DB `CKSubscription`.** The app has **zero** shared-DB subscriptions today (the only push is the `CKSyncEngine` private-DB database subscription for profiles). Delivering `FamilyCommand`s the instant the parent taps a button — rather than on the child's next foreground/refresh — would require a **new `CKQuerySubscription`/`CKDatabaseSubscription` on the shared database** plus notification plumbing. That is CloudKit server-side config and new push infrastructure. **This plan does NOT implement it.** Task 3 ships the pure-code foreground path (no schema, no server config), which closes the reported "silently fails" gap for the realistic case (child re-foregrounds the app). If the maintainer wants zero-latency push, MD-B2-1 is a follow-up. **Recorded, not decided.**
+- **MD-B2-1 (#230): true push delivery via a shared-DB `CKSubscription`.** The app has **zero** shared-DB subscriptions today (the only push is the `CKSyncEngine` private-DB database subscription for profiles). Delivering `FamilyCommand`s the instant the parent taps a button — rather than on the child's next foreground/refresh — would require a **new `CKQuerySubscription`/`CKDatabaseSubscription` on the shared database** plus notification plumbing. That is CloudKit server-side config and new push infrastructure. **This plan does NOT implement it.** Task 3 closes the reported "silently fails" rescue gap with pure-code processing at the enforcement point (poll in `LockCodeEntryView` while locked out) plus foreground/emergency complements — no schema, no server config. A push subscription would only shave the ~5s poll latency and reach a fully-backgrounded child; since APNs is best-effort and the dialog still needs the poll/countdown to reflect the applied reset, the poll is the robust floor and push is a pure enhancement. If the maintainer wants zero-touch/backgrounded delivery, MD-B2-1 is a follow-up. **Recorded, not decided.**
 
 There are **no other** maintainer decisions: #232's dedupe field lives on a local-only struct (no schema), and #241/#231/#208 add no persistence.
 
@@ -62,7 +62,9 @@ There are **no other** maintainer decisions: #232's dedupe field lives on a loca
 
 **Task 3 (#230):**
 - Modify: `Foqos/Utils/LockCodeManager.swift` — split `processCommand` into a testable `applyCommand`; widen `processPendingCommands` visibility to `internal`.
-- Modify: `Foqos/FoqosApp.swift` — process pending commands on child foreground (scenePhase `.active`).
+- Modify: `Foqos/Views/Components/LockCodeEntryView.swift` — **primary**: poll pending commands while locked out so a parent reset clears the lockout live.
+- Modify: `Foqos/Views/EmergencyView.swift` — symmetric: apply `resetEmergencyCount` on the child's emergency screen appear.
+- Modify: `Foqos/FoqosApp.swift` — complement: process pending commands on child foreground (scenePhase `.active`).
 - Test: `FoqosTests/FamilyCommandApplyTests.swift` (new) — throttle-reset via the existing `overrideDefaults` seam.
 
 **Task 4 (#231):**
@@ -463,18 +465,31 @@ git commit -m "Fix #232: dedupe permission-lost notification on approved->denied
 
 ---
 
-### Task 3: #230 — Process pending parent commands on child foreground
+### Task 3: #230 — Rescue a locked-out child: process the parent's reset at the PIN dialog (+ foreground & emergency complements)
 
 **Files:**
 - Modify: `Foqos/Utils/LockCodeManager.swift:302-343`
-- Modify: `Foqos/FoqosApp.swift:137-145`
+- Modify: `Foqos/Views/Components/LockCodeEntryView.swift:14-193` — **primary fix**: poll pending commands while locked out.
+- Modify: `Foqos/Views/EmergencyView.swift:34-36` — symmetric: apply a `resetEmergencyCount` when the child opens the emergency screen.
+- Modify: `Foqos/FoqosApp.swift:137-145` — complement: process on child foreground (`scenePhase .active`).
 - Test: `FoqosTests/FamilyCommandApplyTests.swift` (create)
 
 **Interfaces:**
-- Produces on `LockCodeManager`: `func applyCommand(_ command: FamilyCommand)` (internal, `@MainActor`) — applies the local side effect (`resetThrottle()` / `EmergencyUnblockManager.shared.resetEmergencyUnblocks()`) with **no** CloudKit delete; `func processPendingCommands() async` widened from `private` to internal.
-- Consumes: existing `resetThrottle()` (`:` throttle seam), `overrideDefaults(_:)`, `recordFailedAttempt(now:)`, `isLockedOut(now:)`, `failedAttempts`; `FamilyCommand(commandType:targetChildId:createdBy:)`.
+- Produces on `LockCodeManager`: `func applyCommand(_ command: FamilyCommand)` (internal, `@MainActor`) — applies the local side effect (`resetThrottle()` / `EmergencyUnblockManager.shared.resetEmergencyUnblocks()`) with **no** CloudKit delete; `func processPendingCommands() async` widened from `private` to internal (self-guards `currentMode == .child`).
+- Produces on `LockCodeEntryView`: `private func processPendingResetCommands()` (child-guarded) — kicks off a `processPendingCommands()` fetch+apply and re-reads the lockout.
+- Consumes: existing `resetThrottle()`, `overrideDefaults(_:)`, `recordFailedAttempt(now:)`, `isLockedOut(now:)`, `failedAttempts`, `lockoutRemaining()`; `FamilyCommand(commandType:targetChildId:createdBy:)`; `AppModeManager.shared.currentMode`.
 
-**Context — corrected current truth:** commands ARE processed on dashboard `onAppear`, pull-to-refresh, mode-change, and share-accept (all via `refreshSharedLockCodesForVerification()` → `processPendingCommands()`, `LockCodeManager.swift:211`). The residual gap: the scenePhase `.active` handler (`FoqosApp.swift:137`) does **not** refresh lock codes, so a parent's "Reset PIN Attempts" tap has no effect while the child app is foregrounded **without re-opening the dashboard**. This task adds a child-guarded command-processing call to that handler. (True push — MD-B2-1 — is out of scope; without a shared-DB subscription the `didReceiveRemoteNotification` handler at `FoqosApp.swift:362` never receives a `FamilyCommand` push, so wiring it there would be dead code.) Applying a parent-authored command on the child is **replication of an authorized operation** (Binding Principle 1) — not re-gated, no trust metadata.
+**Context — why the enforcement point, not just foreground.** The rescue scenario the issue is actually about: a child is locked out for up to 15 min and **staring at the PIN dialog** while a parent taps "Reset PIN Attempts" **on their own parent-mode device** (the parent dashboard lists remote children as `FamilyMember`s and targets a specific `childId` — inherently cross-device). The child's app **never backgrounds**, so `scenePhase .active` never fires and `ChildDashboardView.onAppear` never fires (the PIN sheet is on top). Processing commands only on foreground/dashboard-appear therefore does nothing for the primary case — the child watches the countdown tick down with no idea they were already reset.
+
+The **enforcement point** is `LockCodeEntryView` (the child PIN gate, used by `BlockedProfileView`, `SavedLocationsView`, `EmergencyView`). It already holds `@ObservedObject lockCodeManager = LockCodeManager.shared` and runs a **1-second `Timer.publish` while `lockoutSecondsRemaining > 0`** (`LockCodeEntryView.swift:129-132`) that re-reads `lockCodeManager.lockoutRemaining()` each tick. The source of truth is already re-read every second; the only missing piece is that nothing on that screen ever fetches+applies the parent's pending `resetLockCodeThrottle`. Add a throttled poll there and the existing countdown reflects the cleared lockout live — the keypad re-enables within ~5s, hands-off, even though the parent tapped Reset on a different device.
+
+**Layers (this task ships all three code layers; push is deferred):**
+1. **Primary** — poll pending commands in `LockCodeEntryView` while locked out (Step 5). This is the fix for the rescue scenario.
+2. **Symmetric** — `EmergencyView.onAppear` applies a `resetEmergencyCount` when the child opens the emergency screen (Step 6).
+3. **Complement** — child `scenePhase .active` foreground processing (Step 7): covers "child closed the app, parent reset, child reopens."
+4. **Deferred (MD-B2-1)** — shared-DB `CKSubscription` for zero-touch/backgrounded push. Optional latency shave only; APNs is best-effort and the dialog still needs the poll/countdown to reflect the applied reset, so the poll is the robust floor.
+
+Applying a parent-authored command on the child is **replication of an authorized operation** (Binding Principle 1) — not re-gated, no trust metadata.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -578,9 +593,70 @@ Widen `processPendingCommands` visibility (`:306`) from `private func` to `func`
 Run: `xcodebuild test ... -only-testing:FoqosTests/FamilyCommandApplyTests | xcpretty`
 Expected: **PASS** (1 test).
 
-- [ ] **Step 5: Wire child foreground command processing in `FoqosApp`**
+- [ ] **Step 5 (PRIMARY): Poll the parent reset at the PIN dialog while locked out**
 
-Edit `Foqos/FoqosApp.swift`, inside the `if newPhase == .active` block (`:137-145`), extend the first `Task` so a child device drains pending commands on every foreground:
+Edit `Foqos/Views/Components/LockCodeEntryView.swift`. Add a poll tick counter next to the other `@State` (`:14-17`):
+
+```swift
+  @State private var lockoutSecondsRemaining: Int = 0
+  @State private var pollTick: Int = 0
+```
+
+Replace the `.onAppear` / `.onReceive(Timer…)` pair (`:126-132`) so it polls for a parent command every ~5s while locked out:
+
+```swift
+      .onAppear {
+        updateLockoutRemaining()
+        if lockoutSecondsRemaining > 0 { processPendingResetCommands() }
+      }
+      .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
+        guard lockoutSecondsRemaining > 0 else {
+          pollTick = 0
+          return
+        }
+        updateLockoutRemaining()
+        pollTick += 1
+        // #230: poll for a parent "Reset PIN Attempts" command ~every 5s while locked out. The
+        // 1s countdown above already re-reads lockoutRemaining(), so once the reset applies the
+        // lockout clears live — even though the parent tapped Reset on a DIFFERENT device and
+        // this app never backgrounded.
+        if pollTick % 5 == 0 { processPendingResetCommands() }
+      }
+```
+
+Add the child-guarded helper next to `updateLockoutRemaining()` (`:190`):
+
+```swift
+  private func processPendingResetCommands() {
+    guard AppModeManager.shared.currentMode == .child else { return }
+    Task {
+      await lockCodeManager.processPendingCommands()
+      updateLockoutRemaining()  // reflect an applied reset immediately
+    }
+  }
+```
+
+The poll runs **only** while a lockout is active (max 15 min), **only** in child mode, and fetches commands only (no lock-code refetch); it stops the instant the lockout clears. `LockCodeEntryView` is used across `BlockedProfileView`/`SavedLocationsView`/`EmergencyView`, so this covers every child unlock gate. `import SwiftUI` already present; `AppModeManager` is in-module.
+
+- [ ] **Step 6: Apply `resetEmergencyCount` when the child opens the emergency screen**
+
+Edit `Foqos/Views/EmergencyView.swift`. Extend the existing `.onAppear` (`:34-36`) so a parent's emergency-count reset lands when the child views the screen:
+
+```swift
+    .onAppear {
+      emergencyManager.checkAndResetEmergencyUnblocks()
+      // #230: apply a parent "Reset Emergency Count" command when the child opens this screen.
+      if AppModeManager.shared.currentMode == .child {
+        Task { await LockCodeManager.shared.processPendingCommands() }
+      }
+    }
+```
+
+(`processPendingCommands()` drains all pending commands, so it also picks up a throttle reset — harmless. `EmergencyUnblockManager` is already this view's `@EnvironmentObject`; `LockCodeManager.shared`/`AppModeManager.shared` are in-module singletons.)
+
+- [ ] **Step 7 (COMPLEMENT): Process on child foreground in `FoqosApp`**
+
+Edit `Foqos/FoqosApp.swift`, inside the `if newPhase == .active` block (`:137-145`), extend the first `Task` so a child device drains pending commands on foreground (covers "child closed the app, parent reset, child reopens" — before any dialog is even shown):
 
 ```swift
           if newPhase == .active {
@@ -589,7 +665,7 @@ Edit `Foqos/FoqosApp.swift`, inside the `if newPhase == .active` block (`:137-14
               await CloudKitManager.shared.verifySelfFamilyMemberRecord()
               verifyChildAuthorizationIfNeeded()
               // #230: process parent commands (reset PIN attempts / emergency count) on child
-              // foreground, so a rescue takes effect without re-opening the dashboard.
+              // foreground, so a rescue takes effect even before the child opens a lock dialog.
               if AppModeManager.shared.currentMode == .child {
                 await LockCodeManager.shared.processPendingCommands()
               }
@@ -598,20 +674,22 @@ Edit `Foqos/FoqosApp.swift`, inside the `if newPhase == .active` block (`:137-14
           }
 ```
 
-(No other call site changes — `refreshSharedLockCodesForVerification()` still calls `processPendingCommands()` internally on dashboard refresh; this is idempotent because processed commands are deleted server-side.)
+(No other call site changes — `refreshSharedLockCodesForVerification()` still calls `processPendingCommands()` internally on dashboard refresh; all these paths are idempotent because processed commands are deleted server-side.)
 
-- [ ] **Step 6: Build to verify the wiring compiles, then commit**
+- [ ] **Step 8: Build to verify the wiring compiles, then commit**
 
-Run: `xcodebuild test ... -only-testing:FoqosTests/FamilyCommandApplyTests | xcpretty` (compiles the app target + runs the unit test).
+Run: `xcodebuild test ... -only-testing:FoqosTests/FamilyCommandApplyTests | xcpretty` (compiles the app target — including all four modified files — and runs the unit test).
 Expected: **PASS**, build succeeds.
 
 ```bash
-swift-format --in-place Foqos/Utils/LockCodeManager.swift Foqos/FoqosApp.swift FoqosTests/FamilyCommandApplyTests.swift
-git add Foqos/Utils/LockCodeManager.swift Foqos/FoqosApp.swift FoqosTests/FamilyCommandApplyTests.swift
-git commit -m "Fix #230: process pending parent commands on child foreground"
+swift-format --in-place Foqos/Utils/LockCodeManager.swift Foqos/Views/Components/LockCodeEntryView.swift Foqos/Views/EmergencyView.swift Foqos/FoqosApp.swift FoqosTests/FamilyCommandApplyTests.swift
+git add Foqos/Utils/LockCodeManager.swift Foqos/Views/Components/LockCodeEntryView.swift Foqos/Views/EmergencyView.swift Foqos/FoqosApp.swift FoqosTests/FamilyCommandApplyTests.swift
+git commit -m "Fix #230: rescue a locked-out child by polling the parent reset at the PIN dialog"
 ```
 
-> **Manual/integration verification (record in the PR):** With a paired parent+child on a device: lock the child out (10 wrong PINs), background the child app *without* leaving the dashboard focus, tap "Reset PIN Attempts" on the parent, then foreground the child — the lockout clears without re-opening the dashboard. (Zero-latency-while-foregrounded push is MD-B2-1, not shipped here.)
+> **Manual/integration verification (record in the PR — this is the scenario the issue is about):** On **two** devices (a parent-mode device and a separate child device): lock the child out (10 wrong PINs) so the child sits on the PIN dialog with the "Too many attempts" countdown running; on the **parent's** device tap "Reset PIN Attempts"; **without touching the child device**, the child's lockout clears and the keypad re-enables within ~5s. Repeat for "Reset Emergency Count" from the child's Emergency screen. Also confirm the complement: with the child app closed, reset from the parent, then reopen the child app — cleared on foreground. (Zero-touch/backgrounded push is MD-B2-1, not shipped here; the poll is the robust floor.)
+>
+> **View wiring is manual-verify only** — `LockCodeEntryView`/`EmergencyView`/the scenePhase handler have no DI seam; the unit-testable core (applying `resetLockCodeThrottle` clears the lockout) is the `applyCommand` test in Steps 1–4.
 
 ---
 
@@ -929,8 +1007,8 @@ git commit -m "Test #208: regression guard for changed-PIN adoption on connected
 
 1. **Spec coverage:** #241 → Task 1; #232 → Task 2; #230 → Task 3; #231 → Task 4; #208 → Task 5. All five bundle issues have a task. MD-B2-1 (push subscription) is explicitly recorded as out-of-scope maintainer follow-up.
 2. **Placeholder scan:** no `TBD`/`handle edge cases`/`add validation`/`similar to Task N` — every code and test step carries complete, current-signature code.
-3. **Type consistency:** `familyMembersToRemove` (Task 1), `authRevokedNotifiedAt`/`shouldScheduleAuthRevokedAlert`/`carriedAuthRevokedNotifiedAt` (Task 2), `applyCommand`/`processPendingCommands` (Task 3), `AuthorizationRequesting`/`requestAuthorization(for:) async -> Bool` (Task 4), `resolveLockCodes`/static `verifyCode` (Task 5) — names and signatures match their definitions and every call site. `FamilyMember`, `FamilyCommand`, `FamilyLockCode`, `MonitoredDevice`, `FamilyControlsMember` initializers/cases verified against current `main`.
-4. **Binding-principle compliance:** no new gate, trust field, or remote-management surface. #230 replicates an already-authorized parent command on the child; the fix is delivery-latency only.
+3. **Type consistency:** `familyMembersToRemove` (Task 1), `authRevokedNotifiedAt`/`shouldScheduleAuthRevokedAlert`/`carriedAuthRevokedNotifiedAt` (Task 2), `applyCommand`/`processPendingCommands`/`processPendingResetCommands` (Task 3), `AuthorizationRequesting`/`requestAuthorization(for:) async -> Bool` (Task 4), `resolveLockCodes`/static `verifyCode` (Task 5) — names and signatures match their definitions and every call site. `FamilyMember`, `FamilyCommand`, `FamilyLockCode`, `MonitoredDevice`, `FamilyControlsMember` initializers/cases verified against current `main`.
+4. **Binding-principle compliance:** no new gate, trust field, or remote-management surface. #230 replicates an already-authorized parent command on the child (child-guarded, at the enforcement point + foreground) — it fixes *when* an existing authorized command is applied, adding no new capability.
 5. **Schema neutrality:** only #230's *optional* push path (MD-B2-1) would touch CloudKit config, and it is not implemented. All shipped changes are local/pure.
 
 ## Execution Handoff
