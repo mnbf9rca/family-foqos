@@ -376,14 +376,6 @@ Add the two helpers alongside `isAuthRevoked`/`shouldAlert`:
   }
 ```
 
-**Note on the memberwise initializer:** `MonitoredDevice` uses the compiler-synthesized memberwise init. Because `authRevokedNotifiedAt` has a default (`= Date?.none` is not written, so give it a default to keep existing call sites compiling). Change the declaration to:
-
-```swift
-  var authRevokedNotifiedAt: Date? = nil
-```
-
-so existing constructors (`HeartbeatManager.updateOrCreateDevice` new-device branch, and every `MonitoredDeviceTests` call that omits it) keep working, and the new tests can still pass it explicitly.
-
 - [ ] **Step 4: Carry the marker across updates and gate the alert in `HeartbeatManager`**
 
 Edit `Foqos/Utils/HeartbeatManager.swift`. In `updateOrCreateDevice(from:)` existing-device branch (`:189-191`), compute the carried marker **before** overwriting `authorizationStatus`:
@@ -475,7 +467,7 @@ git commit -m "Fix #232: dedupe permission-lost notification on approved->denied
 - Test: `FoqosTests/FamilyCommandApplyTests.swift` (create)
 
 **Interfaces:**
-- Produces on `LockCodeManager`: `func applyCommand(_ command: FamilyCommand)` (internal, `@MainActor`) — applies the local side effect (`resetThrottle()` / `EmergencyUnblockManager.shared.resetEmergencyUnblocks()`) with **no** CloudKit delete; `func processPendingCommands() async` widened from `private` to internal (self-guards `currentMode == .child`).
+- Produces on `LockCodeManager`: `func applyCommand(_ command: FamilyCommand)` (internal, `@MainActor`) — applies the local side effect (`resetThrottle()` / `EmergencyUnblockManager.shared.resetEmergencyUnblocks()`) with **no** CloudKit delete; `func processPendingCommands(cleanupStale: Bool = true) async` widened from `private` to internal, with a `cleanupStale` flag (self-guards `currentMode == .child`; the poll passes `false`).
 - Produces on `LockCodeEntryView`: `private func processPendingResetCommands()` (child-guarded) — kicks off a `processPendingCommands()` fetch+apply and re-reads the lockout.
 - Consumes: existing `resetThrottle()`, `overrideDefaults(_:)`, `recordFailedAttempt(now:)`, `isLockedOut(now:)`, `failedAttempts`, `lockoutRemaining()`; `FamilyCommand(commandType:targetChildId:createdBy:)`; `AppModeManager.shared.currentMode`.
 
@@ -577,14 +569,22 @@ Edit `Foqos/Utils/LockCodeManager.swift`. Replace `processCommand(_:)` (`:325-34
   }
 ```
 
-Widen `processPendingCommands` visibility (`:306`) from `private func` to `func` (internal) so `FoqosApp` can call it — the existing `guard appModeManager.currentMode == .child` stays, so it self-guards:
+Widen `processPendingCommands` visibility (`:306`) from `private func` to `func` (internal) so views/`FoqosApp` can call it, **and add a `cleanupStale` parameter** so the tight locked-out poll can skip the heavier stale-command sweep (`cloudKitManager.cleanupStaleCommands()`, currently unconditional at `:312`). The existing `guard appModeManager.currentMode == .child` stays, so it self-guards:
 
 ```swift
   /// Check for and process any pending commands from parent.
-  /// Called from the child lock-code refresh and on child foreground (#230).
-  func processPendingCommands() async {
+  /// Called from the child lock-code refresh, the PIN-dialog poll, and child foreground (#230).
+  /// - Parameter cleanupStale: run the extra stale-command sweep. Default `true` for the
+  ///   infrequent refresh/foreground/emergency paths; the ~5s locked-out poll passes `false`,
+  ///   so each poll is a single shared-DB fetch (+ delete per applied command), not sweep+fetch.
+  func processPendingCommands(cleanupStale: Bool = true) async {
     guard appModeManager.currentMode == .child else { return }
-    ...
+
+    if cleanupStale {
+      // Clean up any stale commands (from any user, not just this child)
+      await cloudKitManager.cleanupStaleCommands()
+    }
+    // ... existing fetchPendingCommands() + processCommand loop unchanged ...
   }
 ```
 
@@ -630,13 +630,14 @@ Add the child-guarded helper next to `updateLockoutRemaining()` (`:190`):
   private func processPendingResetCommands() {
     guard AppModeManager.shared.currentMode == .child else { return }
     Task {
-      await lockCodeManager.processPendingCommands()
+      // cleanupStale: false — keep each ~5s poll to a single shared-DB fetch (no stale sweep).
+      await lockCodeManager.processPendingCommands(cleanupStale: false)
       updateLockoutRemaining()  // reflect an applied reset immediately
     }
   }
 ```
 
-The poll runs **only** while a lockout is active (max 15 min), **only** in child mode, and fetches commands only (no lock-code refetch); it stops the instant the lockout clears. `LockCodeEntryView` is used across `BlockedProfileView`/`SavedLocationsView`/`EmergencyView`, so this covers every child unlock gate. `import SwiftUI` already present; `AppModeManager` is in-module.
+The poll runs **only** while a lockout is active (max 15 min), **only** in child mode, and via `cleanupStale: false` does a **single shared-DB command fetch per tick** (no stale-command sweep, no lock-code refetch); it stops the instant the lockout clears. `LockCodeEntryView` is used across `BlockedProfileView`/`SavedLocationsView`/`EmergencyView`, so this covers every child unlock gate. `import SwiftUI` already present; `AppModeManager` is in-module.
 
 - [ ] **Step 6: Apply `resetEmergencyCount` when the child opens the emergency screen**
 
