@@ -42,12 +42,13 @@ sed -n '300,320p' Foqos/Models/BlockedProfiles.swift         # fetchProfiles/fin
 Expected: `.outside` compares `unsatisfiedLocations.count == rule.locationReferences.count` (`LocationManager.swift:160`); `deleteLocalLocation` has zero profile repair; the fetch dispatch drains reenqueues after modifications (line ~334) but **not** after the deletions loop (~337-342); `SavedLocationsView.deleteLocation` calls `removeLocationFromProfiles` then routes the delete through the funnel.
 
 - [ ] **Step 2: Re-grep symbols**
+> **grep portability (PR #292 review N3):** multi-pattern greps below use `grep -nF -e … -e …` (fixed strings) rather than BRE `\|` alternation — portable across BSD/macOS and GNU `grep`, and `.`/`(` are never treated as regex metacharacters.
 ```bash
-grep -n 'func checkGeofenceRule\|unsatisfiedLocations\|satisfiedLocations\|locationReferences.count' Foqos/Utils/LocationManager.swift
-grep -n 'func enqueueDelete(locationId\|func enqueueSave(profileId\|private var zoneID' Foqos/CloudKit/SyncEngine/MutationFunnel.swift
-grep -n 'func deleteLocalLocation\|pendingReenqueues\|func commit\|clearDeletionBookkeeping' Foqos/CloudKit/SyncEngine/SyncApplyService.swift
-grep -n 'drainReenqueues\|for (recordID, recordType) in deletions\|func retryFailedApplies\|case .delete' Foqos/CloudKit/SyncEngine/SyncEngineController.swift
-grep -n 'func removeLocationFromProfiles\|func deleteLocation\|enqueueLocationDelete\|func fetchProfiles\|func removeLocationReference' Foqos/Views/SavedLocationsView.swift Foqos/Models/BlockedProfiles.swift
+grep -nF -e 'func checkGeofenceRule' -e 'unsatisfiedLocations' -e 'satisfiedLocations' -e 'locationReferences.count' Foqos/Utils/LocationManager.swift
+grep -nF -e 'func enqueueDelete(locationId' -e 'func enqueueSave(profileId' -e 'private var zoneID' Foqos/CloudKit/SyncEngine/MutationFunnel.swift
+grep -nF -e 'func deleteLocalLocation' -e 'pendingReenqueues' -e 'func commit' -e 'clearDeletionBookkeeping' Foqos/CloudKit/SyncEngine/SyncApplyService.swift
+grep -nF -e 'drainReenqueues' -e 'for (recordID, recordType) in deletions' -e 'func retryFailedApplies' -e 'case .delete' Foqos/CloudKit/SyncEngine/SyncEngineController.swift
+grep -nF -e 'func removeLocationFromProfiles' -e 'func deleteLocation' -e 'enqueueLocationDelete' -e 'func fetchProfiles' -e 'func removeLocationReference' Foqos/Views/SavedLocationsView.swift Foqos/Models/BlockedProfiles.swift
 ```
 
 - [ ] **Step 3: Boot the test simulator once** (per AGENTS.md; reuse the UUID for every task).
@@ -598,6 +599,16 @@ git commit -m "test(#220): guard that inbound location apply never re-enqueues a
 ```
 
 - [ ] **Step 4:** Recommend closing #220 as obsolete in the PR description (the re-triage comment already documents why). Do not change production code for #220.
+
+---
+
+## Skeptic Pass — review-hardening provenance (PR #292)
+
+For provenance parity, the adversarial findings folded into this plan during review are recorded here (not only in the PR threads), so a future reader sees WHY the deletion seams are shaped this way:
+
+- **Two-agent skeptic pass (pre-merge):** confirmed the S0 contract holds on all three items and the citations are accurate; all findings were in test-code precision (nonexistent memberwise inits, placeholder test bodies, `SyncApplyServiceTests` private-helper reuse, helper-save atomicity) and were fixed before commit.
+- **Copilot review #1 → Task 3 (local delete seam):** a throw from `enqueueSave(profileId:)` after `SavedLocation.delete` had committed would clear the tombstone + skip the `.deleteRecord`, orphaning the delete (deleted-locally-but-unreplicated, resurrection-prone). **Folded:** the location `.deleteRecord` is now enqueued at the point-of-no-return (right after the delete commits, tombstone kept) and the profile re-pushes are best-effort — see Task 3 Step 3.
+- **Copilot review #2 → Task 4 (remote delete seam):** returning `.notPresent` when the `SavedLocation` row was already absent skipped profile repair and re-skipped it on retry. **Folded:** `deleteLocalLocation` repairs referencing profiles whether or not the row is present (the deletion event is authoritative), closing the delete-then-repair-fail window — see Task 4 Step 4 and the regression test `testGivenDanglingProfileButLocationAlreadyAbsent_…`.
 
 ---
 

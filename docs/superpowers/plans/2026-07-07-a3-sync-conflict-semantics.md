@@ -47,11 +47,13 @@ Expected: the four-way version gate (`>`, `==` tie, older); the emergency LWW `g
 
 - [ ] **Step 2: Re-grep the symbols each task touches** (if a line moved, update the task's `Files:` before editing)
 
+> **grep portability (PR #292 review N3):** multi-pattern greps use `grep -nF -e … -e …` (fixed strings, one `-e` per pattern) rather than BRE `\|` alternation, so they are portable across BSD/macOS and GNU `grep` and never treat `.`/`(` as regex metacharacters. Apply the same form to any other multi-pattern grep in this plan if you copy it. (On this repo's `/usr/bin/grep` — "BSD grep, GNU compatible" — `\|` happens to work, but `-F -e` is portable and precise everywhere.)
+
 ```bash
-grep -n 'func applyDecodedProfile\|synced.version == existing.syncVersion\|pendingReenqueues.append' Foqos/CloudKit/SyncEngine/SyncApplyService.swift
-grep -n 'func applyEmergencyModification\|emergencySettingsVersion\|applyRemoteEmergencySettings\|performEmergencyUnblock\|emergencyUnblocksRemaining' Foqos/Utils/EmergencyUnblockManager.swift Foqos/CloudKit/SyncEngine/SyncApplyService.swift
-grep -n 'reminderTimeInSeconds\|UInt8(exactly:' Foqos/CloudKit/SyncModels.swift
-grep -n 'func sendCommand\|serverRecordChanged' Foqos/CloudKit/CloudKitNetworkService+Commands.swift Foqos/CloudKit/SessionSyncService.swift
+grep -nF -e 'func applyDecodedProfile' -e 'synced.version == existing.syncVersion' -e 'pendingReenqueues.append' Foqos/CloudKit/SyncEngine/SyncApplyService.swift
+grep -nF -e 'func applyEmergencyModification' -e 'applyRemoteEmergencySettings' -e 'performEmergencyUnblock' -e 'emergencyUnblocksRemaining' -e 'currentResetEpoch' Foqos/Utils/EmergencyUnblockManager.swift Foqos/CloudKit/SyncEngine/SyncApplyService.swift
+grep -nF -e 'reminderTimeInSeconds' -e 'UInt8(exactly:' Foqos/CloudKit/SyncModels.swift
+grep -nF -e 'func sendCommand' -e 'serverRecordChanged' Foqos/CloudKit/CloudKitNetworkService+Commands.swift Foqos/CloudKit/SessionSyncService.swift
 ```
 
 - [ ] **Step 3: Boot the test simulator once** (per AGENTS.md — reuse it for every task)
@@ -63,12 +65,16 @@ xcrun simctl boot <UUID>
 
 ---
 
-## Maintainer decisions in this bundle
+## Maintainer decisions in this bundle — SETTLED (2026-07-08, PR #292 review)
 
-Two tasks encode a policy the maintainer must ratify at plan-review time. Each task implements the **recommended** option; if the maintainer picks another, adjust only that task.
+Both decisions are ratified; the tasks implement them.
 
-- **#218 tie-break policy** (Task 3): **Option B — deterministic winner (recommended)**. Options A/B/C are laid out in Task 3.
-- **#221 count semantics** (Task 4): **Option C — union of usage-event records (recommended, per the bundle steer)**. Options A/B/C are laid out in Task 4. Option B (CAS delta-retry counter arithmetic) is explicitly *flagged, not chosen*.
+- **#218 tie-break policy** (Task 3): **Option B — deterministic winner: `updatedAt`, then `originDeviceId`.** Deterministic, no server round-trip. Also fixes the equal-version conflict-copy bug at `SyncConflictManager.swift:64` (the "older app version" message reused for a same-version tie). Options A/C recorded in Task 3.
+- **#221 count semantics** (Task 4): **Option C — union of immutable usage-event records (G-Set)**, WITH two maintainer refinements folded in:
+  - **Mandatory pruning** — prune usage-event records whose `resetEpoch < currentResetEpoch` (unbounded records are rejected). Task 4e.
+  - **Epoch on a SEPARATE monotonic-max channel** (`SyncedEmergencyEpoch`), NOT config LWW — supersedes the old "accept the residual" note; the residual is **closed**. Tasks 4a/4c/4d.
+  - Option B (CAS delta-retry counter arithmetic) remains *flagged, not chosen*.
+  - The pruning × monotonic-max-epoch interaction is discharged in the **Skeptic Pass** section at the end of Task 4.
 
 ---
 
@@ -139,10 +145,9 @@ final class SyncedProfileDecodeBoundsTests: XCTestCase {
 }
 ```
 
-- [ ] **Step 2: Run it — expect the negative/overflow tests to CRASH (trap), not just fail**
+- [ ] **Step 2: Confirm the red state — note the trap ABORTS the test runner (it is not a clean XCTest failure)**
 
-Run: `xcodebuild test ... -only-testing:FoqosTests/SyncedProfileDecodeBoundsTests | xcpretty`
-Expected: `testGivenNegativeReminder…` and `testGivenOverflowingReminder…` fail via a fatal `UInt32(reminderInt)` overflow trap (the in-range test passes). This reproduces the crash.
+The pre-fix `UInt32(reminderInt)` is a **fatal trap**: it does not produce an `XCTFail`, it aborts the whole test process (`Fatal error: Not enough bits to represent…`), so you cannot run these two cases red-then-green in the normal suite — the runner dies before reporting. Confirm the red state one of two ways instead of running the full suite: (a) reason from the code (`UInt32(_:)` traps on out-of-range; the value flows in unguarded at `SyncModels.swift:200`), or (b) temporarily run ONLY the guard tests against the unpatched code (`-only-testing:FoqosTests/SyncedProfileDecodeBoundsTests`) and observe the process-abort/crash log — expected, and it confirms the trap. Then apply Step 3; after the fix the same two cases pass cleanly (nil, no trap). Do NOT leave the trap-triggering red run wired into CI.
 
 - [ ] **Step 3: Apply the range-checked cast**
 
@@ -308,13 +313,13 @@ git commit -m "fix(#222): treat serverRecordChanged as idempotent success in sen
 
 **Why:** S0 already surfaces same-version divergence (the equal-version branch in `applyDecodedProfile` bumps `syncVersion+1`, re-enqueues the local payload, and raises a conflict banner). Two residuals remain: (1) the tie-break is *local-always-wins*, which does not deterministically converge — because each device re-broadcasts its own payload at the bumped version, two genuinely divergent devices can ping-pong/escalate `syncVersion` with the banner stuck on both; (2) the banner reuses the schema-version wording ("edited on an older app version"), which is wrong for a same-version concurrent edit.
 
-### MAINTAINER DECISION — tie-break policy (implementing Option B)
+### MAINTAINER DECISION — tie-break policy: **Option B, SETTLED (2026-07-08)**
 
 - **Option A — local-always-wins (current).** No data silently lost, surfaced via banner, but non-converging (version escalation risk). *Rejected: doesn't converge.*
-- **Option B — deterministic winner (RECOMMENDED, implemented below).** On a payload-differing tie, both devices pick the SAME winner from a total order already carried in `SyncedProfile`: newer `updatedAt` wins; ties broken by lexicographically-lower `originDeviceId`. Winner keeps+bumps+re-enqueues; loser *adopts* the winner's payload. Both converge to identical data in ≤2 sync rounds; one concurrent edit is dropped but surfaced via a banner. *Chosen.*
+- **Option B — deterministic winner (SETTLED — implemented below).** On a payload-differing tie, both devices pick the SAME winner from a total order already carried in `SyncedProfile`: newer `updatedAt` wins; ties broken by lexicographically-lower `originDeviceId`. Winner keeps+bumps+re-enqueues; loser *adopts* the winner's payload. Both converge to identical data in ≤2 sync rounds; one concurrent edit is dropped but surfaced via a banner. *Chosen — deterministic, no server round-trip.*
 - **Option C — field-level 3-way merge.** High complexity, needs per-field base tracking. *Rejected: out of scope.*
 
-If the maintainer prefers A, implement only the copy fix (Steps 5-7) and skip Steps 1-4's comparator adoption.
+The decision is ratified — implement Option B in full (Steps 1-8). The copy fix (Steps 5-7) also resolves the maintainer-cited equal-version copy bug at `SyncConflictManager.swift:64`: routing ties through the new `divergenceProfiles` category means the tie no longer reuses that line's "older app version" schema-mismatch wording.
 
 **Files:**
 - Modify: `Foqos/CloudKit/SyncEngine/SyncApplyService.swift:270-281` (equal-version branch) and add a private `remoteWinsProfileTie(...)` helper.
@@ -540,26 +545,27 @@ git commit -m "fix(#218): deterministic profile tie-break + dedicated divergence
 - **Option B — CAS delta-retry counter arithmetic** (refetch server value, apply the decrement as a delta, re-save on `serverRecordChanged`, like `SessionSyncService`). Converges, but is *clever counter arithmetic* over a single mutable cell — fragile under three-way races and hard to reason about. *Flagged, not chosen (per the bundle steer).*
 - **Option C — union of immutable usage-event records (RECOMMENDED, implemented below).** Each consumed unblock is a write-once record with a unique recordName; concurrent unblocks create distinct records that CKSyncEngine unions with no conflict. `remaining` becomes *derived*: `max(0, allowance − count(events in current reset epoch))`. Boring, convergent, no counter arithmetic. *Chosen.*
 
-**Design.** Model consumption events like sessions (a recordName-prefixed non-SwiftData entity — **no ModelContainer schema change**), stored in `EmergencyUnblockManager` (co-located with the state they replace):
-- Record type `EmergencyUnblockEvent`, recordName `EmergencyUnblock_<uuid>`, fields `deviceId: String`, `consumedAt: Date`, `resetEpoch: Int`.
-- The event ledger is a persisted `[EmergencyUnblockEvent]` (UserDefaults JSON, like the existing counters). Union on apply = insert-if-absent by `id` (a G-Set).
-- `resetEpoch` is a monotonic Int on the existing `SyncedEmergencySettings` (config, synced by LWW as today). `remaining = max(0, allowance − |events where resetEpoch == currentEpoch|)`, `allowance = 3`.
-- A reset advances `resetEpoch` (config LWW propagates it); old-epoch events stop counting and are GC'd (funnel delete path) in Step 4d.
-- All mutations ride `MutationFunnel`: consuming an unblock enqueues an event save; GC enqueues an event delete.
+**Design** (maintainer-ratified 2026-07-08 — union of usage events + reset-epoch on its OWN monotonic-max channel + **mandatory** epoch-based pruning). Model consumption events like sessions (a recordName-prefixed non-SwiftData entity — **no ModelContainer schema change**), stored in `EmergencyUnblockManager` (co-located with the state they replace):
+- Record type `EmergencyUnblockEvent`, recordName `EmergencyUnblock_<uuid>`, fields `deviceId: String`, `consumedAt: Date`, `resetEpoch: Int` (the epoch the unblock was consumed in — tagged on the event).
+- The event ledger is a persisted `[EmergencyUnblockEvent]` (UserDefaults JSON, like the existing counters). Union on apply = insert-if-absent by `id` (a G-Set). `remaining = max(0, allowance − |events where resetEpoch == currentResetEpoch|)`, `allowance = 3`.
+- **`resetEpoch` syncs on a DEDICATED monotonic-max channel — a single fixed-name `SyncedEmergencyEpoch` record (`emergency-reset-epoch`), NOT the config LWW record.** Apply is `currentResetEpoch = max(local, remote.epoch)` with **no version gate**: a monotonic-max merge is commutative, idempotent, and order-independent, so it can never be clobbered by a stale writer and every device converges on one agreed epoch boundary. This is the property that makes cleanup race-free — it is why the epoch does NOT ride the config channel (a transient LWW desync there could let one device prune events another still counts). One source of truth for the epoch; `resetEpoch` is removed from `SyncedEmergencySettings` entirely.
+- A reset advances `resetEpoch` (`+1`) and pushes it on the monotonic-max channel; old-epoch events stop counting immediately (epoch predicate) and are **MANDATORILY pruned** (Step 4e) — the maintainer will not accept unbounded historic records. **Pruning reads the merged `currentResetEpoch` and deletes only strictly-less-than (`event.resetEpoch < currentResetEpoch`)**, never a locally-bumped-but-unsynced value.
+- All mutations ride `MutationFunnel`: consuming an unblock enqueues an event save; a reset enqueues an epoch save; GC enqueues event deletes.
 
 This is a multi-part task; each sub-task (4a–4e) is independently testable.
 
 **Interfaces produced (used across sub-tasks):**
 - `struct SyncedEmergencyUnblockEvent: Codable, Equatable` in `SyncModels.swift` — `id: UUID`, `deviceId: String`, `consumedAt: Date`, `resetEpoch: Int`; `static let recordType = "EmergencyUnblockEvent"`, `static let recordNamePrefix = "EmergencyUnblock_"`, `var recordName: String { Self.recordNamePrefix + id.uuidString }`; `toCKRecord(in:)` / `updateCKRecord(_:)` / `init?(from:)`.
-- `EmergencyUnblockManager`: `func consumeUnblockEvent(now: Date) -> SyncedEmergencyUnblockEvent` (creates+persists a local event at the current epoch, returns it); `func mergeRemoteUnblockEvent(_:)` (union insert); `func eventRecord(forRecordName:) -> SyncedEmergencyUnblockEvent?`; `var currentResetEpoch: Int`; derived `getRemainingEmergencyUnblocks()`.
-- `MutationFunnel.enqueueEmergencyUnblockEvent(_ event: SyncedEmergencyUnblockEvent)` + facades on `SyncEngineControlling` / `SyncEngineController+Cutover` / `ProfileSyncManager` mirroring `enqueueEmergencySettingsSave`.
+- `struct SyncedEmergencyEpoch: Codable, Equatable` in `SyncModels.swift` — `epoch: Int`; `static let recordType = "EmergencyResetEpoch"`, `static let recordName = "emergency-reset-epoch"` (fixed, single record); `toCKRecord(in:)` / `updateCKRecord(_:)` / `init?(from:)`. Merged by max, never version-gated.
+- `EmergencyUnblockManager`: `func consumeUnblockEvent(now: Date) -> SyncedEmergencyUnblockEvent`; `func mergeRemoteUnblockEvent(_:)` (union insert); `func eventRecord(forRecordName:) -> SyncedEmergencyUnblockEvent?`; `var currentResetEpoch: Int`; `func adoptRemoteEpoch(_ epoch: Int)` (`currentResetEpoch = max(currentResetEpoch, epoch)`); `func currentEpochRecord() -> SyncedEmergencyEpoch`; derived `getRemainingEmergencyUnblocks()`.
+- `MutationFunnel.enqueueEmergencyUnblockEvent(_ event:)`, `.enqueueEmergencyEpochSave()`, `.enqueueEmergencyUnblockEventDelete(_ recordName:)` + facades on `SyncEngineControlling` / `SyncEngineController+Cutover` / `ProfileSyncManager` mirroring `enqueueEmergencySettingsSave`.
 
 ---
 
 ### Task 4a: the event model + derived count + epoch (no sync wiring yet)
 
 **Files:**
-- Modify: `Foqos/CloudKit/SyncModels.swift` (add `SyncedEmergencyUnblockEvent`; add `resetEpoch` to `SyncedEmergencySettings`).
+- Modify: `Foqos/CloudKit/SyncModels.swift` (add `SyncedEmergencyUnblockEvent` and `SyncedEmergencyEpoch`; do NOT add a `resetEpoch` field to `SyncedEmergencySettings` — the epoch lives only on its own channel).
 - Modify: `Foqos/Utils/EmergencyUnblockManager.swift` (event ledger storage, epoch, derived count).
 - Test: `FoqosTests/EmergencyUnblockEventLedgerTests.swift` (create).
 
@@ -642,7 +648,44 @@ final class EmergencyUnblockEventLedgerTests: XCTestCase {
 
 - [ ] **Step 3: Add the model and the ledger**
 
-In `SyncModels.swift`, add `resetEpoch` to `SyncedEmergencySettings`: a new `var resetEpoch: Int` field, a `FieldKey` case, a line in `updateCKRecord`, `init?(from:)` decoding with `as? Int ?? 0` (back-compat), and `defaults(deviceId:)` → `resetEpoch: 0`. **In the explicit memberwise `init` (`SyncModels.swift:540`), give the new parameter a default: `resetEpoch: Int = 0`.** This is required: `SyncedEmergencySettings` has an all-args memberwise init with ~7 existing construction sites (`SyncApplyServiceTests.swift:316/332/335`, `RecordProviderTests.swift:96`, `EmergencyUnblockManagerSnapshotTests.swift:23`, `SyncPayloadEqualityTests.swift:66/69`, plus the two production sites `SyncModels.swift:490` and `EmergencyUnblockManager.swift:249`); a non-defaulted parameter breaks all of them. With the default, only the sites that need the epoch pass it. Then add the event struct:
+In `SyncModels.swift`, add the dedicated monotonic-max epoch record (leave `SyncedEmergencySettings` untouched — the epoch does NOT live there):
+```swift
+// MARK: - Synced Emergency Reset Epoch (monotonic-max channel — never version-gated)
+
+/// The current emergency-unblock reset epoch, synced as a single fixed-name record and merged by
+/// `max()` (commutative/idempotent/order-independent) so all devices converge on one agreed epoch
+/// boundary. This is what makes epoch-based pruning race-free (#221). NOT on the config LWW record.
+struct SyncedEmergencyEpoch: Codable, Equatable {
+  var epoch: Int
+
+  static let recordType = "EmergencyResetEpoch"
+  static let recordName = "emergency-reset-epoch"
+
+  enum FieldKey: String { case epoch }
+
+  func toCKRecord(in zoneID: CKRecordZone.ID) -> CKRecord {
+    let record = CKRecord(
+      recordType: Self.recordType,
+      recordID: CKRecord.ID(recordName: Self.recordName, zoneID: zoneID))
+    updateCKRecord(record)
+    return record
+  }
+
+  func updateCKRecord(_ record: CKRecord) {
+    record[FieldKey.epoch.rawValue] = epoch
+  }
+
+  init(epoch: Int) { self.epoch = epoch }
+
+  init?(from record: CKRecord) {
+    guard record.recordType == Self.recordType,
+      let epoch = record[FieldKey.epoch.rawValue] as? Int
+    else { return nil }
+    self.epoch = epoch
+  }
+}
+```
+Then add the event struct:
 ```swift
 // MARK: - Synced Emergency Unblock Event
 
@@ -760,6 +803,22 @@ In `EmergencyUnblockManager.swift`:
     unblockEvents.first { $0.recordName == recordName }
   }
 
+  // MARK: - Monotonic-max reset-epoch channel (#221)
+
+  /// Adopt a remote epoch by MAX (no version gate) — commutative/idempotent/order-independent, so
+  /// every device converges on one agreed epoch boundary and a stale writer can never lower it.
+  func adoptRemoteEpoch(_ epoch: Int) {
+    let merged = max(currentResetEpoch, epoch)
+    guard merged != currentResetEpoch else { return }
+    currentResetEpoch = merged
+    objectWillChange.send()
+  }
+
+  /// Materialize the current epoch record for RecordProvider / push.
+  func currentEpochRecord() -> SyncedEmergencyEpoch {
+    SyncedEmergencyEpoch(epoch: currentResetEpoch)
+  }
+
   #if DEBUG
   func seedForTesting(allowance: Int, epoch: Int) {
     // `allowance` is fixed at 3 in production; the param documents intent in tests.
@@ -827,15 +886,27 @@ git commit -m "feat(#221): emergency-unblock event ledger + epoch-derived remain
     let recordID = CKRecord.ID(recordName: event.recordName, zoneID: zoneID)
     driver.add(pendingRecordZoneChanges: [.saveRecord(recordID)])
   }
+
+  /// Enqueue the single fixed-name reset-epoch record on its monotonic-max channel (#221). The new
+  /// epoch value is already persisted by the reset (`currentResetEpoch`); RecordProvider serializes
+  /// the current value. No version bump — the value itself is the merge key (max on apply).
+  func enqueueEmergencyEpochSave() {
+    let recordID = CKRecord.ID(recordName: SyncedEmergencyEpoch.recordName, zoneID: zoneID)
+    driver.add(pendingRecordZoneChanges: [.saveRecord(recordID)])
+  }
 ```
 
-- [ ] **Step 4: Add the facades** (mirror `enqueueEmergencySettingsSave` at all three seams)
-- `SyncEngineControlling.swift`: add `func enqueueEmergencyUnblockEvent(_ event: SyncedEmergencyUnblockEvent) throws`
+- [ ] **Step 4: Add the facades** (mirror `enqueueEmergencySettingsSave` at all three seams — for BOTH `enqueueEmergencyUnblockEvent(_:)` and `enqueueEmergencyEpochSave()`)
+- `SyncEngineControlling.swift`: add `func enqueueEmergencyUnblockEvent(_ event: SyncedEmergencyUnblockEvent) throws` and `func enqueueEmergencyEpochSave() throws`
 - `SyncEngineController+Cutover.swift`:
 ```swift
   func enqueueEmergencyUnblockEvent(_ event: SyncedEmergencyUnblockEvent) throws {
     guard let funnel else { throw SyncEngineControllingError.notAttached }
     funnel.enqueueEmergencyUnblockEvent(event)
+  }
+  func enqueueEmergencyEpochSave() throws {
+    guard let funnel else { throw SyncEngineControllingError.notAttached }
+    funnel.enqueueEmergencyEpochSave()
   }
 ```
 - `ProfileSyncManager.swift`:
@@ -844,12 +915,22 @@ git commit -m "feat(#221): emergency-unblock event ledger + epoch-derived remain
     guard let engineController else { throw SyncEngineControllingError.notAttached }
     try engineController.enqueueEmergencyUnblockEvent(event)
   }
+  func enqueueEmergencyEpochSave() throws {
+    guard let engineController else { throw SyncEngineControllingError.notAttached }
+    try engineController.enqueueEmergencyEpochSave()
+  }
 ```
-> **Required:** `FoqosTests/Mocks/MockSyncEngineControlling.swift` conforms to `SyncEngineControlling`, so the new protocol method must be added there or the test target won't compile. Mirror the existing `enqueueEmergencySettingsSave` capture: add `private(set) var enqueuedEmergencyUnblockEvents: [SyncedEmergencyUnblockEvent] = []` and
+> **Required:** `FoqosTests/Mocks/MockSyncEngineControlling.swift` conforms to `SyncEngineControlling`, so both new protocol methods must be added there or the test target won't compile. Mirror the existing `enqueueEmergencySettingsSave` capture:
 > ```swift
+>   private(set) var enqueuedEmergencyUnblockEvents: [SyncedEmergencyUnblockEvent] = []
+>   private(set) var enqueuedEmergencyEpochSaves = 0
 >   func enqueueEmergencyUnblockEvent(_ event: SyncedEmergencyUnblockEvent) throws {
 >     if let errorToThrow { throw errorToThrow }
 >     enqueuedEmergencyUnblockEvents.append(event)
+>   }
+>   func enqueueEmergencyEpochSave() throws {
+>     if let errorToThrow { throw errorToThrow }
+>     enqueuedEmergencyEpochSaves += 1
 >   }
 > ```
 
@@ -952,8 +1033,10 @@ In `applyFetchedModification`'s `switch record.recordType` (lines 70-83), add:
 ```swift
     case SyncedEmergencyUnblockEvent.recordType:
       return applyUnblockEventModification(record)
+    case SyncedEmergencyEpoch.recordType:
+      return applyEmergencyEpochModification(record)
 ```
-Add the handler:
+Add the handlers:
 ```swift
   // MARK: - Emergency unblock event apply (#221 union / G-Set)
 
@@ -967,10 +1050,34 @@ Add the handler:
     storeSystemFields(record)
     return .applied
   }
+
+  // MARK: - Emergency reset-epoch apply (#221 monotonic-max channel — NO version gate)
+
+  private func applyEmergencyEpochModification(_ record: CKRecord) -> ApplyOutcome {
+    guard let remote = SyncedEmergencyEpoch(from: record) else {
+      Log.info("Ignoring undecodable EmergencyResetEpoch record", category: .sync)
+      return .ignored
+    }
+    // Unconditional max-merge — commutative/idempotent/order-independent. Deliberately NOT gated
+    // by any version (unlike applyEmergencyModification): that gate is exactly what would let the
+    // epoch desync and make pruning unsafe (maintainer decision 2026-07-08).
+    emergencyManager.adoptRemoteEpoch(remote.epoch)
+    store.removeFailedApply(recordName: record.recordID.recordName)
+    storeSystemFields(record)
+    return .applied
+  }
 ```
 
 - [ ] **Step 4: Add RecordProvider materialization** (in `RecordProvider.record(forRecordName:)`, before the `UUID(uuidString:)` branch)
 ```swift
+    if recordName == SyncedEmergencyEpoch.recordName {
+      let record = materialize(
+        recordName: recordName,
+        recordType: SyncedEmergencyEpoch.recordType,
+        freshRecordID: CKRecord.ID(recordName: recordName, zoneID: zoneID))
+      emergencyManager.currentEpochRecord().updateCKRecord(record)
+      return record
+    }
     if recordName.hasPrefix(SyncedEmergencyUnblockEvent.recordNamePrefix) {
       guard let event = emergencyManager.eventRecord(forRecordName: recordName) else { return nil }
       let record = materialize(
@@ -980,6 +1087,18 @@ Add the handler:
       event.updateCKRecord(record)
       return record
     }
+```
+Add a focused apply test to `EmergencyUnblockUnionApplyTests` proving the epoch merges by max with no version gate (both directions):
+```swift
+  func testGivenRemoteEpoch_WhenApplied_ThenAdoptedByMaxRegardlessOfOrder() {
+    let apply = makeService()  // seeded at epoch 1
+    _ = apply.applyFetchedModification(
+      SyncedEmergencyEpoch(epoch: 3).toCKRecord(in: zoneID), isPendingDeleteOrTombstoned: { _ in false })
+    XCTAssertEqual(emergencyManager.currentResetEpoch, 3, "higher epoch adopted")
+    _ = apply.applyFetchedModification(
+      SyncedEmergencyEpoch(epoch: 2).toCKRecord(in: zoneID), isPendingDeleteOrTombstoned: { _ in false })
+    XCTAssertEqual(emergencyManager.currentResetEpoch, 3, "lower epoch never lowers it (max, no gate)")
+  }
 ```
 
 - [ ] **Step 5: Run apply + RecordProvider tests — expect PASS**
@@ -1000,7 +1119,7 @@ git commit -m "feat(#221): inbound union apply + RecordProvider materialization 
 
 **Files:**
 - Modify: `Foqos/Utils/EmergencyUnblockManager.swift` (`performEmergencyUnblock`, `emergencyUnblock` gate, resets, `applyRemoteEmergencySettings`, `currentEmergencySettings`).
-- Modify: `Foqos/CloudKit/SyncEngine/SyncApplyService.swift` (`applyEmergencyModification` — apply config incl. epoch, stop overwriting the count).
+- Modify: `Foqos/CloudKit/SyncEngine/SyncApplyService.swift` (`applyEmergencyModification` — apply CONFIG only, stop overwriting the count; the epoch is a separate channel).
 - Test: extend `FoqosTests/EmergencyUnblockEventLedgerTests.swift` (or a new `EmergencyUnblockConsumeTests.swift`).
 
 - [ ] **Step 1: Write the failing tests**
@@ -1061,6 +1180,8 @@ final class EmergencyUnblockConsumeTests: XCTestCase {
 
     XCTAssertEqual(manager.currentResetEpoch, 2, "reset advances the epoch")
     XCTAssertEqual(manager.getRemainingEmergencyUnblocks(), 3, "prior-epoch events no longer count")
+    XCTAssertEqual(
+      mock.enqueuedEmergencyEpochSaves, 1, "reset pushes the epoch on its monotonic-max channel")
   }
 }
 ```
@@ -1104,31 +1225,42 @@ Rewrite `performEmergencyUnblock` (lines 220-233) to use it:
 
 - [ ] **Step 3: Resets advance the epoch**
 
-Rewrite `resetEmergencyUnblocks()` and the elapsed-period branch of `checkAndResetEmergencyUnblocks()` to advance the epoch instead of setting the scalar to 3:
+Rewrite `resetEmergencyUnblocks()` and the elapsed-period branch of `checkAndResetEmergencyUnblocks()` to advance the epoch (on its own channel) instead of setting the scalar to 3. Add a `pushEmergencyEpochToCloudKit()` helper mirroring `pushEmergencySettingsToCloudKit`:
 ```swift
+  private func pushEmergencyEpochToCloudKit() {
+    guard profileSyncManager.isEnabled else { return }
+    do {
+      try profileSyncManager.enqueueEmergencyEpochSave()
+    } catch {
+      Log.warning("enqueueEmergencyEpochSave skipped: \(error.localizedDescription)", category: .sync)
+    }
+  }
+
   func resetEmergencyUnblocks() {
     currentResetEpoch += 1
     lastEmergencyUnblocksResetDateTimestamp = Date().timeIntervalSinceReferenceDate
-    pushEmergencySettingsToCloudKit()  // propagates the new epoch via config LWW
+    pushEmergencyEpochToCloudKit()     // #221: epoch on its OWN monotonic-max channel (NOT config)
+    pushEmergencySettingsToCloudKit()  // config (lastResetDate/period/locked) still syncs LWW
     objectWillChange.send()
+    // NOTE: the mandatory prune (garbageCollectStaleUnblockEvents) is wired here in Task 4e —
+    // it runs AFTER the epoch push and reads the merged currentResetEpoch (strictly-less-than).
   }
 ```
-(Do the same epoch-advance in `checkAndResetEmergencyUnblocks`'s elapsed branch; remove the `emergencyUnblocksRemaining = 3` assignments.)
+(Do the same epoch-advance + both pushes in `checkAndResetEmergencyUnblocks`'s elapsed branch; remove the `emergencyUnblocksRemaining = 3` assignments.)
 
-- [ ] **Step 4: Config apply carries the epoch; count is no longer overwritten**
+- [ ] **Step 4: Config apply drops the count; the epoch is NOT on this channel**
 
-In `applyRemoteEmergencySettings` (line 238), remove `emergencyUnblocksRemaining = remote.unblocksRemaining` and instead adopt the epoch as the max (monotonic, so a lagging device never rewinds):
+In `applyRemoteEmergencySettings` (line 238), remove `emergencyUnblocksRemaining = remote.unblocksRemaining`. Do **not** touch the epoch here — the epoch lives only on the dedicated monotonic-max channel (`adoptRemoteEpoch`, Task 4c); reading it off the LWW config record is exactly the desync the maintainer ruled out:
 ```swift
   func applyRemoteEmergencySettings(_ remote: SyncedEmergencySettings) {
     emergencyUnblocksResetPeriodInDays = remote.resetPeriodInDays
     lastEmergencyUnblocksResetDateTimestamp = remote.lastResetDate.timeIntervalSinceReferenceDate
     emergencySettingsLockedStorage = remote.settingsLocked
     emergencySettingsVersion = remote.version
-    currentResetEpoch = max(currentResetEpoch, remote.resetEpoch)
     objectWillChange.send()
   }
 ```
-In `currentEmergencySettings` (line 248), include `resetEpoch: currentResetEpoch` and set `unblocksRemaining: getRemainingEmergencyUnblocks()` (still emitted for informational/back-compat, but no longer authoritative — the derived count is source of truth). In `applyEmergencyModification` (`SyncApplyService.swift:443`), keep the versioned-LWW gate for CONFIG only; it calls `applyRemoteEmergencySettings`, which no longer touches the count — no code change needed there beyond confirming it compiles.
+In `currentEmergencySettings` (line 248), set `unblocksRemaining: getRemainingEmergencyUnblocks()` (still emitted for informational/back-compat, but no longer authoritative). It carries **no** `resetEpoch` (the field was never added to `SyncedEmergencySettings`). In `applyEmergencyModification` (`SyncApplyService.swift:443`), keep the versioned-LWW gate for CONFIG only; it calls `applyRemoteEmergencySettings`, which no longer touches the count or epoch — no code change needed there beyond confirming it compiles.
 
 - [ ] **Step 5: Delete the now-dead scalar plumbing**
 
@@ -1141,7 +1273,7 @@ Run: `xcodebuild test ... -only-testing:FoqosTests/EmergencyUnblockEventLedgerTe
 
 **S0 conformance note:** consumption pushes ONLY via `enqueueEmergencyUnblockEvent` (funnel, I2). Config (period/locked/epoch) still syncs via the existing versioned-LWW `SyncedEmergencySettings` — legitimate for parent-set config. No inbound path writes the count; it is derived locally from the unioned ledger.
 
-**Convergence residual (flag for maintainer sign-off):** the union *ledger* converges unconditionally (G-Set), but the `resetEpoch` that scopes the count rides the config's versioned-LWW channel, which inherits that channel's same-version divergence: if device A makes a non-reset config change to version N (epoch unchanged) while device B resets to version N (epoch+1), each device's `remote.version > local.version` gate rejects the other's record and the two epochs can diverge — so the derived remaining count could differ across devices until the next strictly-greater config write reconciles them. This is an accepted limitation of reusing the config LWW channel (the `max(currentResetEpoch, remote.resetEpoch)` adoption bounds it monotonically upward, never rewinding). If stronger epoch convergence is required, carry `resetEpoch` on a monotonic-max channel independent of the version gate — note this option for the maintainer rather than silently claiming full convergence.
+**Convergence (residual CLOSED — maintainer decision 2026-07-08):** the union *ledger* converges unconditionally (G-Set), and the `resetEpoch` that scopes the count now rides its **own dedicated monotonic-max channel** (`SyncedEmergencyEpoch`, Task 4a/4c) — applied by unconditional `max()` with no version gate. Because max-merge is commutative/idempotent/order-independent, two concurrent resets can never produce a "lost" epoch (both push, `max` wins deterministically) and a stale writer can never lower it, so every device converges on one agreed epoch boundary. This is what makes the mandatory pruning (Task 4e) race-free. The earlier "reuse config LWW, accept the residual" approach is **superseded**: the residual is closed, not accepted. The one remaining property to demonstrate — that partial arrival of a reset's two effects (epoch-bump vs. event/prune deletions) never *under*-counts remaining (never wrongly denies a legitimate unblock; a brief self-healing over-grant is the accepted direction) — is discharged by the Skeptic Pass section below, per the maintainer's directive.
 
 - [ ] **Step 7: Commit**
 ```bash
@@ -1151,9 +1283,9 @@ git commit -m "feat(#221): consume unblocks as funnel events; resets advance epo
 
 ---
 
-### Task 4e: epoch-GC of stale events (rides the explicit deletion path)
+### Task 4e: epoch-GC of stale events (MANDATORY — rides the explicit deletion path)
 
-**Why:** the ledger grows unbounded. GC events from epochs older than the current one, deleting them through the funnel so peers converge — never by inference.
+**Why:** the maintainer accepts the G-Set only WITH bounded storage — unbounded historic records are rejected, so this pruning is **mandatory**, not optional hygiene. GC events from epochs strictly older than the current one, deleting them through the funnel so peers converge — never by inference. **Race-free invariant (maintainer, 2026-07-08):** the prune predicate reads the **merged** `currentResetEpoch` (the value produced by the monotonic-max channel, incl. a local `+1` on reset) and deletes only `event.resetEpoch < currentResetEpoch`. Strictly-less-than against the monotonic epoch means a pruned event's epoch is provably dead cluster-wide (no device can ever treat it as current again — epochs only advance), so a peer that hasn't yet seen the bump loses at most a transient count that self-heals when the epoch record arrives, and only ever in the over-grant (never wrongly-deny) direction. The Skeptic Pass section discharges this.
 
 **Files:**
 - Modify: `Foqos/Utils/EmergencyUnblockManager.swift` (add `staleUnblockEventRecordNames()` + local prune).
@@ -1202,7 +1334,9 @@ Also add an inbound-deletion assertion as a method inside `EmergencyUnblockUnion
 
 - [ ] **Step 2: Implement** — add to `EmergencyUnblockManager`:
 ```swift
-  /// Record names of events from epochs older than the current one (safe to GC).
+  /// Record names of events from epochs strictly older than the MERGED current epoch (safe to GC).
+  /// Reads `currentResetEpoch` (the monotonic-max value), and only `< currentResetEpoch` — never an
+  /// unmerged/locally-guessed epoch — so a pruned event's epoch is provably dead cluster-wide (#221).
   func staleUnblockEventRecordNames() -> [String] {
     unblockEvents.filter { $0.resetEpoch < currentResetEpoch }.map { $0.recordName }
   }
@@ -1236,7 +1370,7 @@ Add the inbound deletion case in `SyncApplyService.applyFetchedDeletion` (`:88`)
       clearDeletionBookkeeping(recordName: recordName)
       return .deleted
 ```
-Add a GC entry point on `EmergencyUnblockManager` (call it after a reset and on app foreground; the reset already advances the epoch — after `pushEmergencySettingsToCloudKit()` in `resetEmergencyUnblocks`, prune locally + enqueue deletes):
+Add a GC entry point on `EmergencyUnblockManager` (call it after a reset and on app foreground; the reset already advanced + pushed the epoch — so after `pushEmergencyEpochToCloudKit()`/`pushEmergencySettingsToCloudKit()` in `resetEmergencyUnblocks`, prune locally + enqueue deletes against the just-merged epoch):
 ```swift
   func garbageCollectStaleUnblockEvents() {
     let stale = staleUnblockEventRecordNames()
@@ -1260,6 +1394,100 @@ Call `garbageCollectStaleUnblockEvents()` at the end of `resetEmergencyUnblocks(
 git add Foqos/Utils/EmergencyUnblockManager.swift Foqos/CloudKit/SyncEngine/MutationFunnel.swift Foqos/CloudKit/SyncEngine/SyncEngineControlling.swift Foqos/CloudKit/SyncEngine/SyncEngineController+Cutover.swift Foqos/CloudKit/ProfileSyncManager.swift Foqos/CloudKit/SyncEngine/SyncApplyService.swift FoqosTests/
 git commit -m "feat(#221): epoch-GC stale unblock events via explicit funnel deletion"
 ```
+
+---
+
+### Task 4f: engine-controller wiring for the new record types (REQUIRED — the max channel is dead without it)
+
+**Why (adversarial-pass BLOCKER):** a *fixed-name, repeatedly-updated* record (like `SyncedEmergencySettings`) only propagates its updates because the controller (a) caches the server-assigned change tag on each confirmed own-push and on `.serverRecordChanged`, gated by `scopedTypes`, and (b) re-adds a CAS-losing-but-locally-newer record via `localIsStrictlyNewer`. `SyncedEmergencyEpoch` is a fixed-name repeatedly-updated record but was in NEITHER set, so after its first push it would freeze on the server: a fresh (untagged) re-materialization collides → `.serverRecordChanged` → the higher local epoch is dropped and never re-added → peers never receive later bumps → a lagging device stays on a stale epoch and keeps counting stale-epoch events → **permanent under-count → wrong-deny** (the forbidden direction). Additionally `restorableRecordNames()` seeds neither the epoch nor the event ledger, so a T5 zone re-seed loses them permanently. This task closes both.
+
+**Files:**
+- Modify: `Foqos/CloudKit/SyncEngine/SyncEngineController.swift` (`scopedTypes` :347, `localIsStrictlyNewer` :527-557, `restorableRecordNames` :913-921).
+- Modify: `Foqos/Utils/EmergencyUnblockManager.swift` (add `allUnblockEventRecordNames()`).
+- Test: `FoqosTests/SyncEngineControllerTests.swift` (or the existing controller test file) — `localIsStrictlyNewer` epoch case + `restorableRecordNames` inclusion.
+
+- [ ] **Step 1: Scope the epoch record** — add it to `scopedTypes` (`:347`) so confirmed own-pushes and `.serverRecordChanged` responses cache its change tag (events stay UNscoped — they are write-once/unique-name and never re-saved, so they never CAS-conflict on their own record):
+```swift
+  private static let scopedTypes: Set<String> = [
+    SyncedProfile.recordType, SyncedLocation.recordType, SyncedEmergencySettings.recordType,
+    SyncedEmergencyEpoch.recordType,
+  ]
+```
+
+- [ ] **Step 2: Re-add a CAS-losing higher epoch** — add an `EmergencyResetEpoch` case to `localIsStrictlyNewer` (`:554`, before `default`), mirroring the `SyncedEmergencySettings` case but comparing the epoch integer. On `.serverRecordChanged` the inbound merge already `max()`-adopts the server epoch, so the provider materializes `max(local, server)`; if that exceeds the server's value the record is re-added and eventually lands:
+```swift
+    case SyncedEmergencyEpoch.recordType:
+      guard let localRecord = provider.record(forRecordName: name) else { return false }
+      let localEpoch = localRecord[SyncedEmergencyEpoch.FieldKey.epoch.rawValue] as? Int ?? 0
+      let serverEpoch = server[SyncedEmergencyEpoch.FieldKey.epoch.rawValue] as? Int ?? 0
+      return localEpoch > serverEpoch
+```
+
+- [ ] **Step 3: Re-seed the epoch + event ledger** — add an `allUnblockEventRecordNames()` accessor to `EmergencyUnblockManager`:
+```swift
+  func allUnblockEventRecordNames() -> [String] {
+    unblockEvents.map { $0.recordName }
+  }
+```
+and include the epoch record + every ledger event in `restorableRecordNames()` (`:913`), before the provider-non-nil filter (the provider branches from Task 4c/4a materialize them, so the existing `.filter { provider.record != nil }` keeps them):
+```swift
+    names.append(SyncedEmergencyEpoch.recordName)
+    names.append(contentsOf: EmergencyUnblockManager.shared.allUnblockEventRecordNames())
+```
+
+- [ ] **Step 4: Tests**
+```swift
+  func testGivenHigherLocalEpoch_WhenServerRecordLower_ThenLocalIsStrictlyNewer() {
+    // Seed the manager at epoch 5 via the provider; a server record at epoch 3 ⇒ re-add.
+    // (Construct the controller as the existing controller tests do; build a server CKRecord
+    //  SyncedEmergencyEpoch(epoch: 3).toCKRecord(in: zoneID); assert localIsStrictlyNewer == true,
+    //  and == false when the server epoch is >= local.)
+  }
+
+  func testRestorableRecordNames_IncludesEpochAndEvents() {
+    // With currentResetEpoch > 0 and N ledger events present, assert restorableRecordNames()
+    // contains SyncedEmergencyEpoch.recordName and every event.recordName.
+  }
+```
+> `localIsStrictlyNewer` and `restorableRecordNames` are `private`/internal on `SyncEngineController`; test them the way the existing `SyncEngineControllerTests` reach controller internals (they already construct a controller with a `RecordProvider` + `EmergencyUnblockManager`). If a member is `private`, either promote the two under test to internal (they are pure, side-effect-free) or assert via the observable behavior (a second epoch push after a simulated `.serverRecordChanged` re-enqueues a `.saveRecord` for `emergency-reset-epoch`).
+
+**S0 conformance note:** this is pure engine-controller plumbing to make the new synced types first-class alongside the existing three — no new mutation path, no funnel bypass. It is what makes the monotonic-max epoch channel actually converge (and survive a zone re-seed), which the whole #221 correctness argument depends on.
+
+- [ ] **Step 5: Commit**
+```bash
+git add Foqos/CloudKit/SyncEngine/SyncEngineController.swift Foqos/Utils/EmergencyUnblockManager.swift FoqosTests/
+git commit -m "fix(#221): scope + CAS-re-add + re-seed the epoch/event records (max channel converges)"
+```
+
+---
+
+## Skeptic Pass — #221 pruning × monotonic-max epoch (maintainer-directed, PR #292)
+
+The maintainer required the adversarial re-run to discharge two interleavings before merge. Both are recorded here; the implementer MUST turn each into an explicit test (named below) and must not merge if either fails.
+
+**Invariant to protect:** the derived remaining count must never *under*-count remaining (never wrongly DENY a legitimate unblock). A brief *over*-count that self-heals is the accepted direction (same bound as the original residual). Consumption count = `|events where resetEpoch == currentResetEpoch|`; `currentResetEpoch` only ever moves up (local `+1` on reset, or `max()` on remote adopt).
+
+**Interleaving A — reset-and-prune races ahead of a lagging peer.** Device A resets (epoch 1→2), pushes the epoch on the monotonic-max channel, and prunes its epoch-1 events (enqueuing `.deleteRecord`s). Device B has NOT yet received epoch 2.
+- A's prune reads A's **merged** `currentResetEpoch` (=2) and deletes only `resetEpoch < 2`. Epoch-1 is now dead cluster-wide: because the epoch channel is monotonic, B can only ever converge to ≥2, so no device will ever again treat epoch-1 as its current epoch. Deleting epoch-1 events therefore removes data that can never legitimately be counted again.
+- If B receives the event `.deleteRecord`s **before** the epoch record: B (still at epoch 1) loses some epoch-1 events → B's epoch-1 count drops → B momentarily shows *more* remaining (over-count, the accepted direction) → heals the instant the epoch-2 record arrives (adopt-by-max → remaining resets to full for epoch 2 regardless of the epoch-1 ledger).
+- If B receives the epoch record **first**: B adopts epoch 2, epoch-1 events already stop counting, the later deletions are no-ops. No transient error.
+- Test `testGivenPeerPrunedBeforeEpochSeen_ThenNeverUnderCounts`: seed B at epoch 1 with 2 epoch-1 events (remaining 1); apply epoch-1 event deletions with epoch record NOT yet applied; assert remaining ≥ 1 (never < the true value); then apply `SyncedEmergencyEpoch(epoch: 2)`; assert remaining == 3.
+
+**Interleaving B — a reset's two effects arrive singly / out of order.** A reset produces (i) the epoch bump (monotonic channel) and (ii) the prune deletions. A peer may see either alone or in either order.
+- epoch-only arrives: adopt-by-max → old-epoch events filtered out of the count immediately (remaining = full for the new epoch); the still-present old events are harmless (never match the new epoch predicate) and will be pruned when their deletions arrive.
+- deletions-only arrive (epoch not yet seen): covered by Interleaving A — over-count that heals.
+- Neither ordering can drop a **current-epoch** event a peer legitimately counts, because prune deletions only ever target `resetEpoch < currentResetEpoch` at the origin, i.e. strictly-older-than-the-bumped epoch; a current-epoch consumption event is never pruned.
+- Test `testGivenEpochBumpArrivesWithoutEvents_ThenCountResetsAndOldEventsInert` and `testGivenEventsArriveBeforeEpoch_ThenCountedOnlyAfterEpochAdopted` (a peer receiving epoch-2 consumption events while still at epoch 1 must NOT count them until it adopts epoch 2 — they sit inert, so no premature under-count of the peer's own epoch-1 budget).
+
+**Convergence:** two concurrent resets both push their epoch on the max channel; `max()` converges deterministically with no lost bump (unlike LWW, where one version would win and the other's epoch would be dropped). Combined with the G-Set union of events, the whole shape converges. This is the property the dedicated channel buys over the config channel — **but only once the epoch record is actually delivered and re-seedable**, which requires Task 4f (below).
+
+### Findings from the maintainer-directed re-run (adversarial pass, 2026-07-08)
+
+The re-run tried to break the design across concrete 2-device timelines. The *math* (G-Set union + monotonic-max epoch + strictly-less-than prune) holds and protects the never-under-count invariant in the abstract, and the following were verified sound: monotonic-max apply in isolation, CKSyncEngine self-echo harmlessness (max/union are idempotent — no `originDeviceId` self-filter needed), cold-start at epoch 0, and higher-epoch events being inert (the only structural skew is toward over-grant). Three real gaps were found and folded:
+
+- **BLOCKER (fixed by Task 4f):** `SyncedEmergencyEpoch` — a fixed-name repeatedly-updated record — was not in `scopedTypes` and had no `localIsStrictlyNewer` case, so after its first push a CAS-losing higher epoch would be dropped and never re-added → the max channel would freeze on the server → lagging peers permanently under-count (wrong-deny). **Task 4f** scopes it + adds the CAS re-add.
+- **MAJOR (fixed by Task 4f):** `restorableRecordNames()` seeded neither the epoch nor the event ledger → a T5 zone re-seed loses them permanently. **Task 4f** appends both.
+- **MAJOR (MAINTAINER DECISION — flagged, needs a ruling):** the epoch is a bare shared counter, so two devices manually resetting from the same base both go `5 → 6` and collapse two logical reset periods onto epoch 6. Under the **family-wide shared-budget** reading (the stated rationale for choosing the G-Set — one budget of 3 per period across the family), this is *correct*: device B inherits the family's consumption of the shared epoch-6 budget, no violation. Under a **per-device reset-intent** reading, B's explicit Reset would appear to do nothing — a wrong-deny — and the epoch would need a unique identity (`(counter, deviceId)` or a UUID/timestamp), not a bare counter. **This plan assumes the shared-budget reading** (consistent with the G-Set choice; auto-timer resets are already protected by the config-LWW `lastResetDate` + epoch-adopt). If the maintainer intends per-device reset intent, the epoch record must carry a unique identity and the count predicate must key on it — a scoped follow-up, flagged here rather than silently assumed.
 
 ---
 
