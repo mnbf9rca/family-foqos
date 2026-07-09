@@ -140,6 +140,46 @@ final class SyncEngineFacadeTests: XCTestCase {
     XCTAssertTrue(manager.hasNoDeferredMutations, "the deferred sets are cleared after draining")
   }
 
+  func testGivenNotAttached_WhenEnqueueProfileDelete_ThenTombstoneDeleteIsReplayedOnReady() throws {
+    let id = UUID()
+    manager.engineController = nil
+
+    XCTAssertThrowsError(try manager.enqueueProfileDelete(id)) { error in
+      XCTAssertEqual(error as? SyncEngineControllingError, .notAttached)
+    }
+
+    let attached = MockSyncEngineControlling()
+    manager.engineController = attached
+    manager.markSyncReadyAndFlush()
+
+    XCTAssertEqual(
+      attached.deferredDeletes,
+      [id.uuidString],
+      "a profile delete dropped before attach is replayed as a tombstone delete")
+    XCTAssertEqual(attached.requestSyncCount, 1)
+    XCTAssertTrue(manager.hasNoDeferredMutations)
+  }
+
+  func testGivenNotAttached_WhenEnqueueLocationDelete_ThenTombstoneDeleteIsReplayedOnReady() throws {
+    let id = UUID()
+    manager.engineController = nil
+
+    XCTAssertThrowsError(try manager.enqueueLocationDelete(id)) { error in
+      XCTAssertEqual(error as? SyncEngineControllingError, .notAttached)
+    }
+
+    let attached = MockSyncEngineControlling()
+    manager.engineController = attached
+    manager.markSyncReadyAndFlush()
+
+    XCTAssertEqual(
+      attached.deferredDeletes,
+      [id.uuidString],
+      "a location delete dropped before attach is replayed as a tombstone delete")
+    XCTAssertEqual(attached.requestSyncCount, 1)
+    XCTAssertTrue(manager.hasNoDeferredMutations)
+  }
+
   // MARK: - Review fix: not-attached and genuine-throw propagation (findings #2–#6, #15)
 
   func testGivenNoEngineController_WhenSyncNow_ThenThrowsNotAttachedInsteadOfSilentNoOp() {

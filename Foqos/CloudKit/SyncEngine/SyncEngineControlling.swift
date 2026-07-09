@@ -13,6 +13,7 @@ protocol SyncEngineControlling: AnyObject {
   func enqueueLocationSave(_ id: UUID) throws
   func enqueueLocationDelete(_ id: UUID) throws
   func enqueueEmergencySettingsSave() throws
+  func enqueueDeferredDelete(recordName: String)
 }
 
 /// Thrown by the `SyncEngineControlling` enqueue verbs (and by `ProfileSyncManager.syncNow()`/

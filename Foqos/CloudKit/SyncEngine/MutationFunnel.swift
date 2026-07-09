@@ -172,6 +172,16 @@ final class MutationFunnel {
     driver.add(pendingRecordZoneChanges: [.deleteRecord(recordID)])
   }
 
+  /// Enqueue a delete for a record whose model is already gone locally (a delete that fell
+  /// back to a local delete while unattached, #294). Writes the tombstone and `.deleteRecord`;
+  /// there is no persisted delete because the row no longer exists.
+  func enqueueTombstoneDelete(recordName: String) {
+    let changeTag = Self.changeTag(fromSystemFields: store.systemFields(for: recordName))
+    store.setTombstone(recordName: recordName, changeTag: changeTag)
+    let recordID = CKRecord.ID(recordName: recordName, zoneID: zoneID)
+    driver.add(pendingRecordZoneChanges: [.deleteRecord(recordID)])
+  }
+
   // MARK: - System-fields change tag
 
   /// Decode the last-known server change tag from cached CKRecord system fields.

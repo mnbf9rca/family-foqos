@@ -243,8 +243,16 @@ class ProfileSyncManager: ObservableObject {
     if isSyncReady { engineController.requestSync() }
   }
   func enqueueProfileDelete(_ id: UUID) throws {
-    guard let engineController else { throw SyncEngineControllingError.notAttached }
-    try engineController.enqueueProfileDelete(id)
+    guard let engineController else {
+      deferredDeleteRecordNames.insert(id.uuidString)
+      throw SyncEngineControllingError.notAttached
+    }
+    do {
+      try engineController.enqueueProfileDelete(id)
+    } catch SyncEngineControllingError.notAttached {
+      deferredDeleteRecordNames.insert(id.uuidString)
+      throw SyncEngineControllingError.notAttached
+    }
     if isSyncReady { engineController.requestSync() }
   }
   func enqueueLocationSave(_ id: UUID) throws {
@@ -261,8 +269,16 @@ class ProfileSyncManager: ObservableObject {
     if isSyncReady { engineController.requestSync() }
   }
   func enqueueLocationDelete(_ id: UUID) throws {
-    guard let engineController else { throw SyncEngineControllingError.notAttached }
-    try engineController.enqueueLocationDelete(id)
+    guard let engineController else {
+      deferredDeleteRecordNames.insert(id.uuidString)
+      throw SyncEngineControllingError.notAttached
+    }
+    do {
+      try engineController.enqueueLocationDelete(id)
+    } catch SyncEngineControllingError.notAttached {
+      deferredDeleteRecordNames.insert(id.uuidString)
+      throw SyncEngineControllingError.notAttached
+    }
     if isSyncReady { engineController.requestSync() }
   }
   func enqueueEmergencySettingsSave() throws {
@@ -286,9 +302,11 @@ class ProfileSyncManager: ObservableObject {
     guard let engineController else { return }
     for id in deferredProfileSaveIds { try? engineController.enqueueProfileSave(id) }
     for id in deferredLocationSaveIds { try? engineController.enqueueLocationSave(id) }
+    for name in deferredDeleteRecordNames { engineController.enqueueDeferredDelete(recordName: name) }
     if deferredEmergencySave { try? engineController.enqueueEmergencySettingsSave() }
     deferredProfileSaveIds.removeAll()
     deferredLocationSaveIds.removeAll()
+    deferredDeleteRecordNames.removeAll()
     deferredEmergencySave = false
   }
 

@@ -46,4 +46,7 @@ extension SyncEngineController: SyncEngineControlling {
     guard let funnel else { throw SyncEngineControllingError.notAttached }
     funnel.enqueueEmergencySettingsSave()
   }
+  func enqueueDeferredDelete(recordName: String) {
+    funnel?.enqueueTombstoneDelete(recordName: recordName)
+  }
 }

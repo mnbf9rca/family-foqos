@@ -13,6 +13,7 @@ final class MockSyncEngineControlling: SyncEngineControlling {
   private(set) var enqueuedLocationSaves: [UUID] = []
   private(set) var enqueuedLocationDeletes: [UUID] = []
   private(set) var enqueuedEmergencySaves = 0
+  private(set) var deferredDeletes: [String] = []
 
   /// Set by a test to make every `enqueue*` verb below throw instead of recording — used to
   /// verify a genuine funnel throw propagates through the facade instead of being swallowed
@@ -43,5 +44,8 @@ final class MockSyncEngineControlling: SyncEngineControlling {
   func enqueueEmergencySettingsSave() throws {
     if let errorToThrow { throw errorToThrow }
     enqueuedEmergencySaves += 1
+  }
+  func enqueueDeferredDelete(recordName: String) {
+    deferredDeletes.append(recordName)
   }
 }
