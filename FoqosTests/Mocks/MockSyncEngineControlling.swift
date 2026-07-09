@@ -30,8 +30,12 @@ final class MockSyncEngineControlling: SyncEngineControlling {
     enqueuedProfileSaves.append(id)
   }
   func enqueueProfileDelete(_ id: UUID) throws {
+    try enqueueProfileDelete(id, requestSyncAfterPendingDelete: false)
+  }
+  func enqueueProfileDelete(_ id: UUID, requestSyncAfterPendingDelete: Bool) throws {
     if let errorToThrow { throw errorToThrow }
     enqueuedProfileDeletes.append(id)
+    if requestSyncAfterPendingDelete { requestSync() }
   }
   func enqueueLocationSave(_ id: UUID) throws {
     if let errorToThrow { throw errorToThrow }

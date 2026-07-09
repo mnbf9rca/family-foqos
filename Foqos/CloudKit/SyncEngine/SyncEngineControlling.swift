@@ -10,6 +10,7 @@ protocol SyncEngineControlling: AnyObject {
   func beginReset(clearRemoteAppSelections: Bool)
   func enqueueProfileSave(_ id: UUID) throws
   func enqueueProfileDelete(_ id: UUID) throws
+  func enqueueProfileDelete(_ id: UUID, requestSyncAfterPendingDelete: Bool) throws
   func enqueueLocationSave(_ id: UUID) throws
   func enqueueLocationDelete(_ id: UUID) throws
   func enqueueEmergencySettingsSave() throws

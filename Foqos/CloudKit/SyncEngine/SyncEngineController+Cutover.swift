@@ -31,8 +31,16 @@ extension SyncEngineController: SyncEngineControlling {
     try funnel.enqueueSave(profileId: id)
   }
   func enqueueProfileDelete(_ id: UUID) throws {
+    try enqueueProfileDelete(id, requestSyncAfterPendingDelete: false)
+  }
+  func enqueueProfileDelete(_ id: UUID, requestSyncAfterPendingDelete: Bool) throws {
     guard let funnel else { throw SyncEngineControllingError.notAttached }
-    try funnel.enqueueDelete(profileId: id)
+    let onPendingDeleteEnqueued: @MainActor () -> Void = { [weak self] in
+      if requestSyncAfterPendingDelete { self?.requestSync() }
+    }
+    try funnel.enqueueDelete(
+      profileId: id,
+      onPendingDeleteEnqueued: onPendingDeleteEnqueued)
   }
   func enqueueLocationSave(_ id: UUID) throws {
     guard let funnel else { throw SyncEngineControllingError.notAttached }

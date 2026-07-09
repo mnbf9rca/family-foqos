@@ -248,12 +248,11 @@ class ProfileSyncManager: ObservableObject {
       throw SyncEngineControllingError.notAttached
     }
     do {
-      try engineController.enqueueProfileDelete(id)
+      try engineController.enqueueProfileDelete(id, requestSyncAfterPendingDelete: isSyncReady)
     } catch SyncEngineControllingError.notAttached {
       deferredDeleteRecordNames.insert(id.uuidString)
       throw SyncEngineControllingError.notAttached
     }
-    if isSyncReady { engineController.requestSync() }
   }
   func enqueueLocationSave(_ id: UUID) throws {
     guard let engineController else {
