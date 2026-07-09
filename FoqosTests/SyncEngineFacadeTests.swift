@@ -9,6 +9,7 @@ final class SyncEngineFacadeTests: XCTestCase {
   var manager: ProfileSyncManager!
   var mock: MockSyncEngineControlling!
   private var savedEnabled = false
+  private var savedIsSyncReady = false
   private var savedController: (any SyncEngineControlling)?
 
   override func setUp() async throws {
@@ -17,14 +18,17 @@ final class SyncEngineFacadeTests: XCTestCase {
     SharedData.configure(suite: UserDefaults(suiteName: testSuiteName)!)
     manager = ProfileSyncManager.shared
     savedEnabled = manager.isEnabled
+    savedIsSyncReady = manager.isSyncReady
     savedController = manager.engineController
     mock = MockSyncEngineControlling()
     manager.engineController = mock
+    manager.isSyncReady = false
     manager.isEnabled = false
   }
 
   override func tearDown() async throws {
     manager.engineController = savedController
+    manager.isSyncReady = savedIsSyncReady
     manager.isEnabled = savedEnabled
     UserDefaults().removePersistentDomain(forName: testSuiteName)
     try await super.tearDown()
@@ -82,6 +86,58 @@ final class SyncEngineFacadeTests: XCTestCase {
     XCTAssertEqual(
       mock.requestSyncCount, 1,
       "a ready engine flushes a user-initiated save promptly, not on the next foreground")
+  }
+
+  func testGivenNotAttached_WhenEnqueueProfileSave_ThenIdIsDeferredAndReEnqueuedOnReady() throws {
+    let id = UUID()
+    manager.engineController = nil
+
+    XCTAssertThrowsError(try manager.enqueueProfileSave(id)) { error in
+      XCTAssertEqual(error as? SyncEngineControllingError, .notAttached)
+    }
+
+    let attached = MockSyncEngineControlling()
+    manager.engineController = attached
+    manager.markSyncReadyAndFlush()
+
+    XCTAssertEqual(attached.enqueuedProfileSaves, [id], "the dropped save is retried on attach")
+    XCTAssertEqual(attached.requestSyncCount, 1, "exactly one flush covers all drained mutations")
+    XCTAssertTrue(manager.hasNoDeferredMutations, "the deferred sets are cleared after draining")
+  }
+
+  func testGivenNotAttached_WhenEnqueueLocationSave_ThenIdIsDeferredAndReEnqueuedOnReady() throws {
+    let id = UUID()
+    manager.engineController = nil
+
+    XCTAssertThrowsError(try manager.enqueueLocationSave(id)) { error in
+      XCTAssertEqual(error as? SyncEngineControllingError, .notAttached)
+    }
+
+    let attached = MockSyncEngineControlling()
+    manager.engineController = attached
+    manager.markSyncReadyAndFlush()
+
+    XCTAssertEqual(attached.enqueuedLocationSaves, [id], "the dropped location save is retried on attach")
+    XCTAssertEqual(attached.requestSyncCount, 1, "exactly one flush covers all drained mutations")
+    XCTAssertTrue(manager.hasNoDeferredMutations, "the deferred sets are cleared after draining")
+  }
+
+  func testGivenNotAttached_WhenEnqueueEmergencySettingsSave_ThenSaveIsDeferredAndReEnqueuedOnReady()
+    throws
+  {
+    manager.engineController = nil
+
+    XCTAssertThrowsError(try manager.enqueueEmergencySettingsSave()) { error in
+      XCTAssertEqual(error as? SyncEngineControllingError, .notAttached)
+    }
+
+    let attached = MockSyncEngineControlling()
+    manager.engineController = attached
+    manager.markSyncReadyAndFlush()
+
+    XCTAssertEqual(attached.enqueuedEmergencySaves, 1, "the dropped emergency save is retried on attach")
+    XCTAssertEqual(attached.requestSyncCount, 1, "exactly one flush covers all drained mutations")
+    XCTAssertTrue(manager.hasNoDeferredMutations, "the deferred sets are cleared after draining")
   }
 
   // MARK: - Review fix: not-attached and genuine-throw propagation (findings #2–#6, #15)

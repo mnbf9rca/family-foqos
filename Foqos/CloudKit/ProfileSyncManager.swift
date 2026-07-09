@@ -44,6 +44,19 @@ class ProfileSyncManager: ObservableObject {
 
   private var cancellables = Set<AnyCancellable>()
 
+  // Mutations that could not be enqueued because the engine was not attached yet (#294).
+  // Drained on attach so a mutation in the pre-attach window is retried instead of lost.
+  private var deferredProfileSaveIds: Set<UUID> = []
+  private var deferredLocationSaveIds: Set<UUID> = []
+  private var deferredDeleteRecordNames: Set<String> = []
+  private var deferredEmergencySave = false
+
+  /// Test seam: true when nothing is pending re-enqueue.
+  var hasNoDeferredMutations: Bool {
+    deferredProfileSaveIds.isEmpty && deferredLocationSaveIds.isEmpty
+      && deferredDeleteRecordNames.isEmpty && !deferredEmergencySave
+  }
+
   // Device identifier for this device
   var deviceId: String {
     SharedData.deviceSyncId.uuidString
@@ -179,7 +192,7 @@ class ProfileSyncManager: ObservableObject {
       // mirrors the `await controller.startupTask?.value` pattern used by the controller's
       // own tests.
       await controller.startupTask?.value
-      isSyncReady = true
+      markSyncReadyAndFlush()
     }
   }
 
@@ -217,8 +230,16 @@ class ProfileSyncManager: ObservableObject {
   /// itself throws (review findings #4–#6, #15). Delete call sites MUST fall back to a direct
   /// local delete on `.notAttached` so the item is never silently left behind.
   func enqueueProfileSave(_ id: UUID) throws {
-    guard let engineController else { throw SyncEngineControllingError.notAttached }
-    try engineController.enqueueProfileSave(id)
+    guard let engineController else {
+      deferredProfileSaveIds.insert(id)
+      throw SyncEngineControllingError.notAttached
+    }
+    do {
+      try engineController.enqueueProfileSave(id)
+    } catch SyncEngineControllingError.notAttached {
+      deferredProfileSaveIds.insert(id)
+      throw SyncEngineControllingError.notAttached
+    }
     if isSyncReady { engineController.requestSync() }
   }
   func enqueueProfileDelete(_ id: UUID) throws {
@@ -227,8 +248,16 @@ class ProfileSyncManager: ObservableObject {
     if isSyncReady { engineController.requestSync() }
   }
   func enqueueLocationSave(_ id: UUID) throws {
-    guard let engineController else { throw SyncEngineControllingError.notAttached }
-    try engineController.enqueueLocationSave(id)
+    guard let engineController else {
+      deferredLocationSaveIds.insert(id)
+      throw SyncEngineControllingError.notAttached
+    }
+    do {
+      try engineController.enqueueLocationSave(id)
+    } catch SyncEngineControllingError.notAttached {
+      deferredLocationSaveIds.insert(id)
+      throw SyncEngineControllingError.notAttached
+    }
     if isSyncReady { engineController.requestSync() }
   }
   func enqueueLocationDelete(_ id: UUID) throws {
@@ -237,8 +266,37 @@ class ProfileSyncManager: ObservableObject {
     if isSyncReady { engineController.requestSync() }
   }
   func enqueueEmergencySettingsSave() throws {
-    guard let engineController else { throw SyncEngineControllingError.notAttached }
-    try engineController.enqueueEmergencySettingsSave()
+    guard let engineController else {
+      deferredEmergencySave = true
+      throw SyncEngineControllingError.notAttached
+    }
+    do {
+      try engineController.enqueueEmergencySettingsSave()
+    } catch SyncEngineControllingError.notAttached {
+      deferredEmergencySave = true
+      throw SyncEngineControllingError.notAttached
+    }
     if isSyncReady { engineController.requestSync() }
+  }
+
+  /// Replay save-type mutations deferred while the engine was unattached (#294). Uses the
+  /// controller-level enqueue verbs (which do not themselves send), so the single requestSync
+  /// in `markSyncReadyAndFlush()` flushes them all at once.
+  private func drainDeferredMutations() {
+    guard let engineController else { return }
+    for id in deferredProfileSaveIds { try? engineController.enqueueProfileSave(id) }
+    for id in deferredLocationSaveIds { try? engineController.enqueueLocationSave(id) }
+    if deferredEmergencySave { try? engineController.enqueueEmergencySettingsSave() }
+    deferredProfileSaveIds.removeAll()
+    deferredLocationSaveIds.removeAll()
+    deferredEmergencySave = false
+  }
+
+  /// Called once the engine is attached AND startup, including the AB-4 T1 strip, has completed.
+  /// Enables prompt sends and flushes anything enqueued while not ready, always post-T1.
+  func markSyncReadyAndFlush() {
+    isSyncReady = true
+    drainDeferredMutations()
+    engineController?.requestSync()
   }
 }
