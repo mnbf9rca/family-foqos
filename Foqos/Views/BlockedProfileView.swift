@@ -970,6 +970,10 @@ struct BlockedProfileView: View {
         existingProfile.physicalUnblockQRCodeId = physicalUnblockQRCodeId
         existingProfile.reminderTimeInSeconds = reminderTimeSeconds
         existingProfile.customReminderMessage = customReminderMessage
+        let needsAppSelectionAfterSave = BlockedProfiles.needsAppSelectionAfterLocalSave(
+          currentNeedsAppSelection: existingProfile.needsAppSelection,
+          selection: selectedActivity
+        )
 
         // Update remaining fields through updateProfile (which calls context.save())
         let updatedProfile = try BlockedProfiles.updateProfile(
@@ -990,7 +994,7 @@ struct BlockedProfileView: View {
           disableBackgroundStops: disableBackgroundStops,
           preActivationReminderTimes: Array(preActivationReminderTimes).sorted(),
           isManaged: isManaged,
-          needsAppSelection: false  // Clear needsAppSelection since user is saving with app selection
+          needsAppSelection: needsAppSelectionAfterSave
         )
 
         finalizeSave(updatedProfile)

@@ -10,6 +10,7 @@ final class SyncEngineAttachTests: XCTestCase {
   var container: ModelContainer!
   var manager: ProfileSyncManager!
   private var savedEnabled = false
+  private var savedIsSyncReady = false
   private var savedController: (any SyncEngineControlling)?
 
   override func setUp() async throws {
@@ -19,11 +20,14 @@ final class SyncEngineAttachTests: XCTestCase {
     container = try TestModelContainer.create()
     manager = ProfileSyncManager.shared
     savedEnabled = manager.isEnabled
+    savedIsSyncReady = manager.isSyncReady
     savedController = manager.engineController
+    manager.isSyncReady = false
   }
 
   override func tearDown() async throws {
     manager.engineController = savedController
+    manager.isSyncReady = savedIsSyncReady
     manager.isEnabled = savedEnabled
     UserDefaults().removePersistentDomain(forName: testSuiteName)
     try await super.tearDown()
@@ -56,5 +60,34 @@ final class SyncEngineAttachTests: XCTestCase {
 
     XCTAssertNotNil(manager.engineController)
     XCTAssertTrue(driver.enqueuedZoneSaveNames.isEmpty)  // start() not called
+  }
+
+  func testGivenEngineAttachedWhileDisabled_WhenSyncEnabledLater_ThenStartupMarksReadyAndDrainsDeferredDelete()
+    async throws
+  {
+    manager.isEnabled = false
+    let driver = CutoverRecordingDriver(stateSerialization: nil)
+
+    await manager.attachEngine(
+      modelContext: container.mainContext,
+      emergencyManager: EmergencyUnblockManager(),
+      userRecordNameProvider: { "user-attach-enable-later" },
+      driverFactory: { _ in driver })
+
+    let id = UUID()
+    XCTAssertThrowsError(try manager.enqueueProfileDelete(id)) { error in
+      XCTAssertEqual(error as? SyncEngineControllingError, .notAttached)
+    }
+
+    manager.isEnabled = true
+    let controller = try XCTUnwrap(manager.engineController as? SyncEngineController)
+    await controller.startupTask?.value
+
+    XCTAssertTrue(manager.isSyncReady)
+    XCTAssertTrue(manager.hasNoDeferredMutations)
+    XCTAssertTrue(
+      driver.enqueuedDeleteNames.contains(id.uuidString),
+      "the deferred delete is replayed after enable-time startup completes")
+    XCTAssertGreaterThan(driver.sendChangesCount, 0, "ready flush sends after T1 has completed")
   }
 }

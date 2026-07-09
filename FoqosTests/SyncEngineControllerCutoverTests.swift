@@ -16,6 +16,7 @@ final class SyncEngineControllerCutoverTests: XCTestCase {
   var store: SyncEngineStore!
   var driver: CutoverRecordingDriver!
   var controller: SyncEngineController!
+  var profileDeleteCommitScheduler: ManualProfileDeleteCommitScheduler!
   let zoneID = CKRecordZone.ID(
     zoneName: CloudKitConstants.syncZoneName, ownerName: CKCurrentUserDefaultName)
 
@@ -27,6 +28,7 @@ final class SyncEngineControllerCutoverTests: XCTestCase {
     context = container.mainContext
     store = SyncEngineStore(userRecordName: "user-A", defaults: UserDefaults(suiteName: testSuiteName)!)
     driver = CutoverRecordingDriver(stateSerialization: nil)
+    profileDeleteCommitScheduler = ManualProfileDeleteCommitScheduler()
     let deviceId = SharedData.deviceSyncId.uuidString
     let apply = SyncApplyService(
       modelContext: context, store: store, sessionController: MockSessionController(),
@@ -35,7 +37,8 @@ final class SyncEngineControllerCutoverTests: XCTestCase {
       modelContext: context, store: store, emergencyManager: EmergencyUnblockManager(), deviceId: deviceId)
     controller = SyncEngineController(
       modelContext: context, store: store, driverFactory: { [driver] _ in driver! },
-      apply: apply, provider: provider, sessionSync: MockSessionSyncFlushing(), deviceId: deviceId)
+      apply: apply, provider: provider, sessionSync: MockSessionSyncFlushing(), deviceId: deviceId,
+      scheduleProfileDeleteCommit: profileDeleteCommitScheduler.schedule)
   }
 
   override func tearDown() async throws {
@@ -120,6 +123,30 @@ final class SyncEngineControllerCutoverTests: XCTestCase {
     XCTAssertThrowsError(try controller.enqueueProfileDelete(UUID())) { error in
       XCTAssertEqual(error as? MutationFunnel.MutationFunnelError, .entityNotFound)
     }
+  }
+
+  func testGivenReadyProfileDelete_WhenDeferredCommitRuns_ThenSendHappensAfterPendingDeleteEnqueued()
+    throws
+  {
+    let now = Date()
+    let profile = makeProfile(now: now)
+    controller.start()
+    let sendBefore = driver.sendChangesCount
+
+    try controller.enqueueProfileDelete(profile.id, requestSyncAfterPendingDelete: true)
+
+    XCTAssertEqual(profileDeleteCommitScheduler.scheduledOperations.count, 1)
+    XCTAssertFalse(
+      driver.enqueuedDeleteNames.contains(profile.id.uuidString),
+      "profile delete does not enqueue the CK delete until the deferred save commits")
+    XCTAssertEqual(
+      driver.sendChangesCount, sendBefore,
+      "send must not run before the pending .deleteRecord exists")
+
+    profileDeleteCommitScheduler.runNext()
+
+    XCTAssertTrue(driver.enqueuedDeleteNames.contains(profile.id.uuidString))
+    XCTAssertEqual(driver.sendChangesCount, sendBefore + 1)
   }
 
   // MARK: - Task 134b (CRA-4): ResetController + LegacyCleanupCoordinator wiring

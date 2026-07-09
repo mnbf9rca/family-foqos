@@ -467,6 +467,13 @@ class BlockedProfiles {
     return profile
   }
 
+  static func needsAppSelectionAfterLocalSave(
+    currentNeedsAppSelection: Bool,
+    selection: FamilyActivitySelection
+  ) -> Bool {
+    currentNeedsAppSelection && FamilyActivityUtil.countSelectedActivities(selection) == 0
+  }
+
   static func deleteProfile(
     _ profile: BlockedProfiles,
     in context: ModelContext

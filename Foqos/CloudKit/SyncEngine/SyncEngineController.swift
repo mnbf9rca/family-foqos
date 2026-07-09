@@ -28,6 +28,7 @@ final class SyncEngineController: SyncEngineDriverDelegate {
   private let provider: RecordProvider
   private let sessionSync: SessionSyncFlushing
   private let deviceId: String
+  private let scheduleProfileDeleteCommit: (@escaping @MainActor () -> Void) -> Void
 
   private let zoneID = CKRecordZone.ID(
     zoneName: CloudKitConstants.syncZoneName, ownerName: CKCurrentUserDefaultName)
@@ -80,7 +81,9 @@ final class SyncEngineController: SyncEngineDriverDelegate {
     apply: SyncApplyService,
     provider: RecordProvider,
     sessionSync: SessionSyncFlushing,
-    deviceId: String
+    deviceId: String,
+    scheduleProfileDeleteCommit: @escaping (@escaping @MainActor () -> Void) -> Void =
+      BlockedProfiles.scheduleProfileDeleteCommit
   ) {
     self.modelContext = modelContext
     self.store = store
@@ -89,6 +92,7 @@ final class SyncEngineController: SyncEngineDriverDelegate {
     self.provider = provider
     self.sessionSync = sessionSync
     self.deviceId = deviceId
+    self.scheduleProfileDeleteCommit = scheduleProfileDeleteCommit
     self.apply.profileDeleteCommitObserver = { [weak self] recordName in
       guard let self else { return }
       let recordID = CKRecord.ID(recordName: recordName, zoneID: self.zoneID)
@@ -101,7 +105,8 @@ final class SyncEngineController: SyncEngineDriverDelegate {
     guard state == .disabled || state == .purged else { return }
     driver = driverFactory(store.engineState)
     funnel = MutationFunnel(
-      modelContext: modelContext, store: store, driver: driver, deviceId: deviceId)
+      modelContext: modelContext, store: store, driver: driver, deviceId: deviceId,
+      scheduleProfileDeleteCommit: scheduleProfileDeleteCommit)
     reset = ResetController(
       store: store,
       outbox: DriverResetOutbox(driver: driver, zoneID: zoneID),

@@ -103,7 +103,10 @@ final class MutationFunnel {
   /// `.deleteRecord` (I12, §2). On any failure, the tombstone is removed and the context rolled
   /// back before the error is rethrown — a lingering tombstone for an entity that was never
   /// actually deleted would later kill the live record family-wide (round-4/5).
-  func enqueueDelete(profileId: UUID) throws {
+  func enqueueDelete(
+    profileId: UUID,
+    onPendingDeleteEnqueued: @escaping @MainActor () -> Void = {}
+  ) throws {
     let recordName = profileId.uuidString
     let changeTag = Self.changeTag(fromSystemFields: store.systemFields(for: recordName))
     store.setTombstone(recordName: recordName, changeTag: changeTag)
@@ -115,7 +118,10 @@ final class MutationFunnel {
       let deleteZoneID = zoneID
       let saveOverride = saveOverride
       scheduleProfileDeleteCommit {
-        [modelContext, store, driver, profileId, recordName, deleteZoneID, saveOverride] in
+        [
+          modelContext, store, driver, profileId, recordName, deleteZoneID, saveOverride,
+          onPendingDeleteEnqueued,
+        ] in
         do {
           // The caller has already returned; post-boundary failures are logged and converted
           // back into tombstone cleanup plus rollback, and the remote delete is enqueued only
@@ -135,6 +141,7 @@ final class MutationFunnel {
           }
           let recordID = CKRecord.ID(recordName: recordName, zoneID: deleteZoneID)
           driver.add(pendingRecordZoneChanges: [.deleteRecord(recordID)])
+          onPendingDeleteEnqueued()
         } catch {
           store.clearTombstone(recordName: recordName)
           modelContext.rollback()
@@ -168,6 +175,16 @@ final class MutationFunnel {
       modelContext.rollback()
       throw error
     }
+    let recordID = CKRecord.ID(recordName: recordName, zoneID: zoneID)
+    driver.add(pendingRecordZoneChanges: [.deleteRecord(recordID)])
+  }
+
+  /// Enqueue a delete for a record whose model is already gone locally (a delete that fell
+  /// back to a local delete while unattached, #294). Writes the tombstone and `.deleteRecord`;
+  /// there is no persisted delete because the row no longer exists.
+  func enqueueTombstoneDelete(recordName: String) {
+    let changeTag = Self.changeTag(fromSystemFields: store.systemFields(for: recordName))
+    store.setTombstone(recordName: recordName, changeTag: changeTag)
     let recordID = CKRecord.ID(recordName: recordName, zoneID: zoneID)
     driver.add(pendingRecordZoneChanges: [.deleteRecord(recordID)])
   }
