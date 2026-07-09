@@ -224,17 +224,21 @@ class ProfileSyncManager: ObservableObject {
   func enqueueProfileDelete(_ id: UUID) throws {
     guard let engineController else { throw SyncEngineControllingError.notAttached }
     try engineController.enqueueProfileDelete(id)
+    if isSyncReady { engineController.requestSync() }
   }
   func enqueueLocationSave(_ id: UUID) throws {
     guard let engineController else { throw SyncEngineControllingError.notAttached }
     try engineController.enqueueLocationSave(id)
+    if isSyncReady { engineController.requestSync() }
   }
   func enqueueLocationDelete(_ id: UUID) throws {
     guard let engineController else { throw SyncEngineControllingError.notAttached }
     try engineController.enqueueLocationDelete(id)
+    if isSyncReady { engineController.requestSync() }
   }
   func enqueueEmergencySettingsSave() throws {
     guard let engineController else { throw SyncEngineControllingError.notAttached }
     try engineController.enqueueEmergencySettingsSave()
+    if isSyncReady { engineController.requestSync() }
   }
 }

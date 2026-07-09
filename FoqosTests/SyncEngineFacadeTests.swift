@@ -51,6 +51,8 @@ final class SyncEngineFacadeTests: XCTestCase {
 
   func testGivenController_WhenFacadeVerbsCalled_ThenTheyForward() throws {
     let id = UUID()
+    manager.isSyncReady = true
+
     try manager.syncNow()
     try manager.resetSync(clearRemoteAppSelections: true)
     try manager.enqueueProfileSave(id)
@@ -59,7 +61,9 @@ final class SyncEngineFacadeTests: XCTestCase {
     try manager.enqueueLocationDelete(id)
     try manager.enqueueEmergencySettingsSave()
 
-    XCTAssertEqual(mock.requestSyncCount, 1)
+    XCTAssertEqual(
+      mock.requestSyncCount, 6,
+      "syncNow (1) + five enqueue verbs each flush once when ready (5)")
     XCTAssertEqual(mock.beginResetCalls, [true])
     XCTAssertEqual(mock.enqueuedProfileSaves, [id])
     XCTAssertEqual(mock.enqueuedProfileDeletes, [id])
