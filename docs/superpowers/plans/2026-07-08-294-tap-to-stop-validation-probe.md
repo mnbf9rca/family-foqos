@@ -32,13 +32,22 @@ An 8-hypothesis adversarial analysis (coincidence / causal / common-cause) resol
 
 ---
 
+## Maintainer approval points (folded in from PR #295 review)
+
+The maintainer approved this plan with three implementation points; each is bound into the tasks below:
+
+1. **All five facade verbs.** The enqueue-only gap hits every `SyncEngineControlling` mutation — `enqueueProfileSave`, `enqueueProfileDelete`, `enqueueLocationSave`, `enqueueLocationDelete`, `enqueueEmergencySettingsSave` — not just profile-save. The send-on-enqueue fix **and** the deferred-loss fix must cover all of them (deletes via a tombstone path, because their model is already gone by drain time — see Task 1.4).
+2. **AB-4 conformance (explicit).** Send-on-enqueue must fire **only on fresh local mutations and only after the T1 strip has run** — never flushing restored engine state — so it cannot reintroduce the #286 poison hazard. Enforced by the `isSyncReady` gate (Task 1.1) and documented in "AB-4 Conformance", with a dedicated test (Task 1.5).
+3. **The `.notAttached` swallow is the permanent-loss half**, correctly closed by deferred-drain-on-attach (Tasks 1.3–1.4).
+
 ## Global Constraints
 
-- **Chosen fix = send-on-enqueue + swallow deferred-retry** (maintainer decision). Do not implement a full startup backfill; do not touch the trigger/validation UI (it is not the defect).
-- **Two-device physical acceptance is authoritative.** The bug is a device-timing/propagation defect; the acceptance test is "create on device A, foregrounded, without starting it and without relaunching → appears on device B within seconds."
+- **Chosen fix = send-on-enqueue + deferred-drain-on-attach**, across **all five** facade verbs (approval point 1). Do not implement a full startup re-scan/backfill; do not touch the trigger/validation UI (it is not the defect).
+- **AB-4 invariant (approval point 2).** The send-on-enqueue `requestSync()` runs only when `isSyncReady == true`, a flag set only after `attachEngine` awaits `startupTask` (which runs the T1 strip). `requestSync()` is called **only** from the facade enqueue verbs (fresh local mutations) and the post-startup flush; it is never wired into `handleEvent`/restore/T1-seed. See "AB-4 Conformance".
+- **Two-device physical acceptance is authoritative.** The bug is a device-timing/propagation defect; the acceptance test is "create on device A, foregrounded, without starting it and without relaunching → appears on device B within seconds," plus edit and delete propagation.
 - **TDD.** Write the failing test first; names follow `testGivenX_WhenY_ThenZ`.
 - **The send must stay outside `handleEvent`.** `requestSync()`/`sendChanges()` may only be scheduled outside the CKSyncEngine delegate (`SyncEngineController+Cutover.swift:6-8`). All enqueue facade calls originate from UI actions (outside `handleEvent`), so calling `requestSync()` there is permitted. Do **not** add sends inside `nextRecordZoneChangeBatch`/`handleEvent`.
-- **Preserve the delete fallback contract.** Delete call sites must still receive `.notAttached` (they fall back to a local delete — `BlockedProfileView.swift:826-838`). Send-on-enqueue must run only *after* a successful enqueue, so a throwing enqueue never reaches it.
+- **Preserve the delete fallback + I2 contract.** Delete call sites must still receive `.notAttached` (they fall back to a local delete — `BlockedProfileView.swift:826-838`); send-on-enqueue runs only *after* a successful enqueue. The new tombstone-delete verb lives **inside `MutationFunnel`** (an I2-whitelisted enqueue site — `scripts/check-sync-guards.sh`), never in `ProfileSyncManager`.
 - **Single build/test stream.** Simulator UUID `B9E4A679-BDF3-4541-A59F-DA4BE21F80ED` (iPhone 17, booted). Never a device *name* in `-destination`. Use `-parallel-testing-enabled NO` if launch hangs.
 - **Branch.** Implement on `fix/294-tap-to-stop-validation` off `origin/main`. Do **not** fold into `#286`.
 - **No amend/force-push.** Revert temporary probes with normal commits.
@@ -50,11 +59,29 @@ An 8-hypothesis adversarial analysis (coincidence / causal / common-cause) resol
 ## File Structure
 
 - Modify: `Foqos/CloudKit/ProfileSyncManager.swift`
-  - Add `requestSync()` after a successful enqueue in each enqueue facade verb (`enqueueProfileSave/Delete`, `enqueueLocationSave/Delete`, `enqueueEmergencySettingsSave`).
-  - Add `deferredProfileSaveIds: Set<UUID>`; record on `.notAttached` in `enqueueProfileSave`; drain in `attachEngine` after `startupTask`.
-- Modify (tests): `FoqosTests/SyncEngineFacadeTests.swift`
-  - Update `testGivenController_WhenFacadeVerbsCalled_ThenTheyForward` for the new `requestSyncCount`; add send-on-enqueue and deferred-retry tests.
+  - Add `isSyncReady` flag (set after `startupTask` in `attachEngine`, cleared on `stop`/detach).
+  - Add gated `requestSync()` after a successful enqueue in **all five** facade verbs.
+  - Add deferred sets (`deferredProfileSaveIds`, `deferredLocationSaveIds`, `deferredDeleteRecordNames: Set<String>`, `deferredEmergencySave: Bool`); record on `.notAttached`; `drainDeferredMutations()` on attach.
+- Modify: `Foqos/CloudKit/SyncEngine/SyncEngineControlling.swift`
+  - Add `func enqueueDeferredDelete(recordName: String)` to the protocol (tombstone-only delete for a model that is already locally gone).
+- Modify: `Foqos/CloudKit/SyncEngine/SyncEngineController+Cutover.swift`
+  - Implement `enqueueDeferredDelete(recordName:)` forwarding to the funnel (I10 guard).
+- Modify: `Foqos/CloudKit/SyncEngine/MutationFunnel.swift`
+  - Add `func enqueueTombstoneDelete(recordName: String)` — sets the tombstone and adds `.deleteRecord`, mirroring the tail of `enqueueDelete` (`:108-109,136-137`) without a model read.
+- Modify (tests): `FoqosTests/SyncEngineFacadeTests.swift`, `FoqosTests/Mocks/MockSyncEngineControlling.swift`
+  - Add `enqueueDeferredDelete` to the mock (record `deferredDeletes: [String]`); update `testGivenController_WhenFacadeVerbsCalled_ThenTheyForward`; add send-on-enqueue, AB-4-gate, and deferred-drain tests.
 - Optional temporary probe (reverted before merge): `Foqos/CloudKit/SyncEngine/MutationFunnel.swift`, `Foqos/CloudKit/SyncEngine/CKSyncEngineDriver.swift` — one log line at enqueue and one at `sendChanges` (with caller) for device baseline/acceptance.
+
+---
+
+## AB-4 Conformance (approval point 2)
+
+The #286 poison arises when a **restored** pending zone-delete (a `pendingDatabaseChange`) is transmitted before the **T1 strip** removes it. Send-on-enqueue must never do this. Two independent guarantees:
+
+1. **Trigger provenance.** `requestSync()` for this feature is added **only** inside the five `ProfileSyncManager` facade enqueue verbs and the post-startup flush in `attachEngine`. Those verbs are invoked exclusively by fresh local mutations (`BlockedProfileView` create/edit/clone/delete, `BlockedProfileListView` reorder/delete, emergency-settings edits). No new `requestSync`/`sendChanges` is added to `handleEvent`, `nextRecordZoneChangeBatch`, `runStartupSequence`, the T1 seed, or any restore path.
+2. **Ordering gate.** `start()` creates the `MutationFunnel` synchronously (`SyncEngineController.swift:103`) but the T1 strip runs inside the async `startupTask` (`:121`, MARK "T1 strip (AB-4…)" `:193`). So there is a window where the funnel exists yet restored poison is unstripped. The send is therefore gated on `isSyncReady`, which `attachEngine` sets to `true` **only after** `await controller.startupTask?.value` (`ProfileSyncManager.swift:176`) — i.e. after the T1 strip. In that window an enqueue still records its pending change but does **not** send; the post-startup flush (also post-T1) transmits it. Net: no send can execute before T1 strips the poison.
+
+Task 1.5 asserts both: an enqueue with `isSyncReady == false` records the change but issues **zero** `sendChanges`, and the post-startup flush issues exactly one.
 
 ---
 
@@ -120,9 +147,9 @@ Build/install/launch on the reference device (`xcrun devicectl list devices` for
 
 ---
 
-## Phase 1: Send-on-Enqueue + Deferred-Retry Fix (TDD)
+## Phase 1: Send-on-Enqueue + Deferred-Drain Fix (TDD)
 
-### Task 1.1: Send-on-enqueue for the profile-save facade
+### Task 1.1: `isSyncReady` gate + send-on-enqueue for the profile-save facade
 
 **Files:**
 - Modify: `Foqos/CloudKit/ProfileSyncManager.swift`
@@ -130,17 +157,18 @@ Build/install/launch on the reference device (`xcrun devicectl list devices` for
 
 - [ ] **Step 1: Write the failing test**
 
-Add to `SyncEngineFacadeTests`:
+Add to `SyncEngineFacadeTests` (the harness's `setUp` leaves `manager.isSyncReady == false`, so set it explicitly):
 
 ```swift
-func testGivenAttachedController_WhenEnqueueProfileSave_ThenRequestSyncIsScheduled() throws {
+func testGivenReadyController_WhenEnqueueProfileSave_ThenRequestSyncIsScheduled() throws {
+  manager.isSyncReady = true
   let id = UUID()
   try manager.enqueueProfileSave(id)
 
   XCTAssertEqual(mock.enqueuedProfileSaves, [id], "the save is forwarded to the engine")
   XCTAssertEqual(
     mock.requestSyncCount, 1,
-    "a user-initiated profile save must trigger a prompt send, not wait for the next foreground")
+    "a ready engine flushes a user-initiated save promptly, not on the next foreground")
 }
 ```
 
@@ -150,24 +178,38 @@ func testGivenAttachedController_WhenEnqueueProfileSave_ThenRequestSyncIsSchedul
 xcodebuild test -project FamilyFoqos.xcodeproj -scheme FamilyFoqos \
   -destination 'platform=iOS Simulator,id=B9E4A679-BDF3-4541-A59F-DA4BE21F80ED' \
   -parallel-testing-enabled NO \
-  -only-testing:FoqosTests/SyncEngineFacadeTests/testGivenAttachedController_WhenEnqueueProfileSave_ThenRequestSyncIsScheduled | xcpretty
+  -only-testing:FoqosTests/SyncEngineFacadeTests/testGivenReadyController_WhenEnqueueProfileSave_ThenRequestSyncIsScheduled | xcpretty
 ```
 
-Expected: FAIL — `requestSyncCount` is 0 (enqueue does not currently send).
+Expected: compile failure — `isSyncReady` does not exist yet — then FAIL once it compiles (`requestSyncCount` is 0).
 
-- [ ] **Step 3: Implement send-on-enqueue in the facade**
+- [ ] **Step 3: Add the `isSyncReady` gate and send-on-enqueue**
 
-In `ProfileSyncManager.swift`, replace `enqueueProfileSave` (`:213-216`):
+In `ProfileSyncManager.swift`, add the flag near `engineController`:
+
+```swift
+  /// True once the engine is attached AND startup (incl. the AB-4 T1 strip) has completed.
+  /// Gates send-on-enqueue so a send can never flush restored state before T1 (#286 poison).
+  var isSyncReady = false
+```
+
+Replace `enqueueProfileSave` (`:213-216`):
 
 ```swift
   func enqueueProfileSave(_ id: UUID) throws {
     guard let engineController else { throw SyncEngineControllingError.notAttached }
     try engineController.enqueueProfileSave(id)
-    engineController.requestSync()
+    if isSyncReady { engineController.requestSync() }
   }
 ```
 
-(`requestSync()` runs only after a successful enqueue, so a throwing enqueue — including `.notAttached` — never reaches it.)
+In `attachEngine(...)`, inside the `if isEnabled { … }` block, after `await controller.startupTask?.value` (`:176`), add:
+
+```swift
+      isSyncReady = true
+```
+
+In the `isEnabled` off-branch that stops the engine (the `$isEnabled` sink / `stop()` path, `:56-67`), set `isSyncReady = false` so a detach can never leave sends enabled against a torn-down engine. (Task 1.3 replaces the `isSyncReady = true` line with `markSyncReadyAndFlush()`.)
 
 - [ ] **Step 4: Run it green**
 
@@ -176,7 +218,7 @@ Rerun the Step 2 command. Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git commit -am "fix(#294): flush profile save to CloudKit immediately after enqueue"
+git commit -am "fix(#294): gate a prompt send on isSyncReady and flush profile save after enqueue"
 ```
 
 ### Task 1.2: Extend send-on-enqueue to delete/location/emergency and fix the existing forward test
@@ -187,12 +229,18 @@ git commit -am "fix(#294): flush profile save to CloudKit immediately after enqu
 
 - [ ] **Step 1: Update the existing forward test to the new contract**
 
-`testGivenController_WhenFacadeVerbsCalled_ThenTheyForward` currently asserts `mock.requestSyncCount == 1` (from `syncNow` alone). With send-on-enqueue on all five enqueue verbs, the five enqueue calls each add one. Change the assertion (`SyncEngineFacadeTests.swift:62`):
+`testGivenController_WhenFacadeVerbsCalled_ThenTheyForward` currently asserts `mock.requestSyncCount == 1` (from `syncNow` alone). With the gate, the enqueue verbs only flush when `isSyncReady`, so set it at the top of the test (after the existing forwards, before the assertions is fine too — set it before the enqueue calls):
+
+```swift
+    manager.isSyncReady = true
+```
+
+and change the count assertion (`SyncEngineFacadeTests.swift:62`):
 
 ```swift
     XCTAssertEqual(
       mock.requestSyncCount, 6,
-      "syncNow (1) + five enqueue verbs each flush once (5)")
+      "syncNow (1) + five enqueue verbs each flush once when ready (5)")
 ```
 
 - [ ] **Step 2: Run it red**
@@ -208,13 +256,13 @@ Expected: FAIL — count is 2 (only `enqueueProfileSave` from Task 1.1 sends so 
 
 - [ ] **Step 3: Add `requestSync()` to the remaining enqueue verbs**
 
-In `ProfileSyncManager.swift`, apply the same pattern to `enqueueProfileDelete` (`:217-220`), `enqueueLocationSave` (`:221-224`), `enqueueLocationDelete` (`:225-228`), and `enqueueEmergencySettingsSave` (`:229-…`): after the `try engineController.enqueue…(…)` line, add `engineController.requestSync()`. Example for delete:
+In `ProfileSyncManager.swift`, apply the same gated pattern to `enqueueProfileDelete` (`:217-220`), `enqueueLocationSave` (`:221-224`), `enqueueLocationDelete` (`:225-228`), and `enqueueEmergencySettingsSave` (`:229-…`): after the `try engineController.enqueue…(…)` line, add `if isSyncReady { engineController.requestSync() }`. Example for delete:
 
 ```swift
   func enqueueProfileDelete(_ id: UUID) throws {
     guard let engineController else { throw SyncEngineControllingError.notAttached }
     try engineController.enqueueProfileDelete(id)
-    engineController.requestSync()
+    if isSyncReady { engineController.requestSync() }
   }
 ```
 
@@ -236,7 +284,9 @@ Expected: all pass. (Note: `BlockedProfileListView` reorder enqueues N profiles 
 git commit -am "fix(#294): flush delete/location/emergency mutations after enqueue"
 ```
 
-### Task 1.3: Deferred re-enqueue so a `.notAttached` create is not lost
+### Task 1.3: Deferred re-enqueue for the save verbs so a `.notAttached` mutation is not lost
+
+Covers approval points 1 (all save-type verbs: profile save, location save, emergency save) and 3 (the swallow is the permanent-loss half). Deletes are handled in Task 1.4.
 
 **Files:**
 - Modify: `Foqos/CloudKit/ProfileSyncManager.swift`
@@ -244,10 +294,8 @@ git commit -am "fix(#294): flush delete/location/emergency mutations after enque
 
 - [ ] **Step 1: Write the failing test**
 
-The mock's `errorToThrow` makes enqueue throw. Simulate a create hitting `.notAttached`, then attach and drain:
-
 ```swift
-func testGivenNotAttached_WhenEnqueueProfileSave_ThenIdIsDeferredAndReEnqueuedOnAttach() throws {
+func testGivenNotAttached_WhenEnqueueProfileSave_ThenIdIsDeferredAndReEnqueuedOnReady() throws {
   let id = UUID()
   manager.engineController = nil                      // pre-attach window
 
@@ -255,15 +303,14 @@ func testGivenNotAttached_WhenEnqueueProfileSave_ThenIdIsDeferredAndReEnqueuedOn
     XCTAssertEqual(error as? SyncEngineControllingError, .notAttached)
   }
 
-  // Engine attaches; the deferred save must be re-enqueued and flushed.
+  // Engine attaches and startup (T1) completes; deferred saves are replayed and flushed once.
   let attached = MockSyncEngineControlling()
   manager.engineController = attached
-  manager.drainDeferredProfileSaves()
+  manager.markSyncReadyAndFlush()
 
   XCTAssertEqual(attached.enqueuedProfileSaves, [id], "the dropped save is retried on attach")
-  XCTAssertEqual(attached.requestSyncCount, 1, "the retried save is flushed")
-  XCTAssertTrue(
-    manager.hasNoDeferredProfileSaves, "the deferred set is cleared after draining")
+  XCTAssertEqual(attached.requestSyncCount, 1, "exactly one flush covers all drained mutations")
+  XCTAssertTrue(manager.hasNoDeferredMutations, "the deferred sets are cleared after draining")
 }
 ```
 
@@ -273,26 +320,31 @@ func testGivenNotAttached_WhenEnqueueProfileSave_ThenIdIsDeferredAndReEnqueuedOn
 xcodebuild test -project FamilyFoqos.xcodeproj -scheme FamilyFoqos \
   -destination 'platform=iOS Simulator,id=B9E4A679-BDF3-4541-A59F-DA4BE21F80ED' \
   -parallel-testing-enabled NO \
-  -only-testing:FoqosTests/SyncEngineFacadeTests/testGivenNotAttached_WhenEnqueueProfileSave_ThenIdIsDeferredAndReEnqueuedOnAttach | xcpretty
+  -only-testing:FoqosTests/SyncEngineFacadeTests/testGivenNotAttached_WhenEnqueueProfileSave_ThenIdIsDeferredAndReEnqueuedOnReady | xcpretty
 ```
 
-Expected: compile failure — `drainDeferredProfileSaves` / `hasNoDeferredProfileSaves` do not exist, and the deferred set isn't recorded yet.
+Expected: compile failure — `markSyncReadyAndFlush` / `hasNoDeferredMutations` do not exist, and nothing is recorded on `.notAttached`.
 
-- [ ] **Step 3: Implement the deferred-retry set**
+- [ ] **Step 3: Add the deferred stores and drain**
 
-In `ProfileSyncManager.swift`, add a stored property near `engineController`:
+In `ProfileSyncManager.swift`, add near `engineController` (the delete set is populated in Task 1.4):
 
 ```swift
-  /// Profile-save ids that could not be enqueued because the engine was not attached yet
-  /// (#294). Drained on `attachEngine` so a create in the pre-attach window is retried
-  /// instead of silently lost.
+  // Mutations that could not be enqueued because the engine was not attached yet (#294).
+  // Drained on attach so a mutation in the pre-attach window is retried instead of lost.
   private var deferredProfileSaveIds: Set<UUID> = []
+  private var deferredLocationSaveIds: Set<UUID> = []
+  private var deferredDeleteRecordNames: Set<String> = []   // Task 1.4
+  private var deferredEmergencySave = false
 
   /// Test seam: true when nothing is pending re-enqueue.
-  var hasNoDeferredProfileSaves: Bool { deferredProfileSaveIds.isEmpty }
+  var hasNoDeferredMutations: Bool {
+    deferredProfileSaveIds.isEmpty && deferredLocationSaveIds.isEmpty
+      && deferredDeleteRecordNames.isEmpty && !deferredEmergencySave
+  }
 ```
 
-Update `enqueueProfileSave` (from Task 1.1) to record on `.notAttached`:
+Update the three **save** facade verbs to record on `.notAttached` (shown for profile save; apply the same shape to `enqueueLocationSave` → `deferredLocationSaveIds`, and `enqueueEmergencySettingsSave` → `deferredEmergencySave = true`):
 
 ```swift
   func enqueueProfileSave(_ id: UUID) throws {
@@ -306,50 +358,189 @@ Update `enqueueProfileSave` (from Task 1.1) to record on `.notAttached`:
       deferredProfileSaveIds.insert(id)          // I10: controller exists, funnel not built yet
       throw SyncEngineControllingError.notAttached
     }
-    engineController.requestSync()
+    if isSyncReady { engineController.requestSync() }
   }
 ```
 
-Add the drain method:
+Add the drain (delete replay is added in Task 1.4) and the ready hook, and drop `requestSync()` out of the drain so exactly one flush covers everything:
 
 ```swift
-  /// Re-enqueue and flush any profile saves that were deferred while the engine was
-  /// unattached (#294). Safe to call repeatedly; ids whose profile no longer exists throw
-  /// `entityNotFound` inside the funnel and are dropped.
-  func drainDeferredProfileSaves() {
-    guard let engineController, !deferredProfileSaveIds.isEmpty else { return }
-    let ids = deferredProfileSaveIds
+  /// Replay every mutation deferred while the engine was unattached (#294). Uses the
+  /// controller-level enqueue verbs (which do not themselves send), so the single
+  /// `requestSync()` in `markSyncReadyAndFlush()` flushes them all at once. Ids whose model
+  /// no longer exists throw `entityNotFound` in the funnel and are dropped.
+  private func drainDeferredMutations() {
+    guard let engineController else { return }
+    for id in deferredProfileSaveIds { try? engineController.enqueueProfileSave(id) }
+    for id in deferredLocationSaveIds { try? engineController.enqueueLocationSave(id) }
+    for name in deferredDeleteRecordNames { engineController.enqueueDeferredDelete(recordName: name) }  // Task 1.4
+    if deferredEmergencySave { try? engineController.enqueueEmergencySettingsSave() }
     deferredProfileSaveIds.removeAll()
-    for id in ids {
-      do { try engineController.enqueueProfileSave(id) } catch {
-        Log.warning(
-          "Deferred profile re-enqueue failed for \(id): \(error.localizedDescription)",
-          category: .sync)
-      }
-    }
-    engineController.requestSync()
+    deferredLocationSaveIds.removeAll()
+    deferredDeleteRecordNames.removeAll()
+    deferredEmergencySave = false
+  }
+
+  /// Called once the engine is attached AND startup (incl. the AB-4 T1 strip) has completed.
+  /// Enables prompt sends and flushes anything enqueued while not ready — always post-T1, so
+  /// it can never transmit restored poison (AB-4, #286).
+  func markSyncReadyAndFlush() {
+    isSyncReady = true
+    drainDeferredMutations()
+    engineController?.requestSync()
   }
 ```
 
-- [ ] **Step 4: Drain on attach**
-
-In `attachEngine(...)`, inside the `if isEnabled { … }` block after `await controller.startupTask?.value` (`ProfileSyncManager.swift:170-177`), add:
+Replace the `isSyncReady = true` line added in Task 1.1 (`attachEngine`, after `await controller.startupTask?.value`) with:
 
 ```swift
-      drainDeferredProfileSaves()
+      markSyncReadyAndFlush()
 ```
 
-- [ ] **Step 5: Run it green**
+- [ ] **Step 4: Run it green**
 
-Rerun Step 2. Expected: PASS.
+Rerun Step 2. Expected: PASS. (`enqueueDeferredDelete` is not on the protocol yet — Task 1.4 adds it; if the compiler blocks here, do Task 1.4 Step 3 first, then return.)
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git commit -am "fix(#294): defer and retry profile saves dropped in the pre-attach window"
+git commit -am "fix(#294): defer and retry save-type mutations dropped before attach; flush once on ready"
 ```
 
-### Task 1.4: Full verification
+### Task 1.4: Deferred tombstone-delete so a `.notAttached` delete still propagates
+
+The delete call sites fall back to a **local** delete on `.notAttached` (`BlockedProfileView.swift:826-838`, `BlockedProfileListView.swift:188`), leaving the model gone but the remote delete un-enqueued — a re-run of `enqueueProfileDelete` would hit `entityNotFound`. Add a tombstone-only delete replayed on attach.
+
+**Files:**
+- Modify: `Foqos/CloudKit/SyncEngine/MutationFunnel.swift`, `Foqos/CloudKit/SyncEngine/SyncEngineControlling.swift`, `Foqos/CloudKit/SyncEngine/SyncEngineController+Cutover.swift`, `Foqos/CloudKit/ProfileSyncManager.swift`
+- Test: `FoqosTests/SyncEngineFacadeTests.swift`, `FoqosTests/Mocks/MockSyncEngineControlling.swift`
+
+- [ ] **Step 1: Write the failing test**
+
+```swift
+func testGivenNotAttached_WhenEnqueueProfileDelete_ThenTombstoneDeleteIsReplayedOnReady() throws {
+  let id = UUID()
+  manager.engineController = nil
+
+  XCTAssertThrowsError(try manager.enqueueProfileDelete(id)) { error in
+    XCTAssertEqual(error as? SyncEngineControllingError, .notAttached)
+  }
+
+  let attached = MockSyncEngineControlling()
+  manager.engineController = attached
+  manager.markSyncReadyAndFlush()
+
+  XCTAssertEqual(
+    attached.deferredDeletes, [id.uuidString],
+    "a delete dropped before attach is replayed as a tombstone delete")
+  XCTAssertEqual(attached.requestSyncCount, 1)
+  XCTAssertTrue(manager.hasNoDeferredMutations)
+}
+```
+
+- [ ] **Step 2: Run it red**
+
+Focused run of the new test. Expected: compile failure — `enqueueDeferredDelete` / `deferredDeletes` do not exist.
+
+- [ ] **Step 3: Add the tombstone-delete seam**
+
+In `MutationFunnel.swift`, add (mirrors the tail of `enqueueDelete(profileId:)` at `:108-109,136-137`, without a model read — I2-whitelisted funnel site):
+
+```swift
+  /// Enqueue a delete for a record whose model is already gone locally (a delete that fell
+  /// back to a local delete while unattached, #294). Writes the tombstone and the
+  /// `.deleteRecord`; no persisted delete because the row no longer exists.
+  func enqueueTombstoneDelete(recordName: String) {
+    let changeTag = Self.changeTag(fromSystemFields: store.systemFields(for: recordName))
+    store.setTombstone(recordName: recordName, changeTag: changeTag)
+    let recordID = CKRecord.ID(recordName: recordName, zoneID: zoneID)
+    driver.add(pendingRecordZoneChanges: [.deleteRecord(recordID)])
+  }
+```
+
+In `SyncEngineControlling.swift`, add to the protocol:
+
+```swift
+  func enqueueDeferredDelete(recordName: String)
+```
+
+In `SyncEngineController+Cutover.swift`, implement it (I10 guard — no-op if the funnel isn't built):
+
+```swift
+  func enqueueDeferredDelete(recordName: String) {
+    funnel?.enqueueTombstoneDelete(recordName: recordName)
+  }
+```
+
+In `MockSyncEngineControlling.swift`, add:
+
+```swift
+  private(set) var deferredDeletes: [String] = []
+  func enqueueDeferredDelete(recordName: String) { deferredDeletes.append(recordName) }
+```
+
+In `ProfileSyncManager.swift`, record the recordName on `.notAttached` in **both** delete facade verbs (`enqueueProfileDelete`, `enqueueLocationDelete`), shown for profile:
+
+```swift
+  func enqueueProfileDelete(_ id: UUID) throws {
+    guard let engineController else {
+      deferredDeleteRecordNames.insert(id.uuidString)
+      throw SyncEngineControllingError.notAttached
+    }
+    do {
+      try engineController.enqueueProfileDelete(id)
+    } catch SyncEngineControllingError.notAttached {
+      deferredDeleteRecordNames.insert(id.uuidString)
+      throw SyncEngineControllingError.notAttached
+    }
+    if isSyncReady { engineController.requestSync() }
+  }
+```
+
+- [ ] **Step 4: Run it green**
+
+Rerun the Step 1 test and the full `SyncEngineFacadeTests`. Expected: PASS. (Locations share the profile zone, so `enqueueTombstoneDelete` handles both — `MutationFunnel.zoneID` is the single zone used by `enqueueDelete(profileId:)` `:69` and `enqueueDelete(locationId:)` `:171`.)
+
+- [ ] **Step 5: Commit**
+
+```bash
+git commit -am "fix(#294): replay a dropped delete as a tombstone delete on attach"
+```
+
+### Task 1.5: AB-4 conformance test (no send before the T1 strip)
+
+**Files:**
+- Test: `FoqosTests/SyncEngineFacadeTests.swift`
+
+- [ ] **Step 1: Write the test**
+
+```swift
+func testGivenNotReady_WhenEnqueueProfileSave_ThenNoSendUntilReadyFlush() throws {
+  manager.isSyncReady = false            // funnel present (mock) but startup/T1 not done
+  let id = UUID()
+
+  try manager.enqueueProfileSave(id)
+  XCTAssertEqual(mock.enqueuedProfileSaves, [id], "the change is enqueued")
+  XCTAssertEqual(
+    mock.requestSyncCount, 0,
+    "no send may fire before the engine is ready — restored poison must be T1-stripped first (AB-4)")
+
+  manager.markSyncReadyAndFlush()
+  XCTAssertEqual(mock.requestSyncCount, 1, "the post-startup flush sends exactly once, post-T1")
+}
+```
+
+- [ ] **Step 2: Run it green**
+
+Focused run. Expected: PASS with the gate + `markSyncReadyAndFlush` from Tasks 1.1/1.3 already in place (no new production code — this locks the AB-4 invariant).
+
+- [ ] **Step 3: Commit**
+
+```bash
+git commit -am "test(#294): assert send-on-enqueue never fires before the AB-4 T1 strip"
+```
+
+### Task 1.6: Full verification
 
 **Files:** none.
 
@@ -363,7 +554,7 @@ swift-format lint --recursive .
 scripts/check-sync-guards.sh
 ```
 
-Expected: full `FoqosTests` suite passes, 0 failures; lint clean; sync guards pass (I2/I5 unaffected — `requestSync` is not a new enqueue site).
+Expected: full `FoqosTests` suite passes, 0 failures; lint clean; sync guards pass. The one new enqueue site — `MutationFunnel.enqueueTombstoneDelete` — is inside the funnel (I2-whitelisted); if `scripts/check-sync-guards.sh` maintains an allow-list of `driver.add(...)` sites, add this method to it in the same commit.
 
 - [ ] **Step 2: Revert the Phase 0 probe (if added)**
 
@@ -374,7 +565,7 @@ rg -n "\[#294 PROBE\]" . ; echo "rg-exit=$?"
 
 Expected: `rg-exit=1` (no matches).
 
-### Task 1.5: Two-device physical acceptance (authoritative)
+### Task 1.7: Two-device physical acceptance (authoritative)
 
 **Files:** none.
 
@@ -400,17 +591,17 @@ With create-time sync working, the `#286` two-device sync checklist (`docs/sync-
 
 ## Risks / notes for the reviewer
 
-- **Chattiness on bulk reorder.** `BlockedProfileListView` reorder enqueues each remaining profile in a loop; each now calls `requestSync()`. CKSyncEngine coalesces concurrent `sendChanges()`, so this is functionally correct but issues multiple send cycles. If it proves noisy in practice, a single post-loop flush is a clean follow-up (out of scope here).
-- **Deferred-retry scope.** Task 1.3 covers profile **saves** (the reported symptom). Location/emergency mutations get send-on-enqueue (promptness) but not deferred-retry; they are far less likely to hit the pre-attach window and are not the reported bug. Extending the same pattern to them is a trivial follow-up if desired.
-- **`requestSync()` also fetches.** It runs `fetchChanges()` then `sendChanges()`; fetching on enqueue is harmless (it just also pulls remote changes) and keeps the fix to a single existing verb rather than adding a send-only method to the protocol.
-- **Not a #286 change.** This fix is independent of reset poisoning; it does not alter `beginReset`/T1/AB-4 behavior.
+- **Chattiness on bulk reorder.** `BlockedProfileListView` reorder enqueues each remaining profile in a loop; each now calls `requestSync()` (when ready). CKSyncEngine coalesces concurrent `sendChanges()`, so this is functionally correct but issues multiple send cycles. If it proves noisy, a single post-loop flush is a clean follow-up (out of scope).
+- **Coverage (approval point 1).** Send-on-enqueue covers all five facade verbs; deferred-drain covers all five (saves + emergency re-enqueue by id/flag; deletes replayed as tombstone deletes). No verb is left with the enqueue-only gap or the silent-drop.
+- **`requestSync()` also fetches.** It runs `fetchChanges()` then `sendChanges()`; fetching on enqueue is harmless (it also pulls remote changes) and reuses the existing verb rather than adding a send-only protocol method.
+- **Not a #286 change; AB-4-safe (approval point 2).** This fix does not alter `beginReset`/T1/AB-4 behavior. The only sends it adds are gated on `isSyncReady` (set post-T1) and triggered only by fresh local mutations, so it cannot resend restored poison. See "AB-4 Conformance".
 
 ---
 
 ## Self-Review
 
-- **Spec coverage:** send-on-enqueue added to every enqueue facade verb (Tasks 1.1–1.2); the `.notAttached` silent-drop closed with a deferred-retry set drained on attach (Task 1.3); the existing forward test updated to the new `requestSyncCount` contract; two-device acceptance proves prompt propagation without starting or relaunching (Task 1.5). The validation/trigger UI is untouched (established as a red herring).
+- **Spec coverage (incl. all three approval points):** send-on-enqueue added to **all five** facade verbs, gated on `isSyncReady` (Tasks 1.1–1.2); the `.notAttached` silent-drop closed for all five via deferred-drain-on-attach — saves/emergency re-enqueued, deletes replayed as tombstone deletes (Tasks 1.3–1.4); AB-4 conformance enforced by the `isSyncReady` gate and asserted (Task 1.5); the existing forward test updated to the new `requestSyncCount` contract; two-device acceptance proves prompt create/edit/delete propagation without starting or relaunching (Task 1.7). The validation/trigger UI is untouched (established as a red herring).
 - **Placeholder scan:** no `TBD`/`TODO`/"handle edge cases"; every code step shows complete code and exact assertions.
-- **Type/citation consistency:** `enqueueProfileSave/Delete`, `enqueueLocationSave/Delete`, `enqueueEmergencySettingsSave`, `requestSync()`, `deferredProfileSaveIds`, `drainDeferredProfileSaves()`, `hasNoDeferredProfileSaves`, `MockSyncEngineControlling.requestSyncCount`/`enqueuedProfileSaves`/`errorToThrow`, and `attachEngine`/`startupTask` are used consistently and match the current code.
+- **Type/citation consistency:** `enqueueProfileSave/Delete`, `enqueueLocationSave/Delete`, `enqueueEmergencySettingsSave`, `enqueueDeferredDelete(recordName:)`, `MutationFunnel.enqueueTombstoneDelete(recordName:)`, `requestSync()`, `isSyncReady`, `deferredProfileSaveIds`/`deferredLocationSaveIds`/`deferredDeleteRecordNames`/`deferredEmergencySave`, `drainDeferredMutations()`, `markSyncReadyAndFlush()`, `hasNoDeferredMutations`, `MockSyncEngineControlling.requestSyncCount`/`enqueuedProfileSaves`/`deferredDeletes`/`errorToThrow`, and `attachEngine`/`startupTask` are used consistently and match the current code.
 - **Device rigor:** the two-device acceptance is authoritative; unit tests assert the send is scheduled and the drop is retried, but the propagation claim is proven on hardware.
 - **Process integrity:** probes reverted with normal commits (no amend/force-push); PR titled "plans the fix for #294"; scoped to `fix/294-tap-to-stop-validation`, not folded into `#286`.
