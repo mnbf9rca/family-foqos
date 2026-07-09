@@ -36,6 +36,10 @@ class ProfileSyncManager: ObservableObject {
   /// The engine owner (I10). Wired in `attachEngine(...)` once a ModelContext exists.
   weak var engineController: (any SyncEngineControlling)?
 
+  /// True once the engine is attached AND startup, including the AB-4 T1 strip, has completed.
+  /// Gates send-on-enqueue so a send can never flush restored state before T1 (#286 poison).
+  var isSyncReady = false
+
   // MARK: - Private State
 
   private var cancellables = Set<AnyCancellable>()
@@ -62,6 +66,7 @@ class ProfileSyncManager: ObservableObject {
         if enabled {
           self?.engineController?.start()
         } else {
+          self?.isSyncReady = false
           self?.engineController?.stop()
         }
       }
@@ -174,6 +179,7 @@ class ProfileSyncManager: ObservableObject {
       // mirrors the `await controller.startupTask?.value` pattern used by the controller's
       // own tests.
       await controller.startupTask?.value
+      isSyncReady = true
     }
   }
 
@@ -213,6 +219,7 @@ class ProfileSyncManager: ObservableObject {
   func enqueueProfileSave(_ id: UUID) throws {
     guard let engineController else { throw SyncEngineControllingError.notAttached }
     try engineController.enqueueProfileSave(id)
+    if isSyncReady { engineController.requestSync() }
   }
   func enqueueProfileDelete(_ id: UUID) throws {
     guard let engineController else { throw SyncEngineControllingError.notAttached }

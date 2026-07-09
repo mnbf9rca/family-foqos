@@ -68,6 +68,18 @@ final class SyncEngineFacadeTests: XCTestCase {
     XCTAssertEqual(mock.enqueuedEmergencySaves, 1)
   }
 
+  func testGivenReadyController_WhenEnqueueProfileSave_ThenRequestSyncIsScheduled() throws {
+    manager.isSyncReady = true
+    let id = UUID()
+
+    try manager.enqueueProfileSave(id)
+
+    XCTAssertEqual(mock.enqueuedProfileSaves, [id], "the save is forwarded to the engine")
+    XCTAssertEqual(
+      mock.requestSyncCount, 1,
+      "a ready engine flushes a user-initiated save promptly, not on the next foreground")
+  }
+
   // MARK: - Review fix: not-attached and genuine-throw propagation (findings #2–#6, #15)
 
   func testGivenNoEngineController_WhenSyncNow_ThenThrowsNotAttachedInsteadOfSilentNoOp() {
