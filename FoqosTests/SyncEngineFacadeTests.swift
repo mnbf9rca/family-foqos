@@ -180,6 +180,20 @@ final class SyncEngineFacadeTests: XCTestCase {
     XCTAssertTrue(manager.hasNoDeferredMutations)
   }
 
+  func testGivenNotReady_WhenEnqueueProfileSave_ThenNoSendUntilReadyFlush() throws {
+    manager.isSyncReady = false
+    let id = UUID()
+
+    try manager.enqueueProfileSave(id)
+    XCTAssertEqual(mock.enqueuedProfileSaves, [id], "the change is enqueued")
+    XCTAssertEqual(
+      mock.requestSyncCount, 0,
+      "no send may fire before the engine is ready; restored poison must be T1-stripped first (AB-4)")
+
+    manager.markSyncReadyAndFlush()
+    XCTAssertEqual(mock.requestSyncCount, 1, "the post-startup flush sends exactly once, post-T1")
+  }
+
   // MARK: - Review fix: not-attached and genuine-throw propagation (findings #2–#6, #15)
 
   func testGivenNoEngineController_WhenSyncNow_ThenThrowsNotAttachedInsteadOfSilentNoOp() {
