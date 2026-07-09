@@ -77,7 +77,7 @@ class ProfileSyncManager: ObservableObject {
         SharedData.deviceSyncEnabled = enabled
         self?.syncStatus = enabled ? .idle : .disabled
         if enabled {
-          self?.engineController?.start()
+          self?.startEngineAndMarkReadyWhenStartupCompletes()
         } else {
           self?.isSyncReady = false
           self?.engineController?.stop()
@@ -192,7 +192,7 @@ class ProfileSyncManager: ObservableObject {
       // mirrors the `await controller.startupTask?.value` pattern used by the controller's
       // own tests.
       await controller.startupTask?.value
-      markSyncReadyAndFlush()
+      markSyncReadyAndFlushIfStillEnabled(for: controller)
     }
   }
 
@@ -316,5 +316,26 @@ class ProfileSyncManager: ObservableObject {
     isSyncReady = true
     drainDeferredMutations()
     engineController?.requestSync()
+  }
+
+  /// Starts an already-attached engine after the user enables sync, then marks ready only
+  /// after startup has completed. The ready mark is guarded so a concurrent disable cannot
+  /// flush or leave sync marked ready after the engine has been stopped.
+  private func startEngineAndMarkReadyWhenStartupCompletes() {
+    guard let engineController else { return }
+    isSyncReady = false
+    engineController.start()
+    guard let controller = engineController as? SyncEngineController else { return }
+    Task { @MainActor [weak self, weak controller] in
+      await controller?.startupTask?.value
+      guard let controller else { return }
+      self?.markSyncReadyAndFlushIfStillEnabled(for: controller)
+    }
+  }
+
+  /// Complete startup only if sync is still enabled and the same attached controller is current.
+  func markSyncReadyAndFlushIfStillEnabled(for controller: any SyncEngineControlling) {
+    guard isEnabled, let engineController, engineController === controller else { return }
+    markSyncReadyAndFlush()
   }
 }

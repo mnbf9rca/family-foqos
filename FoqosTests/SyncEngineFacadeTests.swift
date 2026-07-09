@@ -194,6 +194,35 @@ final class SyncEngineFacadeTests: XCTestCase {
     XCTAssertEqual(mock.requestSyncCount, 1, "the post-startup flush sends exactly once, post-T1")
   }
 
+  func testGivenNotReady_WhenAnyFacadeEnqueueVerbRuns_ThenNoSendIsScheduled() throws {
+    manager.isSyncReady = false
+    let id = UUID()
+
+    try manager.enqueueProfileSave(id)
+    try manager.enqueueProfileDelete(id)
+    try manager.enqueueLocationSave(id)
+    try manager.enqueueLocationDelete(id)
+    try manager.enqueueEmergencySettingsSave()
+
+    XCTAssertEqual(mock.enqueuedProfileSaves, [id])
+    XCTAssertEqual(mock.enqueuedProfileDeletes, [id])
+    XCTAssertEqual(mock.enqueuedLocationSaves, [id])
+    XCTAssertEqual(mock.enqueuedLocationDeletes, [id])
+    XCTAssertEqual(mock.enqueuedEmergencySaves, 1)
+    XCTAssertEqual(
+      mock.requestSyncCount, 0,
+      "no facade enqueue verb may send before startup completes and T1 has stripped restored state")
+  }
+
+  func testGivenSyncDisabled_WhenStartupCompletes_ThenReadyFlushIsSkipped() {
+    manager.isEnabled = false
+
+    manager.markSyncReadyAndFlushIfStillEnabled(for: mock)
+
+    XCTAssertFalse(manager.isSyncReady)
+    XCTAssertEqual(mock.requestSyncCount, 0)
+  }
+
   // MARK: - Review fix: not-attached and genuine-throw propagation (findings #2–#6, #15)
 
   func testGivenNoEngineController_WhenSyncNow_ThenThrowsNotAttachedInsteadOfSilentNoOp() {
