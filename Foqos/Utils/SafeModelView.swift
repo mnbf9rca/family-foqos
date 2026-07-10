@@ -16,18 +16,26 @@ import SwiftUI
 ///   }
 /// }
 /// ```
-struct SafeModelView<Model: PersistentModel, Content: View>: View {
+struct SafeModelView<Model: PersistentModel, Content: View, Placeholder: View>: View {
   let model: Model
   let content: (Model) -> Content
+  let placeholder: () -> Placeholder
 
-  init(_ model: Model, @ViewBuilder content: @escaping (Model) -> Content) {
+  init(
+    _ model: Model,
+    @ViewBuilder content: @escaping (Model) -> Content,
+    @ViewBuilder placeholder: @escaping () -> Placeholder = { EmptyView() }
+  ) {
     self.model = model
     self.content = content
+    self.placeholder = placeholder
   }
 
   var body: some View {
     if model.isPersistentModelValid {
       content(model)
+    } else {
+      placeholder()
     }
   }
 }
