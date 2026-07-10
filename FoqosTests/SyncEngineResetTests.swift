@@ -111,6 +111,31 @@ final class SyncEngineResetTests: XCTestCase {
     XCTAssertEqual(outbox.zoneDeleteCount, 1, "re-entrant call must not enqueue a second deleteZone")
   }
 
+  // MARK: - #286 coexistence guard (origin)
+
+  func testGivenPendingSeedSaves_WhenBeginReset_ThenDeleteZoneAloneNoRecordSaves() {
+    let now = Date()
+    let mockDriver = MockSyncEngineDriver(
+      pendingRecordZoneChanges: [
+        .saveRecord(CKRecord.ID(recordName: "emergency-settings", zoneID: zoneID)),
+        .saveRecord(CKRecord.ID(recordName: UUID().uuidString, zoneID: zoneID)),
+      ],
+      pendingDatabaseChanges: [.saveZone(CKRecordZone(zoneID: zoneID))])
+    let controller = ResetController(
+      store: store, outbox: DriverResetOutbox(driver: mockDriver, zoneID: zoneID),
+      seeder: MockResetSeeder(), fetcher: MockRecordFetcher(),
+      surfacer: MockResetConflictSurfacer(), deviceId: "device-A")
+
+    controller.beginReset(clearRemoteAppSelections: true, now: now)
+
+    // #286: the delete send must carry ONLY the deleteZone — no coexisting record-saves or
+    // saveZone (CKSyncEngine asserts on that combination at sendChanges()).
+    XCTAssertEqual(mockDriver.pendingDatabaseChanges, [.deleteZone(zoneID)])
+    XCTAssertTrue(
+      mockDriver.pendingRecordZoneChanges.isEmpty,
+      "pending record saves must be cleared before the zone delete")
+  }
+
   // MARK: - T9 / §8.1 steps 3-4
 
   func testGivenDeletingStage_WhenZoneDeleteConfirmed_ThenPurgesAdvancesToRecreatingAndEnqueuesSaveZone()
@@ -446,6 +471,32 @@ final class SyncEngineResetTests: XCTestCase {
     XCTAssertEqual(store.resetIntent?.stage, .deleting)
     XCTAssertEqual(outboxTrans.zoneDeleteCount, 0)
     XCTAssertEqual(surfacerTrans.surfaceCount, 0)
+  }
+
+  func testGivenDeletingResumeWithPendingSaves_WhenResume_ThenDeleteZoneAloneNoCoexistence()
+    async
+  {
+    let now = Date()
+    store.resetIntent = ResetIntent(
+      id: UUID(), clear: true, stage: .deleting, priorCommandId: nil)
+    let mockDriver = MockSyncEngineDriver(
+      pendingRecordZoneChanges: [
+        .saveRecord(CKRecord.ID(recordName: "emergency-settings", zoneID: zoneID))
+      ],
+      pendingDatabaseChanges: [.saveZone(CKRecordZone(zoneID: zoneID))])
+    // Default MockRecordFetcher returns .success(nil) ⇒ gate sees "no command" ⇒ reenqueueDeleting.
+    let controller = ResetController(
+      store: store, outbox: DriverResetOutbox(driver: mockDriver, zoneID: zoneID),
+      seeder: MockResetSeeder(), fetcher: MockRecordFetcher(),
+      surfacer: MockResetConflictSurfacer(), deviceId: "device-A")
+    _ = now  // gate is date-independent; pinned per house rule
+
+    await controller.resume()
+
+    XCTAssertEqual(mockDriver.pendingDatabaseChanges, [.deleteZone(zoneID)])
+    XCTAssertTrue(
+      mockDriver.pendingRecordZoneChanges.isEmpty,
+      "#286: a resumed .deleting stage must not re-add a deleteZone alongside pending saves")
   }
 
   // MARK: - S-4 cross-check (full .purged behavior lives in Phase D; here: intent/tombstone facet)

@@ -149,6 +149,58 @@ final class SyncEngineControllerTests: XCTestCase {
     controller.startupTask?.cancel()
   }
 
+  // MARK: - #286 self-heal (discard poisoned restored serialization)
+
+  func testGivenRestoredStateHasPendingZoneDelete_WhenStart_ThenSerializationDiscardedAndFreshEngine()
+    async
+  {
+    store.engineState = Data([0x01])  // non-nil stand-in for a poisoned serialization
+    let poisoned = MockSyncEngineDriver(pendingDatabaseChanges: [.deleteZone(zoneID)])
+    let fresh = MockSyncEngineDriver()
+    var pending: [MockSyncEngineDriver] = [poisoned, fresh]
+    var factoryArgs: [Data?] = []
+    let controller = SyncEngineController(
+      modelContext: context, store: store,
+      driverFactory: { data in
+        factoryArgs.append(data)
+        return pending.removeFirst()
+      },
+      apply: apply, provider: provider, sessionSync: sessionSync, deviceId: deviceId)
+
+    controller.start()
+    await controller.startupTask?.value
+
+    XCTAssertNil(store.engineState, "#286 self-heal: poisoned serialization discarded")
+    XCTAssertEqual(factoryArgs.count, 2, "engine rebuilt exactly once after discard")
+    XCTAssertNil(factoryArgs[1], "rebuilt with nil serialization (fresh engine, no restored tokens)")
+    XCTAssertFalse(
+      (controller.driver as! MockSyncEngineDriver).pendingDatabaseChanges.contains {
+        if case .deleteZone = $0 { return true } else { return false }
+      },
+      "active engine carries no pending zone-deletion")
+  }
+
+  func testGivenNonPoisonedRestoredState_WhenStart_ThenSerializationKeptEngineNotRebuilt()
+    async
+  {
+    store.engineState = Data([0x01])  // non-nil, no reset in progress, no pending deleteZone
+    let normal = MockSyncEngineDriver()
+    var factoryCount = 0
+    let controller = SyncEngineController(
+      modelContext: context, store: store,
+      driverFactory: { _ in
+        factoryCount += 1
+        return normal
+      },
+      apply: apply, provider: provider, sessionSync: sessionSync, deviceId: deviceId)
+
+    controller.start()
+    await controller.startupTask?.value
+
+    XCTAssertEqual(factoryCount, 1, "no rebuild for a healthy serialization")
+    XCTAssertNotNil(store.engineState, "healthy serialization retained (ordinary relaunch, S-19)")
+  }
+
   func testGivenLegacyCleanupIdsAndFlagUnset_WhenStart_ThenIdsSurviveStripAndReEnqueue() async {
     store.engineState = Data([0x01])
     store.addLegacyCleanupIds(["legacy-1", "legacy-2"])

@@ -23,8 +23,8 @@ protocol SyncEngineDriver: AnyObject {
   func remove(pendingRecordZoneChanges: [CKSyncEngine.PendingRecordZoneChange])
   func add(pendingDatabaseChanges: [CKSyncEngine.PendingDatabaseChange])
   func remove(pendingDatabaseChanges: [CKSyncEngine.PendingDatabaseChange])
-  func fetchChanges()  // MUST be scheduled outside handleEvent (§1.1)
-  func sendChanges()  // MUST be scheduled outside handleEvent
+  func fetchChanges()  // CKSyncEngine await MUST cross a detached boundary (§1.1)
+  func sendChanges()  // CKSyncEngine await MUST cross a detached boundary (§1.1)
   func fetchRecord(_ id: CKRecord.ID) async -> FetchRecordResult
 }
 

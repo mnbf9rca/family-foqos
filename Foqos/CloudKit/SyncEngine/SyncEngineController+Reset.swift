@@ -18,9 +18,11 @@ final class DriverResetOutbox: ResetOutbox {
   }
 
   func enqueueZoneDelete() {
+    Log.info("Reset sync: enqueue zone delete", category: .sync)
     driver.add(pendingDatabaseChanges: [.deleteZone(zoneID)])
   }
   func enqueueZoneSave() {
+    Log.info("Reset sync: enqueue zone save", category: .sync)
     driver.add(pendingDatabaseChanges: [.saveZone(CKRecordZone(zoneID: zoneID))])
   }
   func removeResetZoneChanges() {
@@ -28,14 +30,21 @@ final class DriverResetOutbox: ResetOutbox {
       pendingDatabaseChanges: [.deleteZone(zoneID), .saveZone(CKRecordZone(zoneID: zoneID))])
   }
   func enqueueCommandSave() {
+    Log.info("Reset sync: enqueue reset command", category: .sync)
     driver.add(pendingRecordZoneChanges: [.saveRecord(commandRecordID)])
   }
   func removeCommandSave() {
     driver.remove(pendingRecordZoneChanges: [.saveRecord(commandRecordID)])
   }
   func requestSend() {
-    // §1.1: schedule sendChanges() in a Task AFTER the current handler returns.
+    // §1.1: the driver uses Task.detached before awaiting CKSyncEngine.
+    Log.debug("Reset sync: request send", category: .sync)
     Task { @MainActor in self.driver.sendChanges() }
+  }
+  func clearPendingChangesForReset() {
+    Log.info("Reset sync: clearing pending engine changes before zone reset", category: .sync)
+    driver.remove(pendingRecordZoneChanges: driver.pendingRecordZoneChanges)
+    driver.remove(pendingDatabaseChanges: driver.pendingDatabaseChanges)
   }
 }
 

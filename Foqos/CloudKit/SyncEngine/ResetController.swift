@@ -10,8 +10,12 @@ protocol ResetOutbox: AnyObject {
   func removeResetZoneChanges()
   func enqueueCommandSave()
   func removeCommandSave()
-  /// Schedule sendChanges() in a Task AFTER the current handler returns (§1.1 prohibition).
+  /// Request a best-effort send; the production driver crosses a detached task boundary (§1.1).
   func requestSend()
+  /// #286: purge pending CKSyncEngine work before deleting the zone. This is defensive
+  /// reset hygiene (stale record changes are re-derived after recreation), while the
+  /// sendChanges crash itself is prevented by the driver's detached task boundary.
+  func clearPendingChangesForReset()
 }
 
 /// I6 purge + I11 seed + §8.3 selection-clear, kept behind a seam so the reset machine is
@@ -118,6 +122,7 @@ final class ResetController {
       s.markProcessed(id)  // I4 pre-mark carve-out (safe via §8.3 own-origin check)
       s.lastAppliedResetCommandId = id
     }
+    outbox.clearPendingChangesForReset()  // #286: purge stale queue before destructive reset
     outbox.enqueueZoneDelete()
     outbox.requestSend()
   }
@@ -281,6 +286,7 @@ final class ResetController {
   }
 
   private func reenqueueDeleting() {
+    outbox.clearPendingChangesForReset()  // #286: quiesce before re-adding the deleteZone
     outbox.enqueueZoneDelete()
     outbox.requestSend()
   }
