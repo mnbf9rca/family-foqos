@@ -96,6 +96,20 @@ final class MutationFunnel {
     driver.add(pendingRecordZoneChanges: [.saveRecord(recordID)])
   }
 
+  /// Enqueue a write-once emergency-unblock event (I2, #221). The event is already persisted by
+  /// `EmergencyUnblockManager.consumeUnblockEvent`; this only schedules its CKSyncEngine save.
+  func enqueueEmergencyUnblockEvent(_ event: SyncedEmergencyUnblockEvent) {
+    let recordID = CKRecord.ID(recordName: event.recordName, zoneID: zoneID)
+    driver.add(pendingRecordZoneChanges: [.saveRecord(recordID)])
+  }
+
+  /// Enqueue the fixed-name reset-epoch record. There is no version bump: the epoch value itself
+  /// is merged by monotonic max on apply.
+  func enqueueEmergencyEpochSave() {
+    let recordID = CKRecord.ID(recordName: SyncedEmergencyEpoch.recordName, zoneID: zoneID)
+    driver.add(pendingRecordZoneChanges: [.saveRecord(recordID)])
+  }
+
   // MARK: - Delete paths
 
   /// Persist a delete-intent tombstone (recordName -> last-known server change tag, nil if never
@@ -187,6 +201,13 @@ final class MutationFunnel {
     store.setTombstone(recordName: recordName, changeTag: changeTag)
     let recordID = CKRecord.ID(recordName: recordName, zoneID: zoneID)
     driver.add(pendingRecordZoneChanges: [.deleteRecord(recordID)])
+  }
+
+  /// Delete a write-once emergency-unblock event through the explicit delete path (#221 GC).
+  /// The facade's not-attached fallback reuses `enqueueTombstoneDelete(recordName:)`, so deferred
+  /// drains share the existing tombstone/delete replay semantics.
+  func enqueueEmergencyUnblockEventDelete(_ recordName: String) {
+    enqueueTombstoneDelete(recordName: recordName)
   }
 
   // MARK: - System-fields change tag

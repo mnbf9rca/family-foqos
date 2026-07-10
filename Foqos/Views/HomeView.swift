@@ -166,7 +166,13 @@ struct HomeView: View {
           )
           .padding(.horizontal, 16)
 
-          if syncConflictManager.shouldShowNewerVersionBanner {
+          if syncConflictManager.shouldShowDivergenceBanner {
+            SyncConflictBanner(
+              message: syncConflictManager.divergenceMessage,
+              onDismiss: { syncConflictManager.dismissDivergenceBanner() }
+            )
+            .padding(.vertical, 8)
+          } else if syncConflictManager.shouldShowNewerVersionBanner {
             SyncConflictBanner(
               message: syncConflictManager.newerVersionMessage,
               onDismiss: { syncConflictManager.dismissBanner() }

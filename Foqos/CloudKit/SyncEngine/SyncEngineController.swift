@@ -376,6 +376,7 @@ final class SyncEngineController: SyncEngineDriverDelegate {
 
   private static let scopedTypes: Set<String> = [
     SyncedProfile.recordType, SyncedLocation.recordType, SyncedEmergencySettings.recordType,
+    SyncedEmergencyEpoch.recordType,
   ]
 
   /// Routes each confirmed save/delete and each failed save/delete (§5.3). Confirmed saves
@@ -554,7 +555,7 @@ final class SyncEngineController: SyncEngineDriverDelegate {
 
   /// Compares the local entity's version/timestamp against the server record's, per
   /// recordType (§5.3 branch C local-wins re-add).
-  private func localIsStrictlyNewer(
+  func localIsStrictlyNewer(
     _ recordType: String, name: String, server: CKRecord
   ) -> Bool {
     switch recordType {
@@ -581,6 +582,11 @@ final class SyncEngineController: SyncEngineDriverDelegate {
       let localVersion = localRecord[SyncedEmergencySettings.FieldKey.version.rawValue] as? Int ?? 0
       let serverVersion = server[SyncedEmergencySettings.FieldKey.version.rawValue] as? Int ?? 0
       return localVersion > serverVersion
+    case SyncedEmergencyEpoch.recordType:
+      guard let localRecord = provider.record(forRecordName: name) else { return false }
+      let localEpoch = localRecord[SyncedEmergencyEpoch.FieldKey.epoch.rawValue] as? Int ?? 0
+      let serverEpoch = server[SyncedEmergencyEpoch.FieldKey.epoch.rawValue] as? Int ?? 0
+      return localEpoch > serverEpoch
     default:
       return false
     }
@@ -949,6 +955,7 @@ final class SyncEngineController: SyncEngineDriverDelegate {
     let locations = (try? modelContext.fetch(FetchDescriptor<SavedLocation>())) ?? []
     names.append(contentsOf: locations.map { $0.id.uuidString })
     names.append(SyncedEmergencySettings.recordName)
+    names.append(contentsOf: provider.restorableEmergencyRecordNames())
     return names.filter { provider.record(forRecordName: $0) != nil }
   }
 

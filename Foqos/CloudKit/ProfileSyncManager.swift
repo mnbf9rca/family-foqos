@@ -50,11 +50,14 @@ class ProfileSyncManager: ObservableObject {
   private var deferredLocationSaveIds: Set<UUID> = []
   private var deferredDeleteRecordNames: Set<String> = []
   private var deferredEmergencySave = false
+  private var deferredEmergencyUnblockEvents: [String: SyncedEmergencyUnblockEvent] = [:]
+  private var deferredEmergencyEpochSave = false
 
   /// Test seam: true when nothing is pending re-enqueue.
   var hasNoDeferredMutations: Bool {
     deferredProfileSaveIds.isEmpty && deferredLocationSaveIds.isEmpty
       && deferredDeleteRecordNames.isEmpty && !deferredEmergencySave
+      && deferredEmergencyUnblockEvents.isEmpty && !deferredEmergencyEpochSave
   }
 
   // Device identifier for this device
@@ -293,20 +296,70 @@ class ProfileSyncManager: ObservableObject {
     }
     if isSyncReady { engineController.requestSync() }
   }
+  func enqueueEmergencyUnblockEvent(_ event: SyncedEmergencyUnblockEvent) throws {
+    guard let engineController else {
+      deferredEmergencyUnblockEvents[event.recordName] = event
+      throw SyncEngineControllingError.notAttached
+    }
+    do {
+      try engineController.enqueueEmergencyUnblockEvent(event)
+    } catch SyncEngineControllingError.notAttached {
+      deferredEmergencyUnblockEvents[event.recordName] = event
+      throw SyncEngineControllingError.notAttached
+    }
+    if isSyncReady { engineController.requestSync() }
+  }
+  func enqueueEmergencyEpochSave() throws {
+    guard let engineController else {
+      deferredEmergencyEpochSave = true
+      throw SyncEngineControllingError.notAttached
+    }
+    do {
+      try engineController.enqueueEmergencyEpochSave()
+    } catch SyncEngineControllingError.notAttached {
+      deferredEmergencyEpochSave = true
+      throw SyncEngineControllingError.notAttached
+    }
+    if isSyncReady { engineController.requestSync() }
+  }
+  func enqueueEmergencyUnblockEventDelete(_ recordName: String) throws {
+    guard let engineController else {
+      deferredDeleteRecordNames.insert(recordName)
+      throw SyncEngineControllingError.notAttached
+    }
+    do {
+      try engineController.enqueueEmergencyUnblockEventDelete(recordName)
+    } catch SyncEngineControllingError.notAttached {
+      deferredDeleteRecordNames.insert(recordName)
+      throw SyncEngineControllingError.notAttached
+    }
+    if isSyncReady { engineController.requestSync() }
+  }
 
   /// Replay save-type mutations deferred while the engine was unattached (#294). Uses the
   /// controller-level enqueue verbs (which do not themselves send), so the single requestSync
   /// in `markSyncReadyAndFlush()` flushes them all at once.
   private func drainDeferredMutations() {
     guard let engineController else { return }
+    // #221 deferred safety: epoch saves are max-merged, event saves are write-once/idempotent
+    // by recordName, and GC deletes drain through the existing tombstone path. These operations
+    // need no sequencing guarantee relative to each other or to a fetched remote epoch.
     for id in deferredProfileSaveIds { try? engineController.enqueueProfileSave(id) }
     for id in deferredLocationSaveIds { try? engineController.enqueueLocationSave(id) }
     for name in deferredDeleteRecordNames { engineController.enqueueDeferredDelete(recordName: name) }
     if deferredEmergencySave { try? engineController.enqueueEmergencySettingsSave() }
+    for name in deferredEmergencyUnblockEvents.keys.sorted() {
+      if let event = deferredEmergencyUnblockEvents[name] {
+        try? engineController.enqueueEmergencyUnblockEvent(event)
+      }
+    }
+    if deferredEmergencyEpochSave { try? engineController.enqueueEmergencyEpochSave() }
     deferredProfileSaveIds.removeAll()
     deferredLocationSaveIds.removeAll()
     deferredDeleteRecordNames.removeAll()
     deferredEmergencySave = false
+    deferredEmergencyUnblockEvents.removeAll()
+    deferredEmergencyEpochSave = false
   }
 
   /// Called once the engine is attached AND startup, including the AB-4 T1 strip, has completed.

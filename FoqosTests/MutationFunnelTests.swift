@@ -261,6 +261,46 @@ final class MutationFunnelTests: XCTestCase {
     _ = now
   }
 
+  func testGivenUnblockEvent_WhenEnqueue_ThenEnqueuesOneSaveRecord() throws {
+    let now = Date()
+    let container = try TestModelContainer.create()
+    let syncContext = ModelContext(container)
+    let store = makeStore()
+    let driver = MockSyncEngineDriver()
+    let funnel = MutationFunnel(
+      modelContext: syncContext,
+      store: store,
+      driver: driver,
+      deviceId: "device-A"
+    )
+    let event = SyncedEmergencyUnblockEvent(
+      id: UUID(), deviceId: "device-A", consumedAt: now, resetEpoch: 1)
+
+    funnel.enqueueEmergencyUnblockEvent(event)
+
+    XCTAssertEqual(driver.pendingRecordZoneChanges, [.saveRecord(recordID(event.recordName))])
+  }
+
+  func testGivenEmergencyEpoch_WhenEnqueue_ThenEnqueuesFixedNameSaveRecord() throws {
+    let container = try TestModelContainer.create()
+    let syncContext = ModelContext(container)
+    let store = makeStore()
+    let driver = MockSyncEngineDriver()
+    let funnel = MutationFunnel(
+      modelContext: syncContext,
+      store: store,
+      driver: driver,
+      deviceId: "device-A"
+    )
+
+    funnel.enqueueEmergencyEpochSave()
+
+    XCTAssertEqual(
+      driver.pendingRecordZoneChanges,
+      [.saveRecord(recordID(SyncedEmergencyEpoch.recordName))]
+    )
+  }
+
   // MARK: - S-15 / S-29: delete writes a tombstone carrying the change tag, enqueues once
 
   func testGivenSyncedProfile_WhenEnqueueDelete_ThenDeleteIsMarkedBeforeDeferredSaveAndEnqueuedAfterCommit()

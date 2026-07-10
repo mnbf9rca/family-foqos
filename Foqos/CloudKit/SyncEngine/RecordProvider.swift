@@ -30,6 +30,12 @@ final class RecordProvider {
     if recordName == SyncedEmergencySettings.recordName {
       return emergencyRecord()
     }
+    if recordName == SyncedEmergencyEpoch.recordName {
+      return emergencyEpochRecord()
+    }
+    if recordName.hasPrefix(SyncedEmergencyUnblockEvent.recordNamePrefix) {
+      return emergencyUnblockEventRecord(recordName: recordName)
+    }
     if recordName.hasPrefix("ProfileSession_") {
       // Session records are owned by SessionSyncService (CAS), never materialized here.
       return nil
@@ -44,6 +50,10 @@ final class RecordProvider {
       return locationRecord(location)
     }
     return nil
+  }
+
+  func restorableEmergencyRecordNames() -> [String] {
+    [SyncedEmergencyEpoch.recordName] + emergencyManager.allUnblockEventRecordNames()
   }
 
   private func profileRecord(_ profile: BlockedProfiles) -> CKRecord? {
@@ -74,6 +84,25 @@ final class RecordProvider {
       recordType: SyncedEmergencySettings.recordType,
       freshRecordID: CKRecord.ID(recordName: SyncedEmergencySettings.recordName, zoneID: zoneID))
     synced.updateCKRecord(record)
+    return record
+  }
+
+  private func emergencyEpochRecord() -> CKRecord? {
+    let record = materialize(
+      recordName: SyncedEmergencyEpoch.recordName,
+      recordType: SyncedEmergencyEpoch.recordType,
+      freshRecordID: CKRecord.ID(recordName: SyncedEmergencyEpoch.recordName, zoneID: zoneID))
+    emergencyManager.currentEpochRecord().updateCKRecord(record)
+    return record
+  }
+
+  private func emergencyUnblockEventRecord(recordName: String) -> CKRecord? {
+    guard let event = emergencyManager.eventRecord(forRecordName: recordName) else { return nil }
+    let record = materialize(
+      recordName: recordName,
+      recordType: SyncedEmergencyUnblockEvent.recordType,
+      freshRecordID: CKRecord.ID(recordName: recordName, zoneID: zoneID))
+    event.updateCKRecord(record)
     return record
   }
 

@@ -12,7 +12,9 @@ final class RecordProviderTests: XCTestCase {
   private var emergencyManager: EmergencyUnblockManager!
   private var suiteName: String!
   private var storeSuiteName: String!
+  private var emergencySuiteName: String!
   private var storeDefaults: UserDefaults!
+  private var emergencyDefaults: UserDefaults!
   private let deviceId = "device-A"
   private let zoneID = CKRecordZone.ID(
     zoneName: CloudKitConstants.syncZoneName, ownerName: CKCurrentUserDefaultName)
@@ -22,16 +24,19 @@ final class RecordProviderTests: XCTestCase {
     suiteName = "RecordProviderTests-\(UUID().uuidString)"
     SharedData.configure(suite: UserDefaults(suiteName: suiteName)!)
     storeSuiteName = "RecordProviderTests-store-\(UUID().uuidString)"
+    emergencySuiteName = "RecordProviderTests-emg-\(UUID().uuidString)"
     storeDefaults = UserDefaults(suiteName: storeSuiteName)!
+    emergencyDefaults = UserDefaults(suiteName: emergencySuiteName)!
     store = SyncEngineStore(userRecordName: "user-1", defaults: storeDefaults)
     container = try TestModelContainer.create()
     context = container.mainContext
-    emergencyManager = EmergencyUnblockManager()
+    emergencyManager = EmergencyUnblockManager(defaults: emergencyDefaults)
   }
 
   override func tearDown() async throws {
     UserDefaults().removePersistentDomain(forName: suiteName)
     UserDefaults().removePersistentDomain(forName: storeSuiteName)
+    UserDefaults().removePersistentDomain(forName: emergencySuiteName)
     try await super.tearDown()
   }
 
@@ -92,9 +97,11 @@ final class RecordProviderTests: XCTestCase {
 
   func testGivenEmergencyRecordName_WhenMaterialized_ThenBuildsEmergencyRecord() {
     let now = Date()
+    emergencyManager.seedForTesting(epoch: 1)
+    _ = emergencyManager.consumeUnblockEvent(now: now)
     emergencyManager.applyRemoteEmergencySettings(
       SyncedEmergencySettings(
-        unblocksRemaining: 2, resetPeriodInDays: 14, lastResetDate: now,
+        unblocksRemaining: 99, resetPeriodInDays: 14, lastResetDate: now,
         settingsLocked: true, version: 4, lastModified: now, originDeviceId: "remote"))
 
     let record = makeProvider().record(forRecordName: SyncedEmergencySettings.recordName)
@@ -103,6 +110,31 @@ final class RecordProviderTests: XCTestCase {
     XCTAssertEqual(record?.recordID.recordName, SyncedEmergencySettings.recordName)
     XCTAssertEqual(record?[SyncedEmergencySettings.FieldKey.unblocksRemaining.rawValue] as? Int, 2)
     XCTAssertEqual(record?[SyncedEmergencySettings.FieldKey.version.rawValue] as? Int, 4)
+  }
+
+  func testGivenEmergencyEpochRecordName_WhenMaterialized_ThenBuildsEpochRecord() {
+    emergencyManager.seedForTesting(epoch: 4)
+
+    let record = makeProvider().record(forRecordName: SyncedEmergencyEpoch.recordName)
+
+    XCTAssertEqual(record?.recordType, SyncedEmergencyEpoch.recordType)
+    XCTAssertEqual(record?.recordID.recordName, SyncedEmergencyEpoch.recordName)
+    XCTAssertEqual(record?[SyncedEmergencyEpoch.FieldKey.epoch.rawValue] as? Int, 4)
+  }
+
+  func testGivenEmergencyUnblockEventRecordName_WhenMaterialized_ThenBuildsEventRecord() {
+    let now = Date()
+    emergencyManager.seedForTesting(epoch: 2)
+    let event = emergencyManager.consumeUnblockEvent(now: now)
+
+    let record = makeProvider().record(forRecordName: event.recordName)
+
+    XCTAssertEqual(record?.recordType, SyncedEmergencyUnblockEvent.recordType)
+    XCTAssertEqual(record?.recordID.recordName, event.recordName)
+    XCTAssertEqual(
+      record?[SyncedEmergencyUnblockEvent.FieldKey.id.rawValue] as? String,
+      event.id.uuidString)
+    XCTAssertEqual(record?[SyncedEmergencyUnblockEvent.FieldKey.resetEpoch.rawValue] as? Int, 2)
   }
 
   func testGivenAbsentEntity_WhenMaterialized_ThenNil() {

@@ -55,6 +55,18 @@ extension SyncEngineController: SyncEngineControlling {
     guard let funnel else { throw SyncEngineControllingError.notAttached }
     funnel.enqueueEmergencySettingsSave()
   }
+  func enqueueEmergencyUnblockEvent(_ event: SyncedEmergencyUnblockEvent) throws {
+    guard let funnel else { throw SyncEngineControllingError.notAttached }
+    funnel.enqueueEmergencyUnblockEvent(event)
+  }
+  func enqueueEmergencyEpochSave() throws {
+    guard let funnel else { throw SyncEngineControllingError.notAttached }
+    funnel.enqueueEmergencyEpochSave()
+  }
+  func enqueueEmergencyUnblockEventDelete(_ recordName: String) throws {
+    guard let funnel else { throw SyncEngineControllingError.notAttached }
+    funnel.enqueueEmergencyUnblockEventDelete(recordName)
+  }
   func enqueueDeferredDelete(recordName: String) {
     funnel?.enqueueTombstoneDelete(recordName: recordName)
   }

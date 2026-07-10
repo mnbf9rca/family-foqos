@@ -14,6 +14,9 @@ protocol SyncEngineControlling: AnyObject {
   func enqueueLocationSave(_ id: UUID) throws
   func enqueueLocationDelete(_ id: UUID) throws
   func enqueueEmergencySettingsSave() throws
+  func enqueueEmergencyUnblockEvent(_ event: SyncedEmergencyUnblockEvent) throws
+  func enqueueEmergencyEpochSave() throws
+  func enqueueEmergencyUnblockEventDelete(_ recordName: String) throws
   func enqueueDeferredDelete(recordName: String)
 }
 
