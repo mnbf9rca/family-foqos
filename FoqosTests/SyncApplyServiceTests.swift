@@ -315,6 +315,59 @@ final class SyncApplyServiceTests: XCTestCase {
     XCTAssertEqual(try SavedLocation.find(byID: id, in: context)?.name, "Cafe")
   }
 
+  func testGivenNewerRemoteLocation_WhenApplied_ThenNothingReenqueued() throws {
+    let now = Date()
+    let apply = makeService()
+    let locId = UUID()
+    let location = SavedLocation(
+      id: locId,
+      name: "Home",
+      latitude: 1,
+      longitude: 2,
+      updatedAt: now.addingTimeInterval(-3600)
+    )
+    context.insert(location)
+    try context.save()
+
+    let synced = SyncedLocation(
+      locationId: locId,
+      name: "Renamed",
+      latitude: 1,
+      longitude: 2,
+      defaultRadiusMeters: 500,
+      isLocked: false,
+      lastModified: now
+    )
+    _ = apply.applyFetchedModification(
+      synced.toCKRecord(in: zoneID), isPendingDeleteOrTombstoned: noPendingDelete)
+
+    XCTAssertTrue(apply.drainReenqueues().isEmpty, "applying a location must never trigger a push")
+  }
+
+  func testGivenOlderRemoteLocation_WhenApplied_ThenNoOpAndNothingReenqueued() throws {
+    let now = Date()
+    let apply = makeService()
+    let locId = UUID()
+    let location = SavedLocation(
+      id: locId, name: "Home", latitude: 1, longitude: 2, updatedAt: now)
+    context.insert(location)
+    try context.save()
+
+    let synced = SyncedLocation(
+      locationId: locId,
+      name: "Stale",
+      latitude: 9,
+      longitude: 9,
+      defaultRadiusMeters: 500,
+      isLocked: false,
+      lastModified: now.addingTimeInterval(-3600)
+    )
+    _ = apply.applyFetchedModification(
+      synced.toCKRecord(in: zoneID), isPendingDeleteOrTombstoned: noPendingDelete)
+
+    XCTAssertTrue(apply.drainReenqueues().isEmpty, "the N6 no-op branch must not push either")
+  }
+
   // MARK: - Emergency versioned apply
 
   func testGivenNewerEmergencySettings_WhenApplied_ThenAppliedAndSystemFieldsStored() {
