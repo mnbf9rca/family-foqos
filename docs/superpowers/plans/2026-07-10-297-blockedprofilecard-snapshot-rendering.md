@@ -19,6 +19,7 @@
 - **Do not create GitHub labels.** Not applicable to code, noted for parity with repo rules.
 - **Scope = card family only** (`BlockedProfileCard`, `ProfileScheduleRow`, `BlockedProfileCarousel`, one `BlockedProfiles` extension). The other latent-shape views are **out of scope** — tracked in #298. Do not touch them.
 - **Trap-safe rule:** reading a stored `@Attribute` on a post-save-deleted model traps; reading `modelContext`/`isDeleted`/`persistentModelID`/`registeredModel` is safe. `isPersistentModelValid` (`Foqos/Utils/Extensions.swift`) encodes this. The snapshot builder must run **only** on a model already confirmed valid (inside `SafeModelView`'s valid branch / on a `.valid`-filtered element).
+- **Option-C invariant (edit propagation) — REQUIRED, do not violate:** `profile.cardData` MUST be constructed *inside* the carousel's observation-tracked `SafeModelView` content closure (the render path). That evaluation is what registers the `@Observable` dependencies on the tracked reads, so a legitimate profile edit re-runs the carousel body, rebuilds the snapshot, and updates the card **in place**. Never memoize `cardData`, cache it on the model, or move its construction into an `init` / stored property / any non-render-path location — that silently breaks edit propagation (card stops updating on edits) while still compiling and passing the zombie test. This is the one way Option C rots; it is guarded by the Task 1 freshness test, the `cardData` tripwire comment, and the device-gate edit-propagation step.
 
 ---
 
@@ -83,6 +84,26 @@ final class BlockedProfileCardDataTests: XCTestCase {
     XCTAssertEqual(data.domainsCount, 0)
     XCTAssertFalse(data.isNewerSchemaVersion)        // seeded at currentSchemaVersion
     XCTAssertEqual(data.profileSchemaVersion, BlockedProfiles.currentSchemaVersion)
+  }
+
+  // Builder freshness (#297 Option-C risk: "legitimate edits still re-render"). The builder must
+  // never be memoized/cached — each call reflects the model's CURRENT state. This guards edit
+  // propagation at the unit level; the render-path wiring is verified by the device-gate edit step.
+  @MainActor
+  func testGivenModelMutated_WhenCardDataRebuilt_ThenReflectsChange() throws {
+    let context = try makeContext()
+    let profile = BlockedProfiles(
+      id: UUID(), name: "Before", selectedActivity: FamilyActivitySelection())
+    context.insert(profile)
+
+    let before = profile.cardData
+    XCTAssertEqual(before.name, "Before")
+
+    profile.name = "After"                           // legitimate edit
+    let after = profile.cardData                     // freshly built snapshot
+
+    XCTAssertEqual(after.name, "After")              // reflects the mutation (no stale cache)
+    XCTAssertEqual(before.name, "Before")            // the prior snapshot is an independent value
   }
 
   // The load-bearing regression assertion: a snapshot taken while the model was VALID
@@ -154,6 +175,14 @@ struct BlockedProfileCardData {
 extension BlockedProfiles {
   /// Build the card snapshot. MUST be called only on a valid (non-zombie) model — callers
   /// gate via `.valid` / `SafeModelView` before invoking. Reads live attributes/relationships.
+  ///
+  /// TRIPWIRE (#297 edit-propagation): this MUST be evaluated inside an observation-tracked
+  /// SwiftUI body (the carousel's `SafeModelView` content closure). Those tracked reads register
+  /// the `@Observable` dependencies that make a legitimate edit rebuild the snapshot. Do NOT
+  /// memoize it, cache it on the model, or move the call into an `init` / stored property / out of
+  /// the render path — that silently stops the card updating on edits while still compiling and
+  /// passing the zombie test. Verified by `testGivenModelMutated_WhenCardDataRebuilt_ThenReflectsChange`
+  /// and the device-gate edit step.
   var cardData: BlockedProfileCardData {
     BlockedProfileCardData(
       id: id,
@@ -358,7 +387,10 @@ struct SafeModelView<Model: PersistentModel, Content: View, Placeholder: View>: 
 ForEach(validProfiles) { profile in
   SafeModelView(profile) { profile in
     BlockedProfileCard(
-      data: profile.cardData,                       // built ONLY on a valid model
+      // Built ONLY on a valid model, and ONLY here inside the observation-tracked body: these
+      // tracked reads register the @Observable deps so a legitimate edit rebuilds the snapshot in
+      // place. Do NOT hoist/memoize this call — see the `cardData` tripwire (Option-C invariant).
+      data: profile.cardData,
       isActive: profile.id == activeSessionProfileId,
       isBreakAvailable: isBreakAvailable,
       isBreakActive: isBreakActive,
@@ -376,8 +408,10 @@ ForEach(validProfiles) { profile in
       onOneMoreMinuteTapped: { onOneMoreMinuteTapped(profile) }
     )
   } placeholder: {
-    // Frame-preserving: keep the carousel from collapsing during the brief teardown window.
-    Color.clear
+    // Frame-preserving: `.containerRelativeFrame(.horizontal)` gives width, but `Color.clear`
+    // collapses vertically → a one-frame height jump (the exact artifact the placeholder is meant
+    // to avoid). Pin the height to the card's rendered height.
+    Color.clear.frame(minHeight: cardHeight)
   }
   .containerRelativeFrame(.horizontal)
 }
@@ -445,6 +479,7 @@ git commit -m "test(#297): document type-signature regression guard + zombie-sna
 - [ ] `swift-format lint --recursive .` clean.
 - [ ] `grep -rn "let profile: BlockedProfiles" Foqos/Components/BlockedProfileCards` returns **nothing** (card family holds no live model).
 - [ ] **DEVICE GATE (required before merge, per decision):** on a physical device, **no debugger** (Scheme → Run → Debugger: None; lldb masks the `EXC_BREAKPOINT`), run the exact repro from #297 — with the Home carousel visible, delete a profile via Manage → Edit/Move minus-delete AND swipe-delete, both when it is the last profile (reorder count 0) and one of several (count > 0), ≥10 cycles. Expected: **zero crashes.** Capture an exported log (Settings footer must show a real commit SHA, no `+wip`) attached to the PR.
+- [ ] **DEVICE GATE — edit propagation (Option-C risk, required):** with the Home carousel visible, edit a profile's **name** and its **schedule** via the edit sheet, then return to Home. The card must **update in place** (no navigate-away-and-back) to show the new name and schedule. This confirms the snapshot rebuilds on legitimate edits — the one way Option C can silently rot. If the card shows stale values, `cardData` was hoisted out of the observation-tracked body (Option-C invariant violated); fix before merge.
 - [ ] Request code review (AGENTS.md: review before merge). Reference #297; note #298 is the out-of-scope follow-up.
 
 ## Out of scope (do NOT do here)
@@ -453,7 +488,7 @@ git commit -m "test(#297): document type-signature regression guard + zombie-sna
 - Any `#289`/`#296` sync-layer change — the timeline showed a latent #289 race; the snapshot fix is UI-layer and trigger-agnostic, so no sync change is needed (attribution probe skipped by decision).
 
 ## Self-review checklist (planner ran this)
-- **Spec coverage:** Option C (snapshot) ✓ (Tasks 1–4); frame-preserving placeholder ✓ (Task 4 Step 2); twins → follow-up ✓ (#298, Out of scope); skip attribution probe ✓ (Out of scope); type-signature-as-regression-test explicit ✓ (Task 5); device gate before merge ✓ (Final verification).
+- **Spec coverage:** Option C (snapshot) ✓ (Tasks 1–4); frame-preserving placeholder ✓ (Task 4 Step 2, height-pinned via `minHeight: cardHeight`); **edit-propagation preserved** ✓ (Global-Constraints Option-C invariant + Task 1 freshness test + `cardData` tripwire comment + carousel call-site comment + device-gate edit step); twins → follow-up ✓ (#298, Out of scope); skip attribution probe ✓ (Out of scope); type-signature-as-regression-test explicit ✓ (Task 5); device gate before merge ✓ (Final verification).
 - **Placeholder scan:** every code step shows real code; field types copied from `BlockedProfiles.swift`.
 - **Type consistency:** `cardData` / `BlockedProfileCardData` / `ProfileScheduleRow(data:isActive:)` / `BlockedProfileCard(data:…)` used consistently across Tasks 1–5.
 - **Known soft spot to verify during Task 0/1:** `FamilyActivitySelection` and the schedule/trigger types are used by value; if any is not `Sendable`/usable in a struct field as written, keep the field (structs can hold non-Sendable values) and only adjust if the compiler objects. `BlockedProfileCardData` is intentionally **not** `Equatable` to avoid forcing conformance on `FamilyActivitySelection`/trigger types.
