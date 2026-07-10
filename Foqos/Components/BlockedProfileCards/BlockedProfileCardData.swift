@@ -2,6 +2,12 @@ import FamilyControls
 import FoqosShared
 import Foundation
 
+// REGRESSION GUARD (#297): BlockedProfileCard / ProfileScheduleRow accept ONLY this value type.
+// They can no longer hold a live BlockedProfiles @Model, so a re-render can never read a
+// vacated store row. Reintroducing `let profile: BlockedProfiles` on those views is a
+// compile-time-visible regression. The runtime proof is
+// BlockedProfileCardDataTests.testGivenCardDataThenModelDeletedAndSaved_ThenValuesStillReadableNoTrap.
+
 /// Immutable value snapshot of everything the BlockedProfileCard family renders.
 /// NOT a SwiftData model — holding a value (never the live `@Model`) is what makes the
 /// card crash-proof against a re-render on a deleted profile (see #297). The compiler now
