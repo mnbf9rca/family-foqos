@@ -36,7 +36,7 @@ final class EmergencyUnblockGCTests: XCTestCase {
   func testGivenStaleEpochEvents_WhenGC_ThenRemovedLocallyAndDeletesEnqueued() {
     let now = Date()
     let manager = EmergencyUnblockManager(defaults: emgDefaults, profileSyncManager: .shared)
-    manager.seedForTesting(allowance: 3, epoch: 1)
+    manager.seedForTesting(epoch: 1)
     let e1 = manager.consumeUnblockEvent(now: now)
     let e2 = manager.consumeUnblockEvent(now: now)
     manager.advanceResetEpochForTesting()

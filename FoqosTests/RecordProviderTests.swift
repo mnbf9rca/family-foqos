@@ -97,7 +97,7 @@ final class RecordProviderTests: XCTestCase {
 
   func testGivenEmergencyRecordName_WhenMaterialized_ThenBuildsEmergencyRecord() {
     let now = Date()
-    emergencyManager.seedForTesting(allowance: 3, epoch: 1)
+    emergencyManager.seedForTesting(epoch: 1)
     _ = emergencyManager.consumeUnblockEvent(now: now)
     emergencyManager.applyRemoteEmergencySettings(
       SyncedEmergencySettings(
@@ -113,7 +113,7 @@ final class RecordProviderTests: XCTestCase {
   }
 
   func testGivenEmergencyEpochRecordName_WhenMaterialized_ThenBuildsEpochRecord() {
-    emergencyManager.seedForTesting(allowance: 3, epoch: 4)
+    emergencyManager.seedForTesting(epoch: 4)
 
     let record = makeProvider().record(forRecordName: SyncedEmergencyEpoch.recordName)
 
@@ -124,7 +124,7 @@ final class RecordProviderTests: XCTestCase {
 
   func testGivenEmergencyUnblockEventRecordName_WhenMaterialized_ThenBuildsEventRecord() {
     let now = Date()
-    emergencyManager.seedForTesting(allowance: 3, epoch: 2)
+    emergencyManager.seedForTesting(epoch: 2)
     let event = emergencyManager.consumeUnblockEvent(now: now)
 
     let record = makeProvider().record(forRecordName: event.recordName)

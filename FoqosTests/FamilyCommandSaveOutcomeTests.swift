@@ -6,10 +6,6 @@ import XCTest
 @MainActor
 final class FamilyCommandSaveOutcomeTests: XCTestCase {
 
-  func testGivenNoError_WhenClassifying_ThenSent() {
-    XCTAssertEqual(CloudKitNetworkService.classifyCommandSave(error: nil), .sent)
-  }
-
   func testGivenServerRecordChanged_WhenClassifying_ThenAlreadyPending() {
     let error = CKError(.serverRecordChanged)
     XCTAssertEqual(CloudKitNetworkService.classifyCommandSave(error: error), .alreadyPending)

@@ -44,6 +44,12 @@ final class SyncConflictManager: ObservableObject {
     resetWasSuperseded = false
   }
 
+  func dismissDivergenceBanner() {
+    divergenceProfiles.removeAll()
+    showConflictBanner =
+      !conflictedProfiles.isEmpty || !newerVersionProfiles.isEmpty || resetWasSuperseded
+  }
+
   func clearConflict(profileId: UUID) {
     conflictedProfiles.removeValue(forKey: profileId)
     newerVersionProfiles.removeValue(forKey: profileId)

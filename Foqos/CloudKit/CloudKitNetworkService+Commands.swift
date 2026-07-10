@@ -7,10 +7,9 @@ extension CloudKitNetworkService {
 
   /// Outcome of attempting to save a FamilyCommand. `.alreadyPending` means the deterministic
   /// recordName collided with a still-pending identical command, an idempotent success (#222).
-  enum CommandSaveOutcome: Equatable { case sent, alreadyPending, failed }
+  enum CommandSaveOutcome: Equatable { case alreadyPending, failed }
 
-  static func classifyCommandSave(error: Error?) -> CommandSaveOutcome {
-    guard let error else { return .sent }
+  static func classifyCommandSave(error: Error) -> CommandSaveOutcome {
     if let ckError = error as? CKError, ckError.code == .serverRecordChanged {
       return .alreadyPending
     }
@@ -30,8 +29,6 @@ extension CloudKitNetworkService {
       Log.info("Command sent successfully", category: .cloudKit)
     } catch {
       switch Self.classifyCommandSave(error: error) {
-      case .sent:
-        break
       case .alreadyPending:
         // #222: the deterministic recordName means an identical command is already queued.
         Log.info(

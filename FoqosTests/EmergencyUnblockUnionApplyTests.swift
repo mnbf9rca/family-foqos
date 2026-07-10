@@ -29,7 +29,7 @@ final class EmergencyUnblockUnionApplyTests: XCTestCase {
     container = try TestModelContainer.create()
     context = container.mainContext
     emergencyManager = EmergencyUnblockManager(defaults: emgDefaults)
-    emergencyManager.seedForTesting(allowance: 3, epoch: 1)
+    emergencyManager.seedForTesting(epoch: 1)
   }
 
   override func tearDown() async throws {

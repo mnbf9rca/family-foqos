@@ -254,8 +254,7 @@ class EmergencyUnblockManager: ObservableObject {
   }
 
   #if DEBUG
-    func seedForTesting(allowance: Int, epoch: Int) {
-      _ = allowance
+    func seedForTesting(epoch: Int) {
       currentResetEpoch = epoch
       unblockEvents = []
       objectWillChange.send()

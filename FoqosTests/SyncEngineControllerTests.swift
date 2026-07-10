@@ -290,7 +290,7 @@ final class SyncEngineControllerTests: XCTestCase {
 
   func testRestorableRecordNames_IncludesEpochAndEvents() {
     let now = Date()
-    emergencyManager.seedForTesting(allowance: 3, epoch: 4)
+    emergencyManager.seedForTesting(epoch: 4)
     let event = emergencyManager.consumeUnblockEvent(now: now)
     let controller = makeController()
 
@@ -1008,7 +1008,7 @@ final class SyncEngineControllerTests: XCTestCase {
   }
 
   func testGivenHigherLocalEpoch_WhenServerRecordLower_ThenLocalIsStrictlyNewer() {
-    emergencyManager.seedForTesting(allowance: 3, epoch: 5)
+    emergencyManager.seedForTesting(epoch: 5)
     let controller = makeController()
     let lowerServer = SyncedEmergencyEpoch(epoch: 3).toCKRecord(in: zoneID)
     let equalServer = SyncedEmergencyEpoch(epoch: 5).toCKRecord(in: zoneID)
@@ -1027,7 +1027,7 @@ final class SyncEngineControllerTests: XCTestCase {
 
   func testGivenEpochSaveServerRecordChanged_WhenLocalHigher_ThenStoresTagAndReaddsEpoch() {
     store.engineState = Data([0x01])
-    emergencyManager.seedForTesting(allowance: 3, epoch: 5)
+    emergencyManager.seedForTesting(epoch: 5)
     let controller = makeController()
     controller.start()
     controller.startupTask?.cancel()

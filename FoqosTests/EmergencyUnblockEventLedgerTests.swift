@@ -22,7 +22,7 @@ final class EmergencyUnblockEventLedgerTests: XCTestCase {
   func testGivenThreeAllowance_WhenTwoEventsInEpoch_ThenRemainingIsOne() {
     let now = Date()
     let manager = EmergencyUnblockManager(defaults: defaults)
-    manager.seedForTesting(allowance: 3, epoch: 1)
+    manager.seedForTesting(epoch: 1)
 
     _ = manager.consumeUnblockEvent(now: now)
     _ = manager.consumeUnblockEvent(now: now)
@@ -33,7 +33,7 @@ final class EmergencyUnblockEventLedgerTests: XCTestCase {
   func testGivenConcurrentEventsFromTwoDevices_WhenMerged_ThenBothCount() {
     let now = Date()
     let manager = EmergencyUnblockManager(defaults: defaults)
-    manager.seedForTesting(allowance: 3, epoch: 1)
+    manager.seedForTesting(epoch: 1)
 
     let localEvent = manager.consumeUnblockEvent(now: now)
     let remoteEvent = SyncedEmergencyUnblockEvent(
@@ -47,7 +47,7 @@ final class EmergencyUnblockEventLedgerTests: XCTestCase {
   func testGivenReDeliveredEvent_WhenMergedTwice_ThenCountsOnce() {
     let now = Date()
     let manager = EmergencyUnblockManager(defaults: defaults)
-    manager.seedForTesting(allowance: 3, epoch: 1)
+    manager.seedForTesting(epoch: 1)
     let event = SyncedEmergencyUnblockEvent(
       id: UUID(), deviceId: "x", consumedAt: now, resetEpoch: 1)
 
@@ -60,7 +60,7 @@ final class EmergencyUnblockEventLedgerTests: XCTestCase {
   func testGivenOldEpochEvents_WhenEpochAdvances_ThenTheyStopCounting() {
     let now = Date()
     let manager = EmergencyUnblockManager(defaults: defaults)
-    manager.seedForTesting(allowance: 3, epoch: 1)
+    manager.seedForTesting(epoch: 1)
 
     _ = manager.consumeUnblockEvent(now: now)
     _ = manager.consumeUnblockEvent(now: now)
@@ -72,7 +72,7 @@ final class EmergencyUnblockEventLedgerTests: XCTestCase {
   func testRemainingClampsAtZero() {
     let now = Date()
     let manager = EmergencyUnblockManager(defaults: defaults)
-    manager.seedForTesting(allowance: 3, epoch: 1)
+    manager.seedForTesting(epoch: 1)
 
     for _ in 0..<5 {
       _ = manager.consumeUnblockEvent(now: now)

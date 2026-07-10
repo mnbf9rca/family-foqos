@@ -36,7 +36,7 @@ final class EmergencyUnblockConsumeTests: XCTestCase {
   func testGivenSyncEnabled_WhenRecordAndEnqueueUnblock_ThenEventEnqueuedAndRemainingDrops() {
     let now = Date()
     let manager = EmergencyUnblockManager(defaults: emgDefaults, profileSyncManager: .shared)
-    manager.seedForTesting(allowance: 3, epoch: 1)
+    manager.seedForTesting(epoch: 1)
 
     manager.recordAndEnqueueUnblock(now: now)
 
@@ -48,7 +48,7 @@ final class EmergencyUnblockConsumeTests: XCTestCase {
   func testGivenConsumedUnblocks_WhenReset_ThenEpochAdvancesAndRemainingRestored() {
     let now = Date()
     let manager = EmergencyUnblockManager(defaults: emgDefaults, profileSyncManager: .shared)
-    manager.seedForTesting(allowance: 3, epoch: 1)
+    manager.seedForTesting(epoch: 1)
     manager.recordAndEnqueueUnblock(now: now)
     manager.recordAndEnqueueUnblock(now: now)
     XCTAssertEqual(manager.getRemainingEmergencyUnblocks(), 1)

@@ -30,7 +30,7 @@ final class EmergencyUnblockManagerSnapshotTests: XCTestCase {
   func testGivenAppliedState_WhenSnapshotRequested_ThenReflectsCurrentValuesWithoutBump() {
     let now = Date()
     let manager = EmergencyUnblockManager(defaults: defaults)
-    manager.seedForTesting(allowance: 3, epoch: 1)
+    manager.seedForTesting(epoch: 1)
     _ = manager.consumeUnblockEvent(now: now)
     let remote = SyncedEmergencySettings(
       unblocksRemaining: 99,

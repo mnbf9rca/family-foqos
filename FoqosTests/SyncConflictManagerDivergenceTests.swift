@@ -30,4 +30,30 @@ final class SyncConflictManagerDivergenceTests: XCTestCase {
     manager.clearConflict(profileId: id)
     XCTAssertFalse(manager.showConflictBanner)
   }
+
+  func testGivenDivergenceAndOlderConflict_WhenDismissingDivergence_ThenOlderConflictBannerRemains() {
+    let manager = SyncConflictManager.shared
+    manager.clearAll()
+
+    manager.addDivergenceConflict(profileId: UUID(), profileName: "Homework")
+    manager.addConflict(profileId: UUID(), profileName: "Chores")
+
+    manager.dismissDivergenceBanner()
+
+    XCTAssertFalse(manager.shouldShowDivergenceBanner)
+    XCTAssertTrue(manager.showConflictBanner)
+    XCTAssertTrue(manager.shouldShowOlderDeviceBanner)
+    XCTAssertTrue(manager.conflictMessage.contains("Chores"))
+  }
+
+  func testGivenOnlyDivergence_WhenDismissingDivergence_ThenBannerHides() {
+    let manager = SyncConflictManager.shared
+    manager.clearAll()
+
+    manager.addDivergenceConflict(profileId: UUID(), profileName: "Homework")
+    manager.dismissDivergenceBanner()
+
+    XCTAssertFalse(manager.shouldShowDivergenceBanner)
+    XCTAssertFalse(manager.showConflictBanner)
+  }
 }

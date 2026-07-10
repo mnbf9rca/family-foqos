@@ -169,7 +169,7 @@ struct HomeView: View {
           if syncConflictManager.shouldShowDivergenceBanner {
             SyncConflictBanner(
               message: syncConflictManager.divergenceMessage,
-              onDismiss: { syncConflictManager.dismissBanner() }
+              onDismiss: { syncConflictManager.dismissDivergenceBanner() }
             )
             .padding(.vertical, 8)
           } else if syncConflictManager.shouldShowNewerVersionBanner {
