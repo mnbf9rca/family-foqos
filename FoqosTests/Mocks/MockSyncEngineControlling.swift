@@ -13,6 +13,9 @@ final class MockSyncEngineControlling: SyncEngineControlling {
   private(set) var enqueuedLocationSaves: [UUID] = []
   private(set) var enqueuedLocationDeletes: [UUID] = []
   private(set) var enqueuedEmergencySaves = 0
+  private(set) var enqueuedEmergencyUnblockEvents: [SyncedEmergencyUnblockEvent] = []
+  private(set) var enqueuedEmergencyEpochSaves = 0
+  private(set) var enqueuedEmergencyUnblockEventDeletes: [String] = []
   private(set) var deferredDeletes: [String] = []
 
   /// Set by a test to make every `enqueue*` verb below throw instead of recording — used to
@@ -48,6 +51,18 @@ final class MockSyncEngineControlling: SyncEngineControlling {
   func enqueueEmergencySettingsSave() throws {
     if let errorToThrow { throw errorToThrow }
     enqueuedEmergencySaves += 1
+  }
+  func enqueueEmergencyUnblockEvent(_ event: SyncedEmergencyUnblockEvent) throws {
+    if let errorToThrow { throw errorToThrow }
+    enqueuedEmergencyUnblockEvents.append(event)
+  }
+  func enqueueEmergencyEpochSave() throws {
+    if let errorToThrow { throw errorToThrow }
+    enqueuedEmergencyEpochSaves += 1
+  }
+  func enqueueEmergencyUnblockEventDelete(_ recordName: String) throws {
+    if let errorToThrow { throw errorToThrow }
+    enqueuedEmergencyUnblockEventDeletes.append(recordName)
   }
   func enqueueDeferredDelete(recordName: String) {
     deferredDeletes.append(recordName)

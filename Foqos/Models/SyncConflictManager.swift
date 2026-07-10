@@ -9,6 +9,7 @@ final class SyncConflictManager: ObservableObject {
 
   @Published var conflictedProfiles: [UUID: String] = [:]  // ID → name (older device edited)
   @Published var newerVersionProfiles: [UUID: String] = [:]  // ID → name (this device outdated)
+  @Published var divergenceProfiles: [UUID: String] = [:]  // ID → name (concurrent edit)
   @Published var showConflictBanner: Bool = false
   @Published var resetWasSuperseded: Bool = false  // profile-less: a reset request did not run
 
@@ -31,7 +32,14 @@ final class SyncConflictManager: ObservableObject {
     showConflictBanner = true
   }
 
+  /// Records a same-version concurrent edit resolved by the deterministic tie-break (#218).
+  func addDivergenceConflict(profileId: UUID, profileName: String) {
+    divergenceProfiles[profileId] = profileName
+    showConflictBanner = true
+  }
+
   func dismissBanner() {
+    divergenceProfiles.removeAll()
     showConflictBanner = false
     resetWasSuperseded = false
   }
@@ -39,7 +47,8 @@ final class SyncConflictManager: ObservableObject {
   func clearConflict(profileId: UUID) {
     conflictedProfiles.removeValue(forKey: profileId)
     newerVersionProfiles.removeValue(forKey: profileId)
-    if conflictedProfiles.isEmpty && newerVersionProfiles.isEmpty {
+    divergenceProfiles.removeValue(forKey: profileId)
+    if conflictedProfiles.isEmpty && newerVersionProfiles.isEmpty && divergenceProfiles.isEmpty {
       showConflictBanner = false
     }
   }
@@ -47,6 +56,7 @@ final class SyncConflictManager: ObservableObject {
   func clearAll() {
     conflictedProfiles.removeAll()
     newerVersionProfiles.removeAll()
+    divergenceProfiles.removeAll()
     showConflictBanner = false
     resetWasSuperseded = false
   }
@@ -57,6 +67,19 @@ final class SyncConflictManager: ObservableObject {
 
   var shouldShowOlderDeviceBanner: Bool {
     !conflictedProfiles.isEmpty && showConflictBanner
+  }
+
+  var shouldShowDivergenceBanner: Bool {
+    !divergenceProfiles.isEmpty && showConflictBanner
+  }
+
+  var divergenceMessage: String {
+    if divergenceProfiles.count == 1, let name = divergenceProfiles.values.first {
+      return "\"\(name)\" was changed on another device. Keeping the most recently edited copy."
+    } else {
+      return
+        "Several profiles were changed on more than one device. Keeping the most recently edited copies."
+    }
   }
 
   var conflictMessage: String {

@@ -14,6 +14,7 @@ final class SyncEngineControllerTests: XCTestCase {
   var driver: MockSyncEngineDriver!
   var apply: SyncApplyService!
   var provider: RecordProvider!
+  var emergencyManager: EmergencyUnblockManager!
   var sessionSync: MockSessionSyncFlushing!
   var sessionController: MockSessionController!
   var profileDeleteCommitScheduler: ManualProfileDeleteCommitScheduler!
@@ -33,13 +34,13 @@ final class SyncEngineControllerTests: XCTestCase {
     driver = MockSyncEngineDriver()
     sessionController = MockSessionController()
     profileDeleteCommitScheduler = ManualProfileDeleteCommitScheduler()
-    let emergency = EmergencyUnblockManager()
+    emergencyManager = EmergencyUnblockManager(defaults: defaults)
     apply = SyncApplyService(
       modelContext: context, store: store, sessionController: sessionController,
-      emergencyManager: emergency, deviceId: deviceId,
+      emergencyManager: emergencyManager, deviceId: deviceId,
       scheduleProfileDeleteCommit: profileDeleteCommitScheduler.schedule)
     provider = RecordProvider(
-      modelContext: context, store: store, emergencyManager: emergency, deviceId: deviceId)
+      modelContext: context, store: store, emergencyManager: emergencyManager, deviceId: deviceId)
     sessionSync = MockSessionSyncFlushing()
     SyncConflictManager.shared.clearAll()
   }
@@ -287,6 +288,18 @@ final class SyncEngineControllerTests: XCTestCase {
     XCTAssertTrue(saves.contains(SyncedEmergencySettings.recordName))
   }
 
+  func testRestorableRecordNames_IncludesEpochAndEvents() {
+    let now = Date()
+    emergencyManager.seedForTesting(allowance: 3, epoch: 4)
+    let event = emergencyManager.consumeUnblockEvent(now: now)
+    let controller = makeController()
+
+    let names = Set(controller.restorableRecordNames())
+
+    XCTAssertTrue(names.contains(SyncedEmergencyEpoch.recordName))
+    XCTAssertTrue(names.contains(event.recordName))
+  }
+
   func testGivenNewerSchemaProfile_WhenSeed_ThenNotIncludedInRestorableSet() throws {
     let p = BlockedProfiles(name: "A")
     p.profileSchemaVersion = BlockedProfiles.currentSchemaVersion + 1
@@ -502,7 +515,7 @@ final class SyncEngineControllerTests: XCTestCase {
     let batch = controller.nextRecordZoneChangeBatch(scope: nil) ?? []
     XCTAssertEqual(
       Set(batch.map { $0.recordID.recordName }),
-      Set([p.id.uuidString, SyncedEmergencySettings.recordName]))
+      Set([p.id.uuidString, SyncedEmergencySettings.recordName, SyncedEmergencyEpoch.recordName]))
 
     controller.handle(
       .sentRecordZoneChanges(
@@ -901,6 +914,7 @@ final class SyncEngineControllerTests: XCTestCase {
     controller.startupTask?.cancel()
 
     let remoteRecord = makeProfileRecord(id: id, version: 5, name: "Remote")
+    remoteRecord[SyncedProfile.FieldKey.updatedAt.rawValue] = local.updatedAt.addingTimeInterval(-10)
 
     controller.handle(
       .fetchedRecordZoneChanges(modifications: [remoteRecord], deletions: []))
@@ -909,8 +923,8 @@ final class SyncEngineControllerTests: XCTestCase {
       pendingSaveNames().contains(id.uuidString),
       "CRA-1: §5.1 equal-version-divergence reenqueue is drained and reaches the driver as .saveRecord")
     XCTAssertNotNil(
-      SyncConflictManager.shared.conflictedProfiles[id],
-      "equal-version divergence surfaces a conflict")
+      SyncConflictManager.shared.divergenceProfiles[id],
+      "equal-version divergence surfaces a dedicated divergence conflict")
   }
 
   // MARK: - T4 sentRecordZoneChanges routing (§5.3, S-10, S-11, S-17, S-23, S-29, CRA-1, CRA-3)
@@ -977,6 +991,7 @@ final class SyncEngineControllerTests: XCTestCase {
 
     let sent = makeProfileRecord(id: id, version: 5, name: "Local")
     let server = makeProfileRecord(id: id, version: 5, name: "ServerDiff")  // same version, differs
+    server[SyncedProfile.FieldKey.updatedAt.rawValue] = local.updatedAt.addingTimeInterval(-10)
     let error = makeCKError(
       .serverRecordChanged, userInfo: [CKRecordChangedErrorServerRecordKey: server])
 
@@ -989,7 +1004,45 @@ final class SyncEngineControllerTests: XCTestCase {
       pendingSaveNames().contains(id.uuidString),
       "CRA-1: branch E (§5.1 equal-version divergence) reenqueue drained to the driver")
     XCTAssertNotNil(
-      SyncConflictManager.shared.conflictedProfiles[id], "branch E surfaces a conflict")
+      SyncConflictManager.shared.divergenceProfiles[id], "branch E surfaces a divergence conflict")
+  }
+
+  func testGivenHigherLocalEpoch_WhenServerRecordLower_ThenLocalIsStrictlyNewer() {
+    emergencyManager.seedForTesting(allowance: 3, epoch: 5)
+    let controller = makeController()
+    let lowerServer = SyncedEmergencyEpoch(epoch: 3).toCKRecord(in: zoneID)
+    let equalServer = SyncedEmergencyEpoch(epoch: 5).toCKRecord(in: zoneID)
+
+    XCTAssertTrue(
+      controller.localIsStrictlyNewer(
+        SyncedEmergencyEpoch.recordType,
+        name: SyncedEmergencyEpoch.recordName,
+        server: lowerServer))
+    XCTAssertFalse(
+      controller.localIsStrictlyNewer(
+        SyncedEmergencyEpoch.recordType,
+        name: SyncedEmergencyEpoch.recordName,
+        server: equalServer))
+  }
+
+  func testGivenEpochSaveServerRecordChanged_WhenLocalHigher_ThenStoresTagAndReaddsEpoch() {
+    store.engineState = Data([0x01])
+    emergencyManager.seedForTesting(allowance: 3, epoch: 5)
+    let controller = makeController()
+    controller.start()
+    controller.startupTask?.cancel()
+    let sent = SyncedEmergencyEpoch(epoch: 5).toCKRecord(in: zoneID)
+    let server = SyncedEmergencyEpoch(epoch: 3).toCKRecord(in: zoneID)
+    let error = makeCKError(
+      .serverRecordChanged, userInfo: [CKRecordChangedErrorServerRecordKey: server])
+
+    controller.handle(
+      .sentRecordZoneChanges(
+        savedRecords: [], failedRecordSaves: [(record: sent, error: error)],
+        deletedRecordIDs: [], failedRecordDeletes: []))
+
+    XCTAssertNotNil(store.systemFields(for: SyncedEmergencyEpoch.recordName))
+    XCTAssertTrue(pendingSaveNames().contains(SyncedEmergencyEpoch.recordName))
   }
 
   func testGivenSentSave_WhenZoneNotFound_ThenBranchZSaveZoneSeedAndReAdd() {

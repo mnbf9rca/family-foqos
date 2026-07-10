@@ -74,6 +74,10 @@ final class SyncApplyService {
       return applyLocationModification(record)
     case SyncedEmergencySettings.recordType:
       return applyEmergencyModification(record)
+    case SyncedEmergencyUnblockEvent.recordType:
+      return applyUnblockEventModification(record)
+    case SyncedEmergencyEpoch.recordType:
+      return applyEmergencyEpochModification(record)
     case ProfileSessionRecord.recordType:
       return applySessionModification(record)
     default:
@@ -94,6 +98,10 @@ final class SyncApplyService {
       return deleteLocalProfile(recordName: recordName)
     case SyncedLocation.recordType:
       return deleteLocalLocation(recordName: recordName)
+    case SyncedEmergencyUnblockEvent.recordType:
+      emergencyManager.removeUnblockEvent(recordName: recordName)
+      clearDeletionBookkeeping(recordName: recordName)
+      return .deleted
     case ProfileSessionRecord.recordType:
       return stopSessionForDeletedRecord(recordName: recordName)
     default:
@@ -211,6 +219,15 @@ final class SyncApplyService {
 
   // MARK: - Profile apply (I9 gate + E-1 + equal-version divergence)
 
+  /// #218 deterministic tie-break for equal-version, payload-differing conflicts. Both devices
+  /// choose the same winner: newer `updatedAt`, then lexicographically lower `originDeviceId`.
+  static func remoteWinsProfileTie(remote: SyncedProfile, local: SyncedProfile) -> Bool {
+    if remote.updatedAt != local.updatedAt {
+      return remote.updatedAt > local.updatedAt
+    }
+    return remote.originDeviceId < local.originDeviceId
+  }
+
   private func applyProfileModification(_ record: CKRecord) -> ApplyOutcome {
     guard let synced = SyncedProfile(from: record) else {
       Log.info("Ignoring undecodable SyncedProfile record", category: .sync)
@@ -268,17 +285,28 @@ final class SyncApplyService {
       storeSystemFields(record)
       return .applied
     } else if synced.version == existing.syncVersion {
-      // Equal-version divergence (§5.1): payload-differing ⇒ conflict now.
+      // Equal-version divergence (§5.1): payload-differing => deterministic tie-break (#218).
       let localSynced = SyncedProfile(from: existing, originDeviceId: deviceId)
       if SyncPayloadEquality.profilesPayloadEqual(synced, localSynced) {
         return .applied  // payload-equal echo ⇒ no-op
       }
-      existing.syncVersion += 1
-      try commit()
-      pendingReenqueues.append(record.recordID)
-      SyncConflictManager.shared.addConflict(
-        profileId: existing.id, profileName: existing.name)
-      return .applied
+      if Self.remoteWinsProfileTie(remote: synced, local: localSynced) {
+        // Remote wins: adopt its already-published payload without re-enqueuing.
+        updateLocalProfile(existing, from: synced)
+        try commit()
+        storeSystemFields(record)
+        SyncConflictManager.shared.addDivergenceConflict(
+          profileId: existing.id, profileName: existing.name)
+        return .applied
+      } else {
+        // Local wins: bump above the tie and re-enqueue through the existing I2 exception.
+        existing.syncVersion += 1
+        try commit()
+        pendingReenqueues.append(record.recordID)
+        SyncConflictManager.shared.addDivergenceConflict(
+          profileId: existing.id, profileName: existing.name)
+        return .applied
+      }
     } else {
       // Older incoming version ⇒ no-op.
       return .applied
@@ -454,6 +482,32 @@ final class SyncApplyService {
     }
     emergencyManager.applyRemoteEmergencySettings(remote)
     store.removeFailedApply(recordName: record.recordID.recordName)  // supersession (§5.6)
+    storeSystemFields(record)
+    return .applied
+  }
+
+  // MARK: - Emergency unblock event apply
+
+  private func applyUnblockEventModification(_ record: CKRecord) -> ApplyOutcome {
+    guard let event = SyncedEmergencyUnblockEvent(from: record) else {
+      Log.info("Ignoring undecodable EmergencyUnblockEvent record", category: .sync)
+      return .ignored
+    }
+    emergencyManager.mergeRemoteUnblockEvent(event)
+    store.removeFailedApply(recordName: record.recordID.recordName)
+    storeSystemFields(record)
+    return .applied
+  }
+
+  private func applyEmergencyEpochModification(_ record: CKRecord) -> ApplyOutcome {
+    guard let remote = SyncedEmergencyEpoch(from: record) else {
+      Log.info("Ignoring undecodable EmergencyResetEpoch record", category: .sync)
+      return .ignored
+    }
+    // #221 monotonic-max channel: no version gate. max() is order-independent, so a deferred
+    // local epoch drain and a fetched remote epoch converge regardless of arrival order.
+    emergencyManager.adoptRemoteEpoch(remote.epoch)
+    store.removeFailedApply(recordName: record.recordID.recordName)
     storeSystemFields(record)
     return .applied
   }

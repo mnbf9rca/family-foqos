@@ -55,6 +55,9 @@ final class SyncEngineFacadeTests: XCTestCase {
 
   func testGivenController_WhenFacadeVerbsCalled_ThenTheyForward() throws {
     let id = UUID()
+    let now = Date()
+    let event = SyncedEmergencyUnblockEvent(
+      id: UUID(), deviceId: "device-A", consumedAt: now, resetEpoch: 1)
     manager.isSyncReady = true
 
     try manager.syncNow()
@@ -64,16 +67,22 @@ final class SyncEngineFacadeTests: XCTestCase {
     try manager.enqueueLocationSave(id)
     try manager.enqueueLocationDelete(id)
     try manager.enqueueEmergencySettingsSave()
+    try manager.enqueueEmergencyUnblockEvent(event)
+    try manager.enqueueEmergencyEpochSave()
+    try manager.enqueueEmergencyUnblockEventDelete(event.recordName)
 
     XCTAssertEqual(
-      mock.requestSyncCount, 6,
-      "syncNow (1) + five enqueue verbs each flush once when ready (5)")
+      mock.requestSyncCount, 9,
+      "syncNow (1) + eight enqueue verbs each flush once when ready (8)")
     XCTAssertEqual(mock.beginResetCalls, [true])
     XCTAssertEqual(mock.enqueuedProfileSaves, [id])
     XCTAssertEqual(mock.enqueuedProfileDeletes, [id])
     XCTAssertEqual(mock.enqueuedLocationSaves, [id])
     XCTAssertEqual(mock.enqueuedLocationDeletes, [id])
     XCTAssertEqual(mock.enqueuedEmergencySaves, 1)
+    XCTAssertEqual(mock.enqueuedEmergencyUnblockEvents, [event])
+    XCTAssertEqual(mock.enqueuedEmergencyEpochSaves, 1)
+    XCTAssertEqual(mock.enqueuedEmergencyUnblockEventDeletes, [event.recordName])
   }
 
   func testGivenReadyController_WhenEnqueueProfileSave_ThenRequestSyncIsScheduled() throws {
@@ -140,6 +149,67 @@ final class SyncEngineFacadeTests: XCTestCase {
     XCTAssertTrue(manager.hasNoDeferredMutations, "the deferred sets are cleared after draining")
   }
 
+  func testGivenNotAttached_WhenEnqueueEmergencyUnblockEvent_ThenEventIsDeferredAndReEnqueuedOnReady()
+    throws
+  {
+    let now = Date()
+    let event = SyncedEmergencyUnblockEvent(
+      id: UUID(), deviceId: "device-A", consumedAt: now, resetEpoch: 1)
+    manager.engineController = nil
+
+    XCTAssertThrowsError(try manager.enqueueEmergencyUnblockEvent(event)) { error in
+      XCTAssertEqual(error as? SyncEngineControllingError, .notAttached)
+    }
+
+    let attached = MockSyncEngineControlling()
+    manager.engineController = attached
+    manager.markSyncReadyAndFlush()
+
+    XCTAssertEqual(attached.enqueuedEmergencyUnblockEvents, [event])
+    XCTAssertEqual(attached.requestSyncCount, 1, "exactly one flush covers all drained mutations")
+    XCTAssertTrue(manager.hasNoDeferredMutations, "the deferred sets are cleared after draining")
+  }
+
+  func testGivenNotAttached_WhenEnqueueEmergencyEpochSave_ThenSaveIsDeferredAndReEnqueuedOnReady()
+    throws
+  {
+    manager.engineController = nil
+
+    XCTAssertThrowsError(try manager.enqueueEmergencyEpochSave()) { error in
+      XCTAssertEqual(error as? SyncEngineControllingError, .notAttached)
+    }
+
+    let attached = MockSyncEngineControlling()
+    manager.engineController = attached
+    manager.markSyncReadyAndFlush()
+
+    XCTAssertEqual(attached.enqueuedEmergencyEpochSaves, 1)
+    XCTAssertEqual(attached.requestSyncCount, 1, "exactly one flush covers all drained mutations")
+    XCTAssertTrue(manager.hasNoDeferredMutations, "the deferred sets are cleared after draining")
+  }
+
+  func testGivenNotAttached_WhenEnqueueEmergencyUnblockEventDelete_ThenDeleteIsReplayedOnReady()
+    throws
+  {
+    let recordName = SyncedEmergencyUnblockEvent.recordNamePrefix + UUID().uuidString
+    manager.engineController = nil
+
+    XCTAssertThrowsError(try manager.enqueueEmergencyUnblockEventDelete(recordName)) { error in
+      XCTAssertEqual(error as? SyncEngineControllingError, .notAttached)
+    }
+
+    let attached = MockSyncEngineControlling()
+    manager.engineController = attached
+    manager.markSyncReadyAndFlush()
+
+    XCTAssertEqual(
+      attached.deferredDeletes,
+      [recordName],
+      "a GC delete dropped before attach is replayed through the existing deferred-delete path")
+    XCTAssertEqual(attached.requestSyncCount, 1)
+    XCTAssertTrue(manager.hasNoDeferredMutations)
+  }
+
   func testGivenNotAttached_WhenEnqueueProfileDelete_ThenTombstoneDeleteIsReplayedOnReady() throws {
     let id = UUID()
     manager.engineController = nil
@@ -197,18 +267,27 @@ final class SyncEngineFacadeTests: XCTestCase {
   func testGivenNotReady_WhenAnyFacadeEnqueueVerbRuns_ThenNoSendIsScheduled() throws {
     manager.isSyncReady = false
     let id = UUID()
+    let now = Date()
+    let event = SyncedEmergencyUnblockEvent(
+      id: UUID(), deviceId: "device-A", consumedAt: now, resetEpoch: 1)
 
     try manager.enqueueProfileSave(id)
     try manager.enqueueProfileDelete(id)
     try manager.enqueueLocationSave(id)
     try manager.enqueueLocationDelete(id)
     try manager.enqueueEmergencySettingsSave()
+    try manager.enqueueEmergencyUnblockEvent(event)
+    try manager.enqueueEmergencyEpochSave()
+    try manager.enqueueEmergencyUnblockEventDelete(event.recordName)
 
     XCTAssertEqual(mock.enqueuedProfileSaves, [id])
     XCTAssertEqual(mock.enqueuedProfileDeletes, [id])
     XCTAssertEqual(mock.enqueuedLocationSaves, [id])
     XCTAssertEqual(mock.enqueuedLocationDeletes, [id])
     XCTAssertEqual(mock.enqueuedEmergencySaves, 1)
+    XCTAssertEqual(mock.enqueuedEmergencyUnblockEvents, [event])
+    XCTAssertEqual(mock.enqueuedEmergencyEpochSaves, 1)
+    XCTAssertEqual(mock.enqueuedEmergencyUnblockEventDeletes, [event.recordName])
     XCTAssertEqual(
       mock.requestSyncCount, 0,
       "no facade enqueue verb may send before startup completes and T1 has stripped restored state")

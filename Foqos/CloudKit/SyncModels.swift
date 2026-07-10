@@ -197,7 +197,17 @@ struct SyncedProfile: Codable, Equatable {
     order = record[FieldKey.order.rawValue] as? Int ?? 0
     enableLiveActivity = record[FieldKey.enableLiveActivity.rawValue] as? Bool ?? false
     if let reminderInt = record[FieldKey.reminderTimeInSeconds.rawValue] as? Int {
-      reminderTimeInSeconds = UInt32(reminderInt)
+      // #265: range-check the narrowing cast (same defensive-decode discipline as the
+      // `UInt8(exactly:)` sibling below, and as the C1/#275 clamp for out-of-domain values).
+      // Invalid CloudKit data degrades to "no reminder" instead of trapping the inbound apply.
+      if let bounded = UInt32(exactly: reminderInt) {
+        reminderTimeInSeconds = bounded
+      } else {
+        Log.warning(
+          "Ignoring out-of-range reminderTimeInSeconds \(reminderInt) from synced profile",
+          category: .sync)
+        reminderTimeInSeconds = nil
+      }
     } else {
       reminderTimeInSeconds = nil
     }
@@ -553,6 +563,106 @@ struct SyncedEmergencySettings: Codable, Equatable {
     self.version = version
     self.lastModified = lastModified
     self.originDeviceId = originDeviceId
+  }
+}
+
+// MARK: - Synced Emergency Reset Epoch
+
+/// The current emergency-unblock reset epoch, synced as a single fixed-name record and merged by
+/// max() so all devices converge on one agreed epoch boundary (#221). This deliberately does not
+/// ride the versioned emergency-settings config record.
+struct SyncedEmergencyEpoch: Codable, Equatable {
+  var epoch: Int
+
+  static let recordType = "EmergencyResetEpoch"
+  static let recordName = "emergency-reset-epoch"
+
+  enum FieldKey: String {
+    case epoch
+  }
+
+  func toCKRecord(in zoneID: CKRecordZone.ID) -> CKRecord {
+    let record = CKRecord(
+      recordType: Self.recordType,
+      recordID: CKRecord.ID(recordName: Self.recordName, zoneID: zoneID))
+    updateCKRecord(record)
+    return record
+  }
+
+  func updateCKRecord(_ record: CKRecord) {
+    record[FieldKey.epoch.rawValue] = epoch
+  }
+
+  init(epoch: Int) {
+    self.epoch = epoch
+  }
+
+  init?(from record: CKRecord) {
+    guard record.recordType == Self.recordType,
+      let epoch = record[FieldKey.epoch.rawValue] as? Int
+    else {
+      return nil
+    }
+    self.epoch = epoch
+  }
+}
+
+// MARK: - Synced Emergency Unblock Event
+
+/// One immutable record per consumed emergency unblock. Union-merged across devices (write-once,
+/// unique recordName), so concurrent unblocks never collide (#221).
+struct SyncedEmergencyUnblockEvent: Codable, Equatable {
+  var id: UUID
+  var deviceId: String
+  var consumedAt: Date
+  var resetEpoch: Int
+
+  static let recordType = "EmergencyUnblockEvent"
+  static let recordNamePrefix = "EmergencyUnblock_"
+  var recordName: String { Self.recordNamePrefix + id.uuidString }
+
+  enum FieldKey: String {
+    case id
+    case deviceId
+    case consumedAt
+    case resetEpoch
+  }
+
+  func toCKRecord(in zoneID: CKRecordZone.ID) -> CKRecord {
+    let record = CKRecord(
+      recordType: Self.recordType,
+      recordID: CKRecord.ID(recordName: recordName, zoneID: zoneID))
+    updateCKRecord(record)
+    return record
+  }
+
+  func updateCKRecord(_ record: CKRecord) {
+    record[FieldKey.id.rawValue] = id.uuidString
+    record[FieldKey.deviceId.rawValue] = deviceId
+    record[FieldKey.consumedAt.rawValue] = consumedAt
+    record[FieldKey.resetEpoch.rawValue] = resetEpoch
+  }
+
+  init(id: UUID, deviceId: String, consumedAt: Date, resetEpoch: Int) {
+    self.id = id
+    self.deviceId = deviceId
+    self.consumedAt = consumedAt
+    self.resetEpoch = resetEpoch
+  }
+
+  init?(from record: CKRecord) {
+    guard record.recordType == Self.recordType,
+      let idString = record[FieldKey.id.rawValue] as? String,
+      let id = UUID(uuidString: idString),
+      let consumedAt = record[FieldKey.consumedAt.rawValue] as? Date,
+      let resetEpoch = record[FieldKey.resetEpoch.rawValue] as? Int
+    else {
+      return nil
+    }
+    self.id = id
+    self.deviceId = record[FieldKey.deviceId.rawValue] as? String ?? ""
+    self.consumedAt = consumedAt
+    self.resetEpoch = resetEpoch
   }
 }
 

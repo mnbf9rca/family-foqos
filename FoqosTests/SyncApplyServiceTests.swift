@@ -13,7 +13,9 @@ final class SyncApplyServiceTests: XCTestCase {
   private var emergencyManager: EmergencyUnblockManager!
   private var suiteName: String!
   private var storeSuiteName: String!
+  private var emergencySuiteName: String!
   private var storeDefaults: UserDefaults!
+  private var emergencyDefaults: UserDefaults!
   private let deviceId = "device-A"
   private let zoneID = CKRecordZone.ID(
     zoneName: CloudKitConstants.syncZoneName, ownerName: CKCurrentUserDefaultName)
@@ -23,12 +25,14 @@ final class SyncApplyServiceTests: XCTestCase {
     suiteName = "SyncApplyServiceTests-\(UUID().uuidString)"
     SharedData.configure(suite: UserDefaults(suiteName: suiteName)!)
     storeSuiteName = "SyncApplyServiceTests-store-\(UUID().uuidString)"
+    emergencySuiteName = "SyncApplyServiceTests-emg-\(UUID().uuidString)"
     storeDefaults = UserDefaults(suiteName: storeSuiteName)!
+    emergencyDefaults = UserDefaults(suiteName: emergencySuiteName)!
     store = SyncEngineStore(userRecordName: "user-1", defaults: storeDefaults)
     container = try TestModelContainer.create()
     context = container.mainContext
     sessionController = MockSessionController()
-    emergencyManager = EmergencyUnblockManager()
+    emergencyManager = EmergencyUnblockManager(defaults: emergencyDefaults)
     SyncConflictManager.shared.clearAll()
   }
 
@@ -36,6 +40,7 @@ final class SyncApplyServiceTests: XCTestCase {
     SyncConflictManager.shared.clearAll()
     UserDefaults().removePersistentDomain(forName: suiteName)
     UserDefaults().removePersistentDomain(forName: storeSuiteName)
+    UserDefaults().removePersistentDomain(forName: emergencySuiteName)
     for key in [
       "family_foqos_emergency_unblocks_remaining",
       "family_foqos_emergency_unblocks_reset_period_in_days",
@@ -192,7 +197,8 @@ final class SyncApplyServiceTests: XCTestCase {
     XCTAssertEqual(after?.name, "Focus", "local wins — incoming payload not applied")
     XCTAssertEqual(after?.syncVersion, 6, "conflict bump")
     XCTAssertTrue(service.pendingReenqueues.contains(record.recordID))
-    XCTAssertNotNil(SyncConflictManager.shared.conflictedProfiles[id])
+    XCTAssertTrue(SyncConflictManager.shared.shouldShowDivergenceBanner)
+    XCTAssertNotNil(SyncConflictManager.shared.divergenceProfiles[id])
   }
 
   // MARK: - S-31
@@ -320,7 +326,9 @@ final class SyncApplyServiceTests: XCTestCase {
       makeService().applyFetchedModification(
         remote.toCKRecord(in: zoneID), isPendingDeleteOrTombstoned: noPendingDelete),
       .applied)
-    XCTAssertEqual(emergencyManager.getRemainingEmergencyUnblocks(), 7)
+    XCTAssertEqual(
+      emergencyManager.getRemainingEmergencyUnblocks(), 3,
+      "settings config no longer owns the derived count")
     XCTAssertEqual(emergencyManager.emergencySettingsVersion, nextVersion)
     XCTAssertNotNil(store.systemFields(for: SyncedEmergencySettings.recordName))
   }
@@ -339,7 +347,7 @@ final class SyncApplyServiceTests: XCTestCase {
       makeService().applyFetchedModification(
         stale.toCKRecord(in: zoneID), isPendingDeleteOrTombstoned: noPendingDelete),
       .applied)
-    XCTAssertEqual(emergencyManager.getRemainingEmergencyUnblocks(), 1, "stale version ignored")
+    XCTAssertEqual(emergencyManager.getRemainingEmergencyUnblocks(), 3, "stale version ignored")
     XCTAssertNil(store.systemFields(for: SyncedEmergencySettings.recordName))
   }
 
