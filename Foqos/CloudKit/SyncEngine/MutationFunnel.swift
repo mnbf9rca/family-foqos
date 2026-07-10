@@ -179,10 +179,12 @@ final class MutationFunnel {
     let recordName = locationId.uuidString
     let changeTag = Self.changeTag(fromSystemFields: store.systemFields(for: recordName))
     store.setTombstone(recordName: recordName, changeTag: changeTag)
+    let repaired: [UUID]
     do {
       guard let location = try SavedLocation.find(byID: locationId, in: modelContext) else {
         throw MutationFunnelError.entityNotFound
       }
+      repaired = try BlockedProfiles.removeLocationReference(locationId, in: modelContext)
       try SavedLocation.delete(location, in: modelContext)
     } catch {
       store.clearTombstone(recordName: recordName)
@@ -191,6 +193,16 @@ final class MutationFunnel {
     }
     let recordID = CKRecord.ID(recordName: recordName, zoneID: zoneID)
     driver.add(pendingRecordZoneChanges: [.deleteRecord(recordID)])
+    for profileId in repaired {
+      do {
+        try enqueueSave(profileId: profileId)
+      } catch {
+        Log.warning(
+          "Location-delete profile repair re-push failed for \(profileId): "
+            + error.localizedDescription,
+          category: .sync)
+      }
+    }
   }
 
   /// Enqueue a delete for a record whose model is already gone locally (a delete that fell
