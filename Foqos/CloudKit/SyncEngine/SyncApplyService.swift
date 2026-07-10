@@ -16,6 +16,9 @@ final class SyncApplyService {
   private let emergencyManager: EmergencyUnblockManager
   private let deviceId: String
   private let scheduleProfileDeleteCommit: (@escaping @MainActor () -> Void) -> Void
+  private var zoneID: CKRecordZone.ID {
+    CKRecordZone.ID(zoneName: CloudKitConstants.syncZoneName, ownerName: CKCurrentUserDefaultName)
+  }
 
   /// In-memory confirmed-delete echo guard (§5.1). Populated by the controller on §5.3 confirmation.
   var recentlyConfirmedDeletes: Set<String> = []
@@ -183,13 +186,26 @@ final class SyncApplyService {
   private func deleteLocalLocation(recordName: String) -> DeletionOutcome {
     guard let id = UUID(uuidString: recordName) else { return .ignored }
     do {
-      guard let location = try SavedLocation.find(byID: id, in: modelContext) else {
-        clearDeletionBookkeeping(recordName: recordName)
-        return .notPresent
+      let location = try SavedLocation.find(byID: id, in: modelContext)
+      if let location {
+        try SavedLocation.delete(location, in: modelContext)  // saves internally
       }
-      try SavedLocation.delete(location, in: modelContext)  // saves internally
+
+      let repaired = try BlockedProfiles.removeLocationReference(id, in: modelContext)
+      for profileId in repaired {
+        guard let profile = try BlockedProfiles.findProfile(byID: profileId, in: modelContext)
+        else {
+          continue
+        }
+        profile.syncVersion += 1
+        pendingReenqueues.append(CKRecord.ID(recordName: profileId.uuidString, zoneID: zoneID))
+      }
+      if !repaired.isEmpty {
+        try commit()
+      }
+
       clearDeletionBookkeeping(recordName: recordName)
-      return .deleted
+      return (location == nil && repaired.isEmpty) ? .notPresent : .deleted
     } catch {
       modelContext.rollback()
       store.addFailedApply(

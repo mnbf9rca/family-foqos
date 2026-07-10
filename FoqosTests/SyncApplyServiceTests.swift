@@ -1,4 +1,5 @@
 import CloudKit
+import FoqosShared
 import SwiftData
 import XCTest
 
@@ -457,6 +458,63 @@ final class SyncApplyServiceTests: XCTestCase {
         recordType: SyncedLocation.recordType),
       .deleted)
     XCTAssertNil(try SavedLocation.find(byID: id, in: context))
+  }
+
+  func testGivenReferencingProfile_WhenLocationDeletionApplied_ThenRepairedAndReenqueued()
+    throws
+  {
+    let apply = makeService()
+    let locId = UUID()
+    let profileId = UUID()
+    let location = SavedLocation(id: locId, name: "Library", latitude: 1, longitude: 2)
+    context.insert(location)
+    let profile = BlockedProfiles(id: profileId, name: "Homework", syncVersion: 4)
+    profile.geofenceRule = ProfileGeofenceRule(
+      ruleType: .outside,
+      locationReferences: [ProfileLocationReference(savedLocationId: locId)],
+      allowEmergencyOverride: true)
+    context.insert(profile)
+    try context.save()
+
+    let outcome = apply.applyFetchedDeletion(
+      recordID: CKRecord.ID(recordName: locId.uuidString, zoneID: zoneID),
+      recordType: SyncedLocation.recordType)
+
+    XCTAssertEqual(outcome, .deleted)
+    XCTAssertNil(try SavedLocation.find(byID: locId, in: context))
+    let reread = try XCTUnwrap(BlockedProfiles.findProfile(byID: profileId, in: context))
+    XCTAssertNil(reread.geofenceRule, "dangling rule repaired on the peer")
+    XCTAssertEqual(reread.syncVersion, 5, "bumped so the peer accepts the repaired payload")
+    XCTAssertEqual(
+      apply.drainReenqueues(),
+      [CKRecord.ID(recordName: profileId.uuidString, zoneID: zoneID)],
+      "repaired profile queued for re-push via the I2 exception")
+  }
+
+  func testGivenDanglingProfileButLocationAlreadyAbsent_WhenDeletionApplied_ThenStillRepairs()
+    throws
+  {
+    let apply = makeService()
+    let locId = UUID()
+    let profileId = UUID()
+    let profile = BlockedProfiles(id: profileId, name: "Homework", syncVersion: 4)
+    profile.geofenceRule = ProfileGeofenceRule(
+      ruleType: .outside,
+      locationReferences: [ProfileLocationReference(savedLocationId: locId)],
+      allowEmergencyOverride: true)
+    context.insert(profile)
+    try context.save()
+
+    let outcome = apply.applyFetchedDeletion(
+      recordID: CKRecord.ID(recordName: locId.uuidString, zoneID: zoneID),
+      recordType: SyncedLocation.recordType)
+
+    XCTAssertEqual(outcome, .deleted, "repaired a dangling ref means this is not a no-op")
+    let reread = try XCTUnwrap(BlockedProfiles.findProfile(byID: profileId, in: context))
+    XCTAssertNil(reread.geofenceRule, "dangling ref repaired even though the row was already gone")
+    XCTAssertEqual(reread.syncVersion, 5)
+    XCTAssertEqual(
+      apply.drainReenqueues(), [CKRecord.ID(recordName: profileId.uuidString, zoneID: zoneID)])
   }
 
   func testGivenDeletionForAbsentProfile_WhenApplied_ThenNotPresentNoMutation() throws {

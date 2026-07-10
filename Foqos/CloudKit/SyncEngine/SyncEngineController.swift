@@ -370,6 +370,9 @@ final class SyncEngineController: SyncEngineDriverDelegate {
       applyDeletionSideEffects(recordID: recordID)
       store.removeFailedApply(recordName: recordID.recordName)  // supersession
     }
+    for recordID in apply.drainReenqueues() {
+      driver.add(pendingRecordZoneChanges: [.saveRecord(recordID)])
+    }
   }
 
   // MARK: - T4 sentRecordZoneChanges routing (§5.3, S-10, S-11, S-17, S-23, S-29)
@@ -752,6 +755,9 @@ final class SyncEngineController: SyncEngineDriverDelegate {
           break  // retry next cycle
         }
       }
+    }
+    for recordID in apply.drainReenqueues() {
+      driver.add(pendingRecordZoneChanges: [.saveRecord(recordID)])
     }
   }
 
