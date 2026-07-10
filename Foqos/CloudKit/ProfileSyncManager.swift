@@ -314,6 +314,7 @@ class ProfileSyncManager: ObservableObject {
   func markSyncReadyAndFlush() {
     isSyncReady = true
     drainDeferredMutations()
+    Log.debug("Sync ready; flushing deferred mutations", category: .sync)
     engineController?.requestSync()
   }
 

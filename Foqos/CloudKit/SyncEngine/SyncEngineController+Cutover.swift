@@ -7,6 +7,7 @@ extension SyncEngineController: SyncEngineControlling {
   /// (scenePhase, remote notification, "Sync Now"), so a direct fetch+send is
   /// permitted by §1.1's delegate prohibition. No-op until the engine is started.
   func requestSync() {
+    Log.debug("Sync requested: state=\(state), resetIntentActive=\(store.resetIntent != nil)", category: .sync)
     driver?.fetchChanges()
     driver?.sendChanges()
   }

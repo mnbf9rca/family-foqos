@@ -58,12 +58,16 @@ final class CKSyncEngineDriver: NSObject, SyncEngineDriver, CKSyncEngineDelegate
 
   func fetchChanges() {
     let engine = self.engine!
-    Task { try? await engine.fetchChanges() }
+    CKSyncEngineTaskBoundary.runDetached {
+      try? await engine.fetchChanges()
+    }
   }
 
   func sendChanges() {
     let engine = self.engine!
-    Task { try? await engine.sendChanges() }
+    CKSyncEngineTaskBoundary.runDetached {
+      try? await engine.sendChanges()
+    }
   }
 
   func fetchRecord(_ id: CKRecord.ID) async -> FetchRecordResult {
@@ -175,6 +179,17 @@ final class CKSyncEngineDriver: NSObject, SyncEngineDriver, CKSyncEngineDelegate
       return nil  // not consumed by the controller
     @unknown default:
       return nil
+    }
+  }
+}
+
+enum CKSyncEngineTaskBoundary {
+  @discardableResult
+  static func runDetached(
+    operation: @escaping @Sendable () async -> Void
+  ) -> Task<Void, Never> {
+    Task.detached {
+      await operation()
     }
   }
 }
