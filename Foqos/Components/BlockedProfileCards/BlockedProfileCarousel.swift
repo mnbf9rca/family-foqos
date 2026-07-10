@@ -143,7 +143,10 @@ struct BlockedProfileCarousel: View {
             ForEach(validProfiles) { profile in
               SafeModelView(profile) { profile in
                 BlockedProfileCard(
-                  profile: profile,
+                  // Built only on a valid model, inside this observation-tracked body. These
+                  // tracked reads register dependencies so legitimate edits rebuild the snapshot
+                  // in place. Do not hoist or memoize this call; see the `cardData` tripwire.
+                  data: profile.cardData,
                   isActive: profile.id == activeSessionProfileId,
                   isBreakAvailable: isBreakAvailable,
                   isBreakActive: isBreakActive,
@@ -160,6 +163,8 @@ struct BlockedProfileCarousel: View {
                   oneMoreMinuteStartTime: oneMoreMinuteStartTime,
                   onOneMoreMinuteTapped: { onOneMoreMinuteTapped(profile) }
                 )
+              } placeholder: {
+                Color.clear.frame(minHeight: cardHeight)
               }
               .containerRelativeFrame(.horizontal)
             }

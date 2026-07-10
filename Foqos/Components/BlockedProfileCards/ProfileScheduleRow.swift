@@ -1,29 +1,29 @@
 import SwiftUI
 
 struct ProfileScheduleRow: View {
-  let profile: BlockedProfiles
+  let data: BlockedProfileCardData
   let isActive: Bool
 
-  private var hasLegacySchedule: Bool { profile.schedule?.isActive == true }
+  private var hasLegacySchedule: Bool { data.schedule?.isActive == true }
 
   private var hasV2Schedule: Bool {
     let hasStart =
-      profile.startTriggers.schedule
-      && profile.startSchedule?.isActive == true
+      data.startTriggers.schedule
+      && data.startSchedule?.isActive == true
     let hasStop =
-      profile.stopConditions.schedule
-      && profile.stopSchedule?.isActive == true
+      data.stopConditions.schedule
+      && data.stopSchedule?.isActive == true
     return hasStart || hasStop
   }
 
   private var hasSchedule: Bool { hasLegacySchedule || hasV2Schedule }
 
   private var isTimerStrategy: Bool {
-    if profile.stopConditions.timer { return true }
+    if data.stopConditions.timer { return true }
     // Legacy fallback: V1 profiles have nil stopConditionsData, so
     // stopConditions.timer defaults false even for timer strategies.
-    if profile.profileSchemaVersion < 2 {
-      let id = profile.blockingStrategyId
+    if data.profileSchemaVersion < 2 {
+      let id = data.blockingStrategyId
       return id == NFCTimerBlockingStrategy.id
         || id == QRTimerBlockingStrategy.id
         || id == ShortcutTimerBlockingStrategy.id
@@ -32,7 +32,7 @@ struct ProfileScheduleRow: View {
   }
 
   private var timerDuration: Int? {
-    guard let strategyData = profile.strategyData else { return nil }
+    guard let strategyData = data.strategyData else { return nil }
     let timerData = StrategyTimerData.toStrategyTimerData(from: strategyData)
     return timerData.durationInMinutes
   }
@@ -40,15 +40,15 @@ struct ProfileScheduleRow: View {
   private var daysLine: String {
     if hasV2Schedule {
       var allDays = Set<Weekday>()
-      if let start = profile.startSchedule, profile.startTriggers.schedule {
+      if let start = data.startSchedule, data.startTriggers.schedule {
         allDays.formUnion(start.days)
       }
-      if let stop = profile.stopSchedule, profile.stopConditions.schedule {
+      if let stop = data.stopSchedule, data.stopConditions.schedule {
         allDays.formUnion(stop.days)
       }
       return Array(allDays).compactDaysText()
     }
-    guard let schedule = profile.schedule, schedule.isActive else { return "" }
+    guard let schedule = data.schedule, schedule.isActive else { return "" }
     return schedule.days
       .compactDaysText()
   }
@@ -56,11 +56,11 @@ struct ProfileScheduleRow: View {
   private var timeLine: String? {
     if hasV2Schedule {
       let startText =
-        profile.startTriggers.schedule
-        ? profile.startSchedule?.formattedTime : nil
+        data.startTriggers.schedule
+        ? data.startSchedule?.formattedTime : nil
       let stopText =
-        profile.stopConditions.schedule
-        ? profile.stopSchedule?.formattedTime : nil
+        data.stopConditions.schedule
+        ? data.stopSchedule?.formattedTime : nil
       if let s = startText, let e = stopText {
         return "\(s) - \(e)"
       } else if let s = startText {
@@ -70,7 +70,7 @@ struct ProfileScheduleRow: View {
       }
       return nil
     }
-    guard let schedule = profile.schedule, schedule.isActive else { return nil }
+    guard let schedule = data.schedule, schedule.isActive else { return nil }
     let start = formattedTimeString(hour24: schedule.startHour, minute: schedule.startMinute)
     let end = formattedTimeString(hour24: schedule.endHour, minute: schedule.endMinute)
     return "\(start) - \(end)"
@@ -87,7 +87,7 @@ struct ProfileScheduleRow: View {
     HStack(spacing: 4) {
       // Icon
       Group {
-        if profile.scheduleIsOutOfSync || (hasSchedule && isTimerStrategy) {
+        if data.scheduleIsOutOfSync || (hasSchedule && isTimerStrategy) {
           Image(systemName: "exclamationmark.triangle.fill")
             .foregroundColor(.red)
         }
@@ -95,7 +95,7 @@ struct ProfileScheduleRow: View {
       .font(.body)
 
       VStack(alignment: .leading, spacing: 2) {
-        if profile.scheduleIsOutOfSync {
+        if data.scheduleIsOutOfSync {
           Text("Schedule Out of Sync")
             .font(.caption2)
             .lineLimit(2)
@@ -142,20 +142,22 @@ struct ProfileScheduleRow: View {
 }
 
 #Preview {
+  let profile = BlockedProfiles(
+    name: "Test",
+    blockingStrategyId: NFCBlockingStrategy.id,
+    schedule: .init(
+      days: [.monday, .wednesday, .friday],
+      startHour: 9,
+      startMinute: 0,
+      endHour: 17,
+      endMinute: 0,
+      updatedAt: Date()
+    )
+  )
+
   VStack(spacing: 20) {
     ProfileScheduleRow(
-      profile: BlockedProfiles(
-        name: "Test",
-        blockingStrategyId: NFCBlockingStrategy.id,
-        schedule: .init(
-          days: [.monday, .wednesday, .friday],
-          startHour: 9,
-          startMinute: 0,
-          endHour: 17,
-          endMinute: 0,
-          updatedAt: Date()
-        )
-      ),
+      data: profile.cardData,
       isActive: false
     )
   }
