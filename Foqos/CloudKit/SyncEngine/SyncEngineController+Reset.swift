@@ -37,7 +37,8 @@ final class DriverResetOutbox: ResetOutbox {
     driver.remove(pendingRecordZoneChanges: [.saveRecord(commandRecordID)])
   }
   func requestSend() {
-    // §1.1: the driver uses Task.detached before awaiting CKSyncEngine.
+    // The outer Task only defers to a later main-actor turn; the §1.1/task-local CKSyncEngine
+    // boundary is inside the driver, where sendChanges() crosses Task.detached before awaiting.
     Log.debug("Reset sync: request send", category: .sync)
     Task { @MainActor in self.driver.sendChanges() }
   }

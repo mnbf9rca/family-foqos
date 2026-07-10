@@ -103,6 +103,9 @@ final class SyncEngineController: SyncEngineDriverDelegate {
 
   func start() {
     guard state == .disabled || state == .purged else { return }
+    if store.resetIntent != nil && store.engineState != nil {
+      store.engineState = nil
+    }
     driver = driverFactory(store.engineState)
     // #286 self-heal: a serialization that carries a pending zone-deletion (or was captured
     // mid-reset) is reset poison. Discard it and rebuild a fresh engine; resetIntent /
@@ -232,10 +235,9 @@ final class SyncEngineController: SyncEngineDriverDelegate {
   }
 
   /// #286: a restored serialization is unsafe to keep if it carries a pending `.deleteZone`
-  /// for the sync zone, or if a `resetIntent` is in progress (the reset state machine, not
-  /// the restored queue/tokens, is the source of truth for zone changes — defense in depth).
+  /// for the sync zone. Active resetIntent is handled before driver construction: reset
+  /// resume owns startup and always discards restored serialization up front.
   private func restoredStateIsPoisoned() -> Bool {
-    if store.resetIntent != nil { return true }
     return driver.pendingDatabaseChanges.contains {
       if case .deleteZone(let id) = $0 { return id == zoneID }
       return false
@@ -683,7 +685,9 @@ final class SyncEngineController: SyncEngineDriverDelegate {
     await retryFailedApplies(generation: generation)
     guard generation == namespaceGeneration else { return }
     reEnqueueLegacyCleanup()
-    await applySeedDecision()
+    if store.resetIntent == nil {
+      await applySeedDecision()
+    }
     guard generation == namespaceGeneration else { return }
     if let intent = store.resetIntent { onResumeReset?(intent) }  // §8.1 (Phase E)
     driver.fetchChanges()

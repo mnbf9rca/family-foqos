@@ -104,6 +104,20 @@ final class SyncEngineControllerTests: XCTestCase {
     }
   }
 
+  func countPendingZoneSaves() -> Int {
+    driver.pendingDatabaseChanges.reduce(into: 0) { count, change in
+      if case .saveZone = change { count += 1 }
+    }
+  }
+
+  func countPendingSaves(named name: String) -> Int {
+    driver.pendingRecordZoneChanges.reduce(into: 0) { count, change in
+      if case .saveRecord(let id) = change, id.recordName == name {
+        count += 1
+      }
+    }
+  }
+
   func fetchProfile(_ id: UUID) throws -> BlockedProfiles? {
     try context.fetch(
       FetchDescriptor<BlockedProfiles>(predicate: #Predicate { $0.id == id })
@@ -178,6 +192,29 @@ final class SyncEngineControllerTests: XCTestCase {
         if case .deleteZone = $0 { return true } else { return false }
       },
       "active engine carries no pending zone-deletion")
+  }
+
+  func testGivenActiveResetIntentAndRestoredState_WhenStart_ThenSerializationDiscardedBeforeFactory()
+    async
+  {
+    store.engineState = Data([0x01])
+    store.resetIntent = ResetIntent(id: UUID(), clear: false, stage: .deleting, priorCommandId: nil)
+    let fresh = MockSyncEngineDriver()
+    var factoryArgs: [Data?] = []
+    let controller = SyncEngineController(
+      modelContext: context, store: store,
+      driverFactory: { data in
+        factoryArgs.append(data)
+        return fresh
+      },
+      apply: apply, provider: provider, sessionSync: sessionSync, deviceId: deviceId)
+
+    controller.start()
+    await controller.startupTask?.value
+
+    XCTAssertNil(store.engineState, "active reset discards restored serialization up front")
+    XCTAssertEqual(factoryArgs.count, 1, "no disposable driver should be constructed")
+    XCTAssertNil(factoryArgs[0], "first driver is built with nil serialization")
   }
 
   func testGivenNonPoisonedRestoredState_WhenStart_ThenSerializationKeptEngineNotRebuilt()
@@ -374,6 +411,73 @@ final class SyncEngineControllerTests: XCTestCase {
     XCTAssertEqual(sessionSync.flushCount, 1)
     XCTAssertTrue(hasPendingZoneSave())
     XCTAssertTrue(pendingSaveNames().contains(p.id.uuidString))
+  }
+
+  func testGivenResetIntentDeletingAndNilEngineState_WhenStart_ThenStartupDoesNotOwnSeedZone() async {
+    store.engineState = nil
+    store.resetIntent = ResetIntent(id: UUID(), clear: false, stage: .deleting, priorCommandId: nil)
+    let p = BlockedProfiles(name: "A")
+    context.insert(p)
+    try? context.save()
+
+    let controller = makeController()
+    controller.start()
+    await controller.startupTask?.value
+    await Task.yield()
+
+    XCTAssertFalse(hasPendingZoneSave(), "startup seeding must not enqueue saveZone during reset")
+    XCTAssertTrue(hasPendingZoneDelete(), "reset resume owns the deleting stage")
+    XCTAssertFalse(
+      pendingSaveNames().contains(p.id.uuidString),
+      "startup must not enqueue record seeding while reset owns startup")
+  }
+
+  func testGivenResetIntentRecreatingAndNilEngineState_WhenStart_ThenOnlyResetResumeEnqueuesSaveZone()
+    async
+  {
+    store.engineState = nil
+    store.resetIntent = ResetIntent(
+      id: UUID(), clear: false, stage: .recreating, priorCommandId: nil)
+    let p = BlockedProfiles(name: "A")
+    context.insert(p)
+    try? context.save()
+
+    let controller = makeController()
+    controller.start()
+    await controller.startupTask?.value
+    await Task.yield()
+
+    XCTAssertEqual(countPendingZoneSaves(), 1, "reset resume owns the recreating saveZone")
+    XCTAssertFalse(hasPendingZoneDelete())
+    XCTAssertFalse(
+      pendingSaveNames().contains(p.id.uuidString),
+      "generic startup seed must not duplicate reset-owned recreation")
+  }
+
+  func testGivenResetIntentSeedingAndNilEngineState_WhenStart_ThenOnlyResetResumeEnqueuesSingleSeedBatch()
+    async
+  {
+    store.engineState = nil
+    store.resetIntent = ResetIntent(id: UUID(), clear: false, stage: .seeding, priorCommandId: nil)
+    let p = BlockedProfiles(name: "A")
+    context.insert(p)
+    try? context.save()
+
+    let controller = makeController()
+    controller.start()
+    await controller.startupTask?.value
+    await Task.yield()
+
+    XCTAssertEqual(countPendingZoneSaves(), 1, "reset seeding should enqueue one zone save")
+    XCTAssertEqual(
+      countPendingSaves(named: ResetController.commandRecordName), 1,
+      "reset seeding should enqueue one command save")
+    XCTAssertEqual(
+      countPendingSaves(named: p.id.uuidString), 1,
+      "reset seeding should enqueue one profile save batch")
+    XCTAssertEqual(
+      countPendingSaves(named: SyncedEmergencySettings.recordName), 1,
+      "reset seeding should enqueue one emergency-settings seed")
   }
 
   // MARK: - I11 observable-clear (Fix 5)
