@@ -1,4 +1,5 @@
 import CloudKit
+import Foundation
 import SwiftData
 import XCTest
 
@@ -97,6 +98,22 @@ final class SyncEngineControllerCutoverTests: XCTestCase {
     XCTAssertEqual(after, before + 1)
     let refreshed = try XCTUnwrap(try BlockedProfiles.findProfile(byID: profile.id, in: context))
     XCTAssertGreaterThanOrEqual(refreshed.syncVersion, 1)  // funnel bumped in the same write
+  }
+
+  func testGivenControllerNotStarted_WhenRecordDisabledDeleteTombstone_ThenStoreOnlyWritePersists() {
+    let recordName = UUID().uuidString
+    let systemFields = TestCKRecordSystemFields.encodedProfile(recordName: recordName)
+    store.setSystemFields(systemFields, for: recordName)
+    let expectedTag = MutationFunnel.changeTag(fromSystemFields: systemFields)
+
+    controller.recordDisabledDeleteTombstone(recordName: recordName)
+
+    let reloaded = SyncEngineStore(
+      userRecordName: "user-A", defaults: UserDefaults(suiteName: testSuiteName)!)
+    XCTAssertTrue(reloaded.deleteTombstones.keys.contains(recordName))
+    XCTAssertEqual(reloaded.deleteTombstones[recordName] ?? nil, expectedTag)
+    XCTAssertTrue(driver.pendingRecordZoneChanges.isEmpty)
+    XCTAssertTrue(driver.pendingDatabaseChanges.isEmpty)
   }
 
   // MARK: - Review fix: funnel-not-created-yet surfaces (findings #2–#6, #15)

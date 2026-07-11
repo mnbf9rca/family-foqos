@@ -336,6 +336,18 @@ class ProfileSyncManager: ObservableObject {
     if isSyncReady { engineController.requestSync() }
   }
 
+  /// Records a disabled-sync delete after its local commit so I12 can replay it on re-enable.
+  /// Best-effort because the caller is already on a committed local-delete path.
+  func recordDisabledDeleteTombstone(recordName: String) {
+    guard let engineController else {
+      Log.warning(
+        "Disabled-delete tombstone dropped: engine not attached yet (\(recordName))",
+        category: .sync)
+      return
+    }
+    engineController.recordDisabledDeleteTombstone(recordName: recordName)
+  }
+
   /// Replay save-type mutations deferred while the engine was unattached (#294). Uses the
   /// controller-level enqueue verbs (which do not themselves send), so the single requestSync
   /// in `markSyncReadyAndFlush()` flushes them all at once.

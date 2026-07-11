@@ -70,4 +70,11 @@ extension SyncEngineController: SyncEngineControlling {
   func enqueueDeferredDelete(recordName: String) {
     funnel?.enqueueTombstoneDelete(recordName: recordName)
   }
+
+  func recordDisabledDeleteTombstone(recordName: String) {
+    // Mirrors MutationFunnel.enqueueTombstoneDelete minus its driver.add.
+    store.setTombstone(
+      recordName: recordName,
+      changeTag: MutationFunnel.changeTag(fromSystemFields: store.systemFields(for: recordName)))
+  }
 }

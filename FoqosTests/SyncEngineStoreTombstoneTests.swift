@@ -22,6 +22,30 @@ final class SyncEngineStoreTombstoneTests: XCTestCase {
     try await super.tearDown()
   }
 
+  func testGivenCachedSystemFields_WhenDisabledTombstoneWritten_ThenTagMatchesDecoder() {
+    let store = SyncEngineStore(userRecordName: "userA", defaults: defaults)
+    let systemFields = TestCKRecordSystemFields.encodedProfile(recordName: "p1")
+    store.setSystemFields(systemFields, for: "p1")
+
+    let expectedTag = MutationFunnel.changeTag(fromSystemFields: store.systemFields(for: "p1"))
+    store.setTombstone(recordName: "p1", changeTag: expectedTag)
+
+    let reloaded = SyncEngineStore(userRecordName: "userA", defaults: defaults)
+    XCTAssertTrue(reloaded.deleteTombstones.keys.contains("p1"))
+    XCTAssertEqual(reloaded.deleteTombstones["p1"] ?? nil, expectedTag)
+  }
+
+  func testGivenNeverSyncedRecord_WhenDisabledTombstoneWritten_ThenNilTagKeyPresent() {
+    let store = SyncEngineStore(userRecordName: "userA", defaults: defaults)
+    store.setTombstone(
+      recordName: "p2",
+      changeTag: MutationFunnel.changeTag(fromSystemFields: store.systemFields(for: "p2")))
+
+    let map = SyncEngineStore(userRecordName: "userA", defaults: defaults).deleteTombstones
+    XCTAssertTrue(map.keys.contains("p2"))
+    XCTAssertNil(map["p2"] ?? nil)
+  }
+
   func testGivenTombstones_WhenSetWithNilAndNonNilTags_ThenRoundTripAndClear() {
     let store = SyncEngineStore(userRecordName: "userA", defaults: defaults)
     store.setTombstone(recordName: "p1", changeTag: "tagX")

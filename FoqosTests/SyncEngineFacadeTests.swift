@@ -85,6 +85,22 @@ final class SyncEngineFacadeTests: XCTestCase {
     XCTAssertEqual(mock.enqueuedEmergencyUnblockEventDeletes, [event.recordName])
   }
 
+  func testGivenController_WhenRecordDisabledTombstone_ThenForwardedToController() {
+    manager.isEnabled = false
+
+    manager.recordDisabledDeleteTombstone(recordName: "p1")
+
+    XCTAssertEqual(mock.recordedDisabledTombstones, ["p1"])
+  }
+
+  func testGivenNoController_WhenRecordDisabledTombstone_ThenNoCrashNoForward() {
+    manager.engineController = nil
+
+    manager.recordDisabledDeleteTombstone(recordName: "p1")
+
+    XCTAssertEqual(mock.recordedDisabledTombstones, [])
+  }
+
   func testGivenReadyController_WhenEnqueueProfileSave_ThenRequestSyncIsScheduled() throws {
     manager.isSyncReady = true
     let id = UUID()
