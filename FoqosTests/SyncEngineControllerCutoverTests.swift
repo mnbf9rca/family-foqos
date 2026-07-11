@@ -54,16 +54,6 @@ final class SyncEngineControllerCutoverTests: XCTestCase {
     return profile
   }
 
-  private func encodedSystemFields(recordName: String) -> Data {
-    let record = CKRecord(
-      recordType: SyncedProfile.recordType,
-      recordID: CKRecord.ID(recordName: recordName, zoneID: zoneID))
-    let archiver = NSKeyedArchiver(requiringSecureCoding: true)
-    record.encodeSystemFields(with: archiver)
-    archiver.finishEncoding()
-    return archiver.encodedData
-  }
-
   /// Drains fire-and-forget `Task { await ... }` work scheduled by a reset hook closure
   /// (e.g. `onFetchedResetCommand`, `onZoneChangeConfirmed`'s delete branch) so its
   /// async side effects are observable before assertions run.
@@ -112,7 +102,7 @@ final class SyncEngineControllerCutoverTests: XCTestCase {
 
   func testGivenControllerNotStarted_WhenRecordDisabledDeleteTombstone_ThenStoreOnlyWritePersists() {
     let recordName = UUID().uuidString
-    let systemFields = encodedSystemFields(recordName: recordName)
+    let systemFields = TestCKRecordSystemFields.encodedProfile(recordName: recordName)
     store.setSystemFields(systemFields, for: recordName)
     let expectedTag = MutationFunnel.changeTag(fromSystemFields: systemFields)
 

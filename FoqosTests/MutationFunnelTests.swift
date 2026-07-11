@@ -53,14 +53,6 @@ final class MutationFunnelTests: XCTestCase {
     return profile
   }
 
-  private func encodedSystemFields(recordName: String) -> Data {
-    let record = CKRecord(recordType: SyncedProfile.recordType, recordID: recordID(recordName))
-    let archiver = NSKeyedArchiver(requiringSecureCoding: true)
-    record.encodeSystemFields(with: archiver)
-    archiver.finishEncoding()
-    return archiver.encodedData
-  }
-
   // MARK: - S-15 / S-16: save bumps in the same write, enqueues once
 
   func testGivenProfile_WhenEnqueueSave_ThenBumpsVersionInSameWriteAndEnqueuesOnce() throws {
@@ -388,7 +380,7 @@ final class MutationFunnelTests: XCTestCase {
     try insertProfile(in: userContext, id: profileId, name: "Focus", syncVersion: 2)
 
     let store = makeStore()
-    let systemFields = encodedSystemFields(recordName: recordName)
+    let systemFields = TestCKRecordSystemFields.encodedProfile(recordName: recordName)
     store.setSystemFields(systemFields, for: recordName)
 
     let syncContext = ModelContext(container)
@@ -525,7 +517,8 @@ final class MutationFunnelTests: XCTestCase {
     let syncContext = ModelContext(container)
 
     let store = makeStore()
-    store.setSystemFields(encodedSystemFields(recordName: recordName), for: recordName)
+    store.setSystemFields(
+      TestCKRecordSystemFields.encodedProfile(recordName: recordName), for: recordName)
 
     let driver = MockSyncEngineDriver()
     let funnel = MutationFunnel(
@@ -792,7 +785,8 @@ final class MutationFunnelTests: XCTestCase {
     let syncContext = ModelContext(container)
 
     let store = makeStore()
-    store.setSystemFields(encodedSystemFields(recordName: recordName), for: recordName)
+    store.setSystemFields(
+      TestCKRecordSystemFields.encodedProfile(recordName: recordName), for: recordName)
 
     let driver = MockSyncEngineDriver()
     let funnel = MutationFunnel(

@@ -1,4 +1,3 @@
-import CloudKit
 import FoqosShared
 import Foundation
 import XCTest
@@ -23,22 +22,9 @@ final class SyncEngineStoreTombstoneTests: XCTestCase {
     try await super.tearDown()
   }
 
-  private func encodedSystemFields(recordName: String) -> Data {
-    let record = CKRecord(
-      recordType: SyncedProfile.recordType,
-      recordID: CKRecord.ID(
-        recordName: recordName,
-        zoneID: CKRecordZone.ID(
-          zoneName: CloudKitConstants.syncZoneName, ownerName: CKCurrentUserDefaultName)))
-    let archiver = NSKeyedArchiver(requiringSecureCoding: true)
-    record.encodeSystemFields(with: archiver)
-    archiver.finishEncoding()
-    return archiver.encodedData
-  }
-
   func testGivenCachedSystemFields_WhenDisabledTombstoneWritten_ThenTagMatchesDecoder() {
     let store = SyncEngineStore(userRecordName: "userA", defaults: defaults)
-    let systemFields = encodedSystemFields(recordName: "p1")
+    let systemFields = TestCKRecordSystemFields.encodedProfile(recordName: "p1")
     store.setSystemFields(systemFields, for: "p1")
 
     let expectedTag = MutationFunnel.changeTag(fromSystemFields: store.systemFields(for: "p1"))
