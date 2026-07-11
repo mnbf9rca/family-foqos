@@ -217,8 +217,10 @@ struct SavedLocationsView: View {
       } else {
         // Sync disabled — the funnel would no-op (I2 is only reachable once the engine has
         // started), so delete locally directly.
+        let deletedRecordName = locationId.uuidString
         try BlockedProfiles.removeLocationReference(locationId, in: context)
         try SavedLocation.delete(location, in: context)
+        profileSyncManager.recordDisabledDeleteTombstone(recordName: deletedRecordName)
       }
     } catch {
       errorMessage = "Failed to delete location: \(error.localizedDescription)"

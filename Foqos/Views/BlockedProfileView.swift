@@ -839,10 +839,13 @@ struct BlockedProfileView: View {
                     } else {
                       // Sync disabled — the funnel would no-op (I2 is only reachable once the
                       // engine has started), so delete locally directly.
+                      let deletedRecordName = profileId.uuidString
                       try BlockedProfiles.deleteProfile(profileToDelete, in: modelContext)
                       BlockedProfiles.scheduleProfileDeleteCommit {
                         do {
                           try modelContext.save()
+                          profileSyncManager.recordDisabledDeleteTombstone(
+                            recordName: deletedRecordName)
                         } catch {
                           showError(message: error.localizedDescription)
                         }

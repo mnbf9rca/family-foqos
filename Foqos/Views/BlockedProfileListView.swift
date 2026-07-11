@@ -171,6 +171,7 @@ struct BlockedProfileListView: View {
 
     // Delete the profiles and reorder
     do {
+      var disabledDeletedRecordNames: [String] = []
       for index in offsets {
         let profile = profilesToDelete[index]
         let profileId = profile.id
@@ -194,8 +195,10 @@ struct BlockedProfileListView: View {
           }
         } else {
           // Sync disabled — the funnel would no-op (I2 is only reachable once the engine has
-          // started), so delete locally directly.
+          // started), so delete locally directly. Remember the id for a tombstone only after
+          // the shared reorder save durably commits.
           try BlockedProfiles.deleteProfile(profile, in: context)
+          disabledDeletedRecordNames.append(profileId.uuidString)
         }
       }
 
@@ -204,6 +207,11 @@ struct BlockedProfileListView: View {
           // Reorder remaining profiles to fix gaps in ordering after SwiftUI settles pending deletes.
           let remainingProfiles = try BlockedProfiles.fetchProfiles(in: context)
           try BlockedProfiles.reorderProfiles(remainingProfiles, in: context)
+          // The deletes are now durable. A failed save skips these writes, so a rolled-back
+          // delete cannot leave a tombstone that could later kill a live record.
+          for recordName in disabledDeletedRecordNames {
+            profileSyncManager.recordDisabledDeleteTombstone(recordName: recordName)
+          }
           // The `order` field is synced state — bump syncVersion + enqueue a save for each
           // surviving profile so the gap-fix reaches other devices (I2).
           for profile in remainingProfiles {
