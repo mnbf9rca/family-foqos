@@ -17,6 +17,7 @@ final class MockSyncEngineControlling: SyncEngineControlling {
   private(set) var enqueuedEmergencyEpochSaves = 0
   private(set) var enqueuedEmergencyUnblockEventDeletes: [String] = []
   private(set) var deferredDeletes: [String] = []
+  private(set) var recordedDisabledTombstones: [String] = []
 
   /// Set by a test to make every `enqueue*` verb below throw instead of recording — used to
   /// verify a genuine funnel throw propagates through the facade instead of being swallowed
@@ -66,5 +67,8 @@ final class MockSyncEngineControlling: SyncEngineControlling {
   }
   func enqueueDeferredDelete(recordName: String) {
     deferredDeletes.append(recordName)
+  }
+  func recordDisabledDeleteTombstone(recordName: String) {
+    recordedDisabledTombstones.append(recordName)
   }
 }

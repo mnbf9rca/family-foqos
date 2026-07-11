@@ -1,3 +1,4 @@
+import CloudKit
 import FoqosShared
 import Foundation
 import XCTest
@@ -20,6 +21,43 @@ final class SyncEngineStoreTombstoneTests: XCTestCase {
     UserDefaults().removePersistentDomain(forName: suiteName)
     UserDefaults().removePersistentDomain(forName: "\(suiteName!)-shared")
     try await super.tearDown()
+  }
+
+  private func encodedSystemFields(recordName: String) -> Data {
+    let record = CKRecord(
+      recordType: SyncedProfile.recordType,
+      recordID: CKRecord.ID(
+        recordName: recordName,
+        zoneID: CKRecordZone.ID(
+          zoneName: CloudKitConstants.syncZoneName, ownerName: CKCurrentUserDefaultName)))
+    let archiver = NSKeyedArchiver(requiringSecureCoding: true)
+    record.encodeSystemFields(with: archiver)
+    archiver.finishEncoding()
+    return archiver.encodedData
+  }
+
+  func testGivenCachedSystemFields_WhenDisabledTombstoneWritten_ThenTagMatchesDecoder() {
+    let store = SyncEngineStore(userRecordName: "userA", defaults: defaults)
+    let systemFields = encodedSystemFields(recordName: "p1")
+    store.setSystemFields(systemFields, for: "p1")
+
+    let expectedTag = MutationFunnel.changeTag(fromSystemFields: store.systemFields(for: "p1"))
+    store.setTombstone(recordName: "p1", changeTag: expectedTag)
+
+    let reloaded = SyncEngineStore(userRecordName: "userA", defaults: defaults)
+    XCTAssertTrue(reloaded.deleteTombstones.keys.contains("p1"))
+    XCTAssertEqual(reloaded.deleteTombstones["p1"] ?? nil, expectedTag)
+  }
+
+  func testGivenNeverSyncedRecord_WhenDisabledTombstoneWritten_ThenNilTagKeyPresent() {
+    let store = SyncEngineStore(userRecordName: "userA", defaults: defaults)
+    store.setTombstone(
+      recordName: "p2",
+      changeTag: MutationFunnel.changeTag(fromSystemFields: store.systemFields(for: "p2")))
+
+    let map = SyncEngineStore(userRecordName: "userA", defaults: defaults).deleteTombstones
+    XCTAssertTrue(map.keys.contains("p2"))
+    XCTAssertNil(map["p2"] ?? nil)
   }
 
   func testGivenTombstones_WhenSetWithNilAndNonNilTags_ThenRoundTripAndClear() {

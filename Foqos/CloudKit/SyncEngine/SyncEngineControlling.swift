@@ -18,6 +18,10 @@ protocol SyncEngineControlling: AnyObject {
   func enqueueEmergencyEpochSave() throws
   func enqueueEmergencyUnblockEventDelete(_ recordName: String) throws
   func enqueueDeferredDelete(recordName: String)
+  /// Durable delete-intent tombstone written on a local delete made while sync is disabled.
+  /// This store-only verb does not enqueue a driver change. Callers write only after the local
+  /// delete durably commits, so a rolled-back delete never leaves a tombstone for I12 to replay.
+  func recordDisabledDeleteTombstone(recordName: String)
 }
 
 /// Thrown by the `SyncEngineControlling` enqueue verbs (and by `ProfileSyncManager.syncNow()`/
