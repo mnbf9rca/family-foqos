@@ -48,6 +48,10 @@ extension BlockedProfiles {
   /// passing the zombie test. Verified by `testGivenModelMutated_WhenCardDataRebuilt_ThenReflectsChange`
   /// and the device-gate edit step.
   var cardData: BlockedProfileCardData {
+    cardData(scheduleIsOutOfSync: scheduleIsOutOfSync)
+  }
+
+  func cardData(scheduleIsOutOfSync: Bool) -> BlockedProfileCardData {
     BlockedProfileCardData(
       id: id,
       name: name,

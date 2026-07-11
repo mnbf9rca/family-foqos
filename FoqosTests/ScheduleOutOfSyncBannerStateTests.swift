@@ -12,4 +12,14 @@ final class ScheduleOutOfSyncBannerStateTests: XCTestCase {
 
     XCTAssertFalse(state.isVisible)
   }
+
+  func testGivenHomeCardWarningVisible_WhenReconcileRefreshSeesActivityPresent_ThenCardWarningClears() {
+    let profile = BlockedProfiles(name: "Scheduled")
+    var state = ScheduleOutOfSyncCardState(visibilityByProfileId: [profile.id: true])
+
+    state.refreshAfterScheduleReconcile(profiles: [profile], isOutOfSync: { _ in false })
+    let data = profile.cardData(scheduleIsOutOfSync: state.isOutOfSync(for: profile))
+
+    XCTAssertFalse(data.scheduleIsOutOfSync)
+  }
 }

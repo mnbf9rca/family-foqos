@@ -25,3 +25,29 @@ struct ScheduleOutOfSyncBannerState {
     return isOutOfSync(profile)
   }
 }
+
+struct ScheduleOutOfSyncCardState {
+  var visibilityByProfileId: [UUID: Bool] = [:]
+
+  mutating func refresh(
+    profiles: [BlockedProfiles],
+    isOutOfSync: (BlockedProfiles) -> Bool = { $0.scheduleIsOutOfSync }
+  ) {
+    visibilityByProfileId = Dictionary(
+      uniqueKeysWithValues: profiles.map { ($0.id, isOutOfSync($0)) })
+  }
+
+  mutating func refreshAfterScheduleReconcile(
+    profiles: [BlockedProfiles],
+    isOutOfSync: (BlockedProfiles) -> Bool = { $0.scheduleIsOutOfSync }
+  ) {
+    refresh(profiles: profiles, isOutOfSync: isOutOfSync)
+  }
+
+  func isOutOfSync(
+    for profile: BlockedProfiles,
+    fallback: (BlockedProfiles) -> Bool = { $0.scheduleIsOutOfSync }
+  ) -> Bool {
+    visibilityByProfileId[profile.id] ?? fallback(profile)
+  }
+}
