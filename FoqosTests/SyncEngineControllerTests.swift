@@ -602,6 +602,29 @@ final class SyncEngineControllerTests: XCTestCase {
       store.deleteTombstones[id.uuidString], "tombstone retained until delete confirmed")
   }
 
+  // #302 acceptance: a tombstone written while sync is disabled enters the existing I12
+  // recovered-intent path on re-enable. The adjacent different-tag and entity-present tests
+  // cover N5 keep-bias and the round-4/5 live-record guard respectively.
+  func testGivenDisabledDeleteTombstone_WhenReEnabledAndServerTagMatches_ThenDeleteEnqueued()
+    async
+  {
+    let id = UUID()
+    let recordName = id.uuidString
+    store.engineState = Data([0x01])
+    store.setTombstone(recordName: recordName, changeTag: "tag-before-disable")
+    let record = makeProfileRecord(id: id, version: 1)
+    driver.fetchRecordResults[recordName] = .found(record, changeTag: "tag-before-disable")
+
+    let controller = makeController()
+    controller.start()
+    await controller.startupTask?.value
+
+    XCTAssertTrue(pendingDeleteNames().contains(recordName))
+    XCTAssertTrue(
+      store.deleteTombstones.keys.contains(recordName),
+      "the intent remains durable until the server confirms deletion")
+  }
+
   func testGivenRecoveredTombstoneDifferentTag_WhenRecover_ThenClearedConflictSurfacedNoDelete()
     async
   {
