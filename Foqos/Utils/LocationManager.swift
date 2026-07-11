@@ -107,6 +107,14 @@ class LocationManager: NSObject, ObservableObject {
       return .satisfied()
     }
 
+    let resolvableIds = Set(savedLocations.map { $0.id })
+    let hasResolvableReference = rule.locationReferences.contains {
+      resolvableIds.contains($0.savedLocationId)
+    }
+    guard hasResolvableReference else {
+      return .satisfied()
+    }
+
     // Get current location
     let currentLocation: CLLocation
     do {
@@ -157,7 +165,8 @@ class LocationManager: NSObject, ObservableObject {
 
     case .outside:
       // User must be outside ALL locations
-      if unsatisfiedLocations.count == rule.locationReferences.count {
+      let resolvableCount = satisfiedLocations.count + unsatisfiedLocations.count
+      if unsatisfiedLocations.count == resolvableCount {
         return .satisfied()
       } else {
         let locationNames = satisfiedLocations.prefix(2).joined(separator: " and ")

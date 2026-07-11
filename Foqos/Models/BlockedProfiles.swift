@@ -312,6 +312,26 @@ class BlockedProfiles {
     return try context.fetch(descriptor)
   }
 
+  @discardableResult
+  static func removeLocationReference(_ locationId: UUID, in context: ModelContext) throws
+    -> [UUID]
+  {
+    let profiles = try fetchProfiles(in: context)
+    var changed: [UUID] = []
+    for profile in profiles {
+      guard var rule = profile.geofenceRule,
+        rule.locationReferences.contains(where: { $0.savedLocationId == locationId })
+      else {
+        continue
+      }
+
+      rule.locationReferences.removeAll { $0.savedLocationId == locationId }
+      profile.geofenceRule = rule.locationReferences.isEmpty ? nil : rule
+      changed.append(profile.id)
+    }
+    return changed
+  }
+
   static func findProfile(byID id: UUID, in context: ModelContext) throws
     -> BlockedProfiles?
   {

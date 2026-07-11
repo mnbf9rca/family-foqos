@@ -741,6 +741,43 @@ final class MutationFunnelTests: XCTestCase {
     _ = now
   }
 
+  func testGivenLocationReferencedByProfile_WhenEnqueueDelete_ThenRepairsAndPushesProfile()
+    throws
+  {
+    let locationId = UUID()
+    let profileId = UUID()
+    let container = try TestModelContainer.create()
+    let context = ModelContext(container)
+
+    let location = SavedLocation(id: locationId, name: "Library", latitude: 1, longitude: 2)
+    context.insert(location)
+    let profile = BlockedProfiles(id: profileId, name: "Homework", syncVersion: 4)
+    profile.geofenceRule = ProfileGeofenceRule(
+      ruleType: .outside,
+      locationReferences: [ProfileLocationReference(savedLocationId: locationId)],
+      allowEmergencyOverride: true)
+    context.insert(profile)
+    try context.save()
+
+    let store = makeStore()
+    let driver = MockSyncEngineDriver()
+    let funnel = MutationFunnel(
+      modelContext: context,
+      store: store,
+      driver: driver,
+      deviceId: "device-A"
+    )
+
+    try funnel.enqueueDelete(locationId: locationId)
+
+    XCTAssertNil(try SavedLocation.find(byID: locationId, in: context))
+    let reread = try XCTUnwrap(BlockedProfiles.findProfile(byID: profileId, in: context))
+    XCTAssertNil(reread.geofenceRule, "dangling rule is cleaned up")
+    XCTAssertEqual(reread.syncVersion, 5, "repaired profile bumps for replication")
+    XCTAssertTrue(driver.pendingRecordZoneChanges.contains(.deleteRecord(recordID(locationId.uuidString))))
+    XCTAssertTrue(driver.pendingRecordZoneChanges.contains(.saveRecord(recordID(profileId.uuidString))))
+  }
+
   // MARK: - Location delete failure: tombstone removed, rollback, nothing enqueued
 
   func testGivenAbsentLocation_WhenEnqueueDelete_ThenTombstoneRemovedRollbackAndNothingEnqueued()

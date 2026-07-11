@@ -53,10 +53,7 @@ final class MutationFunnel {
     }
     // Never enqueue newer-schema profiles (I2; the newer device is authoritative — §5.4).
     guard !profile.isNewerSchemaVersion else {
-      Log.info(
-        "MutationFunnel skipping save for newer-schema profile '\(profile.name)'",
-        category: .sync
-      )
+      SyncDiagnostics.localProfileSaveSkippedNewerSchema(profileId: profile.id)
       return
     }
     profile.syncVersion += 1
@@ -68,6 +65,7 @@ final class MutationFunnel {
     }
     let recordID = CKRecord.ID(recordName: profileId.uuidString, zoneID: zoneID)
     driver.add(pendingRecordZoneChanges: [.saveRecord(recordID)])
+    SyncDiagnostics.localProfileSaveEnqueued(profileId: profileId, syncVersion: profile.syncVersion)
   }
 
   /// Re-read the location on the sync context, advance `updatedAt` in the same persisted write
@@ -85,6 +83,7 @@ final class MutationFunnel {
     }
     let recordID = CKRecord.ID(recordName: locationId.uuidString, zoneID: zoneID)
     driver.add(pendingRecordZoneChanges: [.saveRecord(recordID)])
+    SyncDiagnostics.localLocationSaveEnqueued(locationId: locationId)
   }
 
   /// Bump the emergency-settings version and enqueue the single fixed-name record (I2, §2).
@@ -94,6 +93,7 @@ final class MutationFunnel {
     EmergencyUnblockManager.shared.incrementEmergencySettingsVersionForSync()
     let recordID = CKRecord.ID(recordName: SyncedEmergencySettings.recordName, zoneID: zoneID)
     driver.add(pendingRecordZoneChanges: [.saveRecord(recordID)])
+    SyncDiagnostics.localEmergencySettingsSaveEnqueued(recordName: SyncedEmergencySettings.recordName)
   }
 
   /// Enqueue a write-once emergency-unblock event (I2, #221). The event is already persisted by
@@ -101,6 +101,7 @@ final class MutationFunnel {
   func enqueueEmergencyUnblockEvent(_ event: SyncedEmergencyUnblockEvent) {
     let recordID = CKRecord.ID(recordName: event.recordName, zoneID: zoneID)
     driver.add(pendingRecordZoneChanges: [.saveRecord(recordID)])
+    SyncDiagnostics.localEmergencyUnblockEventSaveEnqueued(recordName: event.recordName)
   }
 
   /// Enqueue the fixed-name reset-epoch record. There is no version bump: the epoch value itself
@@ -108,6 +109,7 @@ final class MutationFunnel {
   func enqueueEmergencyEpochSave() {
     let recordID = CKRecord.ID(recordName: SyncedEmergencyEpoch.recordName, zoneID: zoneID)
     driver.add(pendingRecordZoneChanges: [.saveRecord(recordID)])
+    SyncDiagnostics.localEmergencyEpochSaveEnqueued(recordName: SyncedEmergencyEpoch.recordName)
   }
 
   // MARK: - Delete paths
@@ -155,6 +157,7 @@ final class MutationFunnel {
           }
           let recordID = CKRecord.ID(recordName: recordName, zoneID: deleteZoneID)
           driver.add(pendingRecordZoneChanges: [.deleteRecord(recordID)])
+          SyncDiagnostics.localProfileDeleteEnqueued(profileId: profileId)
           onPendingDeleteEnqueued()
         } catch {
           store.clearTombstone(recordName: recordName)
@@ -179,10 +182,12 @@ final class MutationFunnel {
     let recordName = locationId.uuidString
     let changeTag = Self.changeTag(fromSystemFields: store.systemFields(for: recordName))
     store.setTombstone(recordName: recordName, changeTag: changeTag)
+    let repaired: [UUID]
     do {
       guard let location = try SavedLocation.find(byID: locationId, in: modelContext) else {
         throw MutationFunnelError.entityNotFound
       }
+      repaired = try BlockedProfiles.removeLocationReference(locationId, in: modelContext)
       try SavedLocation.delete(location, in: modelContext)
     } catch {
       store.clearTombstone(recordName: recordName)
@@ -191,6 +196,17 @@ final class MutationFunnel {
     }
     let recordID = CKRecord.ID(recordName: recordName, zoneID: zoneID)
     driver.add(pendingRecordZoneChanges: [.deleteRecord(recordID)])
+    SyncDiagnostics.localLocationDeleteEnqueued(locationId: locationId, repairedProfileIds: repaired)
+    for profileId in repaired {
+      do {
+        try enqueueSave(profileId: profileId)
+      } catch {
+        Log.warning(
+          "Location-delete profile repair re-push failed for \(profileId): "
+            + error.localizedDescription,
+          category: .sync)
+      }
+    }
   }
 
   /// Enqueue a delete for a record whose model is already gone locally (a delete that fell
@@ -201,6 +217,7 @@ final class MutationFunnel {
     store.setTombstone(recordName: recordName, changeTag: changeTag)
     let recordID = CKRecord.ID(recordName: recordName, zoneID: zoneID)
     driver.add(pendingRecordZoneChanges: [.deleteRecord(recordID)])
+    SyncDiagnostics.localTombstoneDeleteEnqueued(recordName: recordName)
   }
 
   /// Delete a write-once emergency-unblock event through the explicit delete path (#221 GC).

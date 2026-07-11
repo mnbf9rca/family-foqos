@@ -99,6 +99,12 @@ struct DebugView: View {
               .cornerRadius(10)
             }
             .buttonStyle(.plain)
+
+            #if DEBUG
+              Button("DEBUG reset emergency") {
+                EmergencyUnblockManager.shared.resetEmergencyUnblocks()
+              }
+            #endif
           }
         }
         .padding()

@@ -195,9 +195,6 @@ struct SavedLocationsView: View {
     let locationId = location.id
 
     do {
-      // Remove references from profiles that use this location
-      removeLocationFromProfiles(locationId)
-
       if profileSyncManager.isEnabled {
         // Route the delete entirely through the funnel (I2): it re-reads the location
         // itself, writes the delete-intent tombstone, performs the persisted delete, and
@@ -214,34 +211,17 @@ struct SavedLocationsView: View {
           // the funnel can't own this delete, so delete locally now instead of silently
           // leaving the location behind (review finding #4). It will propagate once the
           // engine attaches / on the next sync.
+          try BlockedProfiles.removeLocationReference(locationId, in: context)
           try SavedLocation.delete(location, in: context)
         }
       } else {
         // Sync disabled — the funnel would no-op (I2 is only reachable once the engine has
         // started), so delete locally directly.
+        try BlockedProfiles.removeLocationReference(locationId, in: context)
         try SavedLocation.delete(location, in: context)
       }
     } catch {
       errorMessage = "Failed to delete location: \(error.localizedDescription)"
-    }
-  }
-
-  private func removeLocationFromProfiles(_ locationId: UUID) {
-    do {
-      let profiles = try BlockedProfiles.fetchProfiles(in: context)
-      for profile in profiles {
-        if var rule = profile.geofenceRule {
-          rule.locationReferences.removeAll { $0.savedLocationId == locationId }
-          if rule.locationReferences.isEmpty {
-            profile.geofenceRule = nil
-          } else {
-            profile.geofenceRule = rule
-          }
-        }
-      }
-      try context.save()
-    } catch {
-      Log.error("Failed to update profiles after location deletion: \(error)", category: .location)
     }
   }
 }
