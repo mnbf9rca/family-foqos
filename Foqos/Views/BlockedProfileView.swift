@@ -88,7 +88,7 @@ struct BlockedProfileView: View {
   @State private var isManaged: Bool = false
   @State private var showingLockCodeEntry = false
   @State private var pendingAction: PendingAction?
-  @State private var scheduleRegistrationRefreshTick = 0
+  @State private var scheduleOutOfSyncBanner = ScheduleOutOfSyncBannerState()
 
   /// Pending actions that require code verification
   private enum PendingAction {
@@ -282,7 +282,7 @@ struct BlockedProfileView: View {
             }
           }
 
-          if profile?.scheduleIsOutOfSync == true {
+          if scheduleOutOfSyncBanner.isVisible {
             Section {
               ScheduleWarningPrompt(onApply: { saveProfile() }, disabled: isBlocking)
             }
@@ -590,11 +590,12 @@ struct BlockedProfileView: View {
           if let existingProfile = profile {
             triggerConfig.loadFromProfile(existingProfile)
           }
+          refreshScheduleOutOfSyncBanner()
         }
         .onReceive(
           NotificationCenter.default.publisher(for: .scheduleRegistrationsDidReconcile)
         ) { _ in
-          scheduleRegistrationRefreshTick += 1
+          scheduleOutOfSyncBanner.refreshAfterScheduleReconcile(profile: profile)
         }
         .navigationTitle(isEditing ? "Profile Details" : "New Profile")
         .toolbar {
@@ -873,6 +874,10 @@ struct BlockedProfileView: View {
         }
       }  // else (non-newer-schema profile)
     }
+  }
+
+  private func refreshScheduleOutOfSyncBanner() {
+    scheduleOutOfSyncBanner.refresh(profile: profile)
   }
 
   /// Largest minutes value whose seconds representation fits in UInt32.

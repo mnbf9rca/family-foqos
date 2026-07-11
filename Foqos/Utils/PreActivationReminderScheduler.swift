@@ -47,6 +47,7 @@ enum PreActivationReminderScheduler {
   /// #301: register DeviceActivity schedules for eligible profiles independent of whether
   /// pre-activation reminders are enabled.
   /// Old reminder-gated name `rescheduleAllReminders` caused #301 by hiding registration.
+  @MainActor
   static func reconcileScheduleRegistrations(
     context: ModelContext,
     notificationCenter: NotificationCenter = .default,
