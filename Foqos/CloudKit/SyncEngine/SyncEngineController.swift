@@ -343,10 +343,12 @@ final class SyncEngineController: SyncEngineDriverDelegate {
     modifications: [CKRecord],
     deletions: [(recordID: CKRecord.ID, recordType: CKRecord.RecordType)]
   ) {
+    SyncDiagnostics.fetchedBatch(modifications: modifications, deletions: deletions)
     let legacyRecords = modifications.filter { $0.recordType == LegacySyncedSession.recordType }
     if !legacyRecords.isEmpty {
       legacyCleanup?.identify(modifications: legacyRecords)  // §11 — never applied
     }
+    var modificationOutcomes: [String] = []
     for record in modifications {
       if record.recordType == SyncResetRequest.recordType {
         onFetchedResetCommand?(record)  // §8.3 — never applied via applyFetchedModification
@@ -357,20 +359,31 @@ final class SyncEngineController: SyncEngineDriverDelegate {
       }
       let outcome = apply.applyFetchedModification(
         record, isPendingDeleteOrTombstoned: blockedPredicate())
+      SyncDiagnostics.fetchedModification(record: record, outcome: outcome)
+      modificationOutcomes.append(SyncDiagnostics.outcomeLabel(outcome))
       if outcome == .applied {
         store.removeFailedApply(recordName: record.recordID.recordName)  // supersession (§5.6)
       }
     }
-    for recordID in apply.drainReenqueues() {  // CRA-1
+    SyncDiagnostics.fetchedModificationSummary(outcomes: modificationOutcomes)
+    let modificationReenqueues = apply.drainReenqueues()
+    SyncDiagnostics.repairReenqueue(source: "fetched_modifications", recordIDs: modificationReenqueues)
+    for recordID in modificationReenqueues {  // CRA-1
       driver.add(pendingRecordZoneChanges: [.saveRecord(recordID)])
     }
+    var deletionOutcomes: [String] = []
     for (recordID, recordType) in deletions {
       let outcome = apply.applyFetchedDeletion(recordID: recordID, recordType: recordType)
+      SyncDiagnostics.fetchedDeletion(recordID: recordID, recordType: recordType, outcome: outcome)
+      deletionOutcomes.append(SyncDiagnostics.outcomeLabel(outcome))
       guard !(recordType == SyncedProfile.recordType && outcome == .deleted) else { continue }
       applyDeletionSideEffects(recordID: recordID)
       store.removeFailedApply(recordName: recordID.recordName)  // supersession
     }
-    for recordID in apply.drainReenqueues() {
+    SyncDiagnostics.fetchedDeletionSummary(outcomes: deletionOutcomes)
+    let deletionReenqueues = apply.drainReenqueues()
+    SyncDiagnostics.repairReenqueue(source: "fetched_deletions", recordIDs: deletionReenqueues)
+    for recordID in deletionReenqueues {
       driver.add(pendingRecordZoneChanges: [.saveRecord(recordID)])
     }
   }
@@ -396,12 +409,16 @@ final class SyncEngineController: SyncEngineDriverDelegate {
     deletedRecordIDs: [CKRecord.ID],
     failedRecordDeletes: [(recordID: CKRecord.ID, error: CKError)]
   ) {
+    SyncDiagnostics.sentBatch(
+      savedRecords: savedRecords, failedRecordSaves: failedRecordSaves,
+      deletedRecordIDs: deletedRecordIDs, failedRecordDeletes: failedRecordDeletes)
     var savedCommandRecords: [CKRecord] = []
     store.transaction { s in
       for record in savedRecords {
         let name = record.recordID.recordName
         if record.recordType == SyncResetRequest.recordType {
           savedCommandRecords.append(record)  // CRA-3: command record, no systemFields
+          SyncDiagnostics.sentSaveConfirmed(record: record)
           continue
         }
         if Self.scopedTypes.contains(record.recordType) {
@@ -409,12 +426,14 @@ final class SyncEngineController: SyncEngineDriverDelegate {
         }
         self.clearLegacyId(name, in: s)
         self.resolveSeedName(name)  // I11 observable-clear (Fix 5): save confirmed sent
+        SyncDiagnostics.sentSaveConfirmed(record: record)
       }
       for id in deletedRecordIDs {
         let name = id.recordName
         s.setSystemFields(nil, for: name)
         s.clearTombstone(recordName: name)  // I12 confirmed
         self.clearLegacyId(name, in: s)
+        SyncDiagnostics.sentDeleteConfirmed(recordID: id)
       }
     }
     // Fired outside `store.transaction` (non-reentrant `SharedData.withLock`): a hook
@@ -426,8 +445,14 @@ final class SyncEngineController: SyncEngineDriverDelegate {
       apply.recentlyConfirmedDeletes.insert(id.recordName)  // echo guard (§5.1)
       confirmDeleteCycle[id.recordName] = currentCycle  // AB-3 drain writer (Task 68 reader)
     }
-    for (record, error) in failedRecordSaves { handleFailedSave(record: record, error: error) }
-    for (id, error) in failedRecordDeletes { handleFailedDelete(recordID: id, error: error) }
+    for (record, error) in failedRecordSaves {
+      SyncDiagnostics.sentSaveFailed(record: record, error: error)
+      handleFailedSave(record: record, error: error)
+    }
+    for (id, error) in failedRecordDeletes {
+      SyncDiagnostics.sentDeleteFailed(recordID: id, error: error)
+      handleFailedDelete(recordID: id, error: error)
+    }
   }
 
   // MARK: - T4b sentDatabaseChanges routing (§5.5)
@@ -606,6 +631,7 @@ final class SyncEngineController: SyncEngineDriverDelegate {
   private func handleWillFetchChanges() {
     currentCycle += 1
     let drained = confirmDeleteCycle.filter { $0.value < currentCycle }.map { $0.key }
+    SyncDiagnostics.echoGuardDrained(currentCycle: currentCycle, recordNames: drained)
     for name in drained {
       apply.recentlyConfirmedDeletes.remove(name)
       confirmDeleteCycle.removeValue(forKey: name)
@@ -682,6 +708,8 @@ final class SyncEngineController: SyncEngineDriverDelegate {
       }
     }
     if !deletesToRemove.isEmpty { driver.remove(pendingRecordZoneChanges: deletesToRemove) }
+    SyncDiagnostics.materializedSendBatch(
+      records: records, removedSaves: savesToRemove.count, removedDeletes: deletesToRemove.count)
     return records.isEmpty ? nil : records
   }
 
@@ -974,6 +1002,312 @@ final class SyncEngineController: SyncEngineDriverDelegate {
 
   private func recordID(_ name: String) -> CKRecord.ID {
     CKRecord.ID(recordName: name, zoneID: zoneID)
+  }
+}
+
+enum SyncDiagnostics {
+  static func fetchedBatch(
+    modifications: [CKRecord],
+    deletions: [(recordID: CKRecord.ID, recordType: CKRecord.RecordType)]
+  ) {
+    Log.debug(
+      "sync.event=fetched_batch modifications=\(modifications.count) "
+        + "modification_types=\(typeSummary(modifications.map(\.recordType))) "
+        + "deletions=\(deletions.count) "
+        + "deletion_types=\(typeSummary(deletions.map { $0.recordType }))",
+      category: .sync)
+  }
+
+  static func fetchedModification(record: CKRecord, outcome: SyncApplyService.ApplyOutcome) {
+    Log.debug(
+      "sync.event=fetched_modification type=\(record.recordType) "
+        + "record=\(record.recordID.recordName) outcome=\(outcomeLabel(outcome))",
+      category: .sync)
+  }
+
+  static func fetchedModificationSummary(outcomes: [String]) {
+    guard !outcomes.isEmpty else { return }
+    Log.debug(
+      "sync.event=fetched_modification_summary outcomes=\(bucketSummary(outcomes))",
+      category: .sync)
+  }
+
+  static func fetchedDeletion(
+    recordID: CKRecord.ID,
+    recordType: CKRecord.RecordType,
+    outcome: SyncApplyService.DeletionOutcome
+  ) {
+    Log.debug(
+      "sync.event=fetched_deletion type=\(recordType) record=\(recordID.recordName) "
+        + "outcome=\(outcomeLabel(outcome))",
+      category: .sync)
+  }
+
+  static func fetchedDeletionSummary(outcomes: [String]) {
+    guard !outcomes.isEmpty else { return }
+    Log.debug(
+      "sync.event=fetched_deletion_summary outcomes=\(bucketSummary(outcomes))",
+      category: .sync)
+  }
+
+  static func repairReenqueue(source: String, recordIDs: [CKRecord.ID]) {
+    guard !recordIDs.isEmpty else { return }
+    Log.debug(
+      "sync.event=repair_reenqueue source=\(source) count=\(recordIDs.count) "
+        + "records=\(recordNames(recordIDs))",
+      category: .sync)
+  }
+
+  static func sentBatch(
+    savedRecords: [CKRecord],
+    failedRecordSaves: [(record: CKRecord, error: CKError)],
+    deletedRecordIDs: [CKRecord.ID],
+    failedRecordDeletes: [(recordID: CKRecord.ID, error: CKError)]
+  ) {
+    Log.debug(
+      "sync.event=sent_batch saved=\(savedRecords.count) "
+        + "save_types=\(typeSummary(savedRecords.map(\.recordType))) "
+        + "failed_saves=\(failedRecordSaves.count) deleted=\(deletedRecordIDs.count) "
+        + "failed_deletes=\(failedRecordDeletes.count)",
+      category: .sync)
+  }
+
+  static func sentSaveConfirmed(record: CKRecord) {
+    Log.debug(
+      "sync.event=sent_save_confirmed type=\(record.recordType) "
+        + "record=\(record.recordID.recordName)",
+      category: .sync)
+  }
+
+  static func sentDeleteConfirmed(recordID: CKRecord.ID) {
+    Log.debug(
+      "sync.event=sent_delete_confirmed record=\(recordID.recordName)",
+      category: .sync)
+  }
+
+  static func sentSaveFailed(record: CKRecord, error: CKError) {
+    Log.warning(
+      "sync.event=sent_save_failed type=\(record.recordType) "
+        + "record=\(record.recordID.recordName) ck_error=\(error.code.rawValue)",
+      category: .sync)
+  }
+
+  static func sentDeleteFailed(recordID: CKRecord.ID, error: CKError) {
+    Log.warning(
+      "sync.event=sent_delete_failed record=\(recordID.recordName) "
+        + "ck_error=\(error.code.rawValue)",
+      category: .sync)
+  }
+
+  static func echoGuardDrained(currentCycle: Int, recordNames: [String]) {
+    guard !recordNames.isEmpty else { return }
+    Log.debug(
+      "sync.event=echo_guard_drained cycle=\(currentCycle) count=\(recordNames.count) "
+        + "records=\(stringList(recordNames))",
+      category: .sync)
+  }
+
+  static func materializedSendBatch(
+    records: [CKRecord],
+    removedSaves: Int,
+    removedDeletes: Int
+  ) {
+    Log.debug(
+      "sync.event=materialized_send_batch records=\(records.count) "
+        + "types=\(typeSummary(records.map(\.recordType))) "
+        + "removed_saves=\(removedSaves) removed_deletes=\(removedDeletes)",
+      category: .sync)
+  }
+
+  static func modificationSkippedPendingDelete(recordType: CKRecord.RecordType, recordName: String) {
+    Log.info(
+      "sync.event=modification_skipped_pending_delete type=\(recordType) record=\(recordName)",
+      category: .sync)
+  }
+
+  static func profileApply(
+    profileId: UUID,
+    branch: String,
+    remoteVersion: Int,
+    localVersion: Int?,
+    remoteSchema: Int,
+    localSchema: Int?,
+    remoteGeofenceRefCount: Int?,
+    localGeofenceRefCount: Int?
+  ) {
+    Log.debug(
+      "sync.event=profile_apply profile=\(profileId.uuidString) branch=\(branch) "
+        + "remote_version=\(remoteVersion) local_version=\(optionalInt(localVersion)) "
+        + "remote_schema=\(remoteSchema) local_schema=\(optionalInt(localSchema)) "
+        + "remote_geofence_refs=\(optionalInt(remoteGeofenceRefCount)) "
+        + "local_geofence_refs=\(optionalInt(localGeofenceRefCount))",
+      category: .sync)
+  }
+
+  static func profileDeletionApplied(
+    profileId: UUID,
+    existed: Bool,
+    stoppedActiveSession: Bool,
+    outcome: SyncApplyService.DeletionOutcome
+  ) {
+    Log.debug(
+      "sync.event=profile_deletion_apply profile=\(profileId.uuidString) existed=\(existed) "
+        + "stopped_active_session=\(stoppedActiveSession) outcome=\(outcomeLabel(outcome))",
+      category: .sync)
+  }
+
+  static func locationApply(
+    locationId: UUID,
+    branch: String,
+    localVersion: Int?,
+    newLocalVersion: Int
+  ) {
+    Log.debug(
+      "sync.event=location_apply location=\(locationId.uuidString) branch=\(branch) "
+        + "local_version=\(optionalInt(localVersion)) new_local_version=\(newLocalVersion)",
+      category: .sync)
+  }
+
+  static func locationDeletionApplied(
+    locationId: UUID,
+    existed: Bool,
+    repairedProfileIds: [UUID],
+    outcome: SyncApplyService.DeletionOutcome
+  ) {
+    Log.debug(
+      "sync.event=location_deletion_apply location=\(locationId.uuidString) existed=\(existed) "
+        + "repaired_profiles=\(repairedProfileIds.count) "
+        + "profile_ids=\(uuidList(repairedProfileIds)) outcome=\(outcomeLabel(outcome))",
+      category: .sync)
+  }
+
+  static func emergencySettingsApply(branch: String, remoteVersion: Int, localVersion: Int) {
+    Log.debug(
+      "sync.event=emergency_settings_apply branch=\(branch) "
+        + "remote_version=\(remoteVersion) local_version=\(localVersion)",
+      category: .sync)
+  }
+
+  static func emergencyUnblockEventApply(recordName: String) {
+    Log.debug(
+      "sync.event=emergency_unblock_event_apply record=\(recordName)",
+      category: .sync)
+  }
+
+  static func emergencyEpochApply(epoch: Int) {
+    Log.debug(
+      "sync.event=emergency_epoch_apply epoch=\(epoch)",
+      category: .sync)
+  }
+
+  static func sessionApply(profileId: UUID, branch: String) {
+    Log.debug(
+      "sync.event=session_apply profile=\(profileId.uuidString) branch=\(branch)",
+      category: .sync)
+  }
+
+  static func localProfileSaveSkippedNewerSchema(profileId: UUID) {
+    Log.info(
+      "sync.event=local_profile_save_skipped_newer_schema profile=\(profileId.uuidString)",
+      category: .sync)
+  }
+
+  static func localProfileSaveEnqueued(profileId: UUID, syncVersion: Int) {
+    Log.debug(
+      "sync.event=local_profile_save_enqueued profile=\(profileId.uuidString) "
+        + "sync_version=\(syncVersion)",
+      category: .sync)
+  }
+
+  static func localLocationSaveEnqueued(locationId: UUID) {
+    Log.debug(
+      "sync.event=local_location_save_enqueued location=\(locationId.uuidString)",
+      category: .sync)
+  }
+
+  static func localProfileDeleteEnqueued(profileId: UUID) {
+    Log.debug(
+      "sync.event=local_profile_delete_enqueued profile=\(profileId.uuidString)",
+      category: .sync)
+  }
+
+  static func localLocationDeleteEnqueued(locationId: UUID, repairedProfileIds: [UUID]) {
+    Log.debug(
+      "sync.event=local_location_delete_enqueued location=\(locationId.uuidString) "
+        + "repaired_profiles=\(repairedProfileIds.count) "
+        + "profile_ids=\(uuidList(repairedProfileIds))",
+      category: .sync)
+  }
+
+  static func localEmergencySettingsSaveEnqueued(recordName: String) {
+    Log.debug(
+      "sync.event=local_emergency_settings_save_enqueued record=\(recordName)",
+      category: .sync)
+  }
+
+  static func localEmergencyUnblockEventSaveEnqueued(recordName: String) {
+    Log.debug(
+      "sync.event=local_emergency_unblock_event_save_enqueued record=\(recordName)",
+      category: .sync)
+  }
+
+  static func localEmergencyEpochSaveEnqueued(recordName: String) {
+    Log.debug(
+      "sync.event=local_emergency_epoch_save_enqueued record=\(recordName)",
+      category: .sync)
+  }
+
+  static func localTombstoneDeleteEnqueued(recordName: String) {
+    Log.debug(
+      "sync.event=local_tombstone_delete_enqueued record=\(recordName)",
+      category: .sync)
+  }
+
+  static func outcomeLabel(_ outcome: SyncApplyService.ApplyOutcome) -> String {
+    switch outcome {
+    case .applied: return "applied"
+    case .skippedPendingDelete: return "skipped_pending_delete"
+    case .ignored: return "ignored"
+    case .failed: return "failed"
+    }
+  }
+
+  static func outcomeLabel(_ outcome: SyncApplyService.DeletionOutcome) -> String {
+    switch outcome {
+    case .deleted: return "deleted"
+    case .notPresent: return "not_present"
+    case .ignored: return "ignored"
+    }
+  }
+
+  static func typeSummary(_ types: [CKRecord.RecordType]) -> String {
+    bucketSummary(types.map { String($0) })
+  }
+
+  static func bucketSummary(_ values: [String]) -> String {
+    guard !values.isEmpty else { return "none" }
+    let counts = Dictionary(grouping: values, by: { $0 }).mapValues(\.count)
+    return counts.keys.sorted().map { "\($0):\(counts[$0] ?? 0)" }.joined(separator: ",")
+  }
+
+  static func recordNames(_ recordIDs: [CKRecord.ID]) -> String {
+    let names = recordIDs.map { $0.recordName }.sorted()
+    return names.isEmpty ? "none" : names.joined(separator: ",")
+  }
+
+  static func uuidList(_ ids: [UUID]) -> String {
+    let names = ids.map { $0.uuidString }.sorted()
+    return names.isEmpty ? "none" : names.joined(separator: ",")
+  }
+
+  static func stringList(_ values: [String]) -> String {
+    let sorted = values.sorted()
+    return sorted.isEmpty ? "none" : sorted.joined(separator: ",")
+  }
+
+  private static func optionalInt(_ value: Int?) -> String {
+    guard let value else { return "nil" }
+    return String(value)
   }
 }
 

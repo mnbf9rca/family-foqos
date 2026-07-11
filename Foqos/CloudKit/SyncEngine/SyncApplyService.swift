@@ -65,9 +65,8 @@ final class SyncApplyService {
     // Pending-delete-wins (§5.1): a modification shadowed by a pending delete, a live
     // tombstone, or the in-memory confirmed-delete echo guard is skipped.
     if isPendingDeleteOrTombstoned(recordName) || recentlyConfirmedDeletes.contains(recordName) {
-      Log.info(
-        "Skipping fetched modification for pending-delete/echo-guarded id \(recordName)",
-        category: .sync)
+      SyncDiagnostics.modificationSkippedPendingDelete(
+        recordType: record.recordType, recordName: recordName)
       return .skippedPendingDelete
     }
     switch record.recordType {
@@ -124,11 +123,14 @@ final class SyncApplyService {
     do {
       guard let profile = try BlockedProfiles.findProfile(byID: id, in: modelContext) else {
         clearDeletionBookkeeping(recordName: recordName)  // intent already satisfied
+        SyncDiagnostics.profileDeletionApplied(
+          profileId: id, existed: false, stoppedActiveSession: false, outcome: .notPresent)
         return .notPresent
       }
       // §5.2 / #203: if the deleted profile owns the active session, stop it first so
       // restrictions are deactivated and the manager does not retain a deleted model.
-      if sessionController.activeSession?.blockedProfile.id == id {
+      let stoppedActiveSession = sessionController.activeSession?.blockedProfile.id == id
+      if stoppedActiveSession {
         sessionController.stopRemoteSession(context: modelContext, profileId: id)
       }
       try BlockedProfiles.deleteProfile(profile, in: modelContext)  // defers save
@@ -170,6 +172,9 @@ final class SyncApplyService {
             category: .sync)
         }
       }
+      SyncDiagnostics.profileDeletionApplied(
+        profileId: id, existed: true, stoppedActiveSession: stoppedActiveSession,
+        outcome: .deleted)
       return .deleted
     } catch {
       modelContext.rollback()
@@ -205,7 +210,10 @@ final class SyncApplyService {
       }
 
       clearDeletionBookkeeping(recordName: recordName)
-      return (location == nil && repaired.isEmpty) ? .notPresent : .deleted
+      let outcome: DeletionOutcome = (location == nil && repaired.isEmpty) ? .notPresent : .deleted
+      SyncDiagnostics.locationDeletionApplied(
+        locationId: id, existed: location != nil, repairedProfileIds: repaired, outcome: outcome)
+      return outcome
     } catch {
       modelContext.rollback()
       store.addFailedApply(
@@ -275,8 +283,18 @@ final class SyncApplyService {
       createLocalProfile(from: synced)
       try commit()
       storeSystemFields(record)
+      SyncDiagnostics.profileApply(
+        profileId: synced.profileId, branch: "created", remoteVersion: synced.version,
+        localVersion: nil, remoteSchema: synced.profileSchemaVersion, localSchema: nil,
+        remoteGeofenceRefCount: synced.geofenceRule?.locationReferences.count,
+        localGeofenceRefCount: nil)
       return .applied
     }
+
+    let localVersion = existing.syncVersion
+    let localSchema = existing.profileSchemaVersion
+    let localGeofenceRefCount = existing.geofenceRule?.locationReferences.count
+    let remoteGeofenceRefCount = synced.geofenceRule?.locationReferences.count
 
     // I9 schema-version gate (verbatim from SyncCoordinator.swift:126-166, own-origin skip removed).
     if synced.profileSchemaVersion < existing.profileSchemaVersion {
@@ -286,6 +304,12 @@ final class SyncApplyService {
       existing.syncVersion += 1
       try commit()
       pendingReenqueues.append(record.recordID)
+      SyncDiagnostics.profileApply(
+        profileId: existing.id, branch: "local_schema_newer_reenqueue",
+        remoteVersion: synced.version, localVersion: localVersion,
+        remoteSchema: synced.profileSchemaVersion, localSchema: localSchema,
+        remoteGeofenceRefCount: remoteGeofenceRefCount,
+        localGeofenceRefCount: localGeofenceRefCount)
       return .applied
     } else if synced.profileSchemaVersion > BlockedProfiles.currentSchemaVersion {
       SyncConflictManager.shared.addNewerVersionConflict(
@@ -293,17 +317,35 @@ final class SyncApplyService {
       existing.profileSchemaVersion = synced.profileSchemaVersion
       existing.syncVersion = synced.version
       try commit()
+      SyncDiagnostics.profileApply(
+        profileId: existing.id, branch: "remote_schema_newer_marker",
+        remoteVersion: synced.version, localVersion: localVersion,
+        remoteSchema: synced.profileSchemaVersion, localSchema: localSchema,
+        remoteGeofenceRefCount: remoteGeofenceRefCount,
+        localGeofenceRefCount: localGeofenceRefCount)
       return .applied
     } else if synced.version > existing.syncVersion {
       updateLocalProfile(existing, from: synced)
       try commit()
       SyncConflictManager.shared.clearConflict(profileId: existing.id)
       storeSystemFields(record)
+      SyncDiagnostics.profileApply(
+        profileId: existing.id, branch: "remote_newer_applied",
+        remoteVersion: synced.version, localVersion: localVersion,
+        remoteSchema: synced.profileSchemaVersion, localSchema: localSchema,
+        remoteGeofenceRefCount: remoteGeofenceRefCount,
+        localGeofenceRefCount: localGeofenceRefCount)
       return .applied
     } else if synced.version == existing.syncVersion {
       // Equal-version divergence (§5.1): payload-differing => deterministic tie-break (#218).
       let localSynced = SyncedProfile(from: existing, originDeviceId: deviceId)
       if SyncPayloadEquality.profilesPayloadEqual(synced, localSynced) {
+        SyncDiagnostics.profileApply(
+          profileId: existing.id, branch: "equal_payload_noop",
+          remoteVersion: synced.version, localVersion: localVersion,
+          remoteSchema: synced.profileSchemaVersion, localSchema: localSchema,
+          remoteGeofenceRefCount: remoteGeofenceRefCount,
+          localGeofenceRefCount: localGeofenceRefCount)
         return .applied  // payload-equal echo ⇒ no-op
       }
       if Self.remoteWinsProfileTie(remote: synced, local: localSynced) {
@@ -313,6 +355,12 @@ final class SyncApplyService {
         storeSystemFields(record)
         SyncConflictManager.shared.addDivergenceConflict(
           profileId: existing.id, profileName: existing.name)
+        SyncDiagnostics.profileApply(
+          profileId: existing.id, branch: "equal_divergence_remote_wins",
+          remoteVersion: synced.version, localVersion: localVersion,
+          remoteSchema: synced.profileSchemaVersion, localSchema: localSchema,
+          remoteGeofenceRefCount: remoteGeofenceRefCount,
+          localGeofenceRefCount: localGeofenceRefCount)
         return .applied
       } else {
         // Local wins: bump above the tie and re-enqueue through the existing I2 exception.
@@ -321,10 +369,21 @@ final class SyncApplyService {
         pendingReenqueues.append(record.recordID)
         SyncConflictManager.shared.addDivergenceConflict(
           profileId: existing.id, profileName: existing.name)
+        SyncDiagnostics.profileApply(
+          profileId: existing.id, branch: "equal_divergence_local_wins_reenqueue",
+          remoteVersion: synced.version, localVersion: localVersion,
+          remoteSchema: synced.profileSchemaVersion, localSchema: localSchema,
+          remoteGeofenceRefCount: remoteGeofenceRefCount,
+          localGeofenceRefCount: localGeofenceRefCount)
         return .applied
       }
     } else {
       // Older incoming version ⇒ no-op.
+      SyncDiagnostics.profileApply(
+        profileId: existing.id, branch: "older_remote_noop", remoteVersion: synced.version,
+        localVersion: localVersion, remoteSchema: synced.profileSchemaVersion,
+        localSchema: localSchema, remoteGeofenceRefCount: remoteGeofenceRefCount,
+        localGeofenceRefCount: localGeofenceRefCount)
       return .applied
     }
   }
@@ -440,6 +499,7 @@ final class SyncApplyService {
       if let existing = try SavedLocation.find(byID: synced.locationId, in: modelContext) {
         // N6 client-clock merge (verbatim from SyncCoordinator.swift:438-455).
         if synced.lastModified > existing.updatedAt {
+          let localVersion = existing.syncVersion
           existing.syncVersion = max(existing.syncVersion, 1) + 1
           _ = try SavedLocation.update(
             existing,
@@ -450,9 +510,16 @@ final class SyncApplyService {
             defaultRadiusMeters: synced.defaultRadiusMeters,
             isLocked: synced.isLocked
           )
+          SyncDiagnostics.locationApply(
+            locationId: synced.locationId, branch: "remote_newer_applied",
+            localVersion: localVersion, newLocalVersion: existing.syncVersion)
         } else {
+          let localVersion = existing.syncVersion
           existing.syncVersion = max(existing.syncVersion, 1)
           try commit()
+          SyncDiagnostics.locationApply(
+            locationId: synced.locationId, branch: "local_newer_or_equal_noop",
+            localVersion: localVersion, newLocalVersion: existing.syncVersion)
         }
       } else {
         let location = SavedLocation(
@@ -466,6 +533,9 @@ final class SyncApplyService {
         )
         modelContext.insert(location)
         try commit()
+        SyncDiagnostics.locationApply(
+          locationId: synced.locationId, branch: "created", localVersion: nil,
+          newLocalVersion: location.syncVersion)
       }
       store.removeFailedApply(recordName: recordName)  // supersession (§5.6)
       storeSystemFields(record)
@@ -491,12 +561,15 @@ final class SyncApplyService {
     }
     // Last-write-wins version gate (verbatim from SyncCoordinator.swift:514-524).
     guard remote.version > emergencyManager.emergencySettingsVersion else {
-      Log.info(
-        "Ignoring emergency settings v\(remote.version) "
-          + "(local v\(emergencyManager.emergencySettingsVersion))", category: .sync)
+      SyncDiagnostics.emergencySettingsApply(
+        branch: "local_newer_or_equal_noop", remoteVersion: remote.version,
+        localVersion: emergencyManager.emergencySettingsVersion)
       return .applied
     }
+    let localVersion = emergencyManager.emergencySettingsVersion
     emergencyManager.applyRemoteEmergencySettings(remote)
+    SyncDiagnostics.emergencySettingsApply(
+      branch: "remote_newer_applied", remoteVersion: remote.version, localVersion: localVersion)
     store.removeFailedApply(recordName: record.recordID.recordName)  // supersession (§5.6)
     storeSystemFields(record)
     return .applied
@@ -510,6 +583,7 @@ final class SyncApplyService {
       return .ignored
     }
     emergencyManager.mergeRemoteUnblockEvent(event)
+    SyncDiagnostics.emergencyUnblockEventApply(recordName: event.recordName)
     store.removeFailedApply(recordName: record.recordID.recordName)
     storeSystemFields(record)
     return .applied
@@ -523,6 +597,7 @@ final class SyncApplyService {
     // #221 monotonic-max channel: no version gate. max() is order-independent, so a deferred
     // local epoch drain and a fetched remote epoch converge regardless of arrival order.
     emergencyManager.adoptRemoteEpoch(remote.epoch)
+    SyncDiagnostics.emergencyEpochApply(epoch: remote.epoch)
     store.removeFailedApply(recordName: record.recordID.recordName)
     storeSystemFields(record)
     return .applied
@@ -544,7 +619,7 @@ final class SyncApplyService {
   private func applySessionState(_ session: ProfileSessionRecord) {
     let profileId = session.profileId
     if session.lastModifiedBy == deviceId {
-      Log.info("Ignoring our own session update for \(profileId)", category: .sync)
+      SyncDiagnostics.sessionApply(profileId: profileId, branch: "own_origin_noop")
       return
     }
     let localActive = sessionController.activeSession?.blockedProfile.id == profileId
@@ -552,9 +627,13 @@ final class SyncApplyService {
       if let startTime = session.startTime {
         sessionController.startRemoteSession(
           context: modelContext, profileId: profileId, sessionId: UUID(), startTime: startTime)
+        SyncDiagnostics.sessionApply(profileId: profileId, branch: "remote_start_applied")
       }
     } else if !session.isActive && localActive {
       sessionController.stopRemoteSession(context: modelContext, profileId: profileId)
+      SyncDiagnostics.sessionApply(profileId: profileId, branch: "remote_stop_applied")
+    } else {
+      SyncDiagnostics.sessionApply(profileId: profileId, branch: "state_already_matching_noop")
     }
   }
 
