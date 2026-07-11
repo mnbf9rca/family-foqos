@@ -2,6 +2,11 @@ import FoqosShared
 import Foundation
 import SwiftData
 
+extension Notification.Name {
+  static let scheduleRegistrationsDidReconcile = Notification.Name(
+    "scheduleRegistrationsDidReconcile")
+}
+
 /// Schedules pre-activation reminders for all profiles with active schedules.
 /// Call this on app launch and when returning to foreground to ensure
 /// daily notifications are scheduled.
@@ -44,6 +49,7 @@ enum PreActivationReminderScheduler {
   /// Old reminder-gated name `rescheduleAllReminders` caused #301 by hiding registration.
   static func reconcileScheduleRegistrations(
     context: ModelContext,
+    notificationCenter: NotificationCenter = .default,
     register: (BlockedProfiles) -> Void = { DeviceActivityCenterUtil.scheduleTimerActivity(for: $0) }
   ) {
     do {
@@ -54,6 +60,7 @@ enum PreActivationReminderScheduler {
       }
 
       Log.debug("Reconciled DeviceActivity schedule registrations", category: .timer)
+      notificationCenter.post(name: .scheduleRegistrationsDidReconcile, object: nil)
     } catch {
       Log.error(
         "Failed to reconcile schedule registrations: \(error.localizedDescription)",

@@ -86,4 +86,24 @@ final class PreActivationReminderSchedulerTests: XCTestCase {
 
     XCTAssertEqual(registeredIds, [])
   }
+
+  func testGivenReconcileCompletes_WhenReconciling_ThenPostsRefreshNotification() throws {
+    let notificationCenter = NotificationCenter()
+    let posted = expectation(description: "schedule reconcile notification posted")
+    let observer = notificationCenter.addObserver(
+      forName: .scheduleRegistrationsDidReconcile,
+      object: nil,
+      queue: nil
+    ) { _ in
+      posted.fulfill()
+    }
+    defer { notificationCenter.removeObserver(observer) }
+
+    PreActivationReminderScheduler.reconcileScheduleRegistrations(
+      context: context,
+      notificationCenter: notificationCenter,
+      register: { _ in })
+
+    wait(for: [posted], timeout: 0.1)
+  }
 }

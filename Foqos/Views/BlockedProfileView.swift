@@ -88,6 +88,7 @@ struct BlockedProfileView: View {
   @State private var isManaged: Bool = false
   @State private var showingLockCodeEntry = false
   @State private var pendingAction: PendingAction?
+  @State private var scheduleRegistrationRefreshTick = 0
 
   /// Pending actions that require code verification
   private enum PendingAction {
@@ -589,6 +590,11 @@ struct BlockedProfileView: View {
           if let existingProfile = profile {
             triggerConfig.loadFromProfile(existingProfile)
           }
+        }
+        .onReceive(
+          NotificationCenter.default.publisher(for: .scheduleRegistrationsDidReconcile)
+        ) { _ in
+          scheduleRegistrationRefreshTick += 1
         }
         .navigationTitle(isEditing ? "Profile Details" : "New Profile")
         .toolbar {
