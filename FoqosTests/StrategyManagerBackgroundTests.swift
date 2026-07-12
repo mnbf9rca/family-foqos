@@ -59,6 +59,28 @@ final class StrategyManagerBackgroundTests: XCTestCase {
     }
   }
 
+  func testGivenProfileNeedsAppSelection_WhenStartSessionFromBackground_ThenThrowsAndNoSession()
+    throws
+  {
+    let profile = BlockedProfiles(name: "Needs Apps")
+    profile.needsAppSelection = true
+    context.insert(profile)
+    try context.save()
+
+    XCTAssertThrowsError(
+      try manager.startSessionFromBackground(profile.id, context: context)
+    ) { error in
+      if case IntentError.needsAppSelection = error {
+      } else {
+        XCTFail("Expected needsAppSelection, got \(error)")
+      }
+    }
+
+    let sessions = try context.fetch(FetchDescriptor<BlockedProfileSession>())
+    XCTAssertTrue(sessions.isEmpty)
+    XCTAssertNotNil(manager.errorMessage)
+  }
+
   func testGivenDurationTooShort_WhenStartingFromBackground_ThenThrowsDurationOutOfRange() throws {
     let profile = BlockedProfiles(name: "Test")
     context.insert(profile)
