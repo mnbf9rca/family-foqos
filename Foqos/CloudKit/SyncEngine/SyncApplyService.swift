@@ -535,6 +535,15 @@ final class SyncApplyService {
             localVersion: localVersion, newLocalVersion: existing.syncVersion)
         }
       } else {
+        if let watermark = store.deleteWatermark(for: recordName),
+          synced.lastModified.timeIntervalSinceReferenceDate <= watermark
+        {
+          SyncDiagnostics.locationApply(
+            locationId: synced.locationId, branch: "stale_delete_echo_skipped",
+            localVersion: nil, newLocalVersion: 0)
+          store.removeFailedApply(recordName: recordName)
+          return .skippedStaleDelete
+        }
         let location = SavedLocation(
           id: synced.locationId,
           name: synced.name,
@@ -546,6 +555,7 @@ final class SyncApplyService {
         )
         modelContext.insert(location)
         try commit()
+        store.clearDeleteWatermark(recordName: recordName)
         SyncDiagnostics.locationApply(
           locationId: synced.locationId, branch: "created", localVersion: nil,
           newLocalVersion: location.syncVersion)

@@ -349,6 +349,44 @@ final class SyncApplyServiceTests: XCTestCase {
     XCTAssertEqual(try SavedLocation.find(byID: id, in: context)?.name, "Cafe")
   }
 
+  func testGivenDeletedLocation_WhenStaleEchoFetched_ThenLocationNotRecreated() throws {
+    let now = Date()
+    let id = UUID()
+    store.setDeleteWatermark(
+      recordName: id.uuidString, value: now.timeIntervalSinceReferenceDate)
+    let synced = SyncedLocation(
+      locationId: id, name: "Stale Cafe", latitude: 5, longitude: 6, defaultRadiusMeters: 80,
+      isLocked: false, lastModified: now)
+
+    let outcome = makeService().applyFetchedModification(
+      synced.toCKRecord(in: zoneID), isPendingDeleteOrTombstoned: noPendingDelete)
+
+    XCTAssertEqual(outcome, .skippedStaleDelete)
+    XCTAssertNil(
+      try SavedLocation.find(byID: id, in: context),
+      "#315: a location echo at or below the delete watermark must not recreate it")
+    XCTAssertEqual(store.deleteWatermark(for: id.uuidString), now.timeIntervalSinceReferenceDate)
+  }
+
+  func testGivenDeletedLocation_WhenNewerRecreationFetched_ThenLocationCreated() throws {
+    let now = Date()
+    let id = UUID()
+    store.setDeleteWatermark(
+      recordName: id.uuidString, value: now.timeIntervalSinceReferenceDate)
+    let synced = SyncedLocation(
+      locationId: id, name: "New Cafe", latitude: 5, longitude: 6, defaultRadiusMeters: 80,
+      isLocked: false, lastModified: now.addingTimeInterval(60))
+
+    let outcome = makeService().applyFetchedModification(
+      synced.toCKRecord(in: zoneID), isPendingDeleteOrTombstoned: noPendingDelete)
+
+    XCTAssertEqual(outcome, .applied)
+    XCTAssertEqual(try SavedLocation.find(byID: id, in: context)?.name, "New Cafe")
+    XCTAssertNil(
+      store.deleteWatermark(for: id.uuidString),
+      "newer location recreation supersedes the delete watermark")
+  }
+
   func testGivenNewerRemoteLocation_WhenApplied_ThenNothingReenqueued() throws {
     let now = Date()
     let apply = makeService()
