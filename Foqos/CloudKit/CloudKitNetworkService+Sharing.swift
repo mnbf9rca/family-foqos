@@ -5,6 +5,20 @@ extension CloudKitNetworkService {
 
   // MARK: - Family Sharing
 
+  /// Decide which existing FamilyMembers to remove after a share-participant sync.
+  ///
+  /// FAIL-SAFE (#241): when any accepted participant has an unresolved userRecordID,
+  /// `acceptedParticipantRecordNames` is incomplete, so a still-enrolled member could look
+  /// departed. In that case remove nothing and let a later fully resolved sync clean up.
+  nonisolated static func familyMembersToRemove(
+    from existing: [FamilyMember],
+    acceptedParticipantRecordNames: Set<String>,
+    hasUnresolvedAcceptedParticipant: Bool
+  ) -> [FamilyMember] {
+    guard !hasUnresolvedAcceptedParticipant else { return [] }
+    return existing.filter { !acceptedParticipantRecordNames.contains($0.userRecordName) }
+  }
+
   func getOrCreateFamilyShare() async throws -> CKShare {
     if let existingShare = self.activeZoneShare {
       return existingShare
@@ -222,20 +236,31 @@ extension CloudKitNetworkService {
         "\(pending.count) accepted participants pending self-registration", category: .cloudKit)
     }
 
-    // Remove FamilyMembers who are no longer accepted participants
-    for member in familyMembers {
-      let userRecordName = member.userRecordName
-
-      if !currentParticipantRecordNames.contains(userRecordName) {
-        do {
-          let recordID = CKRecord.ID(recordName: member.id.uuidString, zoneID: policyZoneID)
-          try await privateDatabase.deleteRecord(withID: recordID)
-          familyMembers.removeAll { $0.id == member.id }
-          Log.info(
-            "Removed FamilyMember who left share: \(member.displayName)", category: .cloudKit)
-        } catch {
-          Log.error("Failed to remove stale FamilyMember: \(error)", category: .cloudKit)
-        }
+    // Remove FamilyMembers who are no longer accepted participants.
+    // FAIL-SAFE (#241): skip removals when any accepted participant is unresolved, so a
+    // transient nil userRecordID cannot delete a still-enrolled child.
+    let hasUnresolvedAcceptedParticipant = acceptedParticipants.contains {
+      $0.userIdentity.userRecordID == nil
+    }
+    if hasUnresolvedAcceptedParticipant {
+      Log.info(
+        "Skipping FamilyMember cleanup: an accepted participant has an unresolved identity",
+        category: .cloudKit)
+    }
+    let membersToRemove = Self.familyMembersToRemove(
+      from: familyMembers,
+      acceptedParticipantRecordNames: currentParticipantRecordNames,
+      hasUnresolvedAcceptedParticipant: hasUnresolvedAcceptedParticipant
+    )
+    for member in membersToRemove {
+      do {
+        let recordID = CKRecord.ID(recordName: member.id.uuidString, zoneID: policyZoneID)
+        try await privateDatabase.deleteRecord(withID: recordID)
+        familyMembers.removeAll { $0.id == member.id }
+        Log.info(
+          "Removed FamilyMember who left share: \(member.displayName)", category: .cloudKit)
+      } catch {
+        Log.error("Failed to remove stale FamilyMember: \(error)", category: .cloudKit)
       }
     }
 
