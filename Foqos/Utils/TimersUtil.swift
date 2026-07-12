@@ -117,6 +117,18 @@ final class TimersUtil: TimersUtilScheduling, @unchecked Sendable {  // SAFETY: 
     return shouldRemoveStaleOwnedReminder(identifier, generation: generation)
   }
 
+  // Internal for focused tests; exercises the same locked check/remove ordering as the callback.
+  func removeStaleOwnedReminderIfCancelledForTesting(
+    _ identifier: String,
+    generation: UInt,
+    remove: ([String]) -> Void
+  ) {
+    ownedReminderIdentifiersLock.lock()
+    defer { ownedReminderIdentifiersLock.unlock() }
+    guard shouldRemoveStaleOwnedReminder(identifier, generation: generation) else { return }
+    remove([identifier])
+  }
+
   private var ownedReminderIdentifiers: Set<String> {
     get {
       Set(
@@ -389,12 +401,10 @@ final class TimersUtil: TimersUtilScheduling, @unchecked Sendable {  // SAFETY: 
                 self?.isOwnedReminderScheduleCurrentForCallback(
                   notificationId, generation: ownedReminderScheduleGeneration) == true
               else {
-                if self?.shouldRemoveStaleOwnedReminderForCallback(
-                  notificationId, generation: ownedReminderScheduleGeneration) == true
-                {
-                  center.removePendingNotificationRequests(withIdentifiers: [notificationId])
-                  center.removeDeliveredNotifications(withIdentifiers: [notificationId])
-                }
+                self?.removeStaleOwnedReminderIfCancelledForCallback(
+                  notificationId,
+                  generation: ownedReminderScheduleGeneration,
+                  center: center)
                 return
               }
               self?.scheduleBackgroundTask(
@@ -474,13 +484,16 @@ final class TimersUtil: TimersUtilScheduling, @unchecked Sendable {  // SAFETY: 
     return isOwnedReminderScheduleCurrent(identifier, generation: generation)
   }
 
-  private func shouldRemoveStaleOwnedReminderForCallback(
+  private func removeStaleOwnedReminderIfCancelledForCallback(
     _ identifier: String,
-    generation: UInt
-  ) -> Bool {
+    generation: UInt,
+    center: UNUserNotificationCenter
+  ) {
     ownedReminderIdentifiersLock.lock()
     defer { ownedReminderIdentifiersLock.unlock() }
-    return shouldRemoveStaleOwnedReminder(identifier, generation: generation)
+    guard shouldRemoveStaleOwnedReminder(identifier, generation: generation) else { return }
+    center.removePendingNotificationRequests(withIdentifiers: [identifier])
+    center.removeDeliveredNotifications(withIdentifiers: [identifier])
   }
 
   func cancelAll() {

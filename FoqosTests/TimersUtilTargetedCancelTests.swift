@@ -116,6 +116,13 @@ final class TimersUtilTargetedCancelTests: XCTestCase {
     XCTAssertTrue(
       timers.shouldRemoveStaleOwnedReminderForTesting(identifier, generation: generation),
       "A stale completion after cancellation must remove the request that may have just been added")
+
+    var removedIdentifiers: [String] = []
+    timers.removeStaleOwnedReminderIfCancelledForTesting(identifier, generation: generation) {
+      removedIdentifiers.append(contentsOf: $0)
+    }
+
+    XCTAssertEqual(removedIdentifiers, [identifier])
   }
 
   func testGivenOlderOwnedReminderAddCompletesAfterNewerSchedule_WhenCheckingStaleGeneration_ThenKeepsNewerReminder() {
@@ -139,5 +146,12 @@ final class TimersUtilTargetedCancelTests: XCTestCase {
     XCTAssertFalse(
       timers.shouldRemoveStaleOwnedReminderForTesting(identifier, generation: oldGeneration),
       "A stale completion from an older schedule must not remove the newer owned reminder")
+
+    var removedIdentifiers: [String] = []
+    timers.removeStaleOwnedReminderIfCancelledForTesting(identifier, generation: oldGeneration) {
+      removedIdentifiers.append(contentsOf: $0)
+    }
+
+    XCTAssertTrue(removedIdentifiers.isEmpty)
   }
 }
