@@ -921,6 +921,7 @@ class StrategyManager: ObservableObject {
               Log.error(
                 "Failed to save deferred profile migration: \(error.localizedDescription)",
                 category: .strategy)
+              return
             }
             Log.info(
               "Migrated deferred profile '\(endedProfile.name)' on session end", category: .app)
