@@ -236,3 +236,15 @@ Explicitly NOT needed: probes for reset non-convergence (G2), tombstone resurrec
 - UNSAFE:high E4-prebridge — Same upgrade, but a remaining V1 device is PRE-bridge (v1.31.1 or
 - SAFE:low E5 — Restoring a V1 device backup onto a device that then runs V2 (iCloud/iTunes
 - SAFE:none E6 — App-group SharedData + DeviceActivity registrations across the upgrade wind
+
+## Post-audit corrections (2026-07-12 backlog cross-reference)
+
+A second pass (7 independent verification agents re-checking every load-bearing citation, plus maintainer input) corrected the following before backlog integration:
+
+- **Population fact (lowers several severities):** v1.31.3 has been the live App Store build for ~6 months at ~200 downloads/90 days. Pre-bridge installs (≤v1.31.1) are believed near-zero, so E4-prebridge / matrix row 12 drops from "build a min-version mechanism" to a pre-release App Store Connect analytics check (epic #263, release readiness).
+- **Rows 10–11 narrowing:** the v1.31.2+ bridge refuses edits/re-pushes of schema-2 profiles, so mixed-window resurrection is limited to **schema-1 records** — i.e. profiles V2 defers migrating while a session is active (which are precisely the in-use ones), plus reset-command starvation (no schema guard). Still real; narrower than the matrix states.
+- **G4 undercount:** the save-time-success defect exists on BOTH command paths — `resetEmergencyCount` (ParentDashboardView.swift:1114/1118) AND `resetLockCodeThrottle` (:1154/:1158).
+- **Emergency-budget correction:** "counter carries over on upgrade" is wrong — `family_foqos_emergency_unblocks_remaining` is read only by the migration and tests; an upgraded device starts a fresh ledger allowance.
+- **D5 severity overstated:** `acceptCloudKitShare` (FoqosApp.swift:462) blocks joining a second family whenever a FamilyPolicies zone exists, and both share-entry points funnel through it; the residual is a TOCTOU double-accept race (guard not re-checked in `completeShareAcceptance`, :514). Downgraded to a device probe + cheap aggregate-all-zones hardening (tracked on #326).
+- **B1 sharpening:** the CKShare leave requires connectivity, so "offline = no PIN" overstates; the dependable window is the online cold-launch race before the async lock-code fetch lands (the PIN gate is bypassed either way).
+- **Backlog disposition (2026-07-12):** #328 (reset convergence), #329 (delete resurrection, stacked on #315), #330 (V1 fail-open — accepted risk, no V1 release), #331 (dashboard honesty), #332 (emergency-budget release note); #310 gained a V1-coexistence constraint; #326 gained mixed-version device rows; min-version gate became an epic release-readiness checklist row. Maintainer decisions: no further V1 releases; epic #263 completes before V2 ships.
