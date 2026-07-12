@@ -742,10 +742,8 @@ class StrategyManager: ObservableObject {
     ) { [weak self] ctx, sess in
       guard let self else { return }
       let manualStrategy = self.getStrategy(id: ManualBlockingStrategy.id)
+      // `.ended` already handles the session activity, reminder, and timer cleanup.
       _ = manualStrategy.stopBlocking(context: ctx, session: sess)
-      self.liveActivityManager.endSessionActivity()
-      self.scheduleReminder(profile: sess.blockedProfile)
-      self.stopTimer()
     }
   }
 
