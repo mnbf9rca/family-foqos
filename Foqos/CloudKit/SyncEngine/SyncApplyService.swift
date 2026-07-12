@@ -7,7 +7,7 @@ import SwiftData
 /// own-origin apply skip. Not wired into any engine in Phase B.
 @MainActor
 final class SyncApplyService {
-  enum ApplyOutcome { case applied, skippedPendingDelete, ignored, failed }
+  enum ApplyOutcome { case applied, skippedPendingDelete, skippedStaleDelete, ignored, failed }
   enum DeletionOutcome { case deleted, notPresent, ignored }
 
   private let modelContext: ModelContext
@@ -277,12 +277,25 @@ final class SyncApplyService {
   private func applyDecodedProfile(
     _ synced: SyncedProfile, record: CKRecord
   ) throws -> ApplyOutcome {
+    let recordName = record.recordID.recordName
     guard
       let existing = try BlockedProfiles.findProfile(byID: synced.profileId, in: modelContext)
     else {
+      if let watermark = store.deleteWatermark(for: recordName),
+        Double(synced.version) <= watermark
+      {
+        SyncDiagnostics.profileApply(
+          profileId: synced.profileId, branch: "stale_delete_echo_skipped",
+          remoteVersion: synced.version, localVersion: nil,
+          remoteSchema: synced.profileSchemaVersion, localSchema: nil,
+          remoteGeofenceRefCount: synced.geofenceRule?.locationReferences.count,
+          localGeofenceRefCount: nil)
+        return .skippedStaleDelete
+      }
       createLocalProfile(from: synced)
       try commit()
       storeSystemFields(record)
+      store.clearDeleteWatermark(recordName: recordName)
       SyncDiagnostics.profileApply(
         profileId: synced.profileId, branch: "created", remoteVersion: synced.version,
         localVersion: nil, remoteSchema: synced.profileSchemaVersion, localSchema: nil,

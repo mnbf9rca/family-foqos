@@ -559,12 +559,14 @@ final class SyncEngineControllerTests: XCTestCase {
     try? context.save()
     store.engineState = Data([0x01])
     store.setTombstone(recordName: id.uuidString, changeTag: "tag-1")
+    store.setDeleteWatermark(recordName: id.uuidString, value: 1)
 
     let controller = makeController()
     controller.start()
     await controller.startupTask?.value
 
     XCTAssertNil(store.deleteTombstones[id.uuidString], "entity present ⇒ abort, clear tombstone")
+    XCTAssertNil(store.deleteWatermark(for: id.uuidString), "entity present ⇒ abort, clear watermark")
     XCTAssertTrue(pendingDeleteNames().isEmpty, "no delete enqueued")
   }
 

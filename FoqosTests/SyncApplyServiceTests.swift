@@ -106,6 +106,40 @@ final class SyncApplyServiceTests: XCTestCase {
     XCTAssertNotNil(store.systemFields(for: id.uuidString), "systemFields stored after durable apply")
   }
 
+  func testGivenConfirmedProfileDelete_WhenStaleEchoFetched_ThenProfileNotRecreated() throws {
+    let now = Date()
+    let id = UUID()
+    store.setDeleteWatermark(recordName: id.uuidString, value: 3)
+    let record = makeProfileRecord(
+      id: id, name: "Stale", version: 3, originDeviceId: "device-B", now: now)
+
+    let outcome = makeService().applyFetchedModification(
+      record, isPendingDeleteOrTombstoned: noPendingDelete)
+
+    XCTAssertEqual(outcome, .skippedStaleDelete)
+    XCTAssertNil(
+      try BlockedProfiles.findProfile(byID: id, in: context),
+      "#315: a stale <=-version echo must not recreate the deleted profile")
+    XCTAssertEqual(store.deleteWatermark(for: id.uuidString), 3)
+  }
+
+  func testGivenConfirmedProfileDelete_WhenHigherVersionRecreationFetched_ThenProfileCreated() throws {
+    let now = Date()
+    let id = UUID()
+    store.setDeleteWatermark(recordName: id.uuidString, value: 3)
+    let record = makeProfileRecord(
+      id: id, name: "Recreated", version: 4, originDeviceId: "device-B", now: now)
+
+    let outcome = makeService().applyFetchedModification(
+      record, isPendingDeleteOrTombstoned: noPendingDelete)
+
+    XCTAssertEqual(outcome, .applied)
+    XCTAssertEqual(try BlockedProfiles.findProfile(byID: id, in: context)?.name, "Recreated")
+    XCTAssertNil(
+      store.deleteWatermark(for: id.uuidString),
+      "higher-version recreation supersedes the delete watermark")
+  }
+
   // MARK: - S-18 / I9
 
   func testGivenSchemaVersions_WhenProfileModificationApplied_ThenI9GatePreserved() throws {
