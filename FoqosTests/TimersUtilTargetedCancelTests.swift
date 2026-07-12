@@ -3,6 +3,16 @@ import XCTest
 @testable import FamilyFoqos
 
 final class TimersUtilTargetedCancelTests: XCTestCase {
+  override func setUp() {
+    UserDefaults.standard.removeObject(forKey: TimersUtil.ownedReminderIdentifiersUserDefaultsKey)
+    super.setUp()
+  }
+
+  override func tearDown() {
+    UserDefaults.standard.removeObject(forKey: TimersUtil.ownedReminderIdentifiersUserDefaultsKey)
+    super.tearDown()
+  }
+
   func testGivenReminderIdentifiers_WhenClassifying_ThenOnlySessionAndBreakAreOwned() {
     let profileId = UUID()
 
@@ -49,5 +59,44 @@ final class TimersUtilTargetedCancelTests: XCTestCase {
     timers.cancelAllNotifications()
 
     XCTAssertTrue(timers.ownedReminderIdentifiersForTesting.isEmpty)
+  }
+
+  func testGivenOwnedReminderScheduled_WhenTimersUtilIsRecreated_ThenOwnershipIsDurable() {
+    let identifier = TimersUtil.breakReminderIdentifier(for: UUID())
+    let firstTimers = TimersUtil()
+
+    _ = firstTimers.scheduleNotification(
+      title: "Break",
+      message: "Message",
+      seconds: 60,
+      identifier: identifier)
+
+    let recreatedTimers = TimersUtil()
+
+    XCTAssertEqual(recreatedTimers.ownedReminderIdentifiersForTesting, [identifier])
+
+    recreatedTimers.cancelAllNotifications()
+
+    XCTAssertTrue(firstTimers.ownedReminderIdentifiersForTesting.isEmpty)
+  }
+
+  func testGivenOwnedReminderScheduleGeneration_WhenCancelled_ThenGenerationIsInvalidated() {
+    let timers = TimersUtil()
+    let identifier = TimersUtil.sessionReminderIdentifier(for: UUID())
+
+    _ = timers.scheduleNotification(
+      title: "Session",
+      message: "Message",
+      seconds: 60,
+      identifier: identifier)
+    let generation = try! XCTUnwrap(timers.ownedReminderScheduleGenerationForTesting(identifier))
+
+    XCTAssertTrue(
+      timers.isOwnedReminderScheduleCurrentForTesting(identifier, generation: generation))
+
+    timers.cancelAllNotifications()
+
+    XCTAssertFalse(
+      timers.isOwnedReminderScheduleCurrentForTesting(identifier, generation: generation))
   }
 }

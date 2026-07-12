@@ -64,6 +64,7 @@ final class TimersUtil: TimersUtilScheduling, @unchecked Sendable {  // SAFETY: 
   static let backgroundProcessingTaskIdentifier =
     "com.cynexia.family-foqos.backgroundprocessing"
   static let backgroundTaskUserDefaultsKey = "family_foqos_background_tasks"
+  static let ownedReminderIdentifiersUserDefaultsKey = "family_foqos_owned_reminder_identifiers"
 
   /// Pre-activation reminder notification identifier prefix
   static let preActivationReminderPrefix = "pre-activation-reminder-"
@@ -85,13 +86,57 @@ final class TimersUtil: TimersUtilScheduling, @unchecked Sendable {  // SAFETY: 
   }
 
   private let ownedReminderIdentifiersLock = NSLock()
-  private var ownedReminderIdentifiers: Set<String> = []
+  private var ownedReminderScheduleGenerations: [String: UInt] = [:]
 
-  // Internal for focused tests; ownership is recorded before authorization or add are asynchronous.
+  // Internal for focused tests; ownership must survive utility recreation.
   var ownedReminderIdentifiersForTesting: Set<String> {
     ownedReminderIdentifiersLock.lock()
     defer { ownedReminderIdentifiersLock.unlock() }
     return ownedReminderIdentifiers
+  }
+
+  // Internal for focused tests; cancellation must invalidate in-flight owned schedules.
+  func ownedReminderScheduleGenerationForTesting(_ identifier: String) -> UInt? {
+    ownedReminderIdentifiersLock.lock()
+    defer { ownedReminderIdentifiersLock.unlock() }
+    return ownedReminderScheduleGenerations[identifier]
+  }
+
+  // Internal for focused tests; mirrors the authorization and add callback validity check.
+  func isOwnedReminderScheduleCurrentForTesting(_ identifier: String, generation: UInt) -> Bool {
+    ownedReminderIdentifiersLock.lock()
+    defer { ownedReminderIdentifiersLock.unlock() }
+    return isOwnedReminderScheduleCurrent(identifier, generation: generation)
+  }
+
+  private var ownedReminderIdentifiers: Set<String> {
+    get {
+      Set(
+        UserDefaults.standard.stringArray(forKey: Self.ownedReminderIdentifiersUserDefaultsKey)
+          ?? [])
+    }
+    set {
+      UserDefaults.standard.set(
+        Array(newValue), forKey: Self.ownedReminderIdentifiersUserDefaultsKey)
+    }
+  }
+
+  private func beginOwnedReminderSchedule(_ identifier: String) -> UInt {
+    ownedReminderIdentifiersLock.lock()
+    defer { ownedReminderIdentifiersLock.unlock() }
+
+    var identifiers = ownedReminderIdentifiers
+    identifiers.insert(identifier)
+    ownedReminderIdentifiers = identifiers
+
+    let generation = (ownedReminderScheduleGenerations[identifier] ?? 0) &+ 1
+    ownedReminderScheduleGenerations[identifier] = generation
+    return generation
+  }
+
+  private func isOwnedReminderScheduleCurrent(_ identifier: String, generation: UInt) -> Bool {
+    ownedReminderIdentifiers.contains(identifier)
+      && ownedReminderScheduleGenerations[identifier] == generation
   }
 
   /// Thread identifier for grouping pre-activation reminders per profile
@@ -280,12 +325,10 @@ final class TimersUtil: TimersUtilScheduling, @unchecked Sendable {  // SAFETY: 
     completion: @escaping @Sendable (NotificationResult) -> Void = { _ in }
   ) -> String {
     let notificationId = identifier ?? UUID().uuidString
-
-    if Self.isSessionOrBreakReminder(notificationId) {
-      ownedReminderIdentifiersLock.lock()
-      ownedReminderIdentifiers.insert(notificationId)
-      ownedReminderIdentifiersLock.unlock()
-    }
+    let ownedReminderScheduleGeneration =
+      Self.isSessionOrBreakReminder(notificationId)
+      ? beginOwnedReminderSchedule(notificationId)
+      : nil
 
     // Request authorization before scheduling
     requestNotificationAuthorization { [weak self] result in
@@ -313,7 +356,41 @@ final class TimersUtil: TimersUtilScheduling, @unchecked Sendable {  // SAFETY: 
           trigger: trigger
         )
 
-        UNUserNotificationCenter.current().add(request) { [weak self] error in
+        let center = UNUserNotificationCenter.current()
+        if let ownedReminderScheduleGeneration {
+          self?.ownedReminderIdentifiersLock.lock()
+          guard
+            self?.isOwnedReminderScheduleCurrent(
+              notificationId, generation: ownedReminderScheduleGeneration) == true
+          else {
+            self?.ownedReminderIdentifiersLock.unlock()
+            return
+          }
+          center.add(request) { [weak self] error in
+            if let error = error {
+              Log.info(
+                "Error scheduling notification: \(error.localizedDescription)", category: .timer)
+              completion(.failure(error.localizedDescription))
+            } else {
+              guard
+                self?.isOwnedReminderScheduleCurrentForCallback(
+                  notificationId, generation: ownedReminderScheduleGeneration) == true
+              else {
+                return
+              }
+              self?.scheduleBackgroundTask(
+                taskId: UUID().uuidString,
+                executionTime: Date().addingTimeInterval(seconds),
+                notificationId: notificationId
+              )
+              completion(.success)
+            }
+          }
+          self?.ownedReminderIdentifiersLock.unlock()
+          return
+        }
+
+        center.add(request) { [weak self] error in
           if let error = error {
             Log.info(
               "Error scheduling notification: \(error.localizedDescription)", category: .timer)
@@ -347,7 +424,11 @@ final class TimersUtil: TimersUtilScheduling, @unchecked Sendable {  // SAFETY: 
   func cancelAllNotifications() {
     ownedReminderIdentifiersLock.lock()
     let identifiers = Array(ownedReminderIdentifiers)
-    ownedReminderIdentifiers.removeAll()
+    ownedReminderIdentifiers = []
+    for identifier in identifiers {
+      ownedReminderScheduleGenerations[identifier] =
+        (ownedReminderScheduleGenerations[identifier] ?? 0) &+ 1
+    }
     ownedReminderIdentifiersLock.unlock()
 
     let center = UNUserNotificationCenter.current()
@@ -363,6 +444,15 @@ final class TimersUtil: TimersUtilScheduling, @unchecked Sendable {  // SAFETY: 
         center.removeDeliveredNotifications(withIdentifiers: preActivationIds)
       }
     }
+  }
+
+  private func isOwnedReminderScheduleCurrentForCallback(
+    _ identifier: String,
+    generation: UInt
+  ) -> Bool {
+    ownedReminderIdentifiersLock.lock()
+    defer { ownedReminderIdentifiersLock.unlock() }
+    return isOwnedReminderScheduleCurrent(identifier, generation: generation)
   }
 
   func cancelAll() {
