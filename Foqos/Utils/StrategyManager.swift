@@ -1060,7 +1060,7 @@ class StrategyManager: ObservableObject {
 
   /// #226: only reconcile a scheduled session's startTime when the active local session
   /// belongs to the scheduled profile and the timestamps differ.
-  static func shouldReconcileScheduledStartTime(
+  nonisolated static func shouldReconcileScheduledStartTime(
     activeProfileId: UUID?,
     scheduledProfileId: UUID,
     localStartTime: Date?,
