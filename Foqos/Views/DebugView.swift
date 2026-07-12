@@ -17,6 +17,10 @@ struct DebugView: View {
     DeviceActivityCenterUtil.getDeviceActivities()
   }
 
+  private var buildInfo: AppBuildInfo {
+    AppBuildInfo()
+  }
+
   var body: some View {
     NavigationStack {
       ScrollView {
@@ -83,6 +87,12 @@ struct DebugView: View {
           }
 
           // Diagnostics section - always visible
+          DebugSection(title: "App Build") {
+            DebugRow(label: "Version", value: buildInfo.version)
+            DebugRow(label: "Build", value: buildInfo.build)
+            DebugRow(label: "Commit", value: buildInfo.commitDisplay)
+          }
+
           DebugSection(title: "Diagnostics") {
             Button {
               showingLogExport = true

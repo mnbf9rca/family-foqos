@@ -813,6 +813,32 @@ final class SyncEngineControllerTests: XCTestCase {
     await controller.fetchCycleSweepTask?.value
   }
 
+  func testGivenFetchCycle_WhenDidFetchChanges_ThenSchedulesReconciledOnceWithApplyContext()
+    async
+  {
+    store.engineState = Data([0x01])
+    var reconciledContexts: [ModelContext] = []
+    let controller = SyncEngineController(
+      modelContext: context,
+      store: store,
+      driverFactory: { [driver] _ in driver! },
+      apply: apply,
+      provider: provider,
+      sessionSync: sessionSync,
+      deviceId: deviceId,
+      scheduleReconciler: { reconciledContexts.append($0) })
+    controller.start()
+    await controller.startupTask?.value
+
+    controller.handle(.willFetchChanges)
+    controller.handle(.didFetchChanges)
+
+    XCTAssertEqual(reconciledContexts.count, 0, "reconcile waits for post-cycle retry sweep")
+    await controller.fetchCycleSweepTask?.value
+    XCTAssertEqual(reconciledContexts.count, 1)
+    XCTAssertTrue(reconciledContexts.first === context)
+  }
+
   func testGivenFailedApplyPending_WhenDidFetchChanges_ThenPostCycleSweepRetriesIt() async {
     store.engineState = Data([0x01])
     let controller = makeController()

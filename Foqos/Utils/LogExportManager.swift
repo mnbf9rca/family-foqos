@@ -64,6 +64,7 @@ final class LogExportManager {
   private func generateDeviceInfo() -> String {
     let device = UIDevice.current
     let bundle = Bundle.main
+    let buildInfo = AppBuildInfo()
 
     let info = """
       Family Foqos Log Export
@@ -71,8 +72,9 @@ final class LogExportManager {
       Generated: \(ISO8601DateFormatter().string(from: Date()))
 
       App Info:
-      - Version: \(bundle.infoDictionary?["CFBundleShortVersionString"] as? String ?? "Unknown")
-      - Build: \(bundle.infoDictionary?["CFBundleVersion"] as? String ?? "Unknown")
+      - Version: \(buildInfo.version)
+      - Build: \(buildInfo.build)
+      - Commit: \(buildInfo.commitDisplay)
       - Bundle ID: \(bundle.bundleIdentifier ?? "Unknown")
 
       Device Info:

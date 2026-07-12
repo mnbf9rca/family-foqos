@@ -29,6 +29,7 @@ final class SyncEngineController: SyncEngineDriverDelegate {
   private let sessionSync: SessionSyncFlushing
   private let deviceId: String
   private let scheduleProfileDeleteCommit: (@escaping @MainActor () -> Void) -> Void
+  private let scheduleReconciler: (ModelContext) -> Void
 
   private let zoneID = CKRecordZone.ID(
     zoneName: CloudKitConstants.syncZoneName, ownerName: CKCurrentUserDefaultName)
@@ -83,7 +84,9 @@ final class SyncEngineController: SyncEngineDriverDelegate {
     sessionSync: SessionSyncFlushing,
     deviceId: String,
     scheduleProfileDeleteCommit: @escaping (@escaping @MainActor () -> Void) -> Void =
-      BlockedProfiles.scheduleProfileDeleteCommit
+      BlockedProfiles.scheduleProfileDeleteCommit,
+    scheduleReconciler: @escaping (ModelContext) -> Void =
+      { PreActivationReminderScheduler.reconcileScheduleRegistrations(context: $0) }
   ) {
     self.modelContext = modelContext
     self.store = store
@@ -93,6 +96,7 @@ final class SyncEngineController: SyncEngineDriverDelegate {
     self.sessionSync = sessionSync
     self.deviceId = deviceId
     self.scheduleProfileDeleteCommit = scheduleProfileDeleteCommit
+    self.scheduleReconciler = scheduleReconciler
     self.apply.profileDeleteCommitObserver = { [weak self] recordName in
       guard let self else { return }
       let recordID = CKRecord.ID(recordName: recordName, zoneID: self.zoneID)
@@ -646,7 +650,13 @@ final class SyncEngineController: SyncEngineDriverDelegate {
     if state == .bootstrapping { state = .steady }  // T2
     let generation = namespaceGeneration
     fetchCycleSweepTask = Task { [weak self] in
-      await self?.retryFailedApplies(generation: generation)
+      guard let self else { return }
+      await self.retryFailedApplies(generation: generation)
+      guard generation == self.namespaceGeneration else { return }
+      // #301: a fetch cycle may have applied profiles whose schedule/trigger config changed;
+      // register their DeviceActivity schedules once, coalesced across the whole cycle (not
+      // per-record). Run after §5.6 retry applies so repaired profile schedules are included.
+      self.scheduleReconciler(self.modelContext)
     }
   }
 

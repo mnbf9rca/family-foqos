@@ -2,6 +2,11 @@ import FoqosShared
 import Foundation
 import SwiftData
 
+extension Notification.Name {
+  static let scheduleRegistrationsDidReconcile = Notification.Name(
+    "scheduleRegistrationsDidReconcile")
+}
+
 /// Schedules pre-activation reminders for all profiles with active schedules.
 /// Call this on app launch and when returning to foreground to ensure
 /// daily notifications are scheduled.
@@ -28,28 +33,38 @@ enum PreActivationReminderScheduler {
     }
   }
 
-  /// Reschedule all pre-activation reminders for profiles with active schedules.
-  /// This should be called on app launch to ensure today's reminders are set.
-  static func rescheduleAllReminders(context: ModelContext) {
+  /// #301: a profile is eligible for automatic DeviceActivity schedule registration iff it has
+  /// an active start/legacy schedule AND its apps are selected on THIS device. The
+  /// needsAppSelection gate is the semantic default: FamilyControls tokens are device-local,
+  /// so a freshly-synced profile registers only after its apps are selected on this device.
+  static func isEligibleForScheduleReconcile(_ profile: BlockedProfiles) -> Bool {
+    let hasActiveSchedule =
+      (profile.startTriggers.schedule && profile.startSchedule?.isActive == true)
+      || profile.schedule?.isActive == true
+    return hasActiveSchedule && !profile.needsAppSelection
+  }
+
+  /// #301: register DeviceActivity schedules for eligible profiles independent of whether
+  /// pre-activation reminders are enabled.
+  /// Old reminder-gated name `rescheduleAllReminders` caused #301 by hiding registration.
+  @MainActor
+  static func reconcileScheduleRegistrations(
+    context: ModelContext,
+    notificationCenter: NotificationCenter = .default,
+    register: (BlockedProfiles) -> Void = { DeviceActivityCenterUtil.scheduleTimerActivity(for: $0) }
+  ) {
     do {
       let profiles = try BlockedProfiles.fetchProfiles(in: context)
 
-      for profile in profiles {
-        let hasActiveSchedule =
-          (profile.startTriggers.schedule && profile.startSchedule?.isActive == true)
-          || profile.schedule?.isActive == true
-        guard profile.preActivationReminderEnabled, hasActiveSchedule else {
-          continue
-        }
-
-        // Reschedule via DeviceActivityCenterUtil which handles the notification
-        DeviceActivityCenterUtil.scheduleTimerActivity(for: profile)
+      for profile in profiles where isEligibleForScheduleReconcile(profile) {
+        register(profile)
       }
 
-      Log.debug("Rescheduled pre-activation reminders for all eligible profiles", category: .timer)
+      Log.debug("Reconciled DeviceActivity schedule registrations", category: .timer)
+      ScheduleRegistrationRefreshNotifier.post(notificationCenter: notificationCenter)
     } catch {
       Log.error(
-        "Failed to reschedule pre-activation reminders: \(error.localizedDescription)",
+        "Failed to reconcile schedule registrations: \(error.localizedDescription)",
         category: .timer
       )
     }

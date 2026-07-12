@@ -26,6 +26,7 @@ struct BlockedProfileCarousel: View {
   var onOneMoreMinuteTapped: (BlockedProfiles) -> Void
 
   @State private var currentProfileId: UUID?
+  @State private var scheduleOutOfSyncCards = ScheduleOutOfSyncCardState()
 
   // Constants for the carousel
   private let cardSpacing: CGFloat = 12
@@ -146,7 +147,8 @@ struct BlockedProfileCarousel: View {
                   // Built only on a valid model, inside this observation-tracked body. These
                   // tracked reads register dependencies so legitimate edits rebuild the snapshot
                   // in place. Do not hoist or memoize this call; see the `cardData` tripwire.
-                  data: profile.cardData,
+                  data: profile.cardData(
+                    scheduleIsOutOfSync: scheduleOutOfSyncCards.isOutOfSync(for: profile)),
                   isActive: profile.id == activeSessionProfileId,
                   isBreakAvailable: isBreakAvailable,
                   isBreakActive: isBreakActive,
@@ -202,6 +204,12 @@ struct BlockedProfileCarousel: View {
     }
     .onAppear {
       initialSetup()
+      refreshScheduleOutOfSyncCards()
+    }
+    .onReceive(
+      NotificationCenter.default.publisher(for: .scheduleRegistrationsDidReconcile)
+    ) { _ in
+      scheduleOutOfSyncCards.refreshAfterScheduleReconcile(profiles: validProfiles)
     }
     .onChange(of: activeSessionProfileId) { _, _ in
       initialSetup()
@@ -212,6 +220,10 @@ struct BlockedProfileCarousel: View {
     .onChange(of: startingProfileId) { _, _ in
       initialSetup()
     }
+  }
+
+  private func refreshScheduleOutOfSyncCards() {
+    scheduleOutOfSyncCards.refresh(profiles: validProfiles)
   }
 
 }
