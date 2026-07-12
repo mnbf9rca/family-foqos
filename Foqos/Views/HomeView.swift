@@ -148,7 +148,7 @@ struct HomeView: View {
         AuthorizationCallout(
           authorizationStatus: requestAuthorizer.authorizationStatus,
           onAuthorizationHandler: {
-            requestAuthorizer.requestAuthorization()
+            Task { await requestAuthorizer.requestAuthorization() }
           }
         )
         .padding(.horizontal, 16)

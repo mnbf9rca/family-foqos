@@ -11,8 +11,10 @@ class RequestAuthorizer: ObservableObject {
   @Published var authorizationError: String?
 
   private var cancellable: AnyCancellable?
+  private let authorizationCenter: AuthorizationRequesting
 
-  init() {
+  init(authorizationCenter: AuthorizationRequesting = AuthorizationCenter.shared) {
+    self.authorizationCenter = authorizationCenter
     let status = AuthorizationCenter.shared.authorizationStatus
     let approved = status == .approved
     self.isAuthorized = approved
@@ -37,36 +39,28 @@ class RequestAuthorizer: ObservableObject {
   }
 
   /// Request authorization for the current app mode
-  func requestAuthorization() {
-    requestAuthorization(for: AppModeManager.shared.currentMode)
+  @discardableResult
+  func requestAuthorization() async -> Bool {
+    await requestAuthorization(for: AppModeManager.shared.currentMode)
   }
 
   /// Request authorization for a specific app mode
   /// - Parameter mode: The app mode to request authorization for
-  func requestAuthorization(for mode: AppMode) {
-    Task {
-      do {
-        switch mode {
-        case .individual, .parent:
-          // Individual and parent modes use .individual authorization
-          // Parent still controls their own device, just creates policies for others
-          try await AuthorizationCenter.shared.requestAuthorization(for: .individual)
-          Log.info("Individual authorization successful for mode: \(mode)", category: .authorization)
+  @discardableResult
+  func requestAuthorization(for mode: AppMode) async -> Bool {
+    let member: FamilyControlsMember = mode == .child ? .child : .individual
 
-        case .child:
-          // Child mode uses .child authorization
-          // This requires parent approval via Screen Time Family Sharing
-          try await AuthorizationCenter.shared.requestAuthorization(for: .child)
-          Log.info("Child authorization successful", category: .authorization)
-        }
-
-        self.isAuthorized = true
-        self.authorizationError = nil
-      } catch {
-        Log.info("Error requesting authorization: \(error)", category: .authorization)
-        self.isAuthorized = false
-        self.authorizationError = self.describeAuthorizationError(error, for: mode)
-      }
+    do {
+      try await authorizationCenter.requestAuthorization(for: member)
+      Log.info("Authorization successful for mode: \(mode)", category: .authorization)
+      self.isAuthorized = true
+      self.authorizationError = nil
+      return true
+    } catch {
+      Log.info("Error requesting authorization: \(error)", category: .authorization)
+      self.isAuthorized = false
+      self.authorizationError = self.describeAuthorizationError(error, for: mode)
+      return false
     }
   }
 
