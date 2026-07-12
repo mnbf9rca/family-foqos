@@ -917,16 +917,15 @@ class StrategyManager: ObservableObject {
           if !endedProfile.needsMigration, let context = endedProfile.modelContext {
             do {
               try context.save()
+              Log.info(
+                "Migrated deferred profile '\(endedProfile.name)' on session end", category: .app)
+              DeviceActivityCenterUtil.scheduleTimerActivity(for: endedProfile)
+              BlockedProfiles.updateSnapshot(for: endedProfile)
             } catch {
               Log.error(
                 "Failed to save deferred profile migration: \(error.localizedDescription)",
                 category: .strategy)
-              return
             }
-            Log.info(
-              "Migrated deferred profile '\(endedProfile.name)' on session end", category: .app)
-            DeviceActivityCenterUtil.scheduleTimerActivity(for: endedProfile)
-            BlockedProfiles.updateSnapshot(for: endedProfile)
           }
         }
 
