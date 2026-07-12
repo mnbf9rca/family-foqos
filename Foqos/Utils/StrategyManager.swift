@@ -27,7 +27,7 @@ class StrategyManager: ObservableObject {
 
   @Published var errorMessage: String?
 
-  private let timersUtil = TimersUtil()
+  private let timersUtil: TimersUtilScheduling
   private let appBlocker: RestrictionApplying
   private let backstopRegistrar: BackstopRegistering
 
@@ -39,7 +39,8 @@ class StrategyManager: ObservableObject {
     sessionSyncService: SessionSyncService = .shared,
     locationManager: LocationManager = .shared,
     appBlocker: RestrictionApplying = AppBlockerUtil(),
-    backstopRegistrar: BackstopRegistering = DeviceActivityBackstopRegistrar()
+    backstopRegistrar: BackstopRegistering = DeviceActivityBackstopRegistrar(),
+    timersUtil: TimersUtilScheduling = TimersUtil()
   ) {
     self.geofenceEvaluator = geofenceEvaluator
     self.emergencyUnblockManager = emergencyUnblockManager
@@ -49,6 +50,7 @@ class StrategyManager: ObservableObject {
     self.locationManager = locationManager
     self.appBlocker = appBlocker
     self.backstopRegistrar = backstopRegistrar
+    self.timersUtil = timersUtil
   }
 
   // Track if we're currently processing a remote session change
@@ -740,10 +742,8 @@ class StrategyManager: ObservableObject {
     ) { [weak self] ctx, sess in
       guard let self else { return }
       let manualStrategy = self.getStrategy(id: ManualBlockingStrategy.id)
+      // `.ended` already handles the session activity, reminder, and timer cleanup.
       _ = manualStrategy.stopBlocking(context: ctx, session: sess)
-      self.liveActivityManager.endSessionActivity()
-      self.scheduleReminder(profile: sess.blockedProfile)
-      self.stopTimer()
     }
   }
 
@@ -917,14 +917,15 @@ class StrategyManager: ObservableObject {
           if !endedProfile.needsMigration, let context = endedProfile.modelContext {
             do {
               try context.save()
+              Log.info(
+                "Migrated deferred profile '\(endedProfile.name)' on session end", category: .app)
+              DeviceActivityCenterUtil.scheduleTimerActivity(for: endedProfile)
+              BlockedProfiles.updateSnapshot(for: endedProfile)
             } catch {
               Log.error(
                 "Failed to save deferred profile migration: \(error.localizedDescription)",
                 category: .strategy)
             }
-            Log.info(
-              "Migrated deferred profile '\(endedProfile.name)' on session end", category: .app)
-            DeviceActivityCenterUtil.scheduleTimerActivity(for: endedProfile)
           }
         }
 
@@ -1058,6 +1059,19 @@ class StrategyManager: ObservableObject {
       .mostRecentActiveSession(in: context)
   }
 
+  /// #226: only reconcile a scheduled session's startTime when the active local session
+  /// belongs to the scheduled profile and the timestamps differ.
+  nonisolated static func shouldReconcileScheduledStartTime(
+    activeProfileId: UUID?,
+    scheduledProfileId: UUID,
+    localStartTime: Date?,
+    remoteStartTime: Date?
+  ) -> Bool {
+    guard let activeProfileId, activeProfileId == scheduledProfileId else { return false }
+    guard let remoteStartTime, let localStartTime else { return false }
+    return localStartTime != remoteStartTime
+  }
+
   private func syncScheduleSessions(context: ModelContext) {
     var hadDanglingGrant = false
 
@@ -1090,10 +1104,14 @@ class StrategyManager: ObservableObject {
               "Scheduled session joined existing from \(existing.sessionOriginDevice ?? "unknown")",
               category: .strategy
             )
-            // Reconcile local startTime to match authoritative remote startTime
-            if let remoteStartTime = existing.startTime,
-              let currentSession = self.activeSession,
-              currentSession.startTime != remoteStartTime
+            // #226: a late CAS result for another profile must not overwrite its startTime.
+            if let currentSession = self.activeSession,
+              Self.shouldReconcileScheduledStartTime(
+                activeProfileId: currentSession.blockedProfile.id,
+                scheduledProfileId: activeScheduledSession.blockedProfileId,
+                localStartTime: currentSession.startTime,
+                remoteStartTime: existing.startTime),
+              let remoteStartTime = existing.startTime
             {
               currentSession.startTime = remoteStartTime
               do {
@@ -1381,7 +1399,8 @@ class StrategyManager: ObservableObject {
       .scheduleNotification(
         title: profileName + " time!",
         message: message,
-        seconds: TimeInterval(reminderTimeInSeconds)
+        seconds: TimeInterval(reminderTimeInSeconds),
+        identifier: TimersUtil.sessionReminderIdentifier(for: profile.id)
       )
   }
 
@@ -1395,7 +1414,8 @@ class StrategyManager: ObservableObject {
     timersUtil.scheduleNotification(
       title: "Break almost over!",
       message: "Hope you enjoyed your break, starting " + profileName + " in 1 minute.",
-      seconds: TimeInterval(breakNotificationTimeInSeconds)
+      seconds: TimeInterval(breakNotificationTimeInSeconds),
+      identifier: TimersUtil.breakReminderIdentifier(for: profile.id)
     )
   }
 

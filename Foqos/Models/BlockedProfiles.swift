@@ -494,10 +494,33 @@ class BlockedProfiles {
     currentNeedsAppSelection && FamilyActivityUtil.countSelectedActivities(selection) == 0
   }
 
+  struct DeleteCleanup {
+    let removeStartSchedule: (BlockedProfiles) -> Void
+    let removeStopSchedule: (BlockedProfiles) -> Void
+    let cancelPreActivationReminders: (UUID) -> Void
+    let removeBreakBackstop: (UUID) -> Void
+    let removeOneMoreMinuteBackstop: (UUID) -> Void
+  }
+
+  private static func defaultDeleteCleanup() -> DeleteCleanup {
+    DeleteCleanup(
+      removeStartSchedule: { DeviceActivityCenterUtil.removeScheduleTimerActivities(for: $0) },
+      removeStopSchedule: { DeviceActivityCenterUtil.removeStopScheduleActivity(for: $0) },
+      cancelPreActivationReminders: { TimersUtil.cancelAllPreActivationReminders(for: $0) },
+      removeBreakBackstop: { DeviceActivityCenterUtil.removeBreakBackstop(profileId: $0) },
+      removeOneMoreMinuteBackstop: {
+        DeviceActivityCenterUtil.removeOneMoreMinuteBackstop(profileId: $0)
+      }
+    )
+  }
+
   static func deleteProfile(
     _ profile: BlockedProfiles,
-    in context: ModelContext
+    in context: ModelContext,
+    cleanup: DeleteCleanup? = nil
   ) throws {
+    let cleanup = cleanup ?? defaultDeleteCleanup()
+
     // First end any active sessions
     for session in profile.sessions {
       if session.endTime == nil {
@@ -513,8 +536,12 @@ class BlockedProfiles {
     // Delete the snapshot
     deleteSnapshot(for: profile)
 
-    // Remove the schedule restrictions
-    DeviceActivityCenterUtil.removeScheduleTimerActivities(for: profile)
+    // Remove all scheduled lifecycle work owned by this profile.
+    cleanup.removeStartSchedule(profile)
+    cleanup.removeStopSchedule(profile)
+    cleanup.cancelPreActivationReminders(profile.id)
+    cleanup.removeBreakBackstop(profile.id)
+    cleanup.removeOneMoreMinuteBackstop(profile.id)
 
     // Then delete the profile
     context.delete(profile)
