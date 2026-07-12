@@ -129,21 +129,26 @@ class HeartbeatManager: ObservableObject {
   }
 
   private func scheduleNotification(for device: MonitoredDevice) {
-    cancelNotification(for: device)
-
     let notificationId = "heartbeat-\(device.id)"
     let content = UNMutableNotificationContent()
     content.sound = .default
 
     let triggerDate: Date
+    let now = Date()
+    var markAuthRevokedNotified = false
 
     if device.isAuthRevoked {
-      // Auth revoked — fire near-immediately
+      guard device.shouldScheduleAuthRevokedAlert() else { return }
+      cancelNotification(for: device)
+
       content.title = "Screen Time Permissions Lost"
       content.body =
         "\(device.deviceName) has lost Screen Time permissions. Tap to review."
-      triggerDate = Date().addingTimeInterval(1)
+      triggerDate = now.addingTimeInterval(1)
+      markAuthRevokedNotified = true
     } else {
+      cancelNotification(for: device)
+
       // Normal staleness countdown
       content.title = "Device Check-In"
       content.body =
@@ -152,24 +157,24 @@ class HeartbeatManager: ObservableObject {
     }
 
     // Don't schedule if trigger is in the past (device already stale — banner handles it)
-    guard triggerDate > Date() else { return }
+    guard triggerDate > now else { return }
 
     let interval = triggerDate.timeIntervalSinceNow
     let trigger = UNTimeIntervalNotificationTrigger(timeInterval: max(interval, 1), repeats: false)
     let request = UNNotificationRequest(identifier: notificationId, content: content, trigger: trigger)
 
+    if let index = monitoredDevices.firstIndex(where: { $0.id == device.id }) {
+      monitoredDevices[index].notificationIdentifier = notificationId
+      if markAuthRevokedNotified {
+        monitoredDevices[index].authRevokedNotifiedAt = now
+      }
+      saveDevices()
+    }
+
     UNUserNotificationCenter.current().add(request) { error in
       if let error {
         Log.warning("Failed to schedule heartbeat notification: \(error)", category: .cloudKit)
       }
-    }
-
-    // Update device with notification ID
-    if let index = monitoredDevices.firstIndex(where: {
-      $0.id == device.id
-    }) {
-      monitoredDevices[index].notificationIdentifier = notificationId
-      saveDevices()
     }
   }
 
@@ -188,6 +193,9 @@ class HeartbeatManager: ObservableObject {
     }) {
       monitoredDevices[index].lastSeenAt = heartbeat.lastHeartbeatAt
       monitoredDevices[index].deviceName = heartbeat.deviceName
+      monitoredDevices[index].authRevokedNotifiedAt = MonitoredDevice.carriedAuthRevokedNotifiedAt(
+        previous: monitoredDevices[index].authRevokedNotifiedAt,
+        newStatus: heartbeat.authorizationStatus)
       monitoredDevices[index].authorizationStatus = heartbeat.authorizationStatus
     } else {
       let device = MonitoredDevice(
