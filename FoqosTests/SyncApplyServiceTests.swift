@@ -585,6 +585,39 @@ final class SyncApplyServiceTests: XCTestCase {
     XCTAssertNil(try SavedLocation.find(byID: id, in: context))
   }
 
+  func testGivenFetchedLocationDelete_WhenSameTimestampEchoFetched_ThenLocationNotRecreated()
+    throws
+  {
+    let now = Date()
+    let id = UUID()
+    let location = SavedLocation(
+      id: id, name: "Home", latitude: 1, longitude: 2, defaultRadiusMeters: 100,
+      isLocked: false, updatedAt: now, syncVersion: 1)
+    context.insert(location)
+    try context.save()
+
+    let service = makeService()
+    XCTAssertEqual(
+      service.applyFetchedDeletion(
+        recordID: CKRecord.ID(recordName: id.uuidString, zoneID: zoneID),
+        recordType: SyncedLocation.recordType),
+      .deleted)
+
+    let watermark = try XCTUnwrap(store.deleteWatermark(for: id.uuidString))
+    XCTAssertEqual(watermark, now.timeIntervalSinceReferenceDate, accuracy: 0.000_001)
+
+    let echo = SyncedLocation(
+      locationId: id, name: "Echo", latitude: 1, longitude: 2, defaultRadiusMeters: 100,
+      isLocked: false, lastModified: now)
+    let outcome = service.applyFetchedModification(
+      echo.toCKRecord(in: zoneID), isPendingDeleteOrTombstoned: noPendingDelete)
+
+    XCTAssertEqual(outcome, .skippedStaleDelete)
+    XCTAssertNil(
+      try SavedLocation.find(byID: id, in: context),
+      "#329: fetched-delete location watermarks must block same-timestamp echoes")
+  }
+
   func testGivenReferencingProfile_WhenLocationDeletionApplied_ThenRepairedAndReenqueued()
     throws
   {
@@ -723,6 +756,66 @@ final class SyncApplyServiceTests: XCTestCase {
 
     XCTAssertNil(try BlockedProfiles.findProfile(byID: id, in: ModelContext(container)))
     XCTAssertNil(store.systemFields(for: id.uuidString))
+  }
+
+  func testGivenFetchedProfileDeleteAtV3_WhenSameVersionRepushFetched_ThenProfileNotRecreated()
+    throws
+  {
+    let now = Date()
+    let id = UUID()
+    let profile = BlockedProfiles(id: id, name: "RemoteDelete", syncVersion: 3)
+    context.insert(profile)
+    try context.save()
+
+    let scheduler = ManualProfileDeleteCommitScheduler()
+    let service = makeService(scheduleProfileDeleteCommit: scheduler.schedule)
+
+    XCTAssertEqual(
+      service.applyFetchedDeletion(
+        recordID: CKRecord.ID(recordName: id.uuidString, zoneID: zoneID),
+        recordType: SyncedProfile.recordType),
+      .deleted)
+    scheduler.runNext()
+
+    XCTAssertEqual(store.deleteWatermark(for: id.uuidString), 3)
+    XCTAssertNil(try BlockedProfiles.findProfile(byID: id, in: context))
+
+    let repush = makeProfileRecord(
+      id: id, name: "V1 Repush", version: 3, originDeviceId: "device-v1", now: now)
+    let outcome = service.applyFetchedModification(repush, isPendingDeleteOrTombstoned: noPendingDelete)
+
+    XCTAssertEqual(outcome, .skippedStaleDelete)
+    XCTAssertNil(
+      try BlockedProfiles.findProfile(byID: id, in: context),
+      "#329: fetched-delete devices must not materialize same-version V1 re-pushes")
+  }
+
+  func testGivenFetchedProfileDeleteAtV3_WhenHigherVersionRecreationFetched_ThenProfileCreated()
+    throws
+  {
+    let now = Date()
+    let id = UUID()
+    let profile = BlockedProfiles(id: id, name: "RemoteDelete", syncVersion: 3)
+    context.insert(profile)
+    try context.save()
+
+    let scheduler = ManualProfileDeleteCommitScheduler()
+    let service = makeService(scheduleProfileDeleteCommit: scheduler.schedule)
+
+    XCTAssertEqual(
+      service.applyFetchedDeletion(
+        recordID: CKRecord.ID(recordName: id.uuidString, zoneID: zoneID),
+        recordType: SyncedProfile.recordType),
+      .deleted)
+    scheduler.runNext()
+
+    let recreation = makeProfileRecord(
+      id: id, name: "Recreated", version: 4, originDeviceId: "device-B", now: now)
+    let outcome = service.applyFetchedModification(recreation, isPendingDeleteOrTombstoned: noPendingDelete)
+
+    XCTAssertEqual(outcome, .applied)
+    XCTAssertEqual(try BlockedProfiles.findProfile(byID: id, in: context)?.name, "Recreated")
+    XCTAssertNil(store.deleteWatermark(for: id.uuidString))
   }
 
   func testGivenRemoteProfileDeletionSaveFails_WhenDeferredCommitRuns_ThenCommitObserverNotCalled()

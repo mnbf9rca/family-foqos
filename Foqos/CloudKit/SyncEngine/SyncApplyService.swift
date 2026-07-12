@@ -127,6 +127,7 @@ final class SyncApplyService {
           profileId: id, existed: false, stoppedActiveSession: false, outcome: .notPresent)
         return .notPresent
       }
+      store.setDeleteWatermark(recordName: recordName, value: Double(profile.syncVersion))
       // §5.2 / #203: if the deleted profile owns the active session, stop it first so
       // restrictions are deactivated and the manager does not retain a deleted model.
       let stoppedActiveSession = sessionController.activeSession?.blockedProfile.id == id
@@ -164,6 +165,7 @@ final class SyncApplyService {
           profileDeleteCommitObserver?(recordName)
         } catch {
           modelContext.rollback()
+          store.clearDeleteWatermark(recordName: recordName)
           store.addFailedApply(
             FailedApply(
               recordName: recordName, recordType: SyncedProfile.recordType, op: .delete))
@@ -178,6 +180,7 @@ final class SyncApplyService {
       return .deleted
     } catch {
       modelContext.rollback()
+      store.clearDeleteWatermark(recordName: recordName)
       store.addFailedApply(
         FailedApply(
           recordName: recordName, recordType: SyncedProfile.recordType, op: .delete))
@@ -193,6 +196,10 @@ final class SyncApplyService {
     do {
       let location = try SavedLocation.find(byID: id, in: modelContext)
       if let location {
+        store.setDeleteWatermark(
+          recordName: recordName,
+          value: location.updatedAt.timeIntervalSinceReferenceDate
+        )
         try SavedLocation.delete(location, in: modelContext)  // saves internally
       }
 
@@ -216,6 +223,7 @@ final class SyncApplyService {
       return outcome
     } catch {
       modelContext.rollback()
+      store.clearDeleteWatermark(recordName: recordName)
       store.addFailedApply(
         FailedApply(
           recordName: recordName, recordType: SyncedLocation.recordType, op: .delete))
