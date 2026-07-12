@@ -23,7 +23,43 @@ enum NotificationResult: Sendable {
   }
 }
 
-final class TimersUtil: @unchecked Sendable {  // SAFETY: Mutable state (backgroundTasks) uses thread-safe UserDefaults
+protocol TimersUtilScheduling: AnyObject {
+  @discardableResult
+  func scheduleNotification(
+    title: String,
+    message: String,
+    seconds: TimeInterval,
+    identifier: String?,
+    threadIdentifier: String?,
+    completion: @escaping @Sendable (NotificationResult) -> Void
+  ) -> String
+
+  func cancelAll()
+  func cancelAllNotifications()
+  func cancelAllBackgroundTasks()
+}
+
+extension TimersUtilScheduling {
+  @discardableResult
+  func scheduleNotification(
+    title: String,
+    message: String,
+    seconds: TimeInterval,
+    identifier: String? = nil,
+    threadIdentifier: String? = nil,
+    completion: @escaping @Sendable (NotificationResult) -> Void = { _ in }
+  ) -> String {
+    scheduleNotification(
+      title: title,
+      message: message,
+      seconds: seconds,
+      identifier: identifier,
+      threadIdentifier: threadIdentifier,
+      completion: completion)
+  }
+}
+
+final class TimersUtil: TimersUtilScheduling, @unchecked Sendable {  // SAFETY: Mutable state (backgroundTasks) uses thread-safe UserDefaults
   /// Constants for background task identifiers
   static let backgroundProcessingTaskIdentifier =
     "com.cynexia.family-foqos.backgroundprocessing"
@@ -31,6 +67,32 @@ final class TimersUtil: @unchecked Sendable {  // SAFETY: Mutable state (backgro
 
   /// Pre-activation reminder notification identifier prefix
   static let preActivationReminderPrefix = "pre-activation-reminder-"
+
+  /// Stable identifiers for session and break reminders, which are owned by session lifecycle.
+  static let sessionReminderPrefix = "session-reminder-"
+  static let breakReminderPrefix = "break-reminder-"
+
+  static func sessionReminderIdentifier(for profileId: UUID) -> String {
+    return "\(sessionReminderPrefix)\(profileId.uuidString)"
+  }
+
+  static func breakReminderIdentifier(for profileId: UUID) -> String {
+    return "\(breakReminderPrefix)\(profileId.uuidString)"
+  }
+
+  static func isSessionOrBreakReminder(_ identifier: String) -> Bool {
+    return identifier.hasPrefix(sessionReminderPrefix) || identifier.hasPrefix(breakReminderPrefix)
+  }
+
+  private let ownedReminderIdentifiersLock = NSLock()
+  private var ownedReminderIdentifiers: Set<String> = []
+
+  // Internal for focused tests; ownership is recorded before authorization or add are asynchronous.
+  var ownedReminderIdentifiersForTesting: Set<String> {
+    ownedReminderIdentifiersLock.lock()
+    defer { ownedReminderIdentifiersLock.unlock() }
+    return ownedReminderIdentifiers
+  }
 
   /// Thread identifier for grouping pre-activation reminders per profile
   static func preActivationReminderThreadIdentifier(for profileId: UUID) -> String {
@@ -219,6 +281,12 @@ final class TimersUtil: @unchecked Sendable {  // SAFETY: Mutable state (backgro
   ) -> String {
     let notificationId = identifier ?? UUID().uuidString
 
+    if Self.isSessionOrBreakReminder(notificationId) {
+      ownedReminderIdentifiersLock.lock()
+      ownedReminderIdentifiers.insert(notificationId)
+      ownedReminderIdentifiersLock.unlock()
+    }
+
     // Request authorization before scheduling
     requestNotificationAuthorization { [weak self] result in
       switch result {
@@ -277,18 +345,22 @@ final class TimersUtil: @unchecked Sendable {  // SAFETY: Mutable state (backgro
   }
 
   func cancelAllNotifications() {
-    UNUserNotificationCenter.current()
-      .removeAllPendingNotificationRequests()
-    // Only remove delivered pre-activation reminders, not other notification types
-    // (e.g., geofence-blocked, break/session reminders)
-    UNUserNotificationCenter.current().getDeliveredNotifications { notifications in
-      let preActivationIds =
-        notifications
-        .map(\.request.identifier)
-        .filter { $0.hasPrefix(Self.preActivationReminderPrefix) }
+    ownedReminderIdentifiersLock.lock()
+    let identifiers = Array(ownedReminderIdentifiers)
+    ownedReminderIdentifiers.removeAll()
+    ownedReminderIdentifiersLock.unlock()
+
+    let center = UNUserNotificationCenter.current()
+    center.removePendingNotificationRequests(withIdentifiers: identifiers)
+    center.removeDeliveredNotifications(withIdentifiers: identifiers)
+
+    // Delivered pre-activation cleanup remains async and does not affect pending ownership.
+    center.getDeliveredNotifications { notifications in
+      let preActivationIds = notifications.map(\.request.identifier).filter {
+        $0.hasPrefix(Self.preActivationReminderPrefix)
+      }
       if !preActivationIds.isEmpty {
-        UNUserNotificationCenter.current()
-          .removeDeliveredNotifications(withIdentifiers: preActivationIds)
+        center.removeDeliveredNotifications(withIdentifiers: preActivationIds)
       }
     }
   }
