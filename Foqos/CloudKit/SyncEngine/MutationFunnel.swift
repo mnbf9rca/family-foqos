@@ -130,6 +130,7 @@ final class MutationFunnel {
       guard let profile = try BlockedProfiles.findProfile(byID: profileId, in: modelContext) else {
         throw MutationFunnelError.entityNotFound
       }
+      store.setDeleteWatermark(recordName: recordName, value: Double(profile.syncVersion))
       try BlockedProfiles.deleteProfile(profile, in: modelContext)
       let deleteZoneID = zoneID
       let saveOverride = saveOverride
@@ -149,6 +150,7 @@ final class MutationFunnel {
           }
           guard try BlockedProfiles.findProfile(byID: profileId, in: modelContext) == nil else {
             store.clearTombstone(recordName: recordName)
+            store.clearDeleteWatermark(recordName: recordName)
             Log.error(
               "Deferred profile delete save completed but \(recordName) is still present",
               category: .sync
@@ -161,6 +163,7 @@ final class MutationFunnel {
           onPendingDeleteEnqueued()
         } catch {
           store.clearTombstone(recordName: recordName)
+          store.clearDeleteWatermark(recordName: recordName)
           modelContext.rollback()
           Log.error(
             "Deferred profile delete save failed for \(recordName): \(error.localizedDescription)",
@@ -171,6 +174,7 @@ final class MutationFunnel {
       return
     } catch {
       store.clearTombstone(recordName: recordName)
+      store.clearDeleteWatermark(recordName: recordName)
       modelContext.rollback()
       throw error
     }
@@ -187,10 +191,15 @@ final class MutationFunnel {
       guard let location = try SavedLocation.find(byID: locationId, in: modelContext) else {
         throw MutationFunnelError.entityNotFound
       }
+      store.setDeleteWatermark(
+        recordName: recordName,
+        value: location.updatedAt.timeIntervalSinceReferenceDate
+      )
       repaired = try BlockedProfiles.removeLocationReference(locationId, in: modelContext)
       try SavedLocation.delete(location, in: modelContext)
     } catch {
       store.clearTombstone(recordName: recordName)
+      store.clearDeleteWatermark(recordName: recordName)
       modelContext.rollback()
       throw error
     }
