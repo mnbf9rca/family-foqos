@@ -24,7 +24,7 @@ enum IntentError: Error, CustomLocalizedStringResourceConvertible {
     case .durationOutOfRange:
       "Duration must be between 15 minutes and 23 hours 59 minutes."
     case .needsAppSelection(let name):
-      "\(name) needs app selection on this device before it can start."
+      "Profile '\(name)' needs app selection on this device before it can start."
     case .noActiveSession(let name):
       "\(name) is not currently active."
     case .backgroundStopsDisabled(let name):

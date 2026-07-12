@@ -302,6 +302,59 @@ final class StrategyManagerStartTests: XCTestCase {
     XCTAssertFalse(geofenceEvaluator.isCheckingGeofence)
   }
 
+  func testGivenRecoveredStaleGeofenceCheck_WhenOldGenerationCompletes_ThenCurrentStateIsNotMutated()
+    throws
+  {
+    let now = Date()
+    let geofenceEvaluator = GeofenceEvaluator()
+    let staleGeneration = geofenceEvaluator.beginGeofenceCheck(
+      now: now.addingTimeInterval(-120))
+    XCTAssertTrue(geofenceEvaluator.recoverStaleGeofenceCheck(now: now))
+    let currentGeneration = geofenceEvaluator.beginGeofenceCheck(now: now)
+
+    let didCompleteStaleGeneration = geofenceEvaluator.completeGeofenceCheck(
+      expectedGeneration: staleGeneration
+    ) {
+      geofenceEvaluator.errorMessage = "stale completion mutated state"
+      geofenceEvaluator.geofenceWarningMessage = "stale warning"
+      geofenceEvaluator.showGeofenceStartWarning = true
+    }
+
+    XCTAssertFalse(didCompleteStaleGeneration)
+    XCTAssertTrue(geofenceEvaluator.isCheckingGeofence)
+    XCTAssertNil(geofenceEvaluator.errorMessage)
+    XCTAssertEqual(geofenceEvaluator.geofenceWarningMessage, "")
+    XCTAssertFalse(geofenceEvaluator.showGeofenceStartWarning)
+
+    let didCompleteCurrentGeneration = geofenceEvaluator.completeGeofenceCheck(
+      expectedGeneration: currentGeneration
+    ) {
+      geofenceEvaluator.errorMessage = "current completion"
+    }
+
+    XCTAssertTrue(didCompleteCurrentGeneration)
+    XCTAssertFalse(geofenceEvaluator.isCheckingGeofence)
+    XCTAssertEqual(geofenceEvaluator.errorMessage, "current completion")
+  }
+
+  func testGivenRecoveredStaleGeofenceCheck_WhenEmergencyGenerationCompletes_ThenOldGenerationIsRejected()
+    throws
+  {
+    let now = Date()
+    let geofenceEvaluator = GeofenceEvaluator()
+    let staleGeneration = geofenceEvaluator.beginGeofenceCheck(
+      now: now.addingTimeInterval(-120))
+    XCTAssertTrue(geofenceEvaluator.recoverStaleGeofenceCheck(now: now))
+    let currentGeneration = geofenceEvaluator.beginGeofenceCheck(now: now)
+
+    XCTAssertFalse(
+      geofenceEvaluator.isCurrentGeofenceCheck(expectedGeneration: staleGeneration)
+    )
+    XCTAssertTrue(
+      geofenceEvaluator.isCurrentGeofenceCheck(expectedGeneration: currentGeneration)
+    )
+  }
+
   func testGivenActiveSessionFetchFails_WhenRejectionForStart_ThenFailsClosed() throws {
     let profile = BlockedProfiles(name: "Manual")
     context.insert(profile)

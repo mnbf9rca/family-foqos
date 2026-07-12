@@ -20,8 +20,10 @@ class GeofenceEvaluator: ObservableObject {
 
   @Published var isCheckingGeofence: Bool = false
   @Published var errorMessage: String?
+  private var geofenceCheckGeneration = 0
+  private var activeGeofenceCheckGeneration: Int?
   private var geofenceCheckStartedAt: Date?
-  private let staleGeofenceCheckInterval: TimeInterval = 60
+  private static let staleGeofenceCheckInterval: TimeInterval = 60
 
   // Geofence start warning state
   @AppStorage("family_foqos_warn_when_activating_away_from_location") private var warnWhenActivatingAwayFromLocation =
@@ -33,14 +35,37 @@ class GeofenceEvaluator: ObservableObject {
   // Stored completion for confirmGeofenceStart
   private var pendingStartCompletion: ((ModelContext, BlockedProfiles) -> Void)?
 
-  func beginGeofenceCheck(now: Date = Date()) {
+  @discardableResult
+  func beginGeofenceCheck(now: Date = Date()) -> Int {
+    geofenceCheckGeneration += 1
+    activeGeofenceCheckGeneration = geofenceCheckGeneration
     isCheckingGeofence = true
     geofenceCheckStartedAt = now
+    return geofenceCheckGeneration
   }
 
-  func endGeofenceCheck() {
+  func endGeofenceCheck(expectedGeneration: Int) {
+    guard isCurrentGeofenceCheck(expectedGeneration: expectedGeneration) else {
+      return
+    }
+
     isCheckingGeofence = false
+    activeGeofenceCheckGeneration = nil
     geofenceCheckStartedAt = nil
+  }
+
+  @discardableResult
+  func completeGeofenceCheck(
+    expectedGeneration: Int,
+    _ updates: () -> Void
+  ) -> Bool {
+    guard isCurrentGeofenceCheck(expectedGeneration: expectedGeneration) else {
+      return false
+    }
+
+    updates()
+    endGeofenceCheck(expectedGeneration: expectedGeneration)
+    return true
   }
 
   func recoverStaleGeofenceCheck(now: Date = Date()) -> Bool {
@@ -48,13 +73,20 @@ class GeofenceEvaluator: ObservableObject {
       return false
     }
 
-    guard now.timeIntervalSince(geofenceCheckStartedAt) >= staleGeofenceCheckInterval else {
+    guard now.timeIntervalSince(geofenceCheckStartedAt) >= Self.staleGeofenceCheckInterval else {
       return false
     }
 
-    endGeofenceCheck()
+    geofenceCheckGeneration += 1
+    activeGeofenceCheckGeneration = nil
+    isCheckingGeofence = false
+    self.geofenceCheckStartedAt = nil
     pendingStartCompletion = nil
     return true
+  }
+
+  func isCurrentGeofenceCheck(expectedGeneration: Int) -> Bool {
+    return activeGeofenceCheckGeneration == expectedGeneration
   }
 
   // MARK: - Evaluate (async, no UI side-effects)
@@ -114,12 +146,12 @@ class GeofenceEvaluator: ObservableObject {
       return
     }
 
-    beginGeofenceCheck()
+    let expectedGeneration = beginGeofenceCheck()
 
     // Capture Sendable snapshots before entering the Task to avoid capturing
     // non-Sendable SwiftData models (profile) across the concurrency boundary
     guard let geofenceRule = profile.geofenceRule else {
-      endGeofenceCheck()
+      endGeofenceCheck(expectedGeneration: expectedGeneration)
       onStop()
       return
     }
@@ -128,23 +160,23 @@ class GeofenceEvaluator: ObservableObject {
     do {
       savedLocationsSnapshot = try SavedLocation.fetchAll(in: context)
     } catch {
-      endGeofenceCheck()
+      endGeofenceCheck(expectedGeneration: expectedGeneration)
       self.errorMessage = "Unable to load saved locations. Please try again."
       return
     }
 
     Task { @MainActor in
-      defer { self.endGeofenceCheck() }
-
       let result = await self.locationManager.checkGeofenceRule(
         rule: ruleToCheck,
         savedLocations: savedLocationsSnapshot
       )
 
-      if result.isSatisfied {
-        onStop()
-      } else {
-        self.errorMessage = result.failureMessage ?? "Location restriction not met."
+      self.completeGeofenceCheck(expectedGeneration: expectedGeneration) {
+        if result.isSatisfied {
+          onStop()
+        } else {
+          self.errorMessage = result.failureMessage ?? "Location restriction not met."
+        }
       }
     }
   }
@@ -180,7 +212,7 @@ class GeofenceEvaluator: ObservableObject {
       return
     }
 
-    beginGeofenceCheck()
+    let expectedGeneration = beginGeofenceCheck()
 
     // Capture saved locations before entering the Task to avoid Sendable warnings
     let ruleToCheck = geofenceRule
@@ -188,7 +220,7 @@ class GeofenceEvaluator: ObservableObject {
     do {
       savedLocationsSnapshot = try SavedLocation.fetchAll(in: context)
     } catch {
-      endGeofenceCheck()
+      endGeofenceCheck(expectedGeneration: expectedGeneration)
       self.errorMessage = "Unable to load saved locations. Please try again."
       return
     }
@@ -197,25 +229,25 @@ class GeofenceEvaluator: ObservableObject {
     pendingStartCompletion = onStart
 
     Task { @MainActor in
-      defer { self.endGeofenceCheck() }
-
       let result = await locationManager.checkGeofenceRule(
         rule: ruleToCheck,
         savedLocations: savedLocationsSnapshot
       )
 
-      if result.isSatisfied {
-        // User is at location, proceed without warning
-        self.pendingStartCompletion = nil
-        onStart(context, profile)
-      } else {
-        // User is NOT at location, show warning
-        self.pendingStartProfile = profile
-        self.geofenceWarningMessage = self.buildStartWarningMessage(
-          rule: ruleToCheck,
-          savedLocations: savedLocationsSnapshot
-        )
-        self.showGeofenceStartWarning = true
+      self.completeGeofenceCheck(expectedGeneration: expectedGeneration) {
+        if result.isSatisfied {
+          // User is at location, proceed without warning
+          self.pendingStartCompletion = nil
+          onStart(context, profile)
+        } else {
+          // User is NOT at location, show warning
+          self.pendingStartProfile = profile
+          self.geofenceWarningMessage = self.buildStartWarningMessage(
+            rule: ruleToCheck,
+            savedLocations: savedLocationsSnapshot
+          )
+          self.showGeofenceStartWarning = true
+        }
       }
     }
   }
@@ -282,8 +314,8 @@ class GeofenceEvaluator: ObservableObject {
       throw .locationPermissionDenied
     }
 
-    beginGeofenceCheck()
-    defer { endGeofenceCheck() }
+    let expectedGeneration = beginGeofenceCheck()
+    defer { endGeofenceCheck(expectedGeneration: expectedGeneration) }
 
     let ruleToCheck = rule
     let savedLocationsSnapshot: [SavedLocation]
@@ -297,6 +329,10 @@ class GeofenceEvaluator: ObservableObject {
       rule: ruleToCheck,
       savedLocations: savedLocationsSnapshot
     )
+
+    guard isCurrentGeofenceCheck(expectedGeneration: expectedGeneration) else {
+      throw .geofenceBlocked("Location check expired. Try again.")
+    }
 
     if !result.isSatisfied {
       throw .geofenceBlocked(result.failureMessage ?? "Location restriction not met.")
