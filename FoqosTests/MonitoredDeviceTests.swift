@@ -174,4 +174,79 @@ final class MonitoredDeviceTests: XCTestCase {
     XCTAssertNil(decoded.authorizationStatus)
     XCTAssertFalse(decoded.isAuthRevoked)
   }
+
+  func testShouldScheduleAuthRevokedAlert_trueWhenRevokedAndNeverNotified() {
+    let now = Date()
+    let device = MonitoredDevice(
+      deviceIdentifier: "dev1",
+      deviceName: "iPhone",
+      childUserRecordName: "child1",
+      lastSeenAt: now,
+      isSuppressed: false,
+      notificationIdentifier: nil,
+      authorizationStatus: "denied",
+      authRevokedNotifiedAt: nil
+    )
+    XCTAssertTrue(device.shouldScheduleAuthRevokedAlert())
+  }
+
+  func testShouldScheduleAuthRevokedAlert_falseWhenAlreadyNotified() {
+    let now = Date()
+    let device = MonitoredDevice(
+      deviceIdentifier: "dev1",
+      deviceName: "iPhone",
+      childUserRecordName: "child1",
+      lastSeenAt: now,
+      isSuppressed: false,
+      notificationIdentifier: nil,
+      authorizationStatus: "denied",
+      authRevokedNotifiedAt: now
+    )
+    XCTAssertFalse(device.shouldScheduleAuthRevokedAlert())
+  }
+
+  func testShouldScheduleAuthRevokedAlert_falseWhenApproved() {
+    let now = Date()
+    let device = MonitoredDevice(
+      deviceIdentifier: "dev1",
+      deviceName: "iPhone",
+      childUserRecordName: "child1",
+      lastSeenAt: now,
+      isSuppressed: false,
+      notificationIdentifier: nil,
+      authorizationStatus: "approved",
+      authRevokedNotifiedAt: nil
+    )
+    XCTAssertFalse(device.shouldScheduleAuthRevokedAlert())
+  }
+
+  func testCarriedAuthRevokedNotifiedAt_preservesMarkerWhileStillDenied() {
+    let now = Date()
+    let carried = MonitoredDevice.carriedAuthRevokedNotifiedAt(previous: now, newStatus: "denied")
+    XCTAssertEqual(carried, now)
+  }
+
+  func testCarriedAuthRevokedNotifiedAt_clearsMarkerWhenBackToApproved() {
+    let now = Date()
+    let carried = MonitoredDevice.carriedAuthRevokedNotifiedAt(previous: now, newStatus: "approved")
+    XCTAssertNil(carried, "Re-arm so a genuine re-revocation alerts again")
+  }
+
+  func testCarriedAuthRevokedNotifiedAt_clearsMarkerWhenStatusNil() {
+    let now = Date()
+    XCTAssertNil(MonitoredDevice.carriedAuthRevokedNotifiedAt(previous: now, newStatus: nil))
+  }
+
+  func testPersistence_backwardsCompatible_missingAuthRevokedNotifiedAt() throws {
+    // A device saved before authRevokedNotifiedAt existed must decode with the field nil.
+    let json = """
+      {"deviceIdentifier":"dev1","deviceName":"iPhone","childUserRecordName":"child1",
+       "lastSeenAt":1000000,"isSuppressed":false,"authorizationStatus":"denied"}
+      """
+    let data = json.data(using: .utf8)!
+    let decoded = try JSONDecoder().decode(MonitoredDevice.self, from: data)
+
+    XCTAssertNil(decoded.authRevokedNotifiedAt)
+    XCTAssertTrue(decoded.shouldScheduleAuthRevokedAlert(), "Legacy denied device alerts once")
+  }
 }

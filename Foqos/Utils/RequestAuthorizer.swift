@@ -11,21 +11,22 @@ class RequestAuthorizer: ObservableObject {
   @Published var authorizationError: String?
 
   private var cancellable: AnyCancellable?
+  private let authorizationCenter: AuthorizationRequesting
 
-  init() {
-    let status = AuthorizationCenter.shared.authorizationStatus
-    let approved = status == .approved
+  init(authorizationCenter: AuthorizationRequesting = AuthorizationCenterRequester.shared) {
+    self.authorizationCenter = authorizationCenter
+    let status = authorizationCenter.authorizationStatus
+    let approved = Self.isApproved(status)
     self.isAuthorized = approved
     self.authorizationStatus = status
     Log.info(
       "RequestAuthorizer init: authorizationStatus=\(status), isAuthorized=\(approved)",
       category: .authorization)
 
-    cancellable = AuthorizationCenter.shared.$authorizationStatus
-      .receive(on: DispatchQueue.main)
+    cancellable = authorizationCenter.authorizationStatusPublisher
       .sink { [weak self] newStatus in
         guard let self else { return }
-        let approved = newStatus == .approved
+        let approved = Self.isApproved(newStatus)
         if self.authorizationStatus != newStatus {
           Log.info(
             "AuthorizationCenter status changed: \(self.authorizationStatus) → \(newStatus)",
@@ -36,37 +37,40 @@ class RequestAuthorizer: ObservableObject {
       }
   }
 
+  private static func isApproved(_ status: AuthorizationStatus) -> Bool {
+    switch status {
+    case .approved, .approvedWithDataAccess:
+      return true
+    case .denied, .notDetermined:
+      return false
+    @unknown default:
+      return false
+    }
+  }
+
   /// Request authorization for the current app mode
-  func requestAuthorization() {
-    requestAuthorization(for: AppModeManager.shared.currentMode)
+  @discardableResult
+  func requestAuthorization() async -> Bool {
+    await requestAuthorization(for: AppModeManager.shared.currentMode)
   }
 
   /// Request authorization for a specific app mode
   /// - Parameter mode: The app mode to request authorization for
-  func requestAuthorization(for mode: AppMode) {
-    Task {
-      do {
-        switch mode {
-        case .individual, .parent:
-          // Individual and parent modes use .individual authorization
-          // Parent still controls their own device, just creates policies for others
-          try await AuthorizationCenter.shared.requestAuthorization(for: .individual)
-          Log.info("Individual authorization successful for mode: \(mode)", category: .authorization)
+  @discardableResult
+  func requestAuthorization(for mode: AppMode) async -> Bool {
+    let member: FamilyControlsMember = mode == .child ? .child : .individual
 
-        case .child:
-          // Child mode uses .child authorization
-          // This requires parent approval via Screen Time Family Sharing
-          try await AuthorizationCenter.shared.requestAuthorization(for: .child)
-          Log.info("Child authorization successful", category: .authorization)
-        }
-
-        self.isAuthorized = true
-        self.authorizationError = nil
-      } catch {
-        Log.info("Error requesting authorization: \(error)", category: .authorization)
-        self.isAuthorized = false
-        self.authorizationError = self.describeAuthorizationError(error, for: mode)
-      }
+    do {
+      try await authorizationCenter.requestAuthorization(for: member)
+      Log.info("Authorization successful for mode: \(mode)", category: .authorization)
+      self.isAuthorized = true
+      self.authorizationError = nil
+      return true
+    } catch {
+      Log.info("Error requesting authorization: \(error)", category: .authorization)
+      self.isAuthorized = false
+      self.authorizationError = self.describeAuthorizationError(error, for: mode)
+      return false
     }
   }
 

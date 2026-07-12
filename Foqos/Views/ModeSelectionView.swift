@@ -117,12 +117,9 @@ struct ModeSelectionView: View {
   private func continueWithSelectedMode() {
     isAuthorizing = true
 
-    // Request authorization for the selected mode
-    requestAuthorizer.requestAuthorization(for: selectedMode)
-
-    // Wait a moment for authorization to complete
-    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-      if requestAuthorizer.isAuthorized {
+    Task {
+      let authorized = await requestAuthorizer.requestAuthorization(for: selectedMode)
+      if authorized {
         appModeManager.selectMode(selectedMode)
         onModeSelected(selectedMode)
       } else if let error = requestAuthorizer.authorizationError {

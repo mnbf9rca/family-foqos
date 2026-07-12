@@ -27,6 +27,13 @@ class LockCodeManager: ObservableObject {
 
   private var cancellables = Set<AnyCancellable>()
 
+  private static let maxProcessedCommandEntries = 50
+
+  private struct ProcessedCommandEntry: Codable {
+    let id: UUID
+    let processedAt: Date
+  }
+
   private init(
     cloudKitManager: CloudKitManager = .shared,
     appModeManager: AppModeManager = .shared
@@ -301,15 +308,17 @@ class LockCodeManager: ObservableObject {
 
   // MARK: - Command Processing (Child Mode)
 
-  /// Check for and process any pending commands from parent
-  /// Called automatically during fetchSharedLockCodes
-  private func processPendingCommands() async {
+  /// Check for and process any pending commands from parent.
+  /// Called from child lock-code refresh, the PIN-dialog poll, and child foreground.
+  func processPendingCommands(cleanupStale: Bool = true) async {
     guard appModeManager.currentMode == .child else {
       return
     }
 
-    // Clean up any stale commands (from any user, not just this child)
-    await cloudKitManager.cleanupStaleCommands()
+    if cleanupStale {
+      // Clean up any stale commands (from any user, not just this child)
+      await cloudKitManager.cleanupStaleCommands()
+    }
 
     do {
       let commands = try await cloudKitManager.fetchPendingCommands()
@@ -322,9 +331,10 @@ class LockCodeManager: ObservableObject {
     }
   }
 
-  private func processCommand(_ command: FamilyCommand) async {
-    Log.info("Processing command: \(command.commandType.rawValue)", category: .cloudKit)
-
+  /// Apply a parent command's local side effect.
+  /// Replication of a parent-authorized operation (#230); not re-gated on the child.
+  func applyCommand(_ command: FamilyCommand) {
+    Log.info("Applying command: \(command.commandType.rawValue)", category: .cloudKit)
     switch command.commandType {
     case .resetEmergencyCount:
       EmergencyUnblockManager.shared.resetEmergencyUnblocks()
@@ -332,6 +342,31 @@ class LockCodeManager: ObservableObject {
     case .resetLockCodeThrottle:
       resetThrottle()
       Log.info("Lock code throttle reset by parent", category: .cloudKit)
+    }
+  }
+
+  /// Apply a parent command once per persisted command ID.
+  /// Commands that remain in CloudKit after a delete failure may be fetched again after relaunch;
+  /// the persisted ledger prevents replaying non-idempotent local side effects.
+  func applyCommandIfNeeded(_ command: FamilyCommand, now: Date = Date()) -> Bool {
+    let entries = loadProcessedCommandEntries()
+    if entries.contains(where: { $0.id == command.id }) {
+      persistProcessedCommandEntries(entries)
+      return false
+    }
+
+    applyCommand(command)
+
+    let updatedEntries =
+      [ProcessedCommandEntry(id: command.id, processedAt: now)] + entries
+    persistProcessedCommandEntries(updatedEntries)
+    return true
+  }
+
+  private func processCommand(_ command: FamilyCommand) async {
+    let didApply = applyCommandIfNeeded(command)
+    if !didApply {
+      Log.info("Skipping already processed command: \(command.commandType.rawValue)", category: .cloudKit)
     }
 
     // Delete the command after processing
@@ -393,6 +428,10 @@ class LockCodeManager: ObservableObject {
     static let childLockCodes = "family_foqos_child_lock_codes"
   }
 
+  private enum CommandLedgerKey {
+    static let processedCommands = "family_foqos_processed_family_commands"
+  }
+
   /// Throttle schedule: failed attempts -> lockout duration in seconds
   private static let throttleSchedule: [(threshold: Int, duration: TimeInterval)] = [
     (3, 30),  // 30 seconds after 3 failures
@@ -445,6 +484,7 @@ class LockCodeManager: ObservableObject {
     throttleDefaults = defaults ?? .standard
     loadThrottleState()
     cachedLockCodes = loadPersistedLockCodes()
+    persistProcessedCommandEntries(loadProcessedCommandEntries())
   }
 
   /// Load throttle state from UserDefaults
@@ -485,6 +525,33 @@ class LockCodeManager: ObservableObject {
     if let data = try? JSONEncoder().encode(codes) {
       throttleDefaults.set(data, forKey: CacheKey.childLockCodes)
     }
+  }
+
+  private func loadProcessedCommandEntries() -> [ProcessedCommandEntry] {
+    guard let data = throttleDefaults.data(forKey: CommandLedgerKey.processedCommands),
+      let entries = try? JSONDecoder().decode([ProcessedCommandEntry].self, from: data)
+    else {
+      return []
+    }
+
+    return Self.prunedProcessedCommandEntries(entries)
+  }
+
+  private func persistProcessedCommandEntries(_ entries: [ProcessedCommandEntry]) {
+    let prunedEntries = Self.prunedProcessedCommandEntries(entries)
+    if let data = try? JSONEncoder().encode(prunedEntries) {
+      throttleDefaults.set(data, forKey: CommandLedgerKey.processedCommands)
+    }
+  }
+
+  private static func prunedProcessedCommandEntries(
+    _ entries: [ProcessedCommandEntry]
+  ) -> [ProcessedCommandEntry] {
+    Array(
+      entries
+        .sorted { $0.processedAt > $1.processedAt }
+        .prefix(maxProcessedCommandEntries)
+    )
   }
 }
 
