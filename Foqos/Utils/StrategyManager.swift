@@ -148,6 +148,11 @@ class StrategyManager: ObservableObject {
 
       stopBlocking(context: context, bypassStrategy: true)
     } else {
+      guard !geofenceEvaluator.isCheckingGeofence else {
+        Log.info("Start tap ignored: geofence check already in flight", category: .strategy)
+        return
+      }
+
       geofenceEvaluator.checkGeofenceAndStart(context: context, activeProfile: activeProfile) {
         ctx, profile in
         self.startBlocking(context: ctx, activeProfile: profile, bypassStrategy: true)
@@ -439,6 +444,10 @@ class StrategyManager: ObservableObject {
               "\(profile.name) is not configured to start via written NFC or printed QR"
             return
           }
+          guard !profile.needsAppSelection else {
+            self.errorMessage = needsAppSelectionMessage(for: profile)
+            return
+          }
         }
 
         let stopResult = StartStopActionResolver.canStop(
@@ -504,6 +513,10 @@ class StrategyManager: ObservableObject {
             "\(profile.name) is not configured to start via written NFC or printed QR"
           return
         }
+        guard !profile.needsAppSelection else {
+          self.errorMessage = needsAppSelectionMessage(for: profile)
+          return
+        }
 
         _ = manualStrategy.startBlocking(
           context: context,
@@ -538,6 +551,13 @@ class StrategyManager: ObservableObject {
           category: .strategy)
         self.errorMessage = "A session is already active."
         throw IntentError.sessionAlreadyActive
+      }
+
+      if profile.needsAppSelection {
+        let message = needsAppSelectionMessage(for: profile)
+        Log.info("Refusing background start: \(message)", category: .strategy)
+        self.errorMessage = message
+        throw IntentError.needsAppSelection(profileName: profile.name)
       }
 
       if let duration = durationInMinutes {
@@ -1143,6 +1163,12 @@ class StrategyManager: ObservableObject {
       return
     }
 
+    if let rejection = rejectionForStart(definedProfile, context: context) {
+      errorMessage = rejection
+      Log.info("Refusing manual start: \(rejection)", category: .strategy)
+      return
+    }
+
     // When bypassStrategy is true, the V2 trigger system has already routed
     // the start action. Use ManualBlockingStrategy to create the session
     // directly, avoiding redundant NFC/QR scans from legacy strategies.
@@ -1256,6 +1282,12 @@ class StrategyManager: ObservableObject {
 
   /// Start blocking with a pre-scanned tag (internal helper)
   private func startWithTag(context: ModelContext, profile: BlockedProfiles, tag: String) {
+    if let rejection = rejectionForStart(profile, context: context) {
+      errorMessage = rejection
+      Log.info("Refusing tag start: \(rejection)", category: .strategy)
+      return
+    }
+
     AppBlockerUtil().activateRestrictions(for: BlockedProfiles.getSnapshot(for: profile))
 
     let session = BlockedProfileSession.createSession(
@@ -1268,6 +1300,22 @@ class StrategyManager: ObservableObject {
     activateSession(session, context: context)
 
     Log.info("Started session for profile '\(profile.name)' with tag", category: .strategy)
+  }
+
+  private func rejectionForStart(_ profile: BlockedProfiles, context: ModelContext) -> String? {
+    if (try? getActiveSession(context: context)) != nil {
+      return "A session is already active. Stop it before starting another."
+    }
+
+    if profile.needsAppSelection {
+      return needsAppSelectionMessage(for: profile)
+    }
+
+    return nil
+  }
+
+  private func needsAppSelectionMessage(for profile: BlockedProfiles) -> String {
+    "Profile '\(profile.name)' needs app selection on this device before it can start."
   }
 
   /// Stop the active blocking session.

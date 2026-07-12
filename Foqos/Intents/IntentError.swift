@@ -4,6 +4,7 @@ enum IntentError: Error, CustomLocalizedStringResourceConvertible {
   case profileNotFound
   case sessionAlreadyActive
   case durationOutOfRange
+  case needsAppSelection(profileName: String)
   case noActiveSession(profileName: String)
   case backgroundStopsDisabled(profileName: String)
   case geofenceBlocked(reason: String)
@@ -18,6 +19,8 @@ enum IntentError: Error, CustomLocalizedStringResourceConvertible {
       "A session is already active."
     case .durationOutOfRange:
       "Duration must be between 15 minutes and 23 hours 59 minutes."
+    case .needsAppSelection(let name):
+      "\(name) needs app selection on this device before it can start."
     case .noActiveSession(let name):
       "\(name) is not currently active."
     case .backgroundStopsDisabled(let name):

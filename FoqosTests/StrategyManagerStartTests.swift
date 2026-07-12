@@ -1,11 +1,38 @@
 // FoqosTests/StrategyManagerStartTests.swift
 import FoqosShared
+import SwiftData
 import XCTest
 
 @testable import FamilyFoqos
 
 @MainActor
 final class StrategyManagerStartTests: XCTestCase {
+  private var container: ModelContainer!
+  private var context: ModelContext!
+  private var manager: StrategyManager!
+  private var suiteName: String!
+
+  override func setUp() async throws {
+    try await super.setUp()
+    suiteName = "StrategyManagerStartTests-\(UUID().uuidString)"
+    SharedData.configure(suite: UserDefaults(suiteName: suiteName)!)
+    container = try TestModelContainer.create()
+    context = container.mainContext
+    manager = StrategyManager()
+  }
+
+  override func tearDown() async throws {
+    manager.stopTimer()
+    UserDefaults().removePersistentDomain(forName: suiteName)
+    try await super.tearDown()
+  }
+
+  private func activeSessions() throws -> [BlockedProfileSession] {
+    try context.fetch(
+      FetchDescriptor<BlockedProfileSession>(
+        predicate: #Predicate { $0.endTime == nil }
+      ))
+  }
 
   func testGivenManualTriggerOnly_WhenDeterminingStartAction_ThenReturnsStartImmediately() {
     var start = ProfileStartTriggers()
@@ -118,5 +145,142 @@ final class StrategyManagerStartTests: XCTestCase {
     let action = StartStopActionResolver.determineStartAction(for: start, stopConditions: stop)
 
     XCTAssertEqual(action, .startImmediately)
+  }
+
+  func testGivenActiveSession_WhenStartWithNFCTag_ThenNoSecondSessionAndErrorSurfaced() throws {
+    let activeProfile = BlockedProfiles(name: "Active")
+    let scannedProfile = BlockedProfiles(name: "Scanned")
+    context.insert(activeProfile)
+    context.insert(scannedProfile)
+    _ = BlockedProfileSession.createSession(
+      in: context, withTag: "existing", withProfile: activeProfile)
+    try context.save()
+
+    manager.startWithNFCTag(context: context, profile: scannedProfile, tagId: "tag-1")
+
+    XCTAssertEqual(try activeSessions().count, 1)
+    XCTAssertNotNil(manager.errorMessage)
+  }
+
+  func testGivenProfileNeedsAppSelection_WhenStartWithQRCode_ThenNoSessionAndErrorSurfaced()
+    throws
+  {
+    let profile = BlockedProfiles(name: "Needs Apps")
+    profile.needsAppSelection = true
+    context.insert(profile)
+    try context.save()
+
+    manager.startWithQRCode(context: context, profile: profile, codeValue: "qr-1")
+
+    XCTAssertNil(manager.activeSession)
+    XCTAssertTrue(try activeSessions().isEmpty)
+    XCTAssertNotNil(manager.errorMessage)
+  }
+
+  func testGivenActiveSession_WhenToggleBlockingStart_ThenNoSecondSessionAndErrorSurfaced()
+    throws
+  {
+    let activeProfile = BlockedProfiles(name: "Active")
+    let nextProfile = BlockedProfiles(name: "Next")
+    nextProfile.blockingStrategyId = ManualBlockingStrategy.id
+    context.insert(activeProfile)
+    context.insert(nextProfile)
+    _ = BlockedProfileSession.createSession(
+      in: context, withTag: "existing", withProfile: activeProfile)
+    try context.save()
+
+    manager.toggleBlocking(context: context, activeProfile: nextProfile)
+
+    XCTAssertEqual(try activeSessions().count, 1)
+    XCTAssertNotNil(manager.errorMessage)
+  }
+
+  func testGivenProfileNeedsAppSelection_WhenToggleBlockingStart_ThenNoSessionAndErrorSurfaced()
+    throws
+  {
+    let profile = BlockedProfiles(name: "Needs Apps")
+    profile.needsAppSelection = true
+    profile.blockingStrategyId = ManualBlockingStrategy.id
+    context.insert(profile)
+    try context.save()
+
+    manager.toggleBlocking(context: context, activeProfile: profile)
+
+    XCTAssertNil(manager.activeSession)
+    XCTAssertTrue(try activeSessions().isEmpty)
+    XCTAssertNotNil(manager.errorMessage)
+  }
+
+  func testGivenNoActiveSessionAndAppsSelected_WhenStartWithNFCTag_ThenSessionStarts() throws {
+    let profile = BlockedProfiles(name: "Ready")
+    context.insert(profile)
+    try context.save()
+
+    manager.startWithNFCTag(context: context, profile: profile, tagId: "tag-1")
+
+    XCTAssertEqual(manager.activeSession?.blockedProfile.id, profile.id)
+    XCTAssertNotNil(manager.timerTask)
+  }
+
+  func testGivenProfileNeedsAppSelection_WhenToggleSessionFromDeeplink_ThenNoSessionAndErrorSurfaced()
+    async throws
+  {
+    let profile = BlockedProfiles(name: "Needs Apps")
+    profile.needsAppSelection = true
+    profile.startTriggers = ProfileStartTriggers(deepLink: true)
+    context.insert(profile)
+    try context.save()
+
+    await manager.toggleSessionFromDeeplink(
+      profile.id.uuidString,
+      url: URL(string: "familyfoqos://profile/\(profile.id.uuidString)")!,
+      context: context
+    )
+
+    XCTAssertNil(manager.activeSession)
+    XCTAssertTrue(try activeSessions().isEmpty)
+    XCTAssertNotNil(manager.errorMessage)
+  }
+
+  func testGivenProfileNeedsAppSelection_WhenToggleSessionFromDeeplinkSwitching_ThenCurrentSessionRemainsAndErrorSurfaced()
+    async throws
+  {
+    let activeProfile = BlockedProfiles(name: "Active")
+    activeProfile.stopConditions = ProfileStopConditions(deepLink: true)
+    let nextProfile = BlockedProfiles(name: "Needs Apps")
+    nextProfile.needsAppSelection = true
+    nextProfile.startTriggers = ProfileStartTriggers(deepLink: true)
+    context.insert(activeProfile)
+    context.insert(nextProfile)
+    let activeSession = BlockedProfileSession.createSession(
+      in: context, withTag: "active", withProfile: activeProfile)
+    try context.save()
+
+    await manager.toggleSessionFromDeeplink(
+      nextProfile.id.uuidString,
+      url: URL(string: "familyfoqos://profile/\(nextProfile.id.uuidString)")!,
+      context: context
+    )
+
+    XCTAssertNil(activeSession.endTime)
+    XCTAssertEqual(try activeSessions().count, 1)
+    XCTAssertNotNil(manager.errorMessage)
+  }
+
+  func testGivenGeofenceCheckInFlight_WhenToggleBlockingCalledAgain_ThenSecondCallIsIgnored()
+    throws
+  {
+    let geofenceEvaluator = GeofenceEvaluator()
+    geofenceEvaluator.isCheckingGeofence = true
+    manager = StrategyManager(geofenceEvaluator: geofenceEvaluator)
+    let profile = BlockedProfiles(name: "Manual")
+    profile.blockingStrategyId = ManualBlockingStrategy.id
+    context.insert(profile)
+    try context.save()
+
+    manager.toggleBlocking(context: context, activeProfile: profile)
+
+    XCTAssertNil(manager.activeSession)
+    XCTAssertTrue(try activeSessions().isEmpty)
   }
 }

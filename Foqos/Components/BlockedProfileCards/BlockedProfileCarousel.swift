@@ -10,6 +10,7 @@ struct BlockedProfileCarousel: View {
   let activeSessionProfileId: UUID?
   let elapsedTime: TimeInterval
   let startingProfileId: UUID?
+  let onStartingProfileConsumed: () -> Void
 
   var onStartTapped: (BlockedProfiles) -> Void
   var onStopTapped: (BlockedProfiles) -> Void
@@ -43,6 +44,32 @@ struct BlockedProfileCarousel: View {
     profiles.valid
   }
 
+  nonisolated static func resolvedCurrentProfileId(
+    currentProfileId: UUID?,
+    validProfileIds: [UUID]
+  ) -> UUID? {
+    if let currentProfileId, validProfileIds.contains(currentProfileId) {
+      return currentProfileId
+    }
+
+    return validProfileIds.first
+  }
+
+  nonisolated static func shouldRunInitialSetupOnProfilesChange(
+    currentProfileId: UUID?,
+    startingProfileId: UUID?,
+    validProfileIds: [UUID]
+  ) -> Bool {
+    if let startingProfileId, validProfileIds.contains(startingProfileId) {
+      return true
+    }
+
+    return resolvedCurrentProfileId(
+      currentProfileId: currentProfileId,
+      validProfileIds: validProfileIds
+    ) != currentProfileId
+  }
+
   private var titleMessage: String {
     return isBlocking ? "Active Profile" : "Profile"
   }
@@ -68,6 +95,7 @@ struct BlockedProfileCarousel: View {
     activeSessionProfileId: UUID?,
     elapsedTime: TimeInterval,
     startingProfileId: UUID? = nil,
+    onStartingProfileConsumed: @escaping () -> Void = {},
     onStartTapped: @escaping (BlockedProfiles) -> Void,
     onStopTapped: @escaping (BlockedProfiles) -> Void,
     onEditTapped: @escaping (BlockedProfiles) -> Void,
@@ -89,6 +117,7 @@ struct BlockedProfileCarousel: View {
     self.activeSessionProfileId = activeSessionProfileId
     self.elapsedTime = elapsedTime
     self.startingProfileId = startingProfileId
+    self.onStartingProfileConsumed = onStartingProfileConsumed
     self.onStartTapped = onStartTapped
     self.onStopTapped = onStopTapped
     self.onEditTapped = onEditTapped
@@ -117,6 +146,7 @@ struct BlockedProfileCarousel: View {
       validProfiles.contains(where: { $0.id == startingId })
     {
       currentProfileId = startingId
+      onStartingProfileConsumed()
       return
     }
 
@@ -215,9 +245,16 @@ struct BlockedProfileCarousel: View {
       initialSetup()
     }
     .onChange(of: profiles) { _, _ in
-      initialSetup()
+      if Self.shouldRunInitialSetupOnProfilesChange(
+        currentProfileId: currentProfileId,
+        startingProfileId: startingProfileId,
+        validProfileIds: validProfiles.map(\.id)
+      ) {
+        initialSetup()
+      }
     }
-    .onChange(of: startingProfileId) { _, _ in
+    .onChange(of: startingProfileId) { _, newValue in
+      guard newValue != nil else { return }
       initialSetup()
     }
   }
