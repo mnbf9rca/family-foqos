@@ -180,6 +180,44 @@ final class SyncEngineStore {
     }
   }
 
+  // MARK: - Delete version watermark (#315)
+
+  /// Guard value captured at delete time: `Double(syncVersion)` for profiles,
+  /// `updatedAt.timeIntervalSinceReferenceDate` for locations. Unlike the I12 tombstone, this
+  /// survives confirmation to gate locally-absent create branches against stale delete echoes.
+  static let maxDeleteWatermarkEntries = 512
+
+  private struct DeleteWatermarkEntry: Codable {
+    var recordName: String
+    var value: Double
+  }
+
+  private var deleteWatermarkEntries: [DeleteWatermarkEntry] {
+    decoded([DeleteWatermarkEntry].self, "delete_watermarks") ?? []
+  }
+
+  func deleteWatermark(for recordName: String) -> Double? {
+    deleteWatermarkEntries.first { $0.recordName == recordName }?.value
+  }
+
+  func setDeleteWatermark(recordName: String, value: Double) {
+    locked {
+      var all = self.deleteWatermarkEntries.filter { $0.recordName != recordName }
+      all.append(DeleteWatermarkEntry(recordName: recordName, value: value))
+      if all.count > Self.maxDeleteWatermarkEntries {
+        all = Array(all.suffix(Self.maxDeleteWatermarkEntries))
+      }
+      self.encodeStore(all, "delete_watermarks")
+    }
+  }
+
+  func clearDeleteWatermark(recordName: String) {
+    locked {
+      let all = self.deleteWatermarkEntries.filter { $0.recordName != recordName }
+      self.encodeStore(all, "delete_watermarks")
+    }
+  }
+
   // MARK: - Failed applies (§2.1 failedApplies, §5.6)
 
   var failedApplies: Set<FailedApply> {
