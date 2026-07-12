@@ -1058,6 +1058,19 @@ class StrategyManager: ObservableObject {
       .mostRecentActiveSession(in: context)
   }
 
+  /// #226: only reconcile a scheduled session's startTime when the active local session
+  /// belongs to the scheduled profile and the timestamps differ.
+  static func shouldReconcileScheduledStartTime(
+    activeProfileId: UUID?,
+    scheduledProfileId: UUID,
+    localStartTime: Date?,
+    remoteStartTime: Date?
+  ) -> Bool {
+    guard let activeProfileId, activeProfileId == scheduledProfileId else { return false }
+    guard let remoteStartTime, let localStartTime else { return false }
+    return localStartTime != remoteStartTime
+  }
+
   private func syncScheduleSessions(context: ModelContext) {
     var hadDanglingGrant = false
 
@@ -1090,10 +1103,14 @@ class StrategyManager: ObservableObject {
               "Scheduled session joined existing from \(existing.sessionOriginDevice ?? "unknown")",
               category: .strategy
             )
-            // Reconcile local startTime to match authoritative remote startTime
-            if let remoteStartTime = existing.startTime,
-              let currentSession = self.activeSession,
-              currentSession.startTime != remoteStartTime
+            // #226: a late CAS result for another profile must not overwrite its startTime.
+            if let currentSession = self.activeSession,
+              Self.shouldReconcileScheduledStartTime(
+                activeProfileId: currentSession.blockedProfile.id,
+                scheduledProfileId: activeScheduledSession.blockedProfileId,
+                localStartTime: currentSession.startTime,
+                remoteStartTime: existing.startTime),
+              let remoteStartTime = existing.startTime
             {
               currentSession.startTime = remoteStartTime
               do {
