@@ -925,6 +925,7 @@ class StrategyManager: ObservableObject {
             Log.info(
               "Migrated deferred profile '\(endedProfile.name)' on session end", category: .app)
             DeviceActivityCenterUtil.scheduleTimerActivity(for: endedProfile)
+            BlockedProfiles.updateSnapshot(for: endedProfile)
           }
         }
 

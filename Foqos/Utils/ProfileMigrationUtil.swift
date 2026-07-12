@@ -31,6 +31,7 @@ enum ProfileMigrationUtil {
         // Register schedules with DeviceActivityCenter for migrated profiles
         for profile in migratedProfiles {
           DeviceActivityCenterUtil.scheduleTimerActivity(for: profile)
+          BlockedProfiles.updateSnapshot(for: profile)
         }
       }
       if deferredCount > 0 {
