@@ -1,14 +1,17 @@
-# Epic #263 tail (G, H, J1, #240) — Implementation Plan
+# Epic #263 tail (H, G, #331, J1, #240) — Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. This plan is **self-contained** — it assumes no prior Claude session/project memory (the implementer may be Codex). Read `AGENTS.md` at the repo root first; it overrides everything here.
 
-**Goal:** Ship the final four epic-#263 clean-up bundles as ONE branch / ONE PR (the "F+I bundle" pattern — four self-contained mini-plans, executed and reviewed in sequence, merged together):
+**Goal:** Ship the final five epic-#263 clean-up bundles as ONE branch / ONE PR (the "F+I bundle" pattern — five self-contained mini-plans, executed and reviewed in sequence, merged together):
 - **Mini-plan H — logging & privacy** (`#252`, `#247`, `#250`): stop writing family-share participants' real names/emails to exportable logs (`#252`); stop leaking the physical-unblock NFC UID through Debug Mode in Child mode (`#247`); route all processes' logs to the shared app-group container so Export Logs actually includes extension logs (`#250`).
 - **Mini-plan G — widget / Live Activity freshness** (`#238`, `#249`): reload the home-screen widget's timelines when the monitor extension starts/stops a scheduled session (`#238`); end-and-recreate the Live Activity on a profile switch so it stops showing the previous profile's name (`#249`).
+- **Mini-plan #331 — parent dashboard honesty for old-version children** (`#331`): during the V1→V2 rollout a V2 parent with a V1 child sees two lies on `ParentDashboardView` — both reset commands report success at CKRecord-save time (a V1 child has no command reader, so it never applies), and Device Status shows "No Devices" for an actively-blocking V1 child (V1 never heartbeats). Make the reset UI honest ("Sent — waiting for child to confirm", flipping to confirmed only when the child deletes the command record on processing) and rewrite the empty Device-Status copy to acknowledge older app versions.
 - **Mini-plan J1 — README corrections** (`#253`, `#254`): correct the minimum OS/toolchain and dead TODO links (`#253`); rewrite the removed-V1 "Blocking Strategies" section against the V2 trigger model (`#254`).
 - **Mini-plan #240 — threat-model comment swap**: replace the apologetic PBKDF2/Argon2 TODO in `FamilyLockCode.swift` with the maintainer's ruled threat model (comment-only).
 
-**Architecture:** Each mini-plan is a focused, TDD-first change on `main` at base commit `e7ac000`. The four are code-independent (different subsystems: logging/privacy, DeviceActivity/widgets/ActivityKit, docs, a single code comment). **This bundle implements LAST in the epic-#263 queue** — after `#302`/`#301`/`#298`, B2, and D3+E2 — so many citations in this document will have drifted by implementation time. **Every mini-plan opens with a mandatory Task 0 citation-refresh** that re-derives its citations by symbol against the then-current `main` and records the SHA it verified against. **Implementation order within the bundle: H → G → J1 + #240** (H and G carry runtime surface and device-acceptance rows; the docs and the comment ride last). Commit each mini-plan's tasks under its own `(#N)` scope.
+**Architecture:** Each mini-plan is a focused, TDD-first change on `main` at base commit `e7ac000`. The five are code-independent (different subsystems: logging/privacy, DeviceActivity/widgets/ActivityKit, parent-dashboard family UI + FamilyCommand CloudKit, docs, a single code comment). **This bundle implements LAST in the epic-#263 queue** — after `#302`/`#301`/`#298`, B2, and D3+E2 — so many citations in this document will have drifted by implementation time. **Every mini-plan opens with a mandatory Task 0 citation-refresh** that re-derives its citations by symbol against the then-current `main` and records the SHA it verified against. **Implementation order within the bundle: H → G → #331 → J1 + #240** (H, G, and #331 carry runtime surface and device-acceptance rows — #331 needs a V1-child + V2-parent pair — so they lead; the docs and the comment ride last). Commit each mini-plan's tasks under its own `(#N)` scope.
+
+> **#331 was added by the 2026-07-12 refresh (ridden via PR #327).** It is the newest mini-plan — a V1→V2 upgrade-audit finding (PR #327, scenarios B3/B4) bundled into this tail per the maintainer's 2026-07-12 decision (no further V1 releases; all mixed-version remediation is V2-side). Because it landed after the plan's `e7ac000` base, its citations are grounded against the **then-current** `main` at refresh time — **`e6c3eb2`** ("Fix B2 family command and heartbeat plumbing (#325)"), i.e. **B2 / PR #325 is already merged**. Task 331.0 re-grounds every citation against whatever `git rev-parse HEAD` reports and reconciles with #325's command plumbing (see that task).
 
 **Tech Stack:** Swift 6, SwiftUI, SwiftData (`cloudKitDatabase: .none`), CloudKit `CKSyncEngine`, `DeviceActivity` / `FamilyControls`, `ActivityKit`, `WidgetKit`, XCTest, Xcode 26. Test simulator: boot an iPhone 17 sim **ONCE** by UUID (see AGENTS.md — never by device name) and reuse it.
 
@@ -27,12 +30,12 @@ Every task's requirements implicitly include this section. Values copied verbati
 - **Standing threat model (calibrates H and #240):** friction, not DRM; the lock code is a **low-stakes secret, proportionately protected** (maintainer rulings on #240 (2026-07-10) and #203). No crypto/KDF/obfuscation/attempt-gating is in scope for this bundle.
 - **Pin time in tests:** capture a single `let now = Date()` per test and derive all other dates from it; inject `now:` where the method under test accepts it.
 - **Do not create GitHub labels** (repo rule; noted for parity).
-- **PR wording:** the plan-only PR that INTRODUCES this document must be titled **"plans the fix for #238, #249, #252, #247, #250, #253, #254, #240"**, never "fixes". When each mini-plan is later IMPLEMENTED, its commits use conventional-commit types scoped to the issue (`fix(#N)`/`feat(#N)`/`test(#N)`/`refactor(#N)`/`docs(#N)`).
+- **PR wording:** the plan-only PR that INTRODUCED this document was titled **"plans the fix for #238, #249, #252, #247, #250, #253, #254, #240"**, never "fixes"; the 2026-07-12 refresh that ADDS Mini-plan #331 rides **PR #327** and its title likewise says **"plans"**, not "fixes" (it adds `#331` to the covered set). When each mini-plan is later IMPLEMENTED, its commits use conventional-commit types scoped to the issue (`fix(#N)`/`feat(#N)`/`test(#N)`/`refactor(#N)`/`docs(#N)`).
 
 ---
 ## Mini-plan H — logging & privacy (#252, #247, #250)
 
-> **Tail-bundle position.** This mini-plan implements **last** in the tail bundle (order H → G → J1+#240), on `main` at base commit `e7ac000`, **after** #302/#301/#298, B2, and D3+E2 have merged. None of those bundles is known to touch the four files H edits (`CloudKitNetworkService+FamilyMembers.swift`, `ProfileDebugCard.swift`, `DebugView.swift`, `Packages/FoqosShared/Sources/FoqosShared/Log.swift`), but citations **may still drift** — each sub-part opens with a mandatory Task 0 that re-derives every citation **by symbol** (fixed-string grep) and records the SHA it verified against. All line numbers below were verified against `e7ac000`; where a Task-0 grep reports a shifted line, use the fresh number.
+> **Tail-bundle position.** This mini-plan implements **last** in the tail bundle (order H → G → #331 → J1+#240), on `main` at base commit `e7ac000`, **after** #302/#301/#298, B2, and D3+E2 have merged. None of those bundles is known to touch the four files H edits (`CloudKitNetworkService+FamilyMembers.swift`, `ProfileDebugCard.swift`, `DebugView.swift`, `Packages/FoqosShared/Sources/FoqosShared/Log.swift`), but citations **may still drift** — each sub-part opens with a mandatory Task 0 that re-derives every citation **by symbol** (fixed-string grep) and records the SHA it verified against. All line numbers below were verified against `e7ac000`; where a Task-0 grep reports a shifted line, use the fresh number.
 
 H is three **code-independent** privacy/logging fixes. Implement them in order H1 → H2 → H3 (H3 is the heaviest), each a self-contained TDD change with its own `(#N)` commit scope. They share no types and can be reviewed independently.
 
@@ -747,7 +750,7 @@ Focus attacked hardest per maintainer direction: #250's cross-process app-group 
 
 ## Mini-plan G — widget / Live Activity freshness (#238, #249)
 
-> **Tail-bundle ordering.** This mini-plan implements **LAST** (order H → G → J1+#240),
+> **Tail-bundle ordering.** This mini-plan implements **LAST** (order H → G → #331 → J1+#240),
 > AFTER #302/#301/#298, B2, and D3+E2 have merged. Every line number below is **provisional** —
 > the two Task 0s re-derive every citation by SYMBOL (fixed-string grep) and record the SHA
 > verified against. Grounding here was verified against this worktree's HEAD **`e7ac000`**
@@ -1567,6 +1570,613 @@ xcodebuild test -project FamilyFoqos.xcodeproj -scheme FamilyFoqos -destination 
 
 ---
 
+## Mini-plan #331 — parent dashboard honesty for old-version children (#331)
+
+> **Tail-bundle position.** This mini-plan implements **third** in the tail bundle (order H → G →
+> **#331** → J1+#240), on `main` **after** #302/#301/#298, B2, and D3+E2 have merged. It is the
+> newest mini-plan (a V1→V2 upgrade-audit finding, PR #327 scenarios B3/B4, bundled 2026-07-12), so
+> its citations are grounded against the then-current `main` — **`e6c3eb2`** ("Fix B2 family command
+> and heartbeat plumbing (#325)"), i.e. **B2 / PR #325 is already merged**. Because #325 touches the
+> FamilyCommand plumbing and the child's delete-on-process, **Task 331.0 must re-ground every citation
+> against whatever `git rev-parse HEAD` reports and reconcile with #325's changes** (the child's
+> delete-on-process moved into `LockCodeManager.processCommand`, and command application is now
+> idempotent via a persisted ledger — see Task 331.0). All line numbers below were verified against
+> `e6c3eb2`; where a Task-0 grep reports a shifted line, use the fresh number.
+
+`#331` is the honesty fix for a V2 parent whose child is still on the App Store V1 build during the
+rollout. V1 has family enrollment and lock-code sync — only the **command reader** and **heartbeats**
+are V2-only — so `ParentDashboardView` tells two lies:
+- **#331a — reset commands report success that never happens.** "Reset Emergency Count" and "Reset
+  PIN Attempts" flip to a green "success" checkmark the instant the `FamilyCommand` record **saves**
+  to CloudKit (`ParentDashboardView.swift:1114→1118` and `:1154→1158` — BOTH paths), not when the
+  child applies it. A V1 child has no command reader, so nothing ever happens; the parent is told it
+  did.
+- **#331b — an active child shows as no child.** Device Status renders "No Devices" / "Child devices
+  will appear here when they activate a profile" (`:550-554`) because it is driven by heartbeats,
+  which V1 never sends. An enrolled, actively-blocking V1 child renders as nothing.
+
+The fix is **UI honesty, V2-side only** (no V1 release, no schema change): a reset command shows
+"Sent — waiting for child to confirm", flipping to confirmed only when the child **deletes the
+command record on processing** (V2 children already delete-on-process — the delete is the truthful
+signal); and the empty Device-Status copy acknowledges that a child on an older app version won't
+appear. Implement in order 331.1 → 331.2 → 331.3 → 331.4, each a self-contained change with its own
+`(#331)` commit scope. **Not blocked on #307** — the truth sources are the command record and the
+heartbeat list, not the CKSyncEngine `state` field.
+
+**Global constraints that bind every task here** (from `AGENTS.md`): NEVER force-commit/amend — new
+commits only; request code review before merge. `swift-format` clean, 2-space indent, ~100–120 col.
+Use `Log`, never `print`; never log lock codes / personal identifiers (UUIDs, `userRecordName`
+opaque CK ids, timestamps, user-defined profile names are acceptable). Lock-check gate is
+`currentMode == .child`, never `!= .parent` (not exercised here — the reset menu already gates on
+`member.role == .child`). Pin time in tests. Test simulator: boot an iPhone 17 **once by UUID**
+(never by device name) and reuse it:
+```
+xcodebuild test -project FamilyFoqos.xcodeproj -scheme FamilyFoqos -destination 'platform=iOS Simulator,id=<UUID>' -only-testing:FoqosTests/<Class> | xcpretty
+```
+
+### Problem (device-observed, V1-child + V2-parent pair)
+
+Both defects only appear in a **mixed-version family** (V2 parent, V1 child) — #326's single-device
+plan will NOT reproduce them. On such a pair:
+1. The parent opens the family dashboard, taps **Reset Emergency Count** (or **Reset PIN Attempts**),
+   and immediately sees the green success indicator — but the child's emergency count / PIN throttle
+   is never reset, because the V1 build has no code that reads `FamilyCommand` records.
+2. Device Status shows the empty "No Devices" card even though the child is enrolled and actively
+   blocking, because the card is populated from heartbeats and V1 never emits one.
+
+### Grounding (verified at `e6c3eb2`)
+
+All in `Foqos/Views/Parent/ParentDashboardView.swift` (`import CloudKit` + `import SwiftUI`; `:1`,
+`:2`), plus the FamilyCommand CloudKit seam.
+
+**#331a — the two reset paths (in `struct FamilyMemberCard`, `:993`).** Both funnels treat a
+successful CKRecord save as success:
+```swift
+:1096  private func resetEmergencyCount() {
+:1105    isResettingEmergency = true
+:1114        try await CloudKitManager.shared.sendCommand(command)
+:1117          isResettingEmergency = false
+:1118          showResetSuccess = true          // ← LIE: save ≠ applied by the child (#331a)
+:1136  private func resetLockCodeThrottle() {
+:1145    isResettingThrottle = true
+:1154        try await CloudKitManager.shared.sendCommand(command)
+:1157          isResettingThrottle = false
+:1158          showResetSuccess = true          // ← same LIE on the second path
+```
+The shared status state lives at `:998-1002` (`isResettingEmergency`, `isResettingThrottle`,
+`showResetSuccess`, `showResetError`, `resetErrorMessage`). The Menu label renders the state at
+`:1060-1071`: `ProgressView` while resetting (`:1060`), a **green `checkmark.circle.fill`** while
+`showResetSuccess` (`:1063-1065`), else `ellipsis.circle`. On save success each funnel sets
+`showResetSuccess = true`, sleeps 2 s, then `showResetSuccess = false` (`:1118-1124`, `:1158-1164`)
+— i.e. a transient green tick that claims the reset happened. The error path (`:1126-1131` /
+`:1166-1171`) is already honest (it surfaces the real error via the `.alert` at `:1073-1077`) and is
+**out of scope**.
+
+**#331b — the empty Device-Status copy (in `deviceStatusSection`, `:538`).** Driven by heartbeats:
+```swift
+:550  if heartbeatManager.monitoredDevices.isEmpty {
+:551    EmptyMemberCard(
+:552      icon: "antenna.radiowaves.left.and.right",
+:553      title: "No Devices",
+:554      description: "Child devices will appear here when they activate a profile"
+```
+`EmptyMemberCard` (`:933`) is a dumb presentation component taking `icon`/`title`/`description` —
+the copy is passed in here, so only these strings change.
+
+**The confirmation signal — the child deletes the command record on processing.** `sendCommand`
+saves the record to the parent's **private** DB in `policyZoneID` with a **deterministic**
+`recordName` (`FamilyCommand.recordName(commandType:targetChildId:parentId:)`,
+`FamilyCommand.swift:35`) — `CloudKitNetworkService+Commands.swift:19-42` (`privateDatabase.save`,
+`:28`). A V2 child processes and then **deletes** it: `LockCodeManager.processCommand` (`:366`) calls
+`cloudKitManager.deleteCommand(command)` (`:374`), after `applyCommandIfNeeded` (`:351`, an
+idempotent persisted-ledger apply added by #325). `deleteCommand`
+(`CloudKitNetworkService+Commands.swift:83-104`) removes it from `sharedDatabase` — the participant
+(child) side of the same shared zone — which propagates the delete back to the owner's (parent's)
+private DB. So the parent can detect "processed" by re-reading its own record: present ⇒ still
+pending; `CKError.unknownItem` ⇒ the child deleted it ⇒ applied. `CloudKitManager.sendCommand`/
+`deleteCommand` delegate to the network service (`CloudKitManager.swift:121`, `:129`);
+`policyZoneID` and `privateDatabase` are the same instance members `sendCommand` already uses
+(`CloudKitNetworkService+Commands.swift:25,28`).
+
+> **#325 reconciliation (mandatory to re-check in Task 331.0).** The issue text cited the child's
+> delete-on-process at `LockCodeManager.swift:339`; at `e6c3eb2` (post-#325) `:339` is the
+> `applyCommand` switch case (`case .resetEmergencyCount:`, `:337-345`) and the **actual
+> `deleteCommand` moved to `processCommand:374`**, with idempotence provided by
+> `applyCommandIfNeeded` (`:351`). The confirmation SIGNAL this mini-plan depends on — the command
+> **record deletion** — is unchanged by #325; only its call site moved. Task 331.0 re-verifies this
+> by symbol.
+
+Nearest test file for structure reference: `FoqosTests/FamilyCommandSaveOutcomeTests.swift`
+(`import CloudKit` + `import XCTest` + `@testable import FamilyFoqos`, `@MainActor`).
+
+### MAINTAINER DECISION — MD-331 (ESCALATE; recommend Option A)
+
+The two lies and their honest copy are fully determined (no fork) — **331.1/331.2/331.4 proceed
+unconditionally**. The one genuine fork is **how the parent detects the child's confirmation** (the
+"flip to confirmed"), which trades UI reactivity against added infrastructure:
+
+- **Option A (RECOMMENDED): a bounded client-side poll after send.** After a successful save, show
+  "Sent — waiting for child to confirm", then re-read the command record a bounded number of times
+  (Task 331.3, ~5 × 3 s ≈ 15 s while the card is on screen); flip to "Confirmed by child" on the
+  first `unknownItem`. A V1 child never deletes the record, so the status honestly stays "waiting"
+  (never a false confirmation). No schema, no subscription lifecycle.
+- **Option B: ship the honesty COPY only** (331.1 + 331.2 + 331.4) and **drop the confirmation poll**
+  (skip 331.3). The reset shows "Sent — waiting for child to confirm" and never auto-flips to
+  "Confirmed". This alone removes **both** lies — the only loss is the positive confirmation signal.
+  Lowest risk, least code.
+- **Option C: a `CKSubscription` on `FamilyCommand` deletions** so the parent flips reactively with
+  no polling. More infrastructure (subscription registration + push handling) for a transient UI
+  nicety.
+
+**Recommendation: A.** The bounded poll is the proportionate way to restore a *truthful* positive
+signal without new persistent infrastructure, and its failure mode is safe (a V1 child simply never
+confirms). **Maintainer, please confirm A vs B vs C.** The tasks below implement **A** and are the
+default that proceeds; if the maintainer picks **B**, skip Task 331.3 and its network method; if
+**C**, replace Task 331.3's poll with a subscription (out of the current scope — a separate follow-up
+seam). This is UI honesty, **not** a sync-protocol change — nothing here makes V1 heartbeat or read
+commands (impossible without a V1 release, which is ruled out).
+
+### Task 331.0: Citation refresh (MANDATORY — do this first, no code)
+
+- [ ] **Step 1: Record the base SHA.** `git rev-parse HEAD` — expect `e6c3eb2` (the B2/#325-merged
+  tip this refresh grounded against), or a **newer** tip since this bundle ships after the other
+  mini-plans. Record it in the Task 331.1 commit body. If it differs, re-run every grep below and
+  reconcile line numbers before writing code.
+- [ ] **Step 2: Confirm the two reset "success-on-save" sites by symbol:**
+```bash
+grep -nF -e 'private func resetEmergencyCount()' -e 'private func resetLockCodeThrottle()' \
+  -e 'try await CloudKitManager.shared.sendCommand(command)' \
+  -e 'showResetSuccess = true' -e 'checkmark.circle.fill' \
+  Foqos/Views/Parent/ParentDashboardView.swift
+```
+  Expected: the two funnels (`~:1096`, `~:1136`), two `sendCommand` calls (`~:1114`, `~:1154`), two
+  `showResetSuccess = true` (`~:1118`, `~:1158`), and the green-tick label (`~:1063`).
+- [ ] **Step 3: Confirm the empty Device-Status copy by symbol:**
+```bash
+grep -nF -e 'private var deviceStatusSection' -e 'heartbeatManager.monitoredDevices.isEmpty' \
+  -e 'title: "No Devices"' \
+  -e 'Child devices will appear here when they activate a profile' \
+  Foqos/Views/Parent/ParentDashboardView.swift
+```
+  Expected: `deviceStatusSection` (`~:538`), the `.isEmpty` gate (`~:550`), and the two copy strings
+  (`~:553`, `~:554`).
+- [ ] **Step 4: Reconcile the confirmation signal with #325 by symbol** (the delete moved; the signal
+  did not):
+```bash
+grep -nF -e 'func processCommand' -e 'cloudKitManager.deleteCommand(command)' \
+  -e 'func applyCommandIfNeeded' -e 'func applyCommand' Foqos/Utils/LockCodeManager.swift
+grep -nF -e 'func sendCommand' -e 'func deleteCommand' -e 'privateDatabase.save' \
+  -e 'policyZoneID' -e 'static func recordName' \
+  Foqos/CloudKit/CloudKitNetworkService+Commands.swift Foqos/Models/FamilyCommand.swift
+grep -nF -e 'func sendCommand' -e 'func deleteCommand' Foqos/CloudKit/CloudKitManager.swift
+```
+  Assert: the child still deletes on process (`processCommand` → `deleteCommand`), `sendCommand`
+  still saves to `privateDatabase` in `policyZoneID` with the deterministic `recordName`, and the
+  `CloudKitManager` wrappers exist. If `#325`'s refactor changed the record id shape or the DB the
+  command is saved to, adjust Task 331.3's probe to match (it must query the **same** DB + zone +
+  recordName `sendCommand` writes).
+
+### Task 331.1: Pure reset-command status model + honest copy (TDD)
+
+**Files:**
+- Create: `Foqos/Views/Parent/ParentResetCommandStatus.swift`
+- Test: **create** `FoqosTests/ParentResetCommandStatusTests.swift`
+
+**Interfaces:**
+- Produces: `enum ParentResetCommandStatus: Equatable { case idle, awaitingChild, confirmed }` with
+  the pure decisions `static let afterSuccessfulSave` (== `.awaitingChild`) and
+  `static func afterConfirmationProbe(commandStillPending: Bool) -> ParentResetCommandStatus`, plus
+  `var displayText: String?`. Consumed by `FamilyMemberCard` (Task 331.2) and the confirmation poll
+  (Task 331.3). Pure over value inputs — no CloudKit, no SwiftUI — so it is exhaustively unit-testable.
+
+- [ ] **Step 1: Write the failing tests** (create `FoqosTests/ParentResetCommandStatusTests.swift`,
+  mirroring `FamilyCommandSaveOutcomeTests` structure):
+```swift
+import XCTest
+
+@testable import FamilyFoqos
+
+final class ParentResetCommandStatusTests: XCTestCase {
+  // #331a: a successful CloudKit SAVE only queues the command — a V1 child never reads it — so
+  // save-success must map to "awaiting", NEVER to "confirmed".
+  func testAfterSuccessfulSave_IsAwaitingChild_NotConfirmed() {
+    XCTAssertEqual(ParentResetCommandStatus.afterSuccessfulSave, .awaitingChild)
+    XCTAssertNotEqual(ParentResetCommandStatus.afterSuccessfulSave, .confirmed)
+  }
+
+  // The child confirms by DELETING the command record; while it still exists we keep waiting.
+  func testConfirmationProbe_StillPending_IsAwaitingChild() {
+    XCTAssertEqual(
+      ParentResetCommandStatus.afterConfirmationProbe(commandStillPending: true), .awaitingChild)
+  }
+
+  // Record gone (unknownItem) ⇒ the child processed + deleted it ⇒ confirmed.
+  func testConfirmationProbe_Gone_IsConfirmed() {
+    XCTAssertEqual(
+      ParentResetCommandStatus.afterConfirmationProbe(commandStillPending: false), .confirmed)
+  }
+
+  func testDisplayText_Awaiting_IsHonestAndNotSuccess() {
+    XCTAssertEqual(
+      ParentResetCommandStatus.awaitingChild.displayText, "Sent — waiting for child to confirm")
+    XCTAssertFalse(
+      ParentResetCommandStatus.awaitingChild.displayText!.lowercased().contains("success"),
+      "must not claim success at save time (#331a)")
+  }
+
+  func testDisplayText_Confirmed_And_Idle() {
+    XCTAssertEqual(ParentResetCommandStatus.confirmed.displayText, "Confirmed by child")
+    XCTAssertNil(ParentResetCommandStatus.idle.displayText)
+  }
+}
+```
+- [ ] **Step 2: Run → FAIL** (`-only-testing:FoqosTests/ParentResetCommandStatusTests`): `cannot find
+  'ParentResetCommandStatus' in scope`.
+- [ ] **Step 3: Implement** (create `Foqos/Views/Parent/ParentResetCommandStatus.swift`):
+```swift
+import Foundation
+
+/// #331: honest status of a parent→child reset command on the family dashboard. Saving the
+/// `FamilyCommand` record to CloudKit only QUEUES it — a V1 child has no command reader and will
+/// never process it — so a successful save must NOT claim the reset happened. Confirmation comes
+/// only when the child DELETES the command record on processing
+/// (`LockCodeManager.processCommand` → `deleteCommand`). Pure value type; unit-testable.
+enum ParentResetCommandStatus: Equatable {
+  case idle           // no reset in flight (failures use the existing error alert)
+  case awaitingChild  // command saved to CloudKit; waiting for the child to process + delete it
+  case confirmed      // the child deleted the command record ⇒ the reset was applied
+
+  /// A successful save maps here, NEVER to `.confirmed` (#331a).
+  static let afterSuccessfulSave: ParentResetCommandStatus = .awaitingChild
+
+  /// The child confirms by deleting the command record; `false` (CKError.unknownItem) ⇒ processed.
+  static func afterConfirmationProbe(commandStillPending: Bool) -> ParentResetCommandStatus {
+    commandStillPending ? .awaitingChild : .confirmed
+  }
+
+  /// User-facing copy for the family-member card. `nil` renders nothing.
+  var displayText: String? {
+    switch self {
+    case .idle: return nil
+    case .awaitingChild: return "Sent — waiting for child to confirm"
+    case .confirmed: return "Confirmed by child"
+    }
+  }
+}
+```
+- [ ] **Step 4: Run → PASS** (`-only-testing:FoqosTests/ParentResetCommandStatusTests`).
+- [ ] **Step 5: Commit**
+```bash
+git add Foqos/Views/Parent/ParentResetCommandStatus.swift FoqosTests/ParentResetCommandStatusTests.swift
+git commit -m "feat(#331): pure ParentResetCommandStatus model + honest reset copy"
+```
+
+### Task 331.2: Wire the honest status into both reset paths (replace the save-time success)
+
+**Files:**
+- Modify: `Foqos/Views/Parent/ParentDashboardView.swift` (`FamilyMemberCard` — state `:1000`, label
+  `:1060-1071`, both reset funnels `:1114-1124` / `:1154-1164`)
+
+**Interfaces:**
+- Consumes: `ParentResetCommandStatus` (Task 331.1).
+
+> `FamilyMemberCard` is a SwiftUI presentation surface — the **decision** lives in the pure model
+> (tested in 331.1); these steps are exact wiring, verified by compile + the 331.5 device gate
+> (this mirrors how Mini-plan G handles view-layer changes: pure helper is unit-tested, the SwiftUI
+> wiring is code-inspection + a device row). The `isResettingEmergency`/`isResettingThrottle`
+> spinners and the existing error `.alert` are **retained unchanged** — only the false save-time
+> "success" is replaced.
+
+- [ ] **Step 1: Replace the `showResetSuccess` boolean with the status enum** (`:1000`):
+```swift
+  @State private var resetStatus: ParentResetCommandStatus = .idle
+```
+  (Delete `@State private var showResetSuccess = false`.)
+- [ ] **Step 2: Render the honest status in the Menu label** (`:1060-1071`) — keep the resetting
+  spinner; replace the green-tick-on-save with status-driven icons, and expose the copy to
+  VoiceOver:
+```swift
+        if isResettingEmergency || isResettingThrottle {
+          ProgressView()
+            .scaleEffect(0.8)
+        } else {
+          switch resetStatus {
+          case .awaitingChild:
+            Image(systemName: "paperplane.circle")
+              .foregroundColor(.secondary)
+          case .confirmed:
+            Image(systemName: "checkmark.circle.fill")
+              .foregroundColor(.green)
+          case .idle:
+            Image(systemName: "ellipsis.circle")
+              .foregroundColor(.secondary)
+          }
+        }
+```
+  Add `.accessibilityLabel(resetStatus.displayText ?? "More")` to the Menu label.
+- [ ] **Step 3: Surface the honest copy for sighted users** — add a caption in the member row's
+  leading `VStack` (below the `Added <date>` text, `~:1027`):
+```swift
+        if let statusText = resetStatus.displayText {
+          Text(statusText)
+            .font(.caption2)
+            .foregroundColor(resetStatus == .confirmed ? .green : .secondary)
+        }
+```
+- [ ] **Step 4: Fix `resetEmergencyCount()`** (`:1114-1124`) — on save success set the honest
+  "awaiting" status instead of the false success tick, and (Option A) kick off the confirmation poll
+  (added in Task 331.3). Clear stale status when a reset starts:
+```swift
+    resetStatus = .idle
+    isResettingEmergency = true
+
+    Task {
+      do {
+        let command = FamilyCommand(
+          commandType: .resetEmergencyCount,
+          targetChildId: member.userRecordName,
+          createdBy: currentUserRecordName
+        )
+        try await CloudKitManager.shared.sendCommand(command)
+
+        await MainActor.run {
+          isResettingEmergency = false
+          resetStatus = .afterSuccessfulSave      // #331a: "Sent — waiting for child to confirm"
+        }
+        await pollForConfirmation(command)        // Task 331.3 (Option A); omit under MD-331 Option B
+      } catch {
+        // Failure path unchanged — the existing error alert is already honest.
+        ...
+      }
+    }
+```
+  Delete the old `showResetSuccess = true` / `try? await Task.sleep(2s)` / `showResetSuccess = false`
+  block (`:1118-1124`).
+- [ ] **Step 5: Apply the identical change to `resetLockCodeThrottle()`** (`:1154-1164`) with
+  `commandType: .resetLockCodeThrottle` and `isResettingThrottle`.
+- [ ] **Step 6: Build** (view edits, no direct unit test):
+```
+xcodebuild -project FamilyFoqos.xcodeproj -scheme FamilyFoqos -configuration Debug -destination 'generic/platform=iOS Simulator' build | xcpretty
+```
+  Expected: `BUILD SUCCEEDED`. Then confirm the save-time lie is gone:
+```bash
+grep -nF -e 'showResetSuccess' Foqos/Views/Parent/ParentDashboardView.swift
+```
+  Expected: **nothing** (all references replaced by `resetStatus`).
+- [ ] **Step 7: Commit**
+```bash
+git add Foqos/Views/Parent/ParentDashboardView.swift
+git commit -m "fix(#331): reset commands show 'waiting for child to confirm', not save-time success"
+```
+
+### Task 331.3: Confirmation probe + bounded poll (implements MD-331 Option A)
+
+> Ships **Option A** (recommended). **Skip this whole task under MD-331 Option B** (honesty copy
+> only — the reset then stays "Sent — waiting for child to confirm" and never auto-confirms). Under
+> **Option C**, replace the poll with a `CKSubscription` (separate follow-up seam).
+
+**Files:**
+- Modify: `Foqos/CloudKit/CloudKitNetworkService+Commands.swift` (add `commandIsPending`)
+- Modify: `Foqos/CloudKit/CloudKitManager.swift` (add the delegating wrapper)
+- Modify: `Foqos/Views/Parent/ParentDashboardView.swift` (add `pollForConfirmation` to
+  `FamilyMemberCard`)
+
+**Interfaces:**
+- Produces: `CloudKitNetworkService.commandIsPending(_:) async throws -> Bool` and its
+  `CloudKitManager` wrapper. Consumed by `pollForConfirmation`, which feeds
+  `ParentResetCommandStatus.afterConfirmationProbe`.
+
+> There is no unit test for the probe or the poll — both are CloudKit / async-timing surfaces
+> (`CKDatabase.record(for:)` has no simulator seam), exactly like Mini-plan G's `WidgetCenter`
+> reload. The **decision** each feeds (`afterConfirmationProbe`) is tested in 331.1; the probe wiring
+> is verified by compile + the 331.5 device gate with a real V2 child (which deletes the record) vs a
+> V1 child (which never does).
+
+- [ ] **Step 1: Add the probe** to `CloudKitNetworkService+Commands.swift` — re-read the parent's own
+  queued record from the **same DB + zone + recordName** `sendCommand` wrote (`:25-28`):
+```swift
+  /// #331: true while the parent's queued command record still exists in the private DB. A V2 child
+  /// DELETES it on processing (LockCodeManager.processCommand → deleteCommand), so `false`
+  /// (CKError.unknownItem) is the parent's honest confirmation that the reset was applied. A V1
+  /// child never deletes it ⇒ this stays true and the UI honestly keeps waiting.
+  func commandIsPending(_ command: FamilyCommand) async throws -> Bool {
+    let recordID = CKRecord.ID(
+      recordName: FamilyCommand.recordName(
+        commandType: command.commandType, targetChildId: command.targetChildId,
+        parentId: command.createdBy),
+      zoneID: policyZoneID)
+    do {
+      _ = try await privateDatabase.record(for: recordID)
+      return true
+    } catch let error as CKError where error.code == .unknownItem {
+      return false
+    }
+  }
+```
+- [ ] **Step 2: Add the `CloudKitManager` wrapper** (next to `sendCommand`, `:121`):
+```swift
+  func commandIsPending(_ command: FamilyCommand) async throws -> Bool {
+    try await networkService.commandIsPending(command)
+  }
+```
+- [ ] **Step 3: Add the bounded poll** to `FamilyMemberCard`:
+```swift
+  /// #331 (MD-331 Option A): after a reset command is queued, poll a bounded number of times for the
+  /// child to delete the record (its processing signal). A V1 child never confirms, so the status
+  /// honestly stays `.awaitingChild` (never a false confirmation). Stops on the first confirmation,
+  /// on a probe error, or when the card leaves the screen (the Task is cancelled).
+  private func pollForConfirmation(_ command: FamilyCommand) async {
+    for _ in 0..<5 {
+      try? await Task.sleep(nanoseconds: 3_000_000_000)
+      let stillPending: Bool
+      do {
+        stillPending = try await CloudKitManager.shared.commandIsPending(command)
+      } catch {
+        return  // transient probe error — leave the honest "waiting" status in place
+      }
+      let next = ParentResetCommandStatus.afterConfirmationProbe(commandStillPending: stillPending)
+      await MainActor.run { resetStatus = next }
+      if next == .confirmed { return }
+    }
+  }
+```
+- [ ] **Step 4: Build the whole scheme** (network + view edits):
+```
+xcodebuild -project FamilyFoqos.xcodeproj -scheme FamilyFoqos -configuration Debug -destination 'generic/platform=iOS Simulator' build | xcpretty
+```
+  Expected: `BUILD SUCCEEDED`. Then re-run 331.1's model tests to confirm no regression:
+```
+xcodebuild test -project FamilyFoqos.xcodeproj -scheme FamilyFoqos -destination 'platform=iOS Simulator,id=<UUID>' -only-testing:FoqosTests/ParentResetCommandStatusTests | xcpretty
+```
+- [ ] **Step 5: Commit**
+```bash
+git add Foqos/CloudKit/CloudKitNetworkService+Commands.swift Foqos/CloudKit/CloudKitManager.swift \
+        Foqos/Views/Parent/ParentDashboardView.swift
+git commit -m "feat(#331): confirm reset commands only when the child deletes the command record"
+```
+
+### Task 331.4: Honest empty Device-Status copy (#331b)
+
+**Files:**
+- Modify: `Foqos/Views/Parent/ParentDashboardView.swift` (`deviceStatusSection`, `:551-554`)
+
+**Interfaces:** none (SwiftUI copy). Like Mini-plan J1's prose, this is a constant string in a view
+with no runtime seam — verified by grep + code-inspection, not a brittle string-assert test.
+
+- [ ] **Step 1: Rewrite the empty-state copy** to acknowledge older app versions (`:551-554`):
+```swift
+        EmptyMemberCard(
+          icon: "antenna.radiowaves.left.and.right",
+          title: "No devices reporting",
+          description:
+            "Devices appear here once they report status. A child on an older app version won't "
+            + "appear even while actively blocking — update their app to see it here."
+        )
+```
+- [ ] **Step 2: Verify the old copy is gone:**
+```bash
+grep -nF -e 'title: "No Devices"' \
+  -e 'Child devices will appear here when they activate a profile' \
+  Foqos/Views/Parent/ParentDashboardView.swift
+```
+  Expected: **nothing** (both old strings replaced).
+- [ ] **Step 3: Build + `swift-format lint`:**
+```
+xcodebuild -project FamilyFoqos.xcodeproj -scheme FamilyFoqos -configuration Debug -destination 'generic/platform=iOS Simulator' build | xcpretty
+swift-format lint Foqos/Views/Parent/ParentDashboardView.swift
+```
+  Expected: `BUILD SUCCEEDED`, no lint output.
+- [ ] **Step 4: Commit**
+```bash
+git add Foqos/Views/Parent/ParentDashboardView.swift
+git commit -m "fix(#331): honest empty Device Status copy for older-version children"
+```
+
+### Task 331.5: Device / integration acceptance (gate before merge — mixed-version pair)
+
+- [ ] **DEVICE GATE (required — V1-child + V2-parent pair; #326's single-device plan will NOT
+  reproduce this).** On a V2 **parent** device and a **V1** child on the same iCloud family account,
+  with the child enrolled and actively blocking a profile:
+  1. **#331b:** open the parent dashboard — Device Status shows the new honest empty copy ("No
+     devices reporting … a child on an older app version won't appear …"), not "No Devices … when
+     they activate a profile".
+  2. **#331a:** tap **Reset Emergency Count** — the card shows **"Sent — waiting for child to
+     confirm"** (paperplane icon), and it **never** flips to the green "Confirmed by child" tick
+     (the V1 child has no command reader). Repeat for **Reset PIN Attempts**.
+  3. **Positive path (verifies the confirmation probe):** pair the V2 parent with a **V2** child;
+     tap a reset; after the child foregrounds and processes (deleting the command record), the
+     parent flips to **"Confirmed by child"** within the poll window.
+  Attach screenshots (both empty-state copy and the "waiting" reset state) and an exported log (real
+  commit SHA, no `+wip`) to the PR.
+- [ ] **CODE-INSPECTION acceptance:** confirm no V1-side change was made (no V1 release exists) and
+  the child-side apply/delete logic (`LockCodeManager` / #325) was left untouched — this mini-plan is
+  V2 parent-UI + one read-only CloudKit probe only.
+
+### Mini-plan #331 — final checks (before requesting review)
+
+- [ ] **Full suite green** on the booted sim (single UUID boot):
+```
+xcodebuild test -project FamilyFoqos.xcodeproj -scheme FamilyFoqos -destination 'platform=iOS Simulator,id=<UUID>' | xcpretty
+```
+- [ ] **`swift-format lint --recursive .` clean.**
+- [ ] **Honesty tripwire greps return nothing:**
+```bash
+grep -nF 'showResetSuccess' Foqos/Views/Parent/ParentDashboardView.swift                       # #331a
+grep -nF -e 'title: "No Devices"' -e 'when they activate a profile' Foqos/Views/Parent/ParentDashboardView.swift  # #331b
+```
+  Both must return **nothing**.
+- [ ] **331.5 DEVICE GATE** (mixed-version pair: honest empty copy + "waiting" reset that never
+  falsely confirms; V2-child positive confirmation) — logged on the PR.
+- [ ] **Request code review** (AGENTS.md: review before merge). Reference #331 and epic #263. Note
+  MD-331 (Option A recommended) awaits maintainer confirmation; 331.1/331.2/331.4 are unconditional.
+
+### Out of scope (do NOT do here)
+- Any **V1-side** change or release (ruled out 2026-07-12 — all mixed-version remediation is
+  V2-side); anything that makes V1 heartbeat or read commands (impossible without a V1 release).
+- The reset **error** path / the existing error `.alert` (already honest — surfaces the real error).
+- The child-side command apply/delete (`LockCodeManager.processCommand` / `applyCommandIfNeeded`) —
+  owned by #325; this mini-plan only reads whether the record still exists.
+- Any `FamilyCommand` **schema** change; changing `sendCommand`/`deleteCommand`/`fetchPendingCommands`
+  behaviour; a `CKSubscription` for command deletion (only under MD-331 Option C, as a follow-up).
+- Heartbeat protocol changes (`HeartbeatManager`) — #331b is copy-only; making V1 appear in Device
+  Status is impossible without a V1 heartbeat emitter.
+
+---
+
+## Skeptic Pass — Mini-plan #331 (refresh, PR #327)
+
+Grounded at `e6c3eb2` (B2/#325 merged). Attacked hardest: the confirmation-probe CloudKit semantics
+and the #325 reconciliation.
+
+1. *(major, CloudKit-semantics — accept with a safe failure mode)* **The confirmation probe assumes a
+   participant (child) deleting the shared record propagates back to the owner's (parent's) private
+   DB, so `privateDatabase.record(for:)` eventually returns `unknownItem`.** `sendCommand` saves to
+   the parent's `privateDatabase` in `policyZoneID` (`CloudKitNetworkService+Commands.swift:25-28`);
+   the V2 child deletes via `sharedDatabase.deleteRecord` (`:93`), i.e. the participant side of the
+   same shared zone. In CloudKit, a participant with write access deleting a record in a shared zone
+   removes it from the owner's private DB — so the probe is sound and the parent will see
+   `unknownItem`. **If that semantics were ever different** (e.g. a retained tombstone), the probe
+   would simply never observe `unknownItem` and the status would stay `.awaitingChild` — a **safe**
+   failure (the parent is told "waiting", never a false "confirmed"). -> Accept; the positive path is
+   proven by the 331.5 device gate with a real V2 child. No false-confirmation risk regardless.
+2. *(minor, #325 reconciliation — handled)* The issue cited the child delete at
+   `LockCodeManager.swift:339`; at `e6c3eb2` that line is the `applyCommand` switch case and the
+   actual `deleteCommand` moved to `processCommand:374` (with an idempotent persisted ledger via
+   `applyCommandIfNeeded:351`). The **signal** #331 depends on — the record deletion — is unchanged;
+   only the call site moved. Task 331.0 Step 4 re-verifies by symbol and adjusts the probe if #325
+   changed the saved record's DB/zone/recordName. -> Covered.
+3. *(minor, non-issue)* **The bounded poll leaks no timer.** `pollForConfirmation` is an `async`
+   sequence of at most 5 × 3 s sleeps started from the card's `Task`; if the parent dismisses the
+   sheet, SwiftUI cancels the owning `Task` and the loop's `Task.sleep` throws → the `try?` swallows
+   it and the loop exits. No retained `Timer`, no background work. -> Sound.
+4. *(minor, non-issue)* **The probe hits the same DB/zone/recordName `sendCommand` writes.** Both use
+   `FamilyCommand.recordName(commandType:targetChildId:parentId:)` in `policyZoneID` against
+   `privateDatabase` (`:25-28`), so the id matches deterministically — the probe cannot miss the
+   record it just queued. `#222`'s deterministic recordName (already relied on for `.alreadyPending`)
+   guarantees this. -> Confirmed.
+5. *(minor, testability — consistent with the plan)* The empty-state copy (#331b) is a constant
+   string in a SwiftUI view; a "README-style" string-assert test would be brittle and low-value, so
+   it is verified by grep + code-inspection — exactly the testability posture Mini-plan J1 states for
+   docs prose and Mini-plan G2-2 states for presentation surfaces. The **decisions** that carry
+   behaviour (`afterSuccessfulSave`, `afterConfirmationProbe`, `displayText`) are all pure and
+   exhaustively unit-tested in 331.1. -> No new testing approach invented.
+6. *(non-issue, #307 independence)* #331's truth sources are the command **record** (deleted by the
+   child) and the heartbeat list — not the CKSyncEngine `state` field — so it is correctly **not
+   blocked on #307**, matching the issue. -> Confirmed.
+
+**Not challenged (the sound core):** both lies are real and grounded byte-for-byte — the reset
+funnels set `showResetSuccess = true` at save time (`ParentDashboardView.swift:1118`, `:1158`) and
+the empty Device-Status card claims children "will appear here when they activate a profile"
+(`:554`) while V1 never heartbeats. The fix is UI honesty + a bounded read-only confirmation probe:
+no schema, no V1 release, no child-side change, file-disjoint from H (`CloudKitNetworkService+
+FamilyMembers.swift` — a **different** `CloudKitNetworkService` extension file), G, J1, and #240. The
+pure `ParentResetCommandStatus` seam mirrors G's `decideAction`/`reloadWidgets` pattern (tested
+decision + code-inspected wiring + device gate). MD-331's confirmation-mechanism fork is correctly
+escalated with a proportionate recommendation (bounded poll), and 331.1/331.2/331.4 ship regardless
+of the ruling so implementation is never blocked.
+
+---
+
 ## Mini-plan J1 — README corrections (#253, #254) — DOCS ONLY
 
 This mini-plan makes **two documentation-only fixes to `README.md`** — no runtime source, no schema, no tests-under-test. It has two independent sub-parts, each self-contained:
@@ -1574,7 +2184,7 @@ This mini-plan makes **two documentation-only fixes to `README.md`** — no runt
 - **J1a · #253** — the README advertises the wrong minimum OS / toolchain (iOS 17.6, Xcode 15, Swift 5.9) and carries three placeholder `TODO` hyperlinks.
 - **J1b · #254** — the "Blocking Strategies" section documents the **removed V1 strategy-picker system** (7 strategy classes + `physicalUnblock*`) as if it were the current configuration model, instead of the V2 **start-triggers / stop-conditions** model.
 
-**Bundle position & drift warning.** In the tail bundle this mini-plan implements **LAST** (order: H → G → J1+#240), *after* #302/#301/#298, B2, and D3+E2. Those bundles touch **Swift** sources, not `README.md` or `FamilyFoqos.xcodeproj/project.pbxproj`, so drift on *these* two files is unlikely — but line numbers are still **provisional**. Each sub-part opens with a mandatory Task 0 that re-derives every citation by **fixed-string grep** and records the SHA it verified against. Do not trust the line numbers printed below.
+**Bundle position & drift warning.** In the tail bundle this mini-plan implements **LAST** (order: H → G → #331 → J1+#240), *after* #302/#301/#298, B2, and D3+E2. Those bundles touch **Swift** sources, not `README.md` or `FamilyFoqos.xcodeproj/project.pbxproj`, so drift on *these* two files is unlikely — but line numbers are still **provisional**. Each sub-part opens with a mandatory Task 0 that re-derives every citation by **fixed-string grep** and records the SHA it verified against. Do not trust the line numbers printed below.
 
 **Global constraints that apply here** (subset of the bundle's, copied per house rule):
 - **Base commit:** `main = e7ac000`. Verified in the worktree at authoring time: `git rev-parse HEAD` → `e7ac00027953…` on branch `worktree-plan-263-tail-ghj240` — i.e. HEAD matches the orchestrator's stated base. Task 0 re-records the real SHA at implementation time (this bundle ships last, so a later tip is possible); re-derive against whatever `git rev-parse HEAD` reports.
@@ -1993,7 +2603,7 @@ git commit -m "docs(#254): rewrite Blocking Strategies section around V2 start-t
 
 ## Mini-plan #240 — replace the apologetic lock-code hashing TODO with the ruled threat model
 
-> **Comment-only change.** This mini-plan touches **exactly three comment lines** in one file. It does **not** change the hashing implementation, does **not** add a KDF (PBKDF2/Argon2), does **not** add attempt-gating or a schema change, and does **not** touch the sync mirror. It IMPLEMENTS LAST in the tail bundle (order: H → G → J1 → **#240**), so its one citation may have drifted — Task 0 re-locates the anchor by fixed-string grep. **Close #240 on merge.**
+> **Comment-only change.** This mini-plan touches **exactly three comment lines** in one file. It does **not** change the hashing implementation, does **not** add a KDF (PBKDF2/Argon2), does **not** add attempt-gating or a schema change, and does **not** touch the sync mirror. It IMPLEMENTS LAST in the tail bundle (order: H → G → #331 → J1 → **#240**), so its one citation may have drifted — Task 0 re-locates the anchor by fixed-string grep. **Close #240 on merge.**
 
 ### Problem
 
@@ -2036,7 +2646,7 @@ The replacement text is the maintainer's calibrated wording (do **not** paraphra
 
 ### Task 0: Citation refresh (MANDATORY — do this first, no code)
 
-Because this mini-plan implements **last** in the tail bundle, the line numbers above may have drifted from earlier bundles (H/G/J1) even though none of them touch `FamilyLockCode.swift`. Re-locate the anchor by fixed string before editing.
+Because this mini-plan implements **last** in the tail bundle, the line numbers above may have drifted from earlier bundles (H/G/#331/J1) even though none of them touch `FamilyLockCode.swift`. Re-locate the anchor by fixed string before editing.
 
 - [ ] **Step 1: Record the base SHA.** Run `git rev-parse HEAD` and write the result into the Task 1 commit body (`Verified against <SHA>`). At authoring time HEAD = `e7ac00027953dc317362fd9337a0b4cc2b1eff73` (= declared base `e7ac000`). If HEAD now differs, that is expected (earlier tail bundles merged ahead of this one) — just record the actual SHA.
 - [ ] **Step 2: Confirm the anchor is still unique and unchanged.** Run:
