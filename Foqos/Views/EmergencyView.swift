@@ -33,6 +33,9 @@ struct EmergencyView: View {
     }
     .onAppear {
       emergencyManager.checkAndResetEmergencyUnblocks()
+      if appModeManager.currentMode == .child {
+        Task { await lockCodeManager.processPendingCommands() }
+      }
     }
     .sheet(isPresented: $showingLockCodeEntry) {
       LockCodeEntryView(

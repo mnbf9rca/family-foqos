@@ -301,15 +301,17 @@ class LockCodeManager: ObservableObject {
 
   // MARK: - Command Processing (Child Mode)
 
-  /// Check for and process any pending commands from parent
-  /// Called automatically during fetchSharedLockCodes
-  private func processPendingCommands() async {
+  /// Check for and process any pending commands from parent.
+  /// Called from child lock-code refresh, the PIN-dialog poll, and child foreground.
+  func processPendingCommands(cleanupStale: Bool = true) async {
     guard appModeManager.currentMode == .child else {
       return
     }
 
-    // Clean up any stale commands (from any user, not just this child)
-    await cloudKitManager.cleanupStaleCommands()
+    if cleanupStale {
+      // Clean up any stale commands (from any user, not just this child)
+      await cloudKitManager.cleanupStaleCommands()
+    }
 
     do {
       let commands = try await cloudKitManager.fetchPendingCommands()
@@ -322,9 +324,10 @@ class LockCodeManager: ObservableObject {
     }
   }
 
-  private func processCommand(_ command: FamilyCommand) async {
-    Log.info("Processing command: \(command.commandType.rawValue)", category: .cloudKit)
-
+  /// Apply a parent command's local side effect.
+  /// Replication of a parent-authorized operation (#230); not re-gated on the child.
+  func applyCommand(_ command: FamilyCommand) {
+    Log.info("Applying command: \(command.commandType.rawValue)", category: .cloudKit)
     switch command.commandType {
     case .resetEmergencyCount:
       EmergencyUnblockManager.shared.resetEmergencyUnblocks()
@@ -333,6 +336,10 @@ class LockCodeManager: ObservableObject {
       resetThrottle()
       Log.info("Lock code throttle reset by parent", category: .cloudKit)
     }
+  }
+
+  private func processCommand(_ command: FamilyCommand) async {
+    applyCommand(command)
 
     // Delete the command after processing
     do {

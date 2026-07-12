@@ -15,6 +15,7 @@ struct LockCodeEntryView: View {
   @State private var showError: Bool = false
   @State private var isVerifying: Bool = false
   @State private var lockoutSecondsRemaining: Int = 0
+  @State private var pollTick: Int = 0
 
   private let codeLength = 4
 
@@ -125,10 +126,20 @@ struct LockCodeEntryView: View {
       }
       .onAppear {
         updateLockoutRemaining()
+        if lockoutSecondsRemaining > 0 {
+          processPendingResetCommands()
+        }
       }
       .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
-        guard lockoutSecondsRemaining > 0 else { return }
+        guard lockoutSecondsRemaining > 0 else {
+          pollTick = 0
+          return
+        }
         updateLockoutRemaining()
+        pollTick += 1
+        if pollTick % 5 == 0 {
+          processPendingResetCommands()
+        }
       }
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
@@ -190,6 +201,14 @@ struct LockCodeEntryView: View {
   private func updateLockoutRemaining() {
     let remaining = lockCodeManager.lockoutRemaining()
     lockoutSecondsRemaining = remaining > 0 ? Int(ceil(remaining)) : 0
+  }
+
+  private func processPendingResetCommands() {
+    guard AppModeManager.shared.currentMode == .child else { return }
+    Task { @MainActor in
+      await lockCodeManager.processPendingCommands(cleanupStale: false)
+      updateLockoutRemaining()
+    }
   }
 }
 

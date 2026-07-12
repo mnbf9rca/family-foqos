@@ -142,6 +142,9 @@ struct FoqosApp: App {
               await CloudKitManager.shared.verifySelfFamilyMemberRecord()
               // Verify child authorization when app becomes active
               verifyChildAuthorizationIfNeeded()
+              if AppModeManager.shared.currentMode == .child {
+                await LockCodeManager.shared.processPendingCommands()
+              }
             }
             // #201: re-drive persisted session-stop retries so a remote device doesn't see a
             // stopped session as perpetually active
