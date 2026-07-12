@@ -195,6 +195,9 @@ struct HomeView: View {
             activeSessionProfileId: activeSessionProfileId,
             elapsedTime: strategyManager.elapsedTime,
             startingProfileId: navigateToProfileId,
+            onStartingProfileConsumed: {
+              navigateToProfileId = nil
+            },
             onStartTapped: { profile in
               strategyButtonPress(profile)
             },
