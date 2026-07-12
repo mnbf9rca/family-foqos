@@ -59,6 +59,11 @@ extension TimersUtilScheduling {
   }
 }
 
+private final class OwnedReminderState: @unchecked Sendable {  // SAFETY: All mutable state is guarded by lock
+  let lock = NSLock()
+  var scheduleGenerations: [String: UInt] = [:]
+}
+
 final class TimersUtil: TimersUtilScheduling, @unchecked Sendable {  // SAFETY: Mutable state (backgroundTasks) uses thread-safe UserDefaults
   /// Constants for background task identifiers
   static let backgroundProcessingTaskIdentifier =
@@ -85,35 +90,34 @@ final class TimersUtil: TimersUtilScheduling, @unchecked Sendable {  // SAFETY: 
     return identifier.hasPrefix(sessionReminderPrefix) || identifier.hasPrefix(breakReminderPrefix)
   }
 
-  private let ownedReminderIdentifiersLock = NSLock()
-  private var ownedReminderScheduleGenerations: [String: UInt] = [:]
+  private static let ownedReminderState = OwnedReminderState()
 
   // Internal for focused tests; ownership must survive utility recreation.
   var ownedReminderIdentifiersForTesting: Set<String> {
-    ownedReminderIdentifiersLock.lock()
-    defer { ownedReminderIdentifiersLock.unlock() }
+    Self.ownedReminderState.lock.lock()
+    defer { Self.ownedReminderState.lock.unlock() }
     return ownedReminderIdentifiers
   }
 
   // Internal for focused tests; cancellation must invalidate in-flight owned schedules.
   func ownedReminderScheduleGenerationForTesting(_ identifier: String) -> UInt? {
-    ownedReminderIdentifiersLock.lock()
-    defer { ownedReminderIdentifiersLock.unlock() }
-    return ownedReminderScheduleGenerations[identifier]
+    Self.ownedReminderState.lock.lock()
+    defer { Self.ownedReminderState.lock.unlock() }
+    return Self.ownedReminderState.scheduleGenerations[identifier]
   }
 
   // Internal for focused tests; mirrors the authorization and add callback validity check.
   func isOwnedReminderScheduleCurrentForTesting(_ identifier: String, generation: UInt) -> Bool {
-    ownedReminderIdentifiersLock.lock()
-    defer { ownedReminderIdentifiersLock.unlock() }
+    Self.ownedReminderState.lock.lock()
+    defer { Self.ownedReminderState.lock.unlock() }
     return isOwnedReminderScheduleCurrent(identifier, generation: generation)
   }
 
   // Internal for focused tests; a stale completion removes the request only when cancellation
   // cleared ownership. A newer generation for the same stable id owns that request and survives.
   func shouldRemoveStaleOwnedReminderForTesting(_ identifier: String, generation: UInt) -> Bool {
-    ownedReminderIdentifiersLock.lock()
-    defer { ownedReminderIdentifiersLock.unlock() }
+    Self.ownedReminderState.lock.lock()
+    defer { Self.ownedReminderState.lock.unlock() }
     return shouldRemoveStaleOwnedReminder(identifier, generation: generation)
   }
 
@@ -123,8 +127,8 @@ final class TimersUtil: TimersUtilScheduling, @unchecked Sendable {  // SAFETY: 
     generation: UInt,
     remove: ([String]) -> Void
   ) {
-    ownedReminderIdentifiersLock.lock()
-    defer { ownedReminderIdentifiersLock.unlock() }
+    Self.ownedReminderState.lock.lock()
+    defer { Self.ownedReminderState.lock.unlock() }
     guard shouldRemoveStaleOwnedReminder(identifier, generation: generation) else { return }
     remove([identifier])
   }
@@ -142,21 +146,21 @@ final class TimersUtil: TimersUtilScheduling, @unchecked Sendable {  // SAFETY: 
   }
 
   private func beginOwnedReminderSchedule(_ identifier: String) -> UInt {
-    ownedReminderIdentifiersLock.lock()
-    defer { ownedReminderIdentifiersLock.unlock() }
+    Self.ownedReminderState.lock.lock()
+    defer { Self.ownedReminderState.lock.unlock() }
 
     var identifiers = ownedReminderIdentifiers
     identifiers.insert(identifier)
     ownedReminderIdentifiers = identifiers
 
-    let generation = (ownedReminderScheduleGenerations[identifier] ?? 0) &+ 1
-    ownedReminderScheduleGenerations[identifier] = generation
+    let generation = (Self.ownedReminderState.scheduleGenerations[identifier] ?? 0) &+ 1
+    Self.ownedReminderState.scheduleGenerations[identifier] = generation
     return generation
   }
 
   private func isOwnedReminderScheduleCurrent(_ identifier: String, generation: UInt) -> Bool {
     ownedReminderIdentifiers.contains(identifier)
-      && ownedReminderScheduleGenerations[identifier] == generation
+      && Self.ownedReminderState.scheduleGenerations[identifier] == generation
   }
 
   private func shouldRemoveStaleOwnedReminder(_ identifier: String, generation: UInt) -> Bool {
@@ -383,12 +387,12 @@ final class TimersUtil: TimersUtilScheduling, @unchecked Sendable {  // SAFETY: 
 
         let center = UNUserNotificationCenter.current()
         if let ownedReminderScheduleGeneration {
-          self?.ownedReminderIdentifiersLock.lock()
+          Self.ownedReminderState.lock.lock()
           guard
             self?.isOwnedReminderScheduleCurrent(
               notificationId, generation: ownedReminderScheduleGeneration) == true
           else {
-            self?.ownedReminderIdentifiersLock.unlock()
+            Self.ownedReminderState.lock.unlock()
             return
           }
           center.add(request) { [weak self] error in
@@ -415,7 +419,7 @@ final class TimersUtil: TimersUtilScheduling, @unchecked Sendable {  // SAFETY: 
               completion(.success)
             }
           }
-          self?.ownedReminderIdentifiersLock.unlock()
+          Self.ownedReminderState.lock.unlock()
           return
         }
 
@@ -451,14 +455,14 @@ final class TimersUtil: TimersUtilScheduling, @unchecked Sendable {  // SAFETY: 
   }
 
   func cancelAllNotifications() {
-    ownedReminderIdentifiersLock.lock()
+    Self.ownedReminderState.lock.lock()
     let identifiers = Array(ownedReminderIdentifiers)
     ownedReminderIdentifiers = []
     for identifier in identifiers {
-      ownedReminderScheduleGenerations[identifier] =
-        (ownedReminderScheduleGenerations[identifier] ?? 0) &+ 1
+      Self.ownedReminderState.scheduleGenerations[identifier] =
+        (Self.ownedReminderState.scheduleGenerations[identifier] ?? 0) &+ 1
     }
-    ownedReminderIdentifiersLock.unlock()
+    Self.ownedReminderState.lock.unlock()
 
     let center = UNUserNotificationCenter.current()
     center.removePendingNotificationRequests(withIdentifiers: identifiers)
@@ -479,8 +483,8 @@ final class TimersUtil: TimersUtilScheduling, @unchecked Sendable {  // SAFETY: 
     _ identifier: String,
     generation: UInt
   ) -> Bool {
-    ownedReminderIdentifiersLock.lock()
-    defer { ownedReminderIdentifiersLock.unlock() }
+    Self.ownedReminderState.lock.lock()
+    defer { Self.ownedReminderState.lock.unlock() }
     return isOwnedReminderScheduleCurrent(identifier, generation: generation)
   }
 
@@ -489,8 +493,8 @@ final class TimersUtil: TimersUtilScheduling, @unchecked Sendable {  // SAFETY: 
     generation: UInt,
     center: UNUserNotificationCenter
   ) {
-    ownedReminderIdentifiersLock.lock()
-    defer { ownedReminderIdentifiersLock.unlock() }
+    Self.ownedReminderState.lock.lock()
+    defer { Self.ownedReminderState.lock.unlock() }
     guard shouldRemoveStaleOwnedReminder(identifier, generation: generation) else { return }
     center.removePendingNotificationRequests(withIdentifiers: [identifier])
     center.removeDeliveredNotifications(withIdentifiers: [identifier])

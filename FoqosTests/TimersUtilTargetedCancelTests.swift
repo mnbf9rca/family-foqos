@@ -154,4 +154,32 @@ final class TimersUtilTargetedCancelTests: XCTestCase {
 
     XCTAssertTrue(removedIdentifiers.isEmpty)
   }
+
+  func testGivenTimersUtilIsRecreated_WhenSameReminderIsScheduledAgain_ThenGenerationStateIsShared() {
+    let identifier = TimersUtil.sessionReminderIdentifier(for: UUID())
+    let oldTimers = TimersUtil()
+
+    _ = oldTimers.scheduleNotification(
+      title: "Old Session",
+      message: "Message",
+      seconds: 60,
+      identifier: identifier)
+    let oldGeneration = try! XCTUnwrap(
+      oldTimers.ownedReminderScheduleGenerationForTesting(identifier))
+
+    let recreatedTimers = TimersUtil()
+    _ = recreatedTimers.scheduleNotification(
+      title: "New Session",
+      message: "Message",
+      seconds: 120,
+      identifier: identifier)
+    let newGeneration = try! XCTUnwrap(
+      recreatedTimers.ownedReminderScheduleGenerationForTesting(identifier))
+
+    XCTAssertNotEqual(oldGeneration, newGeneration)
+    XCTAssertFalse(
+      oldTimers.isOwnedReminderScheduleCurrentForTesting(identifier, generation: oldGeneration))
+    XCTAssertTrue(
+      oldTimers.isOwnedReminderScheduleCurrentForTesting(identifier, generation: newGeneration))
+  }
 }
