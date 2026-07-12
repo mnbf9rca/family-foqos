@@ -99,4 +99,45 @@ final class TimersUtilTargetedCancelTests: XCTestCase {
     XCTAssertFalse(
       timers.isOwnedReminderScheduleCurrentForTesting(identifier, generation: generation))
   }
+
+  func testGivenOwnedReminderAddCompletesAfterCancel_WhenCheckingStaleGeneration_ThenRequestsRemoval() {
+    let timers = TimersUtil()
+    let identifier = TimersUtil.sessionReminderIdentifier(for: UUID())
+
+    _ = timers.scheduleNotification(
+      title: "Session",
+      message: "Message",
+      seconds: 60,
+      identifier: identifier)
+    let generation = try! XCTUnwrap(timers.ownedReminderScheduleGenerationForTesting(identifier))
+
+    timers.cancelAllNotifications()
+
+    XCTAssertTrue(
+      timers.shouldRemoveStaleOwnedReminderForTesting(identifier, generation: generation),
+      "A stale completion after cancellation must remove the request that may have just been added")
+  }
+
+  func testGivenOlderOwnedReminderAddCompletesAfterNewerSchedule_WhenCheckingStaleGeneration_ThenKeepsNewerReminder() {
+    let timers = TimersUtil()
+    let identifier = TimersUtil.sessionReminderIdentifier(for: UUID())
+
+    _ = timers.scheduleNotification(
+      title: "Old Session",
+      message: "Message",
+      seconds: 60,
+      identifier: identifier)
+    let oldGeneration = try! XCTUnwrap(
+      timers.ownedReminderScheduleGenerationForTesting(identifier))
+
+    _ = timers.scheduleNotification(
+      title: "New Session",
+      message: "Message",
+      seconds: 120,
+      identifier: identifier)
+
+    XCTAssertFalse(
+      timers.shouldRemoveStaleOwnedReminderForTesting(identifier, generation: oldGeneration),
+      "A stale completion from an older schedule must not remove the newer owned reminder")
+  }
 }

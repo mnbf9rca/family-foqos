@@ -109,6 +109,14 @@ final class TimersUtil: TimersUtilScheduling, @unchecked Sendable {  // SAFETY: 
     return isOwnedReminderScheduleCurrent(identifier, generation: generation)
   }
 
+  // Internal for focused tests; a stale completion removes the request only when cancellation
+  // cleared ownership. A newer generation for the same stable id owns that request and survives.
+  func shouldRemoveStaleOwnedReminderForTesting(_ identifier: String, generation: UInt) -> Bool {
+    ownedReminderIdentifiersLock.lock()
+    defer { ownedReminderIdentifiersLock.unlock() }
+    return shouldRemoveStaleOwnedReminder(identifier, generation: generation)
+  }
+
   private var ownedReminderIdentifiers: Set<String> {
     get {
       Set(
@@ -137,6 +145,11 @@ final class TimersUtil: TimersUtilScheduling, @unchecked Sendable {  // SAFETY: 
   private func isOwnedReminderScheduleCurrent(_ identifier: String, generation: UInt) -> Bool {
     ownedReminderIdentifiers.contains(identifier)
       && ownedReminderScheduleGenerations[identifier] == generation
+  }
+
+  private func shouldRemoveStaleOwnedReminder(_ identifier: String, generation: UInt) -> Bool {
+    !isOwnedReminderScheduleCurrent(identifier, generation: generation)
+      && !ownedReminderIdentifiers.contains(identifier)
   }
 
   /// Thread identifier for grouping pre-activation reminders per profile
@@ -376,6 +389,12 @@ final class TimersUtil: TimersUtilScheduling, @unchecked Sendable {  // SAFETY: 
                 self?.isOwnedReminderScheduleCurrentForCallback(
                   notificationId, generation: ownedReminderScheduleGeneration) == true
               else {
+                if self?.shouldRemoveStaleOwnedReminderForCallback(
+                  notificationId, generation: ownedReminderScheduleGeneration) == true
+                {
+                  center.removePendingNotificationRequests(withIdentifiers: [notificationId])
+                  center.removeDeliveredNotifications(withIdentifiers: [notificationId])
+                }
                 return
               }
               self?.scheduleBackgroundTask(
@@ -453,6 +472,15 @@ final class TimersUtil: TimersUtilScheduling, @unchecked Sendable {  // SAFETY: 
     ownedReminderIdentifiersLock.lock()
     defer { ownedReminderIdentifiersLock.unlock() }
     return isOwnedReminderScheduleCurrent(identifier, generation: generation)
+  }
+
+  private func shouldRemoveStaleOwnedReminderForCallback(
+    _ identifier: String,
+    generation: UInt
+  ) -> Bool {
+    ownedReminderIdentifiersLock.lock()
+    defer { ownedReminderIdentifiersLock.unlock() }
+    return shouldRemoveStaleOwnedReminder(identifier, generation: generation)
   }
 
   func cancelAll() {
