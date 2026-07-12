@@ -11,6 +11,9 @@ final class SyncEngineFacadeTests: XCTestCase {
   private var savedEnabled = false
   private var savedIsSyncReady = false
   private var savedController: (any SyncEngineControlling)?
+  private var savedBufferDefaults: UserDefaults!
+  private var bufferSuiteName: String!
+  private var bufferDefaults: UserDefaults!
 
   override func setUp() async throws {
     try await super.setUp()
@@ -20,6 +23,10 @@ final class SyncEngineFacadeTests: XCTestCase {
     savedEnabled = manager.isEnabled
     savedIsSyncReady = manager.isSyncReady
     savedController = manager.engineController
+    savedBufferDefaults = manager.bufferDefaults
+    bufferSuiteName = "SyncEngineFacadeTests-buffer-\(UUID().uuidString)"
+    bufferDefaults = UserDefaults(suiteName: bufferSuiteName)!
+    manager.bufferDefaults = bufferDefaults
     mock = MockSyncEngineControlling()
     manager.engineController = mock
     manager.isSyncReady = false
@@ -30,6 +37,8 @@ final class SyncEngineFacadeTests: XCTestCase {
     manager.engineController = savedController
     manager.isSyncReady = savedIsSyncReady
     manager.isEnabled = savedEnabled
+    manager.bufferDefaults = savedBufferDefaults
+    UserDefaults().removePersistentDomain(forName: bufferSuiteName)
     UserDefaults().removePersistentDomain(forName: testSuiteName)
     try await super.tearDown()
   }
@@ -99,6 +108,7 @@ final class SyncEngineFacadeTests: XCTestCase {
     manager.recordDisabledDeleteTombstone(recordName: "p1")
 
     XCTAssertEqual(mock.recordedDisabledTombstones, [])
+    XCTAssertEqual(PreAttachDeleteBuffer.drainAll(defaults: bufferDefaults), ["p1"])
   }
 
   func testGivenReadyController_WhenEnqueueProfileSave_ThenRequestSyncIsScheduled() throws {
@@ -224,6 +234,28 @@ final class SyncEngineFacadeTests: XCTestCase {
       "a GC delete dropped before attach is replayed through the existing deferred-delete path")
     XCTAssertEqual(attached.requestSyncCount, 1)
     XCTAssertTrue(manager.hasNoDeferredMutations)
+  }
+
+  func testGivenNotAttached_WhenEnqueueProfileDelete_ThenDeleteIsBufferedDurably() throws {
+    let id = UUID()
+    manager.engineController = nil
+
+    XCTAssertThrowsError(try manager.enqueueProfileDelete(id)) { error in
+      XCTAssertEqual(error as? SyncEngineControllingError, .notAttached)
+    }
+
+    XCTAssertEqual(Set(PreAttachDeleteBuffer.drainAll(defaults: bufferDefaults)), [id.uuidString])
+  }
+
+  func testGivenNotAttached_WhenEnqueueLocationDelete_ThenDeleteIsBufferedDurably() throws {
+    let id = UUID()
+    manager.engineController = nil
+
+    XCTAssertThrowsError(try manager.enqueueLocationDelete(id)) { error in
+      XCTAssertEqual(error as? SyncEngineControllingError, .notAttached)
+    }
+
+    XCTAssertEqual(Set(PreAttachDeleteBuffer.drainAll(defaults: bufferDefaults)), [id.uuidString])
   }
 
   func testGivenNotAttached_WhenEnqueueProfileDelete_ThenTombstoneDeleteIsReplayedOnReady() throws {
