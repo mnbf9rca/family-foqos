@@ -833,9 +833,10 @@ final class SyncEngineControllerTests: XCTestCase {
     controller.handle(.willFetchChanges)
     controller.handle(.didFetchChanges)
 
+    XCTAssertEqual(reconciledContexts.count, 0, "reconcile waits for post-cycle retry sweep")
+    await controller.fetchCycleSweepTask?.value
     XCTAssertEqual(reconciledContexts.count, 1)
     XCTAssertTrue(reconciledContexts.first === context)
-    await controller.fetchCycleSweepTask?.value
   }
 
   func testGivenFailedApplyPending_WhenDidFetchChanges_ThenPostCycleSweepRetriesIt() async {

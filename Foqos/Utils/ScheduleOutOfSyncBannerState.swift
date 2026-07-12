@@ -1,5 +1,12 @@
 import Foundation
 
+enum ScheduleRegistrationRefreshNotifier {
+  @MainActor
+  static func post(notificationCenter: NotificationCenter = .default) {
+    notificationCenter.post(name: .scheduleRegistrationsDidReconcile, object: nil)
+  }
+}
+
 struct ScheduleOutOfSyncBannerState {
   var isVisible: Bool = false
 

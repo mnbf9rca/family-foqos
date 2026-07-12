@@ -61,7 +61,7 @@ enum PreActivationReminderScheduler {
       }
 
       Log.debug("Reconciled DeviceActivity schedule registrations", category: .timer)
-      notificationCenter.post(name: .scheduleRegistrationsDidReconcile, object: nil)
+      ScheduleRegistrationRefreshNotifier.post(notificationCenter: notificationCenter)
     } catch {
       Log.error(
         "Failed to reconcile schedule registrations: \(error.localizedDescription)",

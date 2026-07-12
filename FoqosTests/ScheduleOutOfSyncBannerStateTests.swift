@@ -22,4 +22,21 @@ final class ScheduleOutOfSyncBannerStateTests: XCTestCase {
 
     XCTAssertFalse(data.scheduleIsOutOfSync)
   }
+
+  func testGivenLocalScheduleRegistration_WhenPostingRefreshSignal_ThenReconcileNotificationEmitted() {
+    let notificationCenter = NotificationCenter()
+    let posted = expectation(description: "schedule registration refresh notification posted")
+    let observer = notificationCenter.addObserver(
+      forName: .scheduleRegistrationsDidReconcile,
+      object: nil,
+      queue: nil
+    ) { _ in
+      posted.fulfill()
+    }
+    defer { notificationCenter.removeObserver(observer) }
+
+    ScheduleRegistrationRefreshNotifier.post(notificationCenter: notificationCenter)
+
+    wait(for: [posted], timeout: 0.1)
+  }
 }

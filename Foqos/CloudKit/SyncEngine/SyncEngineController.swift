@@ -650,12 +650,14 @@ final class SyncEngineController: SyncEngineDriverDelegate {
     if state == .bootstrapping { state = .steady }  // T2
     let generation = namespaceGeneration
     fetchCycleSweepTask = Task { [weak self] in
-      await self?.retryFailedApplies(generation: generation)
+      guard let self else { return }
+      await self.retryFailedApplies(generation: generation)
+      guard generation == self.namespaceGeneration else { return }
+      // #301: a fetch cycle may have applied profiles whose schedule/trigger config changed;
+      // register their DeviceActivity schedules once, coalesced across the whole cycle (not
+      // per-record). Run after §5.6 retry applies so repaired profile schedules are included.
+      self.scheduleReconciler(self.modelContext)
     }
-    // #301: a fetch cycle may have applied profiles whose schedule/trigger config changed;
-    // register their DeviceActivity schedules once, coalesced across the whole cycle (not
-    // per-record). Idempotent + self-gating; respects cleanUpGhostSchedules (adds only).
-    scheduleReconciler(modelContext)
   }
 
   // MARK: - §5.4 nextRecordZoneChangeBatch materialization (S-14, S-29)

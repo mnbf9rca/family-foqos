@@ -939,6 +939,7 @@ struct BlockedProfileView: View {
         "Failed to save trigger config: \(error.localizedDescription)", category: .ui)
     }
     DeviceActivityCenterUtil.scheduleTimerActivity(for: profile)
+    ScheduleRegistrationRefreshNotifier.post()
     do {
       try profileSyncManager.enqueueProfileSave(profile.id)
     } catch SyncEngineControllingError.notAttached {
