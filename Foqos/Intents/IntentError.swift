@@ -11,6 +11,10 @@ enum IntentError: Error, CustomLocalizedStringResourceConvertible {
   case stopConditionsNotMet(reason: String)
   case unexpected(String)
 
+  static func needsAppSelectionMessage(profileName: String) -> String {
+    "Profile '\(profileName)' needs app selection on this device before it can start."
+  }
+
   var localizedStringResource: LocalizedStringResource {
     switch self {
     case .profileNotFound:

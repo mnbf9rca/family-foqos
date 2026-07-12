@@ -148,7 +148,10 @@ class StrategyManager: ObservableObject {
 
       stopBlocking(context: context, bypassStrategy: true)
     } else {
-      guard !geofenceEvaluator.isCheckingGeofence else {
+      if geofenceEvaluator.isCheckingGeofence,
+        !geofenceEvaluator.recoverStaleGeofenceCheck()
+      {
+        errorMessage = "Still checking your location. Try again in a moment."
         Log.info("Start tap ignored: geofence check already in flight", category: .strategy)
         return
       }
@@ -1303,8 +1306,24 @@ class StrategyManager: ObservableObject {
   }
 
   private func rejectionForStart(_ profile: BlockedProfiles, context: ModelContext) -> String? {
-    if (try? getActiveSession(context: context)) != nil {
-      return "A session is already active. Stop it before starting another."
+    rejectionForStart(profile) {
+      try getActiveSession(context: context)
+    }
+  }
+
+  func rejectionForStart(
+    _ profile: BlockedProfiles,
+    activeSessionProvider: () throws -> BlockedProfileSession?
+  ) -> String? {
+    do {
+      if try activeSessionProvider() != nil {
+        return "A session is already active. Stop it before starting another."
+      }
+    } catch {
+      Log.error(
+        "Failed to verify active session before start: \(error.localizedDescription)",
+        category: .strategy)
+      return "Couldn't verify whether a session is already active. Try again."
     }
 
     if profile.needsAppSelection {
@@ -1315,7 +1334,7 @@ class StrategyManager: ObservableObject {
   }
 
   private func needsAppSelectionMessage(for profile: BlockedProfiles) -> String {
-    "Profile '\(profile.name)' needs app selection on this device before it can start."
+    IntentError.needsAppSelectionMessage(profileName: profile.name)
   }
 
   /// Stop the active blocking session.
