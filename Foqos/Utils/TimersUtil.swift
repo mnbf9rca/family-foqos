@@ -395,6 +395,11 @@ final class TimersUtil: TimersUtilScheduling, @unchecked Sendable {  // SAFETY: 
             Self.ownedReminderState.lock.unlock()
             return
           }
+          // SAFETY: UNUserNotificationCenter.add submits over XPC and invokes its completion
+          // asynchronously, so the completion cannot re-enter this lock. Keeping submission
+          // under the generation lock orders same-identifier cancel/reschedule operations before
+          // the request reaches the center; check-unlock-add would reintroduce a race that stale
+          // callback cleanup cannot repair once the identifier is owned by a newer generation.
           center.add(request) { [weak self] error in
             if let error = error {
               Log.info(

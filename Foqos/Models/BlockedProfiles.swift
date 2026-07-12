@@ -498,13 +498,19 @@ class BlockedProfiles {
     let removeStartSchedule: (BlockedProfiles) -> Void
     let removeStopSchedule: (BlockedProfiles) -> Void
     let cancelPreActivationReminders: (UUID) -> Void
+    let removeBreakBackstop: (UUID) -> Void
+    let removeOneMoreMinuteBackstop: (UUID) -> Void
   }
 
   private static func defaultDeleteCleanup() -> DeleteCleanup {
     DeleteCleanup(
       removeStartSchedule: { DeviceActivityCenterUtil.removeScheduleTimerActivities(for: $0) },
       removeStopSchedule: { DeviceActivityCenterUtil.removeStopScheduleActivity(for: $0) },
-      cancelPreActivationReminders: { TimersUtil.cancelAllPreActivationReminders(for: $0) }
+      cancelPreActivationReminders: { TimersUtil.cancelAllPreActivationReminders(for: $0) },
+      removeBreakBackstop: { DeviceActivityCenterUtil.removeBreakBackstop(profileId: $0) },
+      removeOneMoreMinuteBackstop: {
+        DeviceActivityCenterUtil.removeOneMoreMinuteBackstop(profileId: $0)
+      }
     )
   }
 
@@ -530,10 +536,12 @@ class BlockedProfiles {
     // Delete the snapshot
     deleteSnapshot(for: profile)
 
-    // Remove both schedule activity variants and pending pre-activation reminders.
+    // Remove all scheduled lifecycle work owned by this profile.
     cleanup.removeStartSchedule(profile)
     cleanup.removeStopSchedule(profile)
     cleanup.cancelPreActivationReminders(profile.id)
+    cleanup.removeBreakBackstop(profile.id)
+    cleanup.removeOneMoreMinuteBackstop(profile.id)
 
     // Then delete the profile
     context.delete(profile)

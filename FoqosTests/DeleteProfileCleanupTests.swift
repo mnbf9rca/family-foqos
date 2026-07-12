@@ -5,7 +5,7 @@ import XCTest
 
 @MainActor
 final class DeleteProfileCleanupTests: XCTestCase {
-  func testGivenProfileDelete_WhenDeleting_ThenRemovesBothSchedulesAndPreActivationReminders()
+  func testGivenProfileDelete_WhenDeleting_ThenRemovesSchedulesRemindersAndDeadlineBackstops()
     throws
   {
     let container = try TestModelContainer.create()
@@ -20,6 +20,14 @@ final class DeleteProfileCleanupTests: XCTestCase {
       removeStopSchedule: { _ in cleanupActions.append("removeStopSchedule") },
       cancelPreActivationReminders: { _ in
         cleanupActions.append("cancelPreActivationReminders")
+      },
+      removeBreakBackstop: { profileId in
+        XCTAssertEqual(profileId, profile.id)
+        cleanupActions.append("removeBreakBackstop")
+      },
+      removeOneMoreMinuteBackstop: { profileId in
+        XCTAssertEqual(profileId, profile.id)
+        cleanupActions.append("removeOneMoreMinuteBackstop")
       }
     )
 
@@ -27,7 +35,10 @@ final class DeleteProfileCleanupTests: XCTestCase {
 
     XCTAssertEqual(
       cleanupActions,
-      ["removeStartSchedule", "removeStopSchedule", "cancelPreActivationReminders"]
+      [
+        "removeStartSchedule", "removeStopSchedule", "cancelPreActivationReminders",
+        "removeBreakBackstop", "removeOneMoreMinuteBackstop",
+      ]
     )
     XCTAssertNil(try BlockedProfiles.findProfile(byID: profile.id, in: context))
   }
