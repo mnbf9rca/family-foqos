@@ -271,7 +271,7 @@ final class StrategyManagerStartTests: XCTestCase {
     throws
   {
     let geofenceEvaluator = GeofenceEvaluator()
-    geofenceEvaluator.isCheckingGeofence = true
+    geofenceEvaluator.beginGeofenceCheck()
     manager = StrategyManager(geofenceEvaluator: geofenceEvaluator)
     let profile = BlockedProfiles(name: "Manual")
     profile.blockingStrategyId = ManualBlockingStrategy.id
@@ -282,5 +282,35 @@ final class StrategyManagerStartTests: XCTestCase {
 
     XCTAssertNil(manager.activeSession)
     XCTAssertTrue(try activeSessions().isEmpty)
+    XCTAssertNotNil(manager.errorMessage)
+  }
+
+  func testGivenStaleGeofenceCheckInFlight_WhenToggleBlockingCalledAgain_ThenStartCanProceed()
+    throws
+  {
+    let geofenceEvaluator = GeofenceEvaluator()
+    geofenceEvaluator.beginGeofenceCheck(now: Date().addingTimeInterval(-120))
+    manager = StrategyManager(geofenceEvaluator: geofenceEvaluator)
+    let profile = BlockedProfiles(name: "Manual")
+    profile.blockingStrategyId = ManualBlockingStrategy.id
+    context.insert(profile)
+    try context.save()
+
+    manager.toggleBlocking(context: context, activeProfile: profile)
+
+    XCTAssertEqual(manager.activeSession?.blockedProfile.id, profile.id)
+    XCTAssertFalse(geofenceEvaluator.isCheckingGeofence)
+  }
+
+  func testGivenActiveSessionFetchFails_WhenRejectionForStart_ThenFailsClosed() throws {
+    let profile = BlockedProfiles(name: "Manual")
+    context.insert(profile)
+    try context.save()
+
+    let rejection = manager.rejectionForStart(profile) {
+      throw CocoaError(.fileReadUnknown)
+    }
+
+    XCTAssertEqual(rejection, "Couldn't verify whether a session is already active. Try again.")
   }
 }

@@ -20,6 +20,8 @@ class GeofenceEvaluator: ObservableObject {
 
   @Published var isCheckingGeofence: Bool = false
   @Published var errorMessage: String?
+  private var geofenceCheckStartedAt: Date?
+  private let staleGeofenceCheckInterval: TimeInterval = 60
 
   // Geofence start warning state
   @AppStorage("family_foqos_warn_when_activating_away_from_location") private var warnWhenActivatingAwayFromLocation =
@@ -30,6 +32,30 @@ class GeofenceEvaluator: ObservableObject {
 
   // Stored completion for confirmGeofenceStart
   private var pendingStartCompletion: ((ModelContext, BlockedProfiles) -> Void)?
+
+  func beginGeofenceCheck(now: Date = Date()) {
+    isCheckingGeofence = true
+    geofenceCheckStartedAt = now
+  }
+
+  func endGeofenceCheck() {
+    isCheckingGeofence = false
+    geofenceCheckStartedAt = nil
+  }
+
+  func recoverStaleGeofenceCheck(now: Date = Date()) -> Bool {
+    guard isCheckingGeofence, let geofenceCheckStartedAt else {
+      return false
+    }
+
+    guard now.timeIntervalSince(geofenceCheckStartedAt) >= staleGeofenceCheckInterval else {
+      return false
+    }
+
+    endGeofenceCheck()
+    pendingStartCompletion = nil
+    return true
+  }
 
   // MARK: - Evaluate (async, no UI side-effects)
 
@@ -88,12 +114,12 @@ class GeofenceEvaluator: ObservableObject {
       return
     }
 
-    isCheckingGeofence = true
+    beginGeofenceCheck()
 
     // Capture Sendable snapshots before entering the Task to avoid capturing
     // non-Sendable SwiftData models (profile) across the concurrency boundary
     guard let geofenceRule = profile.geofenceRule else {
-      isCheckingGeofence = false
+      endGeofenceCheck()
       onStop()
       return
     }
@@ -102,18 +128,18 @@ class GeofenceEvaluator: ObservableObject {
     do {
       savedLocationsSnapshot = try SavedLocation.fetchAll(in: context)
     } catch {
-      self.isCheckingGeofence = false
+      endGeofenceCheck()
       self.errorMessage = "Unable to load saved locations. Please try again."
       return
     }
 
     Task { @MainActor in
+      defer { self.endGeofenceCheck() }
+
       let result = await self.locationManager.checkGeofenceRule(
         rule: ruleToCheck,
         savedLocations: savedLocationsSnapshot
       )
-
-      self.isCheckingGeofence = false
 
       if result.isSatisfied {
         onStop()
@@ -154,7 +180,7 @@ class GeofenceEvaluator: ObservableObject {
       return
     }
 
-    isCheckingGeofence = true
+    beginGeofenceCheck()
 
     // Capture saved locations before entering the Task to avoid Sendable warnings
     let ruleToCheck = geofenceRule
@@ -162,7 +188,7 @@ class GeofenceEvaluator: ObservableObject {
     do {
       savedLocationsSnapshot = try SavedLocation.fetchAll(in: context)
     } catch {
-      self.isCheckingGeofence = false
+      endGeofenceCheck()
       self.errorMessage = "Unable to load saved locations. Please try again."
       return
     }
@@ -171,12 +197,12 @@ class GeofenceEvaluator: ObservableObject {
     pendingStartCompletion = onStart
 
     Task { @MainActor in
+      defer { self.endGeofenceCheck() }
+
       let result = await locationManager.checkGeofenceRule(
         rule: ruleToCheck,
         savedLocations: savedLocationsSnapshot
       )
-
-      self.isCheckingGeofence = false
 
       if result.isSatisfied {
         // User is at location, proceed without warning
@@ -256,8 +282,8 @@ class GeofenceEvaluator: ObservableObject {
       throw .locationPermissionDenied
     }
 
-    isCheckingGeofence = true
-    defer { isCheckingGeofence = false }
+    beginGeofenceCheck()
+    defer { endGeofenceCheck() }
 
     let ruleToCheck = rule
     let savedLocationsSnapshot: [SavedLocation]
