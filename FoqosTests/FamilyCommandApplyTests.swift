@@ -4,6 +4,14 @@ import XCTest
 
 @MainActor
 final class FamilyCommandApplyTests: XCTestCase {
+  private static let emergencyDefaultsKeys = [
+    "family_foqos_emergency_unblocks_reset_period_in_days",
+    "family_foqos_last_emergency_unblocks_reset_date",
+    "family_foqos_emergency_settings_locked",
+    "family_foqos_emergency_settings_version",
+    "family_foqos_emergency_unblock_events",
+    "family_foqos_emergency_reset_epoch",
+  ]
 
   override func setUp() {
     super.setUp()
@@ -12,6 +20,7 @@ final class FamilyCommandApplyTests: XCTestCase {
       defaults.removePersistentDomain(forName: "FamilyCommandApplyTests")
       LockCodeManager.shared.overrideDefaults(defaults)
       LockCodeManager.shared.resetThrottle()
+      EmergencyUnblockManager.shared.seedForTesting(epoch: 0)
     }
   }
 
@@ -19,6 +28,9 @@ final class FamilyCommandApplyTests: XCTestCase {
     MainActor.assumeIsolated {
       LockCodeManager.shared.resetThrottle()
       LockCodeManager.shared.overrideDefaults(nil)
+      for key in Self.emergencyDefaultsKeys {
+        UserDefaults.standard.removeObject(forKey: key)
+      }
     }
     super.tearDown()
   }
@@ -39,5 +51,23 @@ final class FamilyCommandApplyTests: XCTestCase {
 
     XCTAssertEqual(LockCodeManager.shared.failedAttempts, 0)
     XCTAssertFalse(LockCodeManager.shared.isLockedOut(now: now))
+  }
+
+  func testGivenEmergencyResetCommandAlreadyProcessed_WhenDeliveredAfterFreshLoad_ThenEpochAdvancesOnce() {
+    let command = FamilyCommand(
+      id: UUID(uuidString: "00000000-0000-0000-0000-000000000230")!,
+      commandType: .resetEmergencyCount,
+      targetChildId: "child-rec-1",
+      createdBy: "parent-rec-1",
+      createdAt: Date()
+    )
+
+    XCTAssertTrue(LockCodeManager.shared.applyCommandIfNeeded(command))
+    let defaults = UserDefaults(suiteName: "FamilyCommandApplyTests")!
+    LockCodeManager.shared.overrideDefaults(nil)
+    LockCodeManager.shared.overrideDefaults(defaults)
+
+    XCTAssertFalse(LockCodeManager.shared.applyCommandIfNeeded(command))
+    XCTAssertEqual(EmergencyUnblockManager.shared.currentResetEpoch, 1)
   }
 }

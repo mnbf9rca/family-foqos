@@ -6,6 +6,25 @@ import XCTest
 @MainActor
 final class RequestAuthorizerTests: XCTestCase {
 
+  func testGivenInjectedCenterApproved_WhenInitialized_ThenInitialStateUsesInjectedStatus() {
+    let mock = MockAuthorizationRequesting(initialStatus: .approved)
+
+    let authorizer = RequestAuthorizer(authorizationCenter: mock)
+
+    XCTAssertTrue(authorizer.isAuthorized)
+    XCTAssertEqual(authorizer.authorizationStatus, .approved)
+  }
+
+  func testGivenInjectedStatusChanges_WhenPublisherEmits_ThenAuthorizationStateUpdates() {
+    let mock = MockAuthorizationRequesting(initialStatus: .approved)
+    let authorizer = RequestAuthorizer(authorizationCenter: mock)
+
+    mock.sendStatus(.denied)
+
+    XCTAssertFalse(authorizer.isAuthorized)
+    XCTAssertEqual(authorizer.authorizationStatus, .denied)
+  }
+
   func testGivenAuthApproved_WhenRequestingChild_ThenReturnsTrueAndClearsError() async {
     let mock = MockAuthorizationRequesting()
     mock.outcome = .success

@@ -13,21 +13,20 @@ class RequestAuthorizer: ObservableObject {
   private var cancellable: AnyCancellable?
   private let authorizationCenter: AuthorizationRequesting
 
-  init(authorizationCenter: AuthorizationRequesting = AuthorizationCenter.shared) {
+  init(authorizationCenter: AuthorizationRequesting = AuthorizationCenterRequester.shared) {
     self.authorizationCenter = authorizationCenter
-    let status = AuthorizationCenter.shared.authorizationStatus
-    let approved = status == .approved
+    let status = authorizationCenter.authorizationStatus
+    let approved = Self.isApproved(status)
     self.isAuthorized = approved
     self.authorizationStatus = status
     Log.info(
       "RequestAuthorizer init: authorizationStatus=\(status), isAuthorized=\(approved)",
       category: .authorization)
 
-    cancellable = AuthorizationCenter.shared.$authorizationStatus
-      .receive(on: DispatchQueue.main)
+    cancellable = authorizationCenter.authorizationStatusPublisher
       .sink { [weak self] newStatus in
         guard let self else { return }
-        let approved = newStatus == .approved
+        let approved = Self.isApproved(newStatus)
         if self.authorizationStatus != newStatus {
           Log.info(
             "AuthorizationCenter status changed: \(self.authorizationStatus) → \(newStatus)",
@@ -36,6 +35,17 @@ class RequestAuthorizer: ObservableObject {
         self.authorizationStatus = newStatus
         self.isAuthorized = approved
       }
+  }
+
+  private static func isApproved(_ status: AuthorizationStatus) -> Bool {
+    switch status {
+    case .approved, .approvedWithDataAccess:
+      return true
+    case .denied, .notDetermined:
+      return false
+    @unknown default:
+      return false
+    }
   }
 
   /// Request authorization for the current app mode
