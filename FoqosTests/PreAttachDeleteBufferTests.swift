@@ -40,9 +40,9 @@ final class PreAttachDeleteBufferTests: XCTestCase {
     PreAttachDeleteBuffer.add("A", defaults: defaults)
     PreAttachDeleteBuffer.add("B", defaults: defaults)
 
-    XCTAssertEqual(Set(PreAttachDeleteBuffer.pending(defaults: defaults)), ["A", "B"])
+    XCTAssertEqual(Set(PreAttachDeleteBuffer.pending(defaults: defaults).map(\.recordName)), ["A", "B"])
     XCTAssertEqual(
-      Set(PreAttachDeleteBuffer.pending(defaults: defaults)),
+      Set(PreAttachDeleteBuffer.pending(defaults: defaults).map(\.recordName)),
       ["A", "B"],
       "reading pending names must not clear the only durable copy before tombstone promotion")
   }
@@ -53,6 +53,27 @@ final class PreAttachDeleteBufferTests: XCTestCase {
 
     PreAttachDeleteBuffer.acknowledge("A", defaults: defaults)
 
-    XCTAssertEqual(Set(PreAttachDeleteBuffer.pending(defaults: defaults)), ["B"])
+    XCTAssertEqual(Set(PreAttachDeleteBuffer.pending(defaults: defaults).map(\.recordName)), ["B"])
+  }
+
+  func testGivenBufferedDeleteWithProvenance_WhenPendingRead_ThenPreservesOriginUser() {
+    PreAttachDeleteBuffer.add("A", userRecordName: "user-A", defaults: defaults)
+    PreAttachDeleteBuffer.add("B", userRecordName: nil, defaults: defaults)
+
+    let pending = PreAttachDeleteBuffer.pending(defaults: defaults)
+
+    XCTAssertEqual(pending.first { $0.recordName == "A" }?.userRecordName, "user-A")
+    XCTAssertNil(pending.first { $0.recordName == "B" }?.userRecordName)
+  }
+
+  func testGivenBufferedDeleteWithProvenance_WhenAcknowledgingMatchingUser_ThenOnlyMatchingEntryClears() {
+    PreAttachDeleteBuffer.add("A", userRecordName: "user-A", defaults: defaults)
+    PreAttachDeleteBuffer.add("A", userRecordName: "user-B", defaults: defaults)
+
+    PreAttachDeleteBuffer.acknowledge("A", userRecordName: "user-A", defaults: defaults)
+
+    let pending = PreAttachDeleteBuffer.pending(defaults: defaults)
+    XCTAssertEqual(pending.map(\.recordName), ["A"])
+    XCTAssertEqual(pending.first?.userRecordName, "user-B")
   }
 }

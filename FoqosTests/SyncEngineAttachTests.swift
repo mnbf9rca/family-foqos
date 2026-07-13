@@ -92,6 +92,45 @@ final class SyncEngineAttachTests: XCTestCase {
     store.clearTombstone(recordName: recordName)
   }
 
+  func testGivenPreAttachDeleteBufferedForAnotherUser_WhenAttachEngine_ThenEntrySurvivesForOriginalUser()
+    async throws
+  {
+    manager.isEnabled = false
+    let recordName = "pre-attach-\(UUID().uuidString)"
+    let userA = "user-attach-buffer-A-\(UUID().uuidString)"
+    let userB = "user-attach-buffer-B-\(UUID().uuidString)"
+    PreAttachDeleteBuffer.add(recordName, userRecordName: userA, defaults: bufferDefaults)
+
+    await manager.attachEngine(
+      modelContext: container.mainContext,
+      emergencyManager: EmergencyUnblockManager(),
+      userRecordNameProvider: { userB },
+      driverFactory: { _ in CutoverRecordingDriver(stateSerialization: nil) })
+
+    let storeB = SyncEngineStore(userRecordName: userB)
+    XCTAssertFalse(
+      storeB.deleteTombstones.keys.contains(recordName),
+      "a delete buffered under user A must not become a tombstone for user B")
+    XCTAssertEqual(
+      PreAttachDeleteBuffer.pending(defaults: bufferDefaults).map(\.recordName),
+      [recordName],
+      "mismatched provenance must remain pending for a later matching attach")
+
+    manager.engineController = nil
+    await manager.attachEngine(
+      modelContext: container.mainContext,
+      emergencyManager: EmergencyUnblockManager(),
+      userRecordNameProvider: { userA },
+      driverFactory: { _ in CutoverRecordingDriver(stateSerialization: nil) })
+
+    let storeA = SyncEngineStore(userRecordName: userA)
+    XCTAssertTrue(
+      storeA.deleteTombstones.keys.contains(recordName),
+      "the original user's later attach must promote its buffered delete")
+    XCTAssertTrue(PreAttachDeleteBuffer.pending(defaults: bufferDefaults).isEmpty)
+    storeA.clearTombstone(recordName: recordName)
+  }
+
   func testGivenEngineAttachedWhileDisabled_WhenSyncEnabledLater_ThenStartupMarksReadyAndDrainsDeferredDelete()
     async throws
   {
