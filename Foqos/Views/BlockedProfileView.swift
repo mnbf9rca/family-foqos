@@ -691,12 +691,6 @@ struct BlockedProfileView: View {
             allowMode: enableAllowModeDomain
           )
         }
-        .sheet(isPresented: $showingGeofencePicker) {
-          GeofencePicker(
-            geofenceRule: $geofenceRule,
-            savedLocations: savedLocations
-          )
-        }
         .sheet(isPresented: $showingGeneratedQRCode) {
           if let profileToWrite = profile {
             let url = BlockedProfiles.getProfileDeepLink(profileToWrite)
@@ -875,6 +869,9 @@ struct BlockedProfileView: View {
           }
         }
       }  // else (non-newer-schema profile)
+    }
+    .sheet(isPresented: $showingGeofencePicker) {
+      GeofencePicker(geofenceRule: $geofenceRule)
     }
   }
 
@@ -1109,7 +1106,7 @@ struct BlockedProfileView: View {
   BlockedProfileView()
     .environmentObject(NFCWriter())
     .environmentObject(StrategyManager.shared)
-    .modelContainer(for: BlockedProfiles.self, inMemory: true)
+    .modelContainer(for: [BlockedProfiles.self, SavedLocation.self], inMemory: true)
 }
 
 #Preview {
@@ -1122,5 +1119,5 @@ struct BlockedProfileView: View {
   BlockedProfileView(profile: previewProfile)
     .environmentObject(NFCWriter())
     .environmentObject(StrategyManager.shared)
-    .modelContainer(for: BlockedProfiles.self, inMemory: true)
+    .modelContainer(for: [BlockedProfiles.self, SavedLocation.self], inMemory: true)
 }

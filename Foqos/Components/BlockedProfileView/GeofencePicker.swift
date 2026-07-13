@@ -1,4 +1,5 @@
 import MapKit
+import SwiftData
 import SwiftUI
 
 struct GeofencePicker: View {
@@ -7,13 +8,15 @@ struct GeofencePicker: View {
   @EnvironmentObject var themeManager: ThemeManager
 
   @Binding var geofenceRule: ProfileGeofenceRule?
-  let savedLocations: [SavedLocation]
+
+  @SafeQuery(sort: \SavedLocation.name) private var savedLocations: [SavedLocation]
 
   // Local state for editing
   @State private var selectedRuleType: GeofenceRuleType = .within
   @State private var selectedLocationIds: Set<UUID> = []
   @State private var locationReferences: [UUID: ProfileLocationReference] = [:]
   @State private var allowEmergencyOverride: Bool = true
+  @State private var showingAddLocation = false
 
   // Map state
   @State private var mapRegion = MKCoordinateRegion(
@@ -27,6 +30,18 @@ struct GeofencePicker: View {
 
   private var selectedLocations: [SavedLocation] {
     savedLocations.filter { selectedLocationIds.contains($0.id) }
+  }
+
+  static func selectLocation(
+    _ locationId: UUID,
+    selectedLocationIds: inout Set<UUID>,
+    locationReferences: inout [UUID: ProfileLocationReference]
+  ) {
+    selectedLocationIds.insert(locationId)
+    if locationReferences[locationId] == nil {
+      locationReferences[locationId] = ProfileLocationReference(
+        savedLocationId: locationId)
+    }
   }
 
   var body: some View {
@@ -81,10 +96,18 @@ struct GeofencePicker: View {
                 .foregroundColor(.secondary)
               Text("No saved locations")
                 .font(.subheadline)
-              Text("Add locations in Settings to use geofence restrictions.")
+              Text("Add a location to use geofence restrictions.")
                 .font(.caption)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
+
+              Button {
+                showingAddLocation = true
+              } label: {
+                Label("Add Location", systemImage: "plus")
+              }
+              .buttonStyle(.borderedProminent)
+              .tint(themeManager.themeColor)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 16)
@@ -111,17 +134,20 @@ struct GeofencePicker: View {
                   isSelected: isSelected,
                   onToggle: { selected in
                     if selected {
-                      selectedLocationIds.insert(locationId)
-                      if locationReferences[locationId] == nil {
-                        locationReferences[locationId] = ProfileLocationReference(
-                          savedLocationId: locationId)
-                      }
+                      selectLocation(locationId)
                     } else {
                       selectedLocationIds.remove(locationId)
                     }
                   }
                 )
               }
+            }
+
+            Button {
+              showingAddLocation = true
+            } label: {
+              Label("Add Location", systemImage: "plus")
+                .foregroundStyle(themeManager.themeColor)
             }
           }
         } header: {
@@ -183,7 +209,20 @@ struct GeofencePicker: View {
       .onAppear {
         syncStateFromRule()
       }
+      .sheet(isPresented: $showingAddLocation) {
+        AddLocationView(onSave: { locationId in
+          selectLocation(locationId)
+        })
+      }
     }
+  }
+
+  private func selectLocation(_ locationId: UUID) {
+    Self.selectLocation(
+      locationId,
+      selectedLocationIds: &selectedLocationIds,
+      locationReferences: &locationReferences
+    )
   }
 
   private func syncStateFromRule() {
@@ -309,18 +348,10 @@ struct GeofenceMapPreview: View {
   struct PreviewContainer: View {
     @State var rule: ProfileGeofenceRule? = nil
 
-    let sampleLocations = [
-      SavedLocation(name: "Home", latitude: 51.5074, longitude: -0.1278, defaultRadiusMeters: 500),
-      SavedLocation(name: "Office", latitude: 51.5155, longitude: -0.1419, defaultRadiusMeters: 1000),
-      SavedLocation(name: "School", latitude: 51.5200, longitude: -0.1300, defaultRadiusMeters: 250),
-    ]
-
     var body: some View {
-      GeofencePicker(
-        geofenceRule: $rule,
-        savedLocations: sampleLocations
-      )
-      .environmentObject(ThemeManager.shared)
+      GeofencePicker(geofenceRule: $rule)
+        .environmentObject(ThemeManager.shared)
+        .modelContainer(for: SavedLocation.self, inMemory: true)
     }
   }
 
