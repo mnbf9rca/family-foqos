@@ -691,9 +691,6 @@ struct BlockedProfileView: View {
             allowMode: enableAllowModeDomain
           )
         }
-        .sheet(isPresented: $showingGeofencePicker) {
-          GeofencePicker(geofenceRule: $geofenceRule)
-        }
         .sheet(isPresented: $showingGeneratedQRCode) {
           if let profileToWrite = profile {
             let url = BlockedProfiles.getProfileDeepLink(profileToWrite)
@@ -872,6 +869,9 @@ struct BlockedProfileView: View {
           }
         }
       }  // else (non-newer-schema profile)
+    }
+    .sheet(isPresented: $showingGeofencePicker) {
+      GeofencePicker(geofenceRule: $geofenceRule)
     }
   }
 
