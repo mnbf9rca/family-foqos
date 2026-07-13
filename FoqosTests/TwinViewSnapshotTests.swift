@@ -52,4 +52,43 @@ final class TwinViewSnapshotTests: XCTestCase {
     XCTAssertFalse(profile.isPersistentModelValid)
     XCTAssertEqual(data.name, "School")
   }
+
+  func testGivenSessionRowData_WhenFormatted_ThenMatchesRawFieldLogic() throws {
+    let now = Date()
+    let data = SessionRowData(
+      startTime: now,
+      endTime: now.addingTimeInterval(3600),
+      breakStartTime: nil,
+      breakEndTime: nil,
+      isActive: false,
+      durationSeconds: 3600
+    )
+
+    XCTAssertEqual(data.formattedDuration, "1h 0m")
+    XCTAssertTrue(data.timeRangeText.contains("→"))
+    XCTAssertNil(data.breakRangeText)
+  }
+
+  func testGivenSessionRowDataThenModelDeletedAndSaved_ThenValuesStillReadableNoTrap() throws {
+    let now = Date()
+    let profile = BlockedProfiles(name: "P", selectedActivity: FamilyActivitySelection())
+    context.insert(profile)
+    let session = BlockedProfileSession.createSession(
+      in: context,
+      withTag: "t",
+      withProfile: profile,
+      startTime: now
+    )
+    session.endTime = now.addingTimeInterval(600)
+    try context.save()
+
+    let data = session.sessionRowData
+
+    context.delete(session)
+    try context.save()
+
+    XCTAssertFalse(session.isPersistentModelValid)
+    XCTAssertEqual(data.formattedDuration, "10m")
+    _ = data.timeRangeText
+  }
 }

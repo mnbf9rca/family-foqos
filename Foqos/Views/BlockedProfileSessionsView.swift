@@ -52,7 +52,10 @@ struct BlockedProfileSessionsView: View {
       List {
         if let activeSession = activeSession {
           Section("Active Session") {
-            SessionRow(session: activeSession)
+            // #298: activeSession is a live @Model - gate before snapshotting.
+            SafeModelView(activeSession) { s in
+              SessionRow(data: s.sessionRowData)
+            }
           }
         }
 
@@ -60,7 +63,9 @@ struct BlockedProfileSessionsView: View {
           Section("Past Sessions") {
             ForEach(inactiveSessions) { session in
               SafeModelView(session) { s in
-                SessionRow(session: s)
+                // #298: build the snapshot ONLY here inside the validity gate
+                // (observation-tracked); do NOT hoist/memoize - see the sessionRowData tripwire.
+                SessionRow(data: s.sessionRowData)
                   .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                     Button(role: .destructive) {
                       alertIdentifier = SessionAlertIdentifier(
