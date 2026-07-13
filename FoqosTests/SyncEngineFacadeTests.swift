@@ -245,6 +245,13 @@ final class SyncEngineFacadeTests: XCTestCase {
     }
 
     XCTAssertEqual(Set(PreAttachDeleteBuffer.drainAll(defaults: bufferDefaults)), [id.uuidString])
+
+    let attached = MockSyncEngineControlling()
+    manager.engineController = attached
+    manager.markSyncReadyAndFlush()
+
+    XCTAssertEqual(attached.deferredDeletes, [id.uuidString])
+    XCTAssertTrue(manager.hasNoDeferredMutations)
   }
 
   func testGivenNotAttached_WhenEnqueueLocationDelete_ThenDeleteIsBufferedDurably() throws {
@@ -256,6 +263,13 @@ final class SyncEngineFacadeTests: XCTestCase {
     }
 
     XCTAssertEqual(Set(PreAttachDeleteBuffer.drainAll(defaults: bufferDefaults)), [id.uuidString])
+
+    let attached = MockSyncEngineControlling()
+    manager.engineController = attached
+    manager.markSyncReadyAndFlush()
+
+    XCTAssertEqual(attached.deferredDeletes, [id.uuidString])
+    XCTAssertTrue(manager.hasNoDeferredMutations)
   }
 
   func testGivenNotAttached_WhenEnqueueProfileDelete_ThenTombstoneDeleteIsReplayedOnReady() throws {
