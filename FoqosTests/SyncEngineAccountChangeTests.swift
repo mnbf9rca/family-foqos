@@ -115,4 +115,31 @@ final class SyncEngineAccountChangeTests: XCTestCase {
 
     XCTAssertFalse(controller.hasLiveDriver)
   }
+
+  func testSignInSuppressesButDoesNotTearDown() throws {
+    let controller = makeController()
+    controller.start()
+    var seen: SyncEngineAccountChangeKind?
+    controller.onAccountChange = { seen = $0 }
+
+    controller.handle(.accountChange(kind: .signIn))
+
+    XCTAssertTrue(controller.hasLiveDriver)
+    XCTAssertTrue(controller.accountResolutionInFlight)
+    XCTAssertEqual(seen, .signIn)
+  }
+
+  func testSignOutTearsDownAndSignals() throws {
+    let controller = makeController()
+    controller.start()
+    var seen: SyncEngineAccountChangeKind?
+    controller.onAccountChange = { seen = $0 }
+
+    controller.handle(.accountChange(kind: .signOut))
+
+    XCTAssertFalse(controller.hasLiveDriver)
+    XCTAssertEqual(controller.state, .disabled)
+    XCTAssertEqual(driver.shutdownCallCount, 1)
+    XCTAssertEqual(seen, .signOut)
+  }
 }
