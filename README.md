@@ -2,7 +2,7 @@
   <img src="./Foqos/Assets.xcassets/AppIcon.appiconset/AppIcon~ios-marketing.png" width="250" style="border-radius: 40px;">
 </p>
 
-<h1 align="center"><a href="TODO">Family Foqos</a></h1>
+<h1 align="center"><a href="https://github.com/mnbf9rca/family-foqos">Family Foqos</a></h1>
 
 <p align="center">
   <strong>Focus, the physical way</strong>
@@ -36,7 +36,7 @@ But still has all these features from the original Foqos app:
 
 ## 📋 Requirements
 
-- iOS 17.6+
+- iOS 18.6+
 - iPhone with NFC capability (for NFC features)
 - Screen Time permissions (for app blocking)
 
@@ -44,7 +44,7 @@ But still has all these features from the original Foqos app:
 
 ### From the App Store
 
-1. Download Foqos from the [App Store](TODO)
+1. Family Foqos is not yet published on the App Store — build it from source (see the Development section below)
 2. Grant Screen Time permissions when prompted
 3. Create your first blocking profile
 4. Optionally set up NFC tags or a QR code and start focusing
@@ -71,9 +71,9 @@ But still has all these features from the original Foqos app:
 
 ### Prerequisites
 
-- Xcode 15.0+
-- iOS 17.0+ SDK
-- Swift 5.9+
+- Xcode 16.0+
+- iOS 18.6+ SDK
+- Swift 6.0
 - Apple Developer Account (for Screen Time and NFC entitlements)
 
 ### Building the Project
@@ -202,7 +202,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🔗 Links
 
-- [App Store](TODO)
+- App Store — not yet published (build from source via the GitHub repo above)
 - [GitHub Issues](https://github.com/mnbf9rca/family-foqos/issues)
 - [Donate to Common Sense Media](https://www.commonsensemedia.org/donate)
 
