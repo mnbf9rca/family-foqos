@@ -73,6 +73,12 @@ final class MockSyncEngineDriver: SyncEngineDriver {
     operations.append(.sendChanges)
   }
 
+  func reset() {
+    operations.removeAll()
+    fetchChangesCount = 0
+    sendChangesCount = 0
+  }
+
   func fetchRecord(_ id: CKRecord.ID) async -> FetchRecordResult {
     fetchedRecordIDs.append(id)
     return fetchRecordResults[id.recordName] ?? defaultFetchRecordResult

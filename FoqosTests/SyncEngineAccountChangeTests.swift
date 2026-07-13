@@ -63,4 +63,33 @@ final class SyncEngineAccountChangeTests: XCTestCase {
 
     XCTAssertEqual(controller.state, .disabled)
   }
+
+  func testRequestSyncNoOpsWhenDisabledEvenWithLiveDriver() throws {
+    let controller = makeController()
+    controller.start()
+    controller.forceStateForTest(.disabled)
+    driver.reset()
+
+    controller.requestSync()
+
+    XCTAssertEqual(driver.fetchChangesCount, 0)
+    XCTAssertEqual(driver.sendChangesCount, 0)
+  }
+
+  func testRequestSyncNoOpsWhileResolvingAccountChange() throws {
+    let controller = makeController()
+    controller.start()
+    controller.forceStateForTest(.steady)
+    controller.beginAccountResolution()
+    driver.reset()
+
+    controller.requestSync()
+
+    XCTAssertEqual(driver.sendChangesCount, 0)
+
+    controller.endAccountResolution()
+    controller.requestSync()
+
+    XCTAssertEqual(driver.sendChangesCount, 1)
+  }
 }

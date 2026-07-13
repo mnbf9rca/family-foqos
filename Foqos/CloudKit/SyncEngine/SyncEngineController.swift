@@ -79,6 +79,22 @@ final class SyncEngineController: SyncEngineDriverDelegate {
   // once this set empties.
   private var pendingSeedNames: Set<String> = []
   private static let seedZoneMarkerName = "__i11_seed_zone__"
+  private(set) var accountResolutionInFlight = false
+  var hasLiveDriver: Bool { driver != nil }
+
+  func beginAccountResolution() {
+    accountResolutionInFlight = true
+  }
+
+  func endAccountResolution() {
+    accountResolutionInFlight = false
+  }
+
+  #if DEBUG
+    func forceStateForTest(_ newValue: SyncEngineState) {
+      state = newValue
+    }
+  #endif
 
   init(
     modelContext: ModelContext,
