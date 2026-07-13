@@ -101,8 +101,9 @@ struct GeofencePicker: View {
                   }
                 )
 
+                // #298: snapshot the location inside the gate; the reference stays a live binding.
                 LocationReferenceRow(
-                  location: loc,
+                  location: loc.locationReferenceRowData,
                   reference: binding,
                   isSelected: isSelected,
                   onToggle: { selected in

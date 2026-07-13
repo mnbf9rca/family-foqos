@@ -3,7 +3,7 @@ import SwiftUI
 struct LocationReferenceRow: View {
   @EnvironmentObject var themeManager: ThemeManager
 
-  let location: SavedLocation
+  let location: LocationReferenceRowData
   @Binding var reference: ProfileLocationReference
   let isSelected: Bool
   let onToggle: (Bool) -> Void
@@ -154,39 +154,43 @@ struct LocationReferenceRow: View {
     @State var isSelected = true
 
     var body: some View {
+      let home = SavedLocation(
+        name: "Home",
+        latitude: 51.5074,
+        longitude: -0.1278,
+        defaultRadiusMeters: 500
+      )
+      let office = SavedLocation(
+        name: "Office",
+        latitude: 51.5155,
+        longitude: -0.1419,
+        defaultRadiusMeters: 1000,
+        isLocked: true
+      )
+      let school = SavedLocation(
+        name: "School",
+        latitude: 51.5200,
+        longitude: -0.1300,
+        defaultRadiusMeters: 250
+      )
+
       List {
         LocationReferenceRow(
-          location: SavedLocation(
-            name: "Home",
-            latitude: 51.5074,
-            longitude: -0.1278,
-            defaultRadiusMeters: 500
-          ),
+          location: home.locationReferenceRowData,
           reference: $reference,
           isSelected: isSelected,
           onToggle: { isSelected = $0 }
         )
 
         LocationReferenceRow(
-          location: SavedLocation(
-            name: "Office",
-            latitude: 51.5155,
-            longitude: -0.1419,
-            defaultRadiusMeters: 1000,
-            isLocked: true
-          ),
+          location: office.locationReferenceRowData,
           reference: .constant(ProfileLocationReference(savedLocationId: UUID(), radiusOverrideMeters: 250)),
           isSelected: true,
           onToggle: { _ in }
         )
 
         LocationReferenceRow(
-          location: SavedLocation(
-            name: "School",
-            latitude: 51.5200,
-            longitude: -0.1300,
-            defaultRadiusMeters: 250
-          ),
+          location: school.locationReferenceRowData,
           reference: .constant(ProfileLocationReference(savedLocationId: UUID())),
           isSelected: false,
           onToggle: { _ in }
