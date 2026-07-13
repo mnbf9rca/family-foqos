@@ -34,7 +34,12 @@ final class SyncEngineController: SyncEngineDriverDelegate {
   private let zoneID = CKRecordZone.ID(
     zoneName: CloudKitConstants.syncZoneName, ownerName: CKCurrentUserDefaultName)
 
-  private(set) var state: SyncEngineState = .disabled
+  private(set) var state: SyncEngineState = .disabled {
+    didSet {
+      guard state != oldValue else { return }
+      Log.debug("state \(oldValue) -> \(state) (main=\(Thread.isMainThread))", category: .sync)
+    }
+  }
   // Widened to internal (Phase F, Task 131): `+Cutover`'s `requestSync`/`enqueue*` are the
   // only other-file collaborators that read/forward through these.
   var driver: SyncEngineDriver!
