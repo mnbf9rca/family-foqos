@@ -41,6 +41,26 @@ extension CloudKitNetworkService {
     }
   }
 
+  /// #331: true while the parent's queued command record still exists in the private DB. A V2 child
+  /// deletes it after processing; a V1 child never does, so the parent honestly keeps waiting.
+  func commandIsPending(_ command: FamilyCommand) async throws -> Bool {
+    let recordID = CKRecord.ID(
+      recordName: FamilyCommand.recordName(
+        commandType: command.commandType,
+        targetChildId: command.targetChildId,
+        parentId: command.createdBy
+      ),
+      zoneID: policyZoneID
+    )
+
+    do {
+      _ = try await privateDatabase.record(for: recordID)
+      return true
+    } catch let error as CKError where error.code == .unknownItem {
+      return false
+    }
+  }
+
   func fetchPendingCommands(currentUserRecordID: CKRecord.ID?) async throws -> [FamilyCommand] {
     let zones = try await sharedDatabase.allRecordZones()
 

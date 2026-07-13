@@ -1131,6 +1131,7 @@ struct FamilyMemberCard: View {
           isResettingEmergency = false
           resetStatus = .afterSuccessfulSave
         }
+        await pollForConfirmation(command)
       } catch {
         await MainActor.run {
           isResettingEmergency = false
@@ -1166,6 +1167,7 @@ struct FamilyMemberCard: View {
           isResettingThrottle = false
           resetStatus = .afterSuccessfulSave
         }
+        await pollForConfirmation(command)
       } catch {
         await MainActor.run {
           isResettingThrottle = false
@@ -1173,6 +1175,24 @@ struct FamilyMemberCard: View {
           showResetError = true
         }
       }
+    }
+  }
+
+  private func pollForConfirmation(_ command: FamilyCommand) async {
+    for _ in 0..<5 {
+      try? await Task.sleep(nanoseconds: 3_000_000_000)
+
+      let stillPending: Bool
+      do {
+        stillPending = try await CloudKitManager.shared.commandIsPending(command)
+      } catch {
+        return
+      }
+
+      let next = ParentResetCommandStatus.afterConfirmationProbe(
+        commandStillPending: stillPending)
+      await MainActor.run { resetStatus = next }
+      if next == .confirmed { return }
     }
   }
 }

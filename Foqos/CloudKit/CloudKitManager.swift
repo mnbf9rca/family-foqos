@@ -163,6 +163,10 @@ class CloudKitManager: ObservableObject {
     try await networkService.sendCommand(command)
   }
 
+  func commandIsPending(_ command: FamilyCommand) async throws -> Bool {
+    try await networkService.commandIsPending(command)
+  }
+
   func fetchPendingCommands() async throws -> [FamilyCommand] {
     return try await networkService.fetchPendingCommands(currentUserRecordID: currentUserRecordID)
   }
