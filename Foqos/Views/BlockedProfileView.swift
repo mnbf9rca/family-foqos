@@ -896,6 +896,48 @@ struct BlockedProfileView: View {
     return UInt32(clampedMinutes * 60)
   }
 
+  static func emptyProfileValidationMessage(
+    selection: FamilyActivitySelection,
+    domains: [String],
+    enableAllowMode: Bool,
+    enableAllowModeDomains: Bool,
+    needsAppSelection: Bool
+  ) -> String? {
+    emptyProfileValidationMessage(
+      selectedItemsCount: FamilyActivityUtil.countSelectedActivities(selection),
+      domains: domains,
+      enableAllowMode: enableAllowMode,
+      enableAllowModeDomains: enableAllowModeDomains,
+      needsAppSelection: needsAppSelection
+    )
+  }
+
+  static func emptyProfileValidationMessage(
+    selectedItemsCount: Int,
+    domains: [String],
+    enableAllowMode: Bool,
+    enableAllowModeDomains: Bool,
+    needsAppSelection: Bool
+  ) -> String? {
+    let hasSelectedActivity = selectedItemsCount > 0
+    let hasDomains = domains.contains {
+      !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+    let hasAllowModeContent = enableAllowMode || enableAllowModeDomains
+
+    guard !hasSelectedActivity && !hasDomains && !hasAllowModeContent else {
+      return nil
+    }
+
+    if needsAppSelection {
+      return
+        "This synced profile still needs an app selection. Select apps, app categories, Safari websites, or domains before saving."
+    }
+
+    return
+      "This profile does not block anything yet. Select apps, app categories, Safari websites, or domains before saving."
+  }
+
   private func showError(message: String) {
     alertIdentifier = AlertIdentifier(id: .error, errorMessage: message)
   }
@@ -963,6 +1005,17 @@ struct BlockedProfileView: View {
           .map { "• " + $0 }
           .joined(separator: "\n")
       )
+      return
+    }
+
+    if let validationMessage = Self.emptyProfileValidationMessage(
+      selection: selectedActivity,
+      domains: domains,
+      enableAllowMode: enableAllowMode,
+      enableAllowModeDomains: enableAllowModeDomain,
+      needsAppSelection: profile?.needsAppSelection ?? false
+    ) {
+      alertIdentifier = AlertIdentifier(id: .error, errorMessage: validationMessage)
       return
     }
 
