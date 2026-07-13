@@ -2,22 +2,18 @@ import FamilyControls
 import SwiftUI
 
 struct ProfileRow: View {
-  let profile: BlockedProfiles
+  let data: ProfileRowData
 
   var formattedUpdateTime: String {
     let formatter = RelativeDateTimeFormatter()
     formatter.unitsStyle = .short
-    return formatter.localizedString(for: profile.updatedAt, relativeTo: Date())
-  }
-
-  var selectedItemsCount: Int {
-    FamilyActivityUtil.countSelectedActivities(profile.selectedActivity)
+    return formatter.localizedString(for: data.updatedAt, relativeTo: Date())
   }
 
   var body: some View {
     HStack {
       VStack(alignment: .leading, spacing: 12) {
-        Text(profile.name)
+        Text(data.name)
           .font(.headline)
 
         HStack(spacing: 4) {
@@ -32,7 +28,7 @@ struct ProfileRow: View {
 
       HStack(spacing: 4) {
         Image(systemName: "list.bullet.circle.fill")
-        Text("\(selectedItemsCount) items")
+        Text("\(data.selectedItemsCount) items")
       }
       .foregroundStyle(.secondary)
       .font(.subheadline)
@@ -48,6 +44,6 @@ struct ProfileRow: View {
     updatedAt: Date().addingTimeInterval(-3600)
   )
 
-  return ProfileRow(profile: previewProfile)
+  return ProfileRow(data: previewProfile.profileRowData)
     .padding()
 }

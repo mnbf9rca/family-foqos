@@ -68,7 +68,9 @@ struct BlockedProfileListView: View {
     List {
       ForEach(profiles) { profile in
         SafeModelView(profile) { p in
-          ProfileRow(profile: p)
+          // #298: build the snapshot ONLY here inside the validity gate (observation-tracked);
+          // do NOT hoist/memoize - see the profileRowData tripwire.
+          ProfileRow(data: p.profileRowData)
             .contentShape(Rectangle())
             .onTapGesture {
               if editMode == .inactive {
