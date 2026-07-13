@@ -18,6 +18,8 @@ class LiveActivityManager: ObservableObject {
 
   // Use AppStorage for persisting the activity ID across app launches
   @AppStorage("family_foqos_current_activity_id") private var storedActivityId: String = ""
+  @AppStorage("family_foqos_current_activity_profile_id")
+  private var storedActivityProfileId: String = ""
 
   static let shared = LiveActivityManager()
 
@@ -31,6 +33,10 @@ class LiveActivityManager: ObservableObject {
       return ActivityAuthorizationInfo().areActivitiesEnabled
     }
     return false
+  }
+
+  private var currentActivityProfileId: UUID? {
+    storedActivityProfileId.isEmpty ? nil : UUID(uuidString: storedActivityProfileId)
   }
 
   /// #249: a profile switch must recreate the activity because the profile name is an immutable
@@ -58,6 +64,7 @@ class LiveActivityManager: ObservableObject {
   // Remove activity ID from AppStorage
   private func removeActivityId() {
     storedActivityId = ""
+    storedActivityProfileId = ""
   }
 
   // Restore existing activity from system if available
@@ -92,19 +99,32 @@ class LiveActivityManager: ObservableObject {
       restoreExistingActivity()
     }
 
-    // Check if we already have an activity running
-    if currentActivity != nil {
-      Log.info("Live Activity is already running, will update instead", category: .liveActivity)
+    let action = Self.decideAction(
+      currentProfileId: currentActivityProfileId,
+      incomingProfileId: session.blockedProfile.id,
+      enableLiveActivity: session.blockedProfile.enableLiveActivity,
+      hasCurrentActivity: currentActivity != nil
+    )
+
+    switch action {
+    case .skip:
+      Log.info("Live Activity disabled for profile, nothing to do", category: .liveActivity)
+    case .update:
+      Log.info("Live Activity already running for this profile, updating", category: .liveActivity)
       updateSessionActivity(session: session)
-      return
+    case .end:
+      Log.info("Live Activity disabled for switched-in profile, ending", category: .liveActivity)
+      endSessionActivity()
+    case .recreate:
+      Log.info("Profile switched, recreating Live Activity for new name", category: .liveActivity)
+      endSessionActivity()
+      requestActivity(session: session)
+    case .start:
+      requestActivity(session: session)
     }
+  }
 
-    if session.blockedProfile.enableLiveActivity == false {
-      Log.info("Activity is disabled for profile", category: .liveActivity)
-      return
-    }
-
-    // Create and start the activity
+  private func requestActivity(session: BlockedProfileSession) {
     let profileName = session.blockedProfile.name
     let message = FocusMessages.getRandomMessage()
     let attributes = FoqosWidgetAttributes(name: profileName, message: message)
@@ -126,11 +146,10 @@ class LiveActivityManager: ObservableObject {
       currentActivity = activity
 
       saveActivityId(activity.id)
+      storedActivityProfileId = session.blockedProfile.id.uuidString
       Log.info("Started Live Activity with ID: \(activity.id) for profile: \(profileName)", category: .liveActivity)
-      return
     } catch {
       Log.info("Error starting Live Activity: \(error.localizedDescription)", category: .liveActivity)
-      return
     }
   }
 
