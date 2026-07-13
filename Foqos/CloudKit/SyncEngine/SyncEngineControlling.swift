@@ -7,6 +7,9 @@ protocol SyncEngineControlling: AnyObject {
   func start()
   func stop()
   func requestSync()
+  func beginAccountResolution()
+  func endAccountResolution()
+  func prepareForAccountSwitch()
   func beginReset(clearRemoteAppSelections: Bool)
   func enqueueProfileSave(_ id: UUID) throws
   func enqueueProfileDelete(_ id: UUID) throws

@@ -34,7 +34,12 @@ final class SyncEngineController: SyncEngineDriverDelegate {
   private let zoneID = CKRecordZone.ID(
     zoneName: CloudKitConstants.syncZoneName, ownerName: CKCurrentUserDefaultName)
 
-  private(set) var state: SyncEngineState = .disabled
+  private(set) var state: SyncEngineState = .disabled {
+    didSet {
+      guard state != oldValue else { return }
+      Log.debug("state \(oldValue) -> \(state) (main=\(Thread.isMainThread))", category: .sync)
+    }
+  }
   // Widened to internal (Phase F, Task 131): `+Cutover`'s `requestSync`/`enqueue*` are the
   // only other-file collaborators that read/forward through these.
   var driver: SyncEngineDriver!
@@ -63,6 +68,7 @@ final class SyncEngineController: SyncEngineDriverDelegate {
   // T4b §5.5 zone-change confirmation hook (CRA-3-style), wired to ResetController in
   // Phase E to advance resetIntent stages.
   var onZoneChangeConfirmed: (([CKRecordZone.ID], [CKRecordZone.ID]) -> Void)?
+  var onAccountChange: (@MainActor (SyncEngineAccountChangeKind) -> Void)?
 
   // Echo guard cycle bookkeeping (§5.1 / AB-3).
   private var currentCycle = 0
@@ -74,6 +80,33 @@ final class SyncEngineController: SyncEngineDriverDelegate {
   // once this set empties.
   private var pendingSeedNames: Set<String> = []
   private static let seedZoneMarkerName = "__i11_seed_zone__"
+  private(set) var accountResolutionInFlight = false
+  var hasLiveDriver: Bool { driver != nil }
+
+  func beginAccountResolution() {
+    accountResolutionInFlight = true
+  }
+
+  func endAccountResolution() {
+    accountResolutionInFlight = false
+  }
+
+  func prepareForAccountSwitch() {
+    namespaceGeneration += 1
+    startupTask?.cancel()
+    flushTask?.cancel()
+    fetchCycleSweepTask?.cancel()
+    driver?.shutdown()
+    driver = nil
+    endAccountResolution()
+    state = .disabled
+  }
+
+  #if DEBUG
+    func forceStateForTest(_ newValue: SyncEngineState) {
+      state = newValue
+    }
+  #endif
 
   init(
     modelContext: ModelContext,
@@ -211,6 +244,8 @@ final class SyncEngineController: SyncEngineDriverDelegate {
     flushTask?.cancel()
     fetchCycleSweepTask?.cancel()
     store.engineState = nil  // pending unsent saves lost (N5); tombstones survive
+    driver?.shutdown()
+    driver = nil
     state = .disabled
   }
 
@@ -251,6 +286,10 @@ final class SyncEngineController: SyncEngineDriverDelegate {
   // MARK: - SyncEngineDriverDelegate
 
   func handle(_ event: SyncEngineEvent) {
+    guard driver != nil else {
+      Log.debug("engine event ignored: driver torn down (\(event))", category: .sync)
+      return
+    }
     switch event {
     case .willFetchChanges:
       handleWillFetchChanges()
@@ -304,25 +343,29 @@ final class SyncEngineController: SyncEngineDriverDelegate {
           s.pendingSeedIntent = false
           // tombstones survive — deletion intent is not consent-scoped
         }
-        state = .purged
         SharedData.deviceSyncEnabled = false
         flushTask = Task { [weak self] in await self?.sessionSync.flushSessionCache() }
         NotificationCenter.default.post(name: .syncEnginePurged, object: nil)  // one-time notice (Phase F UI)
+        driver?.shutdown()
+        driver = nil
+        state = .purged
       }
     }
   }
 
   // MARK: - T7 accountChange (§7)
 
-  /// Stops the engine and invalidates in-flight async continuations by bumping the
-  /// namespace generation (I12/§5.6 checks re-verify it before acting) — an account
-  /// change purges NOTHING (§7): the namespace switch to the new user's own store is
-  /// performed by the app reconstructing the controller/store (Phase F, N11).
+  /// The engine no longer decides the identity outcome here (#307 D-D). `.signIn` is
+  /// ambiguous, so suppress sends but keep the engine alive until the facade resolves it.
+  /// `.signOut`/`.switchAccounts` are confirmed teardown signals.
   private func handleAccountChange(_ kind: SyncEngineAccountChangeKind) {
-    namespaceGeneration += 1  // invalidates in-flight async fetches (they re-check the generation)
-    startupTask?.cancel()
-    flushTask?.cancel()
-    state = .disabled
+    switch kind {
+    case .signIn:
+      beginAccountResolution()
+    case .signOut, .switchAccounts:
+      prepareForAccountSwitch()
+    }
+    onAccountChange?(kind)
   }
 
   // MARK: - T10 stateUpdate persistence (§5.0, AB-2, S-26)

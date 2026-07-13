@@ -8,6 +8,12 @@ extension SyncEngineController: SyncEngineControlling {
   /// permitted by §1.1's delegate prohibition. No-op until the engine is started.
   func requestSync() {
     Log.debug("Sync requested: state=\(state), resetIntentActive=\(store.resetIntent != nil)", category: .sync)
+    guard state == .bootstrapping || state == .steady, !accountResolutionInFlight else {
+      Log.debug(
+        "requestSync ignored: non-operational/resolving (state=\(state), resolving=\(accountResolutionInFlight))",
+        category: .sync)
+      return
+    }
     driver?.fetchChanges()
     driver?.sendChanges()
   }

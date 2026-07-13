@@ -7,6 +7,9 @@ final class MockSyncEngineControlling: SyncEngineControlling {
   private(set) var startCount = 0
   private(set) var stopCount = 0
   private(set) var requestSyncCount = 0
+  private(set) var beginAccountResolutionCount = 0
+  private(set) var endAccountResolutionCount = 0
+  private(set) var prepareForAccountSwitchCount = 0
   private(set) var beginResetCalls: [Bool] = []
   private(set) var enqueuedProfileSaves: [UUID] = []
   private(set) var enqueuedProfileDeletes: [UUID] = []
@@ -28,6 +31,9 @@ final class MockSyncEngineControlling: SyncEngineControlling {
   func start() { startCount += 1 }
   func stop() { stopCount += 1 }
   func requestSync() { requestSyncCount += 1 }
+  func beginAccountResolution() { beginAccountResolutionCount += 1 }
+  func endAccountResolution() { endAccountResolutionCount += 1 }
+  func prepareForAccountSwitch() { prepareForAccountSwitchCount += 1 }
   func beginReset(clearRemoteAppSelections: Bool) { beginResetCalls.append(clearRemoteAppSelections) }
   func enqueueProfileSave(_ id: UUID) throws {
     if let errorToThrow { throw errorToThrow }

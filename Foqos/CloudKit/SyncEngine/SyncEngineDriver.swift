@@ -26,6 +26,9 @@ protocol SyncEngineDriver: AnyObject {
   func fetchChanges()  // CKSyncEngine await MUST cross a detached boundary (§1.1)
   func sendChanges()  // CKSyncEngine await MUST cross a detached boundary (§1.1)
   func fetchRecord(_ id: CKRecord.ID) async -> FetchRecordResult
+  /// Quiesces/releases the backing engine so reconstructed controllers do not race an
+  /// orphaned CKSyncEngine after an account-change teardown (#307 D-C).
+  func shutdown()
 }
 
 /// The controller side of the seam. `handle` receives events serially (B-7);

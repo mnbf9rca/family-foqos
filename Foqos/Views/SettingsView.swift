@@ -140,6 +140,30 @@ struct SettingsView: View {
           }
           .tint(themeManager.themeColor)
 
+          if profileSyncManager.syncPausedReason == .accountChanged
+            && profileSyncManager.pendingConflictName != nil
+          {
+            Button {
+              profileSyncManager.reopenPendingAccountChangeConflict()
+            } label: {
+              HStack {
+                Image(systemName: "exclamationmark.icloud.fill")
+                  .foregroundColor(.orange)
+                VStack(alignment: .leading, spacing: 2) {
+                  Text("iCloud account changed")
+                    .foregroundColor(.primary)
+                  Text("Choose how to sync")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                  .foregroundColor(.secondary)
+                  .font(.caption)
+              }
+            }
+          }
+
           if profileSyncManager.isEnabled {
             HStack {
               Text("Sync Status")

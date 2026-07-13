@@ -8,7 +8,7 @@ import Foundation
 /// checklist (§10). Only `translateReason` is unit-tested (pure).
 @MainActor
 final class CKSyncEngineDriver: NSObject, SyncEngineDriver, CKSyncEngineDelegate {
-  private var engine: CKSyncEngine!
+  private var engine: CKSyncEngine?
   private weak var delegate: SyncEngineDriverDelegate?
   private let restoredState: Data?
   private let database: CKDatabase
@@ -33,38 +33,38 @@ final class CKSyncEngineDriver: NSObject, SyncEngineDriver, CKSyncEngineDelegate
   var stateSerialization: Data? { restoredState }
 
   var pendingRecordZoneChanges: [CKSyncEngine.PendingRecordZoneChange] {
-    engine.state.pendingRecordZoneChanges
+    engine?.state.pendingRecordZoneChanges ?? []
   }
 
   var pendingDatabaseChanges: [CKSyncEngine.PendingDatabaseChange] {
-    engine.state.pendingDatabaseChanges
+    engine?.state.pendingDatabaseChanges ?? []
   }
 
   func add(pendingRecordZoneChanges changes: [CKSyncEngine.PendingRecordZoneChange]) {
-    engine.state.add(pendingRecordZoneChanges: changes)
+    engine?.state.add(pendingRecordZoneChanges: changes)
   }
 
   func remove(pendingRecordZoneChanges changes: [CKSyncEngine.PendingRecordZoneChange]) {
-    engine.state.remove(pendingRecordZoneChanges: changes)
+    engine?.state.remove(pendingRecordZoneChanges: changes)
   }
 
   func add(pendingDatabaseChanges changes: [CKSyncEngine.PendingDatabaseChange]) {
-    engine.state.add(pendingDatabaseChanges: changes)
+    engine?.state.add(pendingDatabaseChanges: changes)
   }
 
   func remove(pendingDatabaseChanges changes: [CKSyncEngine.PendingDatabaseChange]) {
-    engine.state.remove(pendingDatabaseChanges: changes)
+    engine?.state.remove(pendingDatabaseChanges: changes)
   }
 
   func fetchChanges() {
-    let engine = self.engine!
+    guard let engine else { return }
     CKSyncEngineTaskBoundary.runDetached {
       try? await engine.fetchChanges()
     }
   }
 
   func sendChanges() {
-    let engine = self.engine!
+    guard let engine else { return }
     CKSyncEngineTaskBoundary.runDetached {
       try? await engine.sendChanges()
     }
@@ -83,6 +83,10 @@ final class CKSyncEngineDriver: NSObject, SyncEngineDriver, CKSyncEngineDelegate
     } catch {
       return .transientError((error as? CKError) ?? CKError(.serviceUnavailable))
     }
+  }
+
+  func shutdown() {
+    engine = nil
   }
 
   // MARK: - CKSyncEngineDelegate (nonisolated; hops to main actor)
@@ -113,6 +117,7 @@ final class CKSyncEngineDriver: NSObject, SyncEngineDriver, CKSyncEngineDelegate
   private func batchOnMain(
     scope: CKSyncEngine.SendChangesOptions.Scope
   ) -> CKSyncEngine.RecordZoneChangeBatch? {
+    guard let engine else { return nil }
     let saves = delegate?.nextRecordZoneChangeBatch(scope: scope) ?? []
     let deletes = engine.state.pendingRecordZoneChanges.compactMap { change -> CKRecord.ID? in
       if case .deleteRecord(let id) = change, scope.contains(change) { return id }

@@ -12,6 +12,7 @@ final class CutoverRecordingDriver: SyncEngineDriver {
   private(set) var databaseChanges: [CKSyncEngine.PendingDatabaseChange] = []
   private(set) var fetchChangesCount = 0
   private(set) var sendChangesCount = 0
+  private(set) var shutdownCallCount = 0
 
   var fetchRecordResults: [String: FetchRecordResult] = [:]
   var defaultFetchRecordResult: FetchRecordResult = .notFound
@@ -42,6 +43,7 @@ final class CutoverRecordingDriver: SyncEngineDriver {
   func fetchRecord(_ id: CKRecord.ID) async -> FetchRecordResult {
     fetchRecordResults[id.recordName] ?? defaultFetchRecordResult
   }
+  func shutdown() { shutdownCallCount += 1 }
 
   // MARK: - Test inspection helpers
   var enqueuedSaveNames: [String] {

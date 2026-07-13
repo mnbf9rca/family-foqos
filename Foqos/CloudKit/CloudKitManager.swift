@@ -1,6 +1,28 @@
 import CloudKit
 import Foundation
 
+enum AccountAvailability: Equatable {
+  case available(CKRecord.ID?)
+  case noAccount
+  case ambiguous
+
+  init(from status: CKAccountStatus, recordID: CKRecord.ID?, error: Error?) {
+    if error != nil {
+      self = .ambiguous
+      return
+    }
+
+    switch status {
+    case .available:
+      self = .available(recordID)
+    case .noAccount:
+      self = .noAccount
+    default:
+      self = .ambiguous
+    }
+  }
+}
+
 /// Thin @MainActor state layer for CloudKit operations.
 /// All network I/O is delegated to CloudKitNetworkService (a background actor, not @MainActor),
 /// keeping the main thread free from CloudKit IPC.
@@ -42,6 +64,25 @@ class CloudKitManager: ObservableObject {
     } else {
       self.currentUserRecordID = nil
     }
+  }
+
+  func accountAvailability() async -> AccountAvailability {
+    let raw = await networkService.accountStatusDetailed()
+    let availability = AccountAvailability(
+      from: raw.status, recordID: raw.userRecordID, error: raw.error)
+
+    switch availability {
+    case .available(let id):
+      isSignedIn = true
+      if let id { currentUserRecordID = id }
+    case .noAccount:
+      isSignedIn = false
+      currentUserRecordID = nil
+    case .ambiguous:
+      break
+    }
+
+    return availability
   }
 
   // MARK: - User Record

@@ -8,6 +8,7 @@ import Foundation
 enum CloudKitConstants {
   static let containerIdentifier = "iCloud.com.cynexia.family-foqos"
   static let syncZoneName = "DeviceSync"
+  static let defaultUserRecordName = "__default_user__"
 }
 
 // MARK: - SyncedProfile
