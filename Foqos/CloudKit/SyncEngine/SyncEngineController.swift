@@ -232,6 +232,8 @@ final class SyncEngineController: SyncEngineDriverDelegate {
     flushTask?.cancel()
     fetchCycleSweepTask?.cancel()
     store.engineState = nil  // pending unsent saves lost (N5); tombstones survive
+    driver?.shutdown()
+    driver = nil
     state = .disabled
   }
 
@@ -272,6 +274,10 @@ final class SyncEngineController: SyncEngineDriverDelegate {
   // MARK: - SyncEngineDriverDelegate
 
   func handle(_ event: SyncEngineEvent) {
+    guard driver != nil else {
+      Log.debug("engine event ignored: driver torn down (\(event))", category: .sync)
+      return
+    }
     switch event {
     case .willFetchChanges:
       handleWillFetchChanges()
@@ -325,10 +331,12 @@ final class SyncEngineController: SyncEngineDriverDelegate {
           s.pendingSeedIntent = false
           // tombstones survive — deletion intent is not consent-scoped
         }
-        state = .purged
         SharedData.deviceSyncEnabled = false
         flushTask = Task { [weak self] in await self?.sessionSync.flushSessionCache() }
         NotificationCenter.default.post(name: .syncEnginePurged, object: nil)  // one-time notice (Phase F UI)
+        driver?.shutdown()
+        driver = nil
+        state = .purged
       }
     }
   }

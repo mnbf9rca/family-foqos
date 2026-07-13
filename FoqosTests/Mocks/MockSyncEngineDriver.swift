@@ -22,6 +22,7 @@ final class MockSyncEngineDriver: SyncEngineDriver {
   private(set) var operations: [Operation] = []
   private(set) var fetchChangesCount = 0
   private(set) var sendChangesCount = 0
+  private(set) var shutdownCallCount = 0
 
   var stateSerialization: Data?
   var pendingRecordZoneChanges: [CKSyncEngine.PendingRecordZoneChange]
@@ -82,6 +83,10 @@ final class MockSyncEngineDriver: SyncEngineDriver {
   func fetchRecord(_ id: CKRecord.ID) async -> FetchRecordResult {
     fetchedRecordIDs.append(id)
     return fetchRecordResults[id.recordName] ?? defaultFetchRecordResult
+  }
+
+  func shutdown() {
+    shutdownCallCount += 1
   }
 
   // MARK: - Test drivers

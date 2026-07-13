@@ -92,4 +92,27 @@ final class SyncEngineAccountChangeTests: XCTestCase {
 
     XCTAssertEqual(driver.sendChangesCount, 1)
   }
+
+  func testStopNilsDriverAndShutsItDown() throws {
+    let controller = makeController()
+    controller.start()
+
+    XCTAssertTrue(controller.hasLiveDriver)
+
+    controller.stop()
+
+    XCTAssertFalse(controller.hasLiveDriver)
+    XCTAssertEqual(driver.shutdownCallCount, 1)
+    XCTAssertGreaterThanOrEqual(driver.sendChangesCount, 1)
+  }
+
+  func testHandleIgnoresEventsAfterTeardown() throws {
+    let controller = makeController()
+    controller.start()
+    controller.stop()
+
+    controller.handle(.didFetchChanges)
+
+    XCTAssertFalse(controller.hasLiveDriver)
+  }
 }
