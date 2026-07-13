@@ -32,6 +32,9 @@ class ProfileSyncManager: ObservableObject {
   @Published var error: SyncError?
   /// Set to true when legacy records were cleaned up and user should be notified
   @Published var shouldShowSyncUpgradeNotice = false
+  @Published private(set) var syncPausedReason: SyncPausedReason?
+  @Published private(set) var accountChangeConflict: AccountChangeConflict?
+  private(set) var pendingConflictName: String?
 
   /// The engine owner (I10). Wired in `attachEngine(...)` once a ModelContext exists.
   weak var engineController: (any SyncEngineControlling)?
@@ -55,6 +58,17 @@ class ProfileSyncManager: ObservableObject {
   private var deferredEmergencySave = false
   private var deferredEmergencyUnblockEvents: [String: SyncedEmergencyUnblockEvent] = [:]
   private var deferredEmergencyEpochSave = false
+  private(set) var attachedUserRecordName: String?
+  private var attachedModelContext: ModelContext?
+  private var attachedEmergencyManager: EmergencyUnblockManager?
+  private var attachedDriverFactory: ((Data?) -> SyncEngineDriver)?
+  private var didRetryAccountResolution = false
+
+  #if DEBUG
+    private(set) var didCallStartForTest = false
+    private(set) var didTearDownForTest = false
+    var disableAccountResolutionRetryForTest = false
+  #endif
 
   /// Test seam: true when nothing is pending re-enqueue.
   var hasNoDeferredMutations: Bool {
@@ -118,6 +132,15 @@ class ProfileSyncManager: ObservableObject {
     }
   }
 
+  enum SyncPausedReason: Equatable {
+    case signedOut
+    case accountChanged
+  }
+
+  struct AccountChangeConflict: Equatable {
+    let newUserRecordName: String
+  }
+
   // MARK: - Sync Errors
 
   enum SyncError: LocalizedError {
@@ -172,8 +195,25 @@ class ProfileSyncManager: ObservableObject {
     // in production nothing else ever nils `engineController`, so this only ever fires once.
     guard engineController == nil else { return }
     let userRecordName = await userRecordNameProvider()
+    attachedModelContext = modelContext
+    attachedEmergencyManager = emergencyManager
+    attachedDriverFactory = driverFactory
+    await buildEngine(
+      userRecordName: userRecordName, modelContext: modelContext, emergencyManager: emergencyManager,
+      driverFactory: driverFactory, forceSeed: false)
+  }
+
+  private func buildEngine(
+    userRecordName: String,
+    modelContext: ModelContext,
+    emergencyManager: EmergencyUnblockManager,
+    driverFactory: ((Data?) -> SyncEngineDriver)?,
+    forceSeed: Bool
+  ) async {
+    attachedUserRecordName = userRecordName
     let deviceId = SharedData.deviceSyncId.uuidString
     let store = SyncEngineStore(userRecordName: userRecordName)
+    if forceSeed { store.pendingSeedIntent = true }
     let apply = SyncApplyService(
       modelContext: modelContext, store: store, sessionController: StrategyManager.shared,
       emergencyManager: emergencyManager, deviceId: deviceId)
@@ -193,6 +233,7 @@ class ProfileSyncManager: ObservableObject {
       modelContext: modelContext, store: store, driverFactory: factory,
       apply: apply, provider: provider, sessionSync: SessionSyncCacheFlusher(), deviceId: deviceId)
     pendingController = controller
+    controller.onAccountChange = { [weak self] kind in self?.handleEngineAccountChange(kind) }
     ownedEngineController = controller
     engineController = controller
     for entry in PreAttachDeleteBuffer.pending(defaults: bufferDefaults) {
@@ -224,6 +265,150 @@ class ProfileSyncManager: ObservableObject {
       return "__default_user__"
     }
   }
+
+  func handleEngineAccountChange(_ kind: SyncEngineAccountChangeKind) {
+    if kind == .signOut || kind == .switchAccounts {
+      didRetryAccountResolution = false
+    }
+
+    Task { @MainActor [weak self] in
+      guard let self else { return }
+      let availability = await CloudKitManager.shared.accountAvailability()
+      var newName: String?
+      if case .available = availability {
+        newName = await ProfileSyncManager.fetchUserRecordName()
+      }
+      self.resolveAccountChange(availability: availability, newName: newName)
+    }
+  }
+
+  func resolveAccountChange(availability: AccountAvailability, newName: String?) {
+    let sentinel = "__default_user__"
+
+    switch availability {
+    case .noAccount:
+      didRetryAccountResolution = false
+      pauseSync(reason: .signedOut)
+    case .ambiguous:
+      resumeAfterAmbiguity()
+    case .available:
+      guard let newName, newName != sentinel,
+        let attached = attachedUserRecordName, attached != sentinel
+      else {
+        resumeAfterAmbiguity()
+        return
+      }
+
+      if newName == attached {
+        didRetryAccountResolution = false
+        clearPause()
+        if let controller = engineController as? SyncEngineController {
+          if controller.state == .disabled {
+            if controller.hasLiveDriver {
+              controller.prepareForAccountSwitch()
+              #if DEBUG
+                didTearDownForTest = true
+              #endif
+            } else {
+              controller.endAccountResolution()
+            }
+            startEngineAndMarkReadyWhenStartupCompletes()
+          } else {
+            controller.endAccountResolution()
+            controller.requestSync()
+          }
+        } else {
+          engineController?.endAccountResolution()
+          engineController?.requestSync()
+        }
+      } else {
+        didRetryAccountResolution = false
+        engineController?.prepareForAccountSwitch()
+        #if DEBUG
+          didTearDownForTest = true
+        #endif
+        isSyncReady = false
+        pendingConflictName = newName
+        accountChangeConflict = AccountChangeConflict(newUserRecordName: newName)
+        syncPausedReason = .accountChanged
+      }
+    }
+  }
+
+  func reattachEngine(userRecordName: String, forceSeed: Bool) async {
+    guard let modelContext = attachedModelContext,
+      let emergencyManager = attachedEmergencyManager
+    else { return }
+
+    engineController?.prepareForAccountSwitch()
+    #if DEBUG
+      didTearDownForTest = true
+    #endif
+    ownedEngineController = nil
+    engineController = nil
+    isSyncReady = false
+    await buildEngine(
+      userRecordName: userRecordName,
+      modelContext: modelContext,
+      emergencyManager: emergencyManager,
+      driverFactory: attachedDriverFactory,
+      forceSeed: forceSeed)
+  }
+
+  private func pauseSync(reason: SyncPausedReason) {
+    isSyncReady = false
+    engineController?.prepareForAccountSwitch()
+    #if DEBUG
+      didTearDownForTest = true
+    #endif
+    syncPausedReason = reason
+  }
+
+  private func clearPause() {
+    syncPausedReason = nil
+    accountChangeConflict = nil
+    pendingConflictName = nil
+  }
+
+  private func resumeAfterAmbiguity() {
+    engineController?.endAccountResolution()
+    engineController?.requestSync()
+    scheduleAccountResolutionRetry()
+  }
+
+  private func scheduleAccountResolutionRetry() {
+    guard !didRetryAccountResolution else { return }
+    #if DEBUG
+      guard !disableAccountResolutionRetryForTest else { return }
+    #endif
+    didRetryAccountResolution = true
+    Task { @MainActor [weak self] in
+      try? await Task.sleep(nanoseconds: 5_000_000_000)
+      self?.handleEngineAccountChange(.signIn)
+    }
+  }
+
+  #if DEBUG
+    func resetAccountChangeDebugCountersForTest() {
+      didCallStartForTest = false
+      didTearDownForTest = false
+      disableAccountResolutionRetryForTest = true
+    }
+
+    func clearAccountChangeStateForTest() {
+      syncPausedReason = nil
+      accountChangeConflict = nil
+      pendingConflictName = nil
+      attachedUserRecordName = nil
+      attachedModelContext = nil
+      attachedEmergencyManager = nil
+      attachedDriverFactory = nil
+      didRetryAccountResolution = false
+      didCallStartForTest = false
+      didTearDownForTest = false
+      disableAccountResolutionRetryForTest = false
+    }
+  #endif
 
   // MARK: - Engine facade (Phase F)
 
@@ -416,6 +601,9 @@ class ProfileSyncManager: ObservableObject {
   private func startEngineAndMarkReadyWhenStartupCompletes() {
     guard let engineController else { return }
     isSyncReady = false
+    #if DEBUG
+      didCallStartForTest = true
+    #endif
     engineController.start()
     guard let controller = engineController as? SyncEngineController else { return }
     Task { @MainActor [weak self, weak controller] in
