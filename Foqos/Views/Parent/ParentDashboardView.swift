@@ -550,8 +550,10 @@ struct ParentDashboardView: View {
       if heartbeatManager.monitoredDevices.isEmpty {
         EmptyMemberCard(
           icon: "antenna.radiowaves.left.and.right",
-          title: "No Devices",
-          description: "Child devices will appear here when they activate a profile"
+          title: "No devices reporting",
+          description:
+            "Devices appear here once they report status. A child on an older app version won't "
+            + "appear even while actively blocking — update their app to see it here."
         )
       } else {
         ForEach(heartbeatManager.monitoredDevices) { device in
