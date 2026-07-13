@@ -16,6 +16,7 @@ final class ProfileSyncAccountResolverTests: XCTestCase {
   var savedIsSyncReady = false
   var savedController: (any SyncEngineControlling)?
   var savedBufferDefaults: UserDefaults!
+  var emergencyManager: EmergencyUnblockManager!
   let recA = CKRecord.ID(recordName: "userA")
   let recB = CKRecord.ID(recordName: "userB")
 
@@ -33,6 +34,7 @@ final class ProfileSyncAccountResolverTests: XCTestCase {
     savedController = manager.engineController
     savedBufferDefaults = manager.bufferDefaults
     manager.bufferDefaults = bufferDefaults
+    emergencyManager = EmergencyUnblockManager(defaults: defaults)
     manager.engineController = nil
     manager.isSyncReady = false
     manager.isEnabled = false
@@ -130,6 +132,80 @@ final class ProfileSyncAccountResolverTests: XCTestCase {
     XCTAssertFalse(manager.isSyncReady)
   }
 
+  func testCombineReattachesWithForcedSeedWithoutWiping() async throws {
+    try await makeAttachedManager(namespace: "userA", isEnabled: true, engineState: .steady)
+    manager.resolveAccountChange(availability: .available(recB), newName: "userB")
+    seedLocalProfiles(count: 2)
+
+    await manager.resolveConflictCombine()
+
+    XCTAssertEqual(manager.attachedUserRecordName, "userB")
+    XCTAssertEqual(try container.mainContext.fetch(FetchDescriptor<BlockedProfiles>()).count, 2)
+    XCTAssertTrue(manager.lastReattachForceSeedForTest)
+    XCTAssertNil(manager.accountChangeConflict)
+  }
+
+  func testSwitchWipesLocalAndEmergencyThenReattaches() async throws {
+    try await makeAttachedManager(namespace: "userA", isEnabled: true, engineState: .steady)
+    manager.resolveAccountChange(availability: .available(recB), newName: "userB")
+    let now = Date()
+    seedLocalProfiles(count: 2, now: now)
+    let location = SavedLocation(
+      name: "Library", latitude: 51.5, longitude: -0.1, createdAt: now, updatedAt: now)
+    container.mainContext.insert(location)
+    try container.mainContext.save()
+    _ = emergencyManager.recordAndEnqueueUnblock(now: now)
+
+    await manager.resolveConflictSwitchToCloud()
+
+    XCTAssertEqual(manager.attachedUserRecordName, "userB")
+    XCTAssertEqual(try container.mainContext.fetch(FetchDescriptor<BlockedProfiles>()).count, 0)
+    XCTAssertEqual(try container.mainContext.fetch(FetchDescriptor<SavedLocation>()).count, 0)
+    XCTAssertEqual(emergencyManager.getRemainingEmergencyUnblocks(), 3)
+    XCTAssertNil(manager.accountChangeConflict)
+  }
+
+  func testSwitchWithActiveSessionEndsItAndClearsRestrictions() async throws {
+    try await makeAttachedManager(namespace: "userA", isEnabled: true, engineState: .steady)
+    manager.resolveAccountChange(availability: .available(recB), newName: "userB")
+    let now = Date()
+    let profile = seedLocalProfiles(count: 1, now: now).first!
+    let session = startActiveSession(for: profile, now: now)
+    var removedStartSchedules: Set<UUID> = []
+    var removedStopSchedules: Set<UUID> = []
+    var canceledPreActivationReminders: Set<UUID> = []
+    let cleanup = BlockedProfiles.DeleteCleanup(
+      removeStartSchedule: { removedStartSchedules.insert($0.id) },
+      removeStopSchedule: { removedStopSchedules.insert($0.id) },
+      cancelPreActivationReminders: { canceledPreActivationReminders.insert($0) },
+      removeBreakBackstop: { _ in },
+      removeOneMoreMinuteBackstop: { _ in }
+    )
+
+    await manager.wipeAndReattachForTest(cleanup: cleanup, newName: "userB")
+
+    XCTAssertNotNil(session.endTime)
+    XCTAssertTrue(removedStartSchedules.contains(profile.id))
+    XCTAssertTrue(removedStopSchedules.contains(profile.id))
+    XCTAssertTrue(canceledPreActivationReminders.contains(profile.id))
+    XCTAssertEqual(try container.mainContext.fetch(FetchDescriptor<BlockedProfiles>()).count, 0)
+  }
+
+  func testNotNowLeavesEngineOffButRePromptable() async throws {
+    try await makeAttachedManager(namespace: "userA", isEnabled: true, engineState: .steady)
+    manager.resolveAccountChange(availability: .available(recB), newName: "userB")
+    seedLocalProfiles(count: 2)
+
+    manager.resolveConflictNotNow()
+
+    XCTAssertNil(manager.accountChangeConflict)
+    XCTAssertEqual(manager.syncPausedReason, .accountChanged)
+    XCTAssertEqual(manager.pendingConflictName, "userB")
+    XCTAssertEqual(try container.mainContext.fetch(FetchDescriptor<BlockedProfiles>()).count, 2)
+    XCTAssertEqual(manager.attachedUserRecordName, "userA")
+    XCTAssertFalse((manager.engineController as? SyncEngineController)?.hasLiveDriver ?? true)
+  }
+
   private func makeAttachedManager(
     namespace: String, isEnabled: Bool, engineState: SyncEngineState
   ) async throws {
@@ -139,7 +215,7 @@ final class ProfileSyncAccountResolverTests: XCTestCase {
     let driver = MockSyncEngineDriver()
     await manager.attachEngine(
       modelContext: container.mainContext,
-      emergencyManager: EmergencyUnblockManager(defaults: defaults),
+      emergencyManager: emergencyManager,
       userRecordNameProvider: { namespace },
       driverFactory: { _ in driver })
     manager.isEnabled = isEnabled
@@ -148,5 +224,24 @@ final class ProfileSyncAccountResolverTests: XCTestCase {
     }
     (manager.engineController as? SyncEngineController)?.forceStateForTest(engineState)
     manager.resetAccountChangeDebugCountersForTest()
+  }
+
+  @discardableResult
+  private func seedLocalProfiles(count: Int, now: Date = Date()) -> [BlockedProfiles] {
+    let profiles = (0..<count).map {
+      BlockedProfiles(name: "Focus \($0)", createdAt: now, updatedAt: now)
+    }
+    for profile in profiles {
+      container.mainContext.insert(profile)
+    }
+    try? container.mainContext.save()
+    return profiles
+  }
+
+  private func startActiveSession(for profile: BlockedProfiles, now: Date) -> BlockedProfileSession {
+    let session = BlockedProfileSession(tag: "manual", blockedProfile: profile, startTime: now)
+    container.mainContext.insert(session)
+    try? container.mainContext.save()
+    return session
   }
 }

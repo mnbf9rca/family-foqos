@@ -67,6 +67,7 @@ class ProfileSyncManager: ObservableObject {
   #if DEBUG
     private(set) var didCallStartForTest = false
     private(set) var didTearDownForTest = false
+    private(set) var lastReattachForceSeedForTest = false
     var disableAccountResolutionRetryForTest = false
   #endif
 
@@ -340,6 +341,9 @@ class ProfileSyncManager: ObservableObject {
       let emergencyManager = attachedEmergencyManager
     else { return }
 
+    #if DEBUG
+      lastReattachForceSeedForTest = forceSeed
+    #endif
     engineController?.prepareForAccountSwitch()
     #if DEBUG
       didTearDownForTest = true
@@ -353,6 +357,45 @@ class ProfileSyncManager: ObservableObject {
       emergencyManager: emergencyManager,
       driverFactory: attachedDriverFactory,
       forceSeed: forceSeed)
+  }
+
+  func resolveConflictSwitchToCloud() async {
+    guard let conflict = accountChangeConflict else { return }
+    wipeLocalSyncedDataDirectly()
+    await reattachEngine(userRecordName: conflict.newUserRecordName, forceSeed: false)
+    clearPause()
+  }
+
+  func resolveConflictCombine() async {
+    guard let conflict = accountChangeConflict else { return }
+    await reattachEngine(userRecordName: conflict.newUserRecordName, forceSeed: true)
+    clearPause()
+  }
+
+  func resolveConflictNotNow() {
+    accountChangeConflict = nil
+  }
+
+  func reopenPendingAccountChangeConflict() {
+    guard let pendingConflictName else { return }
+    accountChangeConflict = AccountChangeConflict(newUserRecordName: pendingConflictName)
+  }
+
+  private func wipeLocalSyncedDataDirectly(cleanup: BlockedProfiles.DeleteCleanup? = nil) {
+    guard let context = attachedModelContext else { return }
+
+    let profiles = (try? context.fetch(FetchDescriptor<BlockedProfiles>())) ?? []
+    for profile in profiles {
+      try? BlockedProfiles.deleteProfile(profile, in: context, cleanup: cleanup)
+    }
+
+    let locations = (try? context.fetch(FetchDescriptor<SavedLocation>())) ?? []
+    for location in locations {
+      try? SavedLocation.delete(location, in: context)
+    }
+
+    try? context.save()
+    attachedEmergencyManager?.resetAllStateForAccountSwitch()
   }
 
   private func pauseSync(reason: SyncPausedReason) {
@@ -392,6 +435,7 @@ class ProfileSyncManager: ObservableObject {
     func resetAccountChangeDebugCountersForTest() {
       didCallStartForTest = false
       didTearDownForTest = false
+      lastReattachForceSeedForTest = false
       disableAccountResolutionRetryForTest = true
     }
 
@@ -406,7 +450,14 @@ class ProfileSyncManager: ObservableObject {
       didRetryAccountResolution = false
       didCallStartForTest = false
       didTearDownForTest = false
+      lastReattachForceSeedForTest = false
       disableAccountResolutionRetryForTest = false
+    }
+
+    func wipeAndReattachForTest(cleanup: BlockedProfiles.DeleteCleanup, newName: String) async {
+      wipeLocalSyncedDataDirectly(cleanup: cleanup)
+      await reattachEngine(userRecordName: newName, forceSeed: false)
+      clearPause()
     }
   #endif
 

@@ -234,6 +234,32 @@ struct FoqosApp: App {
             "Session sync has been improved. Please update Family Foqos on all your devices to ensure sessions sync correctly."
           )
         }
+        .confirmationDialog(
+          "iCloud account changed",
+          isPresented: Binding(
+            get: { profileSyncManager.accountChangeConflict != nil },
+            set: { isPresented in
+              if !isPresented, profileSyncManager.accountChangeConflict != nil {
+                profileSyncManager.resolveConflictNotNow()
+              }
+            }
+          ),
+          titleVisibility: .visible
+        ) {
+          Button("Use this account's data") {
+            Task { await profileSyncManager.resolveConflictSwitchToCloud() }
+          }
+          Button("Combine my data") {
+            Task { await profileSyncManager.resolveConflictCombine() }
+          }
+          Button("Not now", role: .cancel) {
+            profileSyncManager.resolveConflictNotNow()
+          }
+        } message: {
+          Text(
+            "Sync was turned off because this device signed into a different iCloud account. Use this account's data replaces this device's profiles with the ones already in the new account. Combine my data adds this device's profiles to the new account and they will appear on all devices signed into that account."
+          )
+        }
         .environmentObject(requestAuthorizer)
         .environmentObject(strategyManager)
         .environmentObject(geofenceEvaluator)
