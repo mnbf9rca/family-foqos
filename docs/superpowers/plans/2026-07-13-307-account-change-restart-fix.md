@@ -66,14 +66,14 @@ The load-bearing rule: **a teardown/pause or a destructive dialog happens only o
 Combine reconstructs the engine into the new user's namespace **without** wiping local data, and **forces a seed** so the union fires even for a previously-seen account. `applySeedDecision()` (`SyncEngineController.swift:918-926`) seeds only when `engineState == nil` *or* `pendingSeedIntent` is set; for a returning account `engineState[newName]` is non-nil (§7 "purges nothing"; nothing clears it on switch), so relying on `engineState == nil` would silently degrade Combine to fetch-only. Instead, set `store.pendingSeedIntent = true` for the new namespace **before** `start()` — this takes the I11 crash-recovery branch (`design:320` "`pendingSeedIntent` set ⇒ re-run I6 purge + I11 seed"), which runs the **I11** seed (`design:258`, `SyncEngineController.seedZoneAndRecords`/`restorableRecordNames` `:967-1005`): `saveZone` + save-all-restorable (profiles minus `isNewerSchemaVersion`, `SavedLocation`s, the emergency records) while `fetchChanges` pulls the new user's existing cloud records. Local SwiftData is account-agnostic; UUID keys make it collision-free (`design:497`). This *is* **N11** (`design:748`) — the contract's own accepted behavior — and touches **no** §8.1 machinery (verified against escalation trigger #3). Cross-device propagation is inherent; the dialog copy must say so.
 
 ### D-G — Switch is a full LOCAL wipe incl. UserDefaults emergency state
-The I11 seed set includes UserDefaults-backed emergency records (`restorableRecordNames` appends `SyncedEmergencySettings.recordName` + `provider.restorableEmergencyRecordNames()`, `SyncEngineController.swift:1002-1004`; emergency state is `Codable` structs in `UserDefaults` via `EmergencyUnblockManager`, `SyncModels.swift:471,574`, `EmergencyUnblockManager.swift:35,44`). A SwiftData `ctx.delete` loop cannot remove them. So the Switch wipe must delete the SwiftData entities (`BlockedProfiles`, `SavedLocation`) **and** reset the emergency UserDefaults state via `EmergencyUnblockManager` — otherwise emergency budget/epoch/events survive and union up into the switched-to account, contradicting "adopt cloud". (On **Combine** they intentionally union up — the flagged passenger, Task 9.)
+The I11 seed set includes UserDefaults-backed emergency records (`restorableRecordNames` appends `SyncedEmergencySettings.recordName` + `provider.restorableEmergencyRecordNames()`, `SyncEngineController.swift:1002-1004`; emergency state is `Codable` structs in `UserDefaults` via `EmergencyUnblockManager`, `SyncModels.swift:471,574`, `EmergencyUnblockManager.swift:35,44`). A SwiftData `ctx.delete` loop cannot remove them. So the Switch wipe must delete the SwiftData entities via their **model-owned delete APIs** — `BlockedProfiles.deleteProfile(_:in:cleanup:)` (ends any active session and runs the D4 cleanup set: start/stop schedules, pre-activation reminders, break/one-more-minute backstops, snapshot — so no live ManagedSettings restriction or ghost DeviceActivity schedule leaks, the #245 class; a raw `ctx.delete` would leak all of these) and `SavedLocation.delete(_:in:)` — **and** reset the emergency UserDefaults state via `EmergencyUnblockManager` — otherwise emergency budget/epoch/events survive and union up into the switched-to account, contradicting "adopt cloud". (On **Combine** they intentionally union up — the flagged passenger, Task 9.)
 
 ### D-H — `isEnabled` (consent) vs runtime pause; the invariant test's exact form
 `isEnabled`/`SharedData.deviceSyncEnabled` stays persisted user consent (so same-user re-sign-in auto-resumes without re-consent). Runtime pause is a separate published `syncPausedReason`. The shipped facade-boundary invariant test asserts decision #5 in its always-true form:
 
 > For the controller the facade routes to, `state ∈ {.disabled, .purged}` ⇒ `hasLiveDriver == false` (no `.disabled`/`.purged` controller with a live-but-orphaned driver), **and** after a *confirmed same-user* account-change with `isEnabled == true` and a previously `.disabled` engine, the routed controller returns to `.bootstrapping`/`.steady`.
 
-*Flag for reviewer:* the literal "isEnabled always ⇒ operational" cannot hold during a legitimate confirmed-signed-out pause (consent preserved, runtime paused); the orphan-ban form forbids the dangerous configuration in that window too (driver nil). This is the one place the invariant's wording is interpreted rather than taken literally — confirm the reading.
+**Resolved (reviewer, 2026-07-13): adopt this orphan-ban + same-user-recovery form.** The literal "isEnabled always ⇒ operational" cannot hold during a legitimate confirmed-signed-out pause (consent preserved, runtime paused); the orphan-ban form forbids the dangerous configuration in that window too (driver nil), and the same-user-recovery clause covers the operational guarantee decision #5 targets.
 
 ---
 
@@ -570,7 +570,7 @@ func resolveAccountChange(availability: AccountAvailability, newName: String?) {
       clearPause()
       if let c = engineController as? SyncEngineController {
         if c.state == .disabled { startEngineAndMarkReadyWhenStartupCompletes() }  // NOT .purged (D-A)
-        else { c.endAccountResolution() }                    // running engine: just resume sends
+        else { c.endAccountResolution(); c.requestSync() }   // running engine: resume + flush anything suppressed
       }
     } else {
       (engineController as? SyncEngineController)?.prepareForAccountSwitch()  // tear down BEFORE dialog (no leak)
@@ -589,9 +589,10 @@ private func pauseSync(reason: SyncPausedReason) {
 }
 private func clearPause() { syncPausedReason = nil; accountChangeConflict = nil; pendingConflictName = nil }
 
-/// Unconfirmed signal: leave the running engine untouched, resume its sends, retry once.
+/// Unconfirmed signal: leave the running engine untouched, resume its sends (flushing anything
+/// suppressed during resolution), retry once.
 private func resumeAfterAmbiguity() {
-  (engineController as? SyncEngineController)?.endAccountResolution()
+  if let c = engineController as? SyncEngineController { c.endAccountResolution(); c.requestSync() }
   scheduleAccountResolutionRetry()
 }
 private var didRetryAccountResolution = false
@@ -659,6 +660,19 @@ In `buildEngine`, when `forceSeed`, set `store.pendingSeedIntent = true` **befor
   XCTAssertEqual(emergencySpentBudget(), 0)                                    // UserDefaults emergency reset (D-G)
   XCTAssertNil(mgr.accountChangeConflict)
 }
+@MainActor func testSwitchWithActiveSessionEndsItAndClearsRestrictions() async throws {
+  let mgr = makeAttachedManager(namespace: "userA", isEnabled: true, engineState: .steady)
+  mgr.resolveAccountChange(availability: .available(recB), newName: "userB")
+  let profile = seedLocalProfiles(count: 1, into: ctx).first!
+  let session = startActiveSession(for: profile, in: ctx)                      // endTime == nil
+  let spyCleanup = SpyDeleteCleanup()
+  await mgr.wipeAndReattachForTest(cleanup: spyCleanup, newName: "userB")      // #if DEBUG seam driving the Switch wipe
+  XCTAssertNotNil(session.endTime)                                            // active session ended (not leaked)
+  XCTAssertTrue(spyCleanup.didRemoveStartSchedule(profile.id))
+  XCTAssertTrue(spyCleanup.didRemoveStopSchedule(profile.id))
+  XCTAssertTrue(spyCleanup.didCancelPreActivationReminders(profile.id))       // restrictions/schedules cleared (#245)
+  XCTAssertEqual(try ctx.fetch(FetchDescriptor<BlockedProfiles>()).count, 0)
+}
 @MainActor func testNotNowLeavesEngineOffButRePromptable() throws {
   let mgr = makeAttachedManager(namespace: "userA", isEnabled: true, engineState: .steady)
   mgr.resolveAccountChange(availability: .available(recB), newName: "userB")   // tore down, published conflict
@@ -692,18 +706,23 @@ func resolveConflictCombine() async {
 func resolveConflictNotNow() { accountChangeConflict = nil }  // keep syncPausedReason + pendingConflictName
 ```
 
-- [ ] **Step 3b: `wipeLocalSyncedDataDirectly()`** — direct delete (bypasses `MutationFunnel`; sync is funnel-driven — SwiftData CloudKit auto-sync is disabled, `cloudKitDatabase: .none` — so a raw delete never enqueues a server delete; the old driver is already torn down by the different-user resolver, but the funnel-bypass is what makes this LOCAL, not the driver's absence):
+- [ ] **Step 3b: `wipeLocalSyncedDataDirectly()`** — local delete via the **model-owned delete APIs** (NOT raw `ctx.delete`, reviewer-required 2026-07-13): `deleteProfile` ends any active session and runs the full D4 cleanup set (schedules, reminders, backstops, snapshot) so no live ManagedSettings restriction or ghost DeviceActivity schedule leaks (#245 class); `SavedLocation.delete` mirrors it. It stays LOCAL because it bypasses `MutationFunnel` (sync is funnel-driven — SwiftData CloudKit auto-sync is off, `cloudKitDatabase: .none` — so no server delete is enqueued; the funnel-bypass, not the old driver's absence, is what makes this local). The `cleanup:` seam is injectable for the active-session test (Step 1):
 
 ```swift
-private func wipeLocalSyncedDataDirectly() {
+private func wipeLocalSyncedDataDirectly(cleanup: BlockedProfiles.DeleteCleanup? = nil) {
   guard let ctx = attachedModelContext else { return }
-  for p in (try? ctx.fetch(FetchDescriptor<BlockedProfiles>())) ?? [] { ctx.delete(p) }
-  for l in (try? ctx.fetch(FetchDescriptor<SavedLocation>())) ?? [] { ctx.delete(l) }
+  for p in (try? ctx.fetch(FetchDescriptor<BlockedProfiles>())) ?? [] {
+    try? BlockedProfiles.deleteProfile(p, in: ctx, cleanup: cleanup)   // ends active sessions + D4 cleanup (#245)
+  }
+  for l in (try? ctx.fetch(FetchDescriptor<SavedLocation>())) ?? [] {
+    try? SavedLocation.delete(l, in: ctx)
+  }
   try? ctx.save()
   attachedEmergencyManager?.resetAllStateForAccountSwitch()   // emergency is UserDefaults, not SwiftData (D-G)
 }
 ```
-> Match this set to `restorableRecordNames()` (Task 0 Step 4): `BlockedProfiles` + `SavedLocation` (SwiftData) + emergency (UserDefaults). **Not** sessions (§6/N13).
+`resolveConflictSwitchToCloud()` calls `wipeLocalSyncedDataDirectly()` (default cleanup = `BlockedProfiles.defaultDeleteCleanup()`, the real ManagedSettings/DeviceActivity teardown). Expose a `#if DEBUG` test entry that passes an injected spy cleanup.
+> Match this set to `restorableRecordNames()` (Task 0 Step 4): `BlockedProfiles` + `SavedLocation` (SwiftData, via their delete APIs) + emergency (UserDefaults). **Not** sessions (§6/N13 — but `deleteProfile` still ends a profile's *own* active session before removing it, which is correct: an adopted-away profile must not leave restrictions applied).
 
 - [ ] **Step 3c: The dialog** — `.alert`/`confirmationDialog` on the root view, presented when `accountChangeConflict != nil`, three buttons; copy makes Combine's cross-device propagation explicit (decision #4):
   - Title: "iCloud account changed"
@@ -781,6 +800,8 @@ private let syncZoneID = CKRecordZone.ID(zoneName: CloudKitConstants.syncZoneNam
 
 Same two-device protocol that diagnosed #307 (Section 2 of `docs/superpowers/plans/2026-07-12-307-state-divergence-diagnosis.md`), re-run on the **fix build** (Debug). The permanent state log (Task 1) replaces the probes. Acceptance bar: the steps that previously ended `state=disabled` now end `state=steady`. Device **A** stays signed in/untouched; Device **B** does the toggles and iCloud sign-out. Keep two simple profiles (no schedules); clear in-app logs; install the fix build on both.
 
+> **Step 7 prerequisite:** the different-account step needs a **second real iCloud account** available on Device B, and — to confirm Combine's cross-device propagation — a way to observe that account's data elsewhere (a third device, or Device A re-signed into the second account). Line this up before starting; without a second account Step 7 cannot be exercised. Steps 1–6 need only the one shared account.
+
 | Step | Action (unchanged) | **Post-fix expected signature** |
 |---|---|---|
 | 1 | Manual "Sync Now" each | `Sync requested: state=steady …` both |
@@ -802,7 +823,7 @@ Same two-device protocol that diagnosed #307 (Section 2 of `docs/superpowers/pla
 - **Union unsafe against the S0 contract?** No — D-F: Combine is the documented N11 union via the I11 seed, forced (`pendingSeedIntent`) so it fires for any target account, collision-free by UUID, and touches no §8.1 machinery.
 - **Fix cannot avoid touching §8.1 reset?** No — same-user restart = `start()` resume; different-user = `reattachEngine`→T1 bootstrap (forced I11 seed) or local-wipe-then-bootstrap. None invoke `deleteZone`/`resetIntent`/the reset command.
 
-Two design points flagged (not blockers): D-H (invariant's literal wording vs the orphan-ban form during a legitimate signed-out pause) and D-C (explicit driver teardown + straggler guard so a torn-down controller can't crash on a stray event).
+Two design points **resolved by the reviewer (2026-07-13)**: D-H → adopt the orphan-ban + same-user-recovery invariant form; D-C → keep `shutdown()` + the `handle(_:)` straggler guard.
 
 ---
 
