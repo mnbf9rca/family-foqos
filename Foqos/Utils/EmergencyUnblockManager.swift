@@ -253,6 +253,20 @@ class EmergencyUnblockManager: ObservableObject {
     SyncedEmergencyEpoch(epoch: currentResetEpoch)
   }
 
+  func resetAllStateForAccountSwitch() {
+    emergencyUnblocksResetPeriodInDays = 28
+    lastEmergencyUnblocksResetDateTimestamp = 0
+    emergencySettingsLockedStorage = false
+    emergencySettingsVersion = 0
+    defaults.set(28, forKey: DefaultsKey.resetPeriodInDays)
+    defaults.set(0, forKey: DefaultsKey.lastResetDate)
+    defaults.set(false, forKey: DefaultsKey.settingsLocked)
+    defaults.set(0, forKey: DefaultsKey.settingsVersion)
+    defaults.set(0, forKey: LedgerKey.resetEpoch)
+    defaults.removeObject(forKey: LedgerKey.events)
+    objectWillChange.send()
+  }
+
   #if DEBUG
     func seedForTesting(epoch: Int) {
       currentResetEpoch = epoch

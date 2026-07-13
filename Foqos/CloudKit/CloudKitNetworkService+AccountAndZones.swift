@@ -5,6 +5,28 @@ extension CloudKitNetworkService {
 
   // MARK: - Account Status
 
+  func accountStatusDetailed() async -> (
+    status: CKAccountStatus, userRecordID: CKRecord.ID?, error: Error?
+  ) {
+    do {
+      let status = try await container.accountStatus()
+      guard status == .available else {
+        return (status: status, userRecordID: nil, error: nil)
+      }
+
+      do {
+        let recordID = try await container.userRecordID()
+        return (status: status, userRecordID: recordID, error: nil)
+      } catch {
+        Log.error("Failed to fetch user record ID: \(error)", category: .cloudKit)
+        return (status: status, userRecordID: nil, error: nil)
+      }
+    } catch {
+      Log.error("Account status detail error: \(error)", category: .cloudKit)
+      return (status: .couldNotDetermine, userRecordID: nil, error: error)
+    }
+  }
+
   func checkAccountStatus() async -> (isSignedIn: Bool, userRecordID: CKRecord.ID?) {
     let start = CFAbsoluteTimeGetCurrent()
     Log.info("checkAccountStatus: starting", category: .cloudKit)
