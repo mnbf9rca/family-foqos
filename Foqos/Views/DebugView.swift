@@ -194,10 +194,15 @@ struct DebugView: View {
       markdown += "- **Custom Reminder Message:** \(customMessage)\n"
     }
 
-    if let nfcTagId = profile.physicalUnblockNFCTagId {
+    if let nfcTagId = DebugRedaction.physicalUnblockNFCTagIdForDisplay(
+      profile.physicalUnblockNFCTagId,
+      mode: AppModeManager.shared.currentMode
+    ) {
       markdown += "- **Physical Unlock NFC Tag ID:** \(nfcTagId)\n"
     }
 
+    // #247 deliberate asymmetry: QR stores and exports only a SHA-256 digest; unlike the NFC UID,
+    // it is not a replayable stored credential, so Debug Mode leaves it visible for diagnostics.
     if let qrCodeId = profile.physicalUnblockQRCodeId {
       markdown += "- **Physical Unlock QR Code ID:** \(qrCodeId)\n"
     }
