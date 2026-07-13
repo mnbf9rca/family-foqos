@@ -83,8 +83,9 @@ struct SavedLocationsView: View {
           Section {
             ForEach(locations) { location in
               SafeModelView(location) { loc in
+                // #298: snapshot inside the validity gate; do NOT hoist - see tripwire.
                 SavedLocationCard(
-                  location: loc,
+                  data: loc.savedLocationCardData,
                   onTap: {
                     handleEdit(loc)
                   },

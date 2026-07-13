@@ -91,4 +91,26 @@ final class TwinViewSnapshotTests: XCTestCase {
     XCTAssertEqual(data.formattedDuration, "10m")
     _ = data.timeRangeText
   }
+
+  func testGivenSavedLocationCardDataThenModelDeletedAndSaved_ThenValuesStillReadableNoTrap()
+    throws
+  {
+    let location = SavedLocation(
+      name: "Home",
+      latitude: 0,
+      longitude: 0,
+      defaultRadiusMeters: 500
+    )
+    context.insert(location)
+    try context.save()
+
+    let data = location.savedLocationCardData
+
+    context.delete(location)
+    try context.save()
+
+    XCTAssertFalse(location.isPersistentModelValid)
+    XCTAssertEqual(data.name, "Home")
+    XCTAssertEqual(data.defaultRadiusMeters, 500)
+  }
 }

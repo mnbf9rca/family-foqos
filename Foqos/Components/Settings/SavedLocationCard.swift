@@ -3,7 +3,7 @@ import SwiftUI
 struct SavedLocationCard: View {
   @EnvironmentObject var themeManager: ThemeManager
 
-  let location: SavedLocation
+  let data: SavedLocationCardData
   let onTap: () -> Void
   var inUseByProfile: String? = nil
 
@@ -31,11 +31,11 @@ struct SavedLocationCard: View {
         // Location details
         VStack(alignment: .leading, spacing: 4) {
           HStack(spacing: 6) {
-            Text(location.name)
+            Text(data.name)
               .font(.headline)
               .foregroundColor(isDisabled ? .secondary : .primary)
 
-            if location.isLocked {
+            if data.isLocked {
               Image(systemName: "lock.fill")
                 .font(.caption)
                 .foregroundColor(.orange)
@@ -47,7 +47,7 @@ struct SavedLocationCard: View {
               .font(.subheadline)
               .foregroundColor(.orange)
           } else {
-            Text("Distance: \(SavedLocation.formatRadius(location.defaultRadiusMeters))")
+            Text("Distance: \(SavedLocation.formatRadius(data.defaultRadiusMeters))")
               .font(.subheadline)
               .foregroundColor(.secondary)
           }
@@ -70,37 +70,41 @@ struct SavedLocationCard: View {
 }
 
 #Preview {
+  let home = SavedLocation(
+    name: "Home",
+    latitude: 51.5074,
+    longitude: -0.1278,
+    defaultRadiusMeters: 500,
+    isLocked: false
+  )
+  let office = SavedLocation(
+    name: "Office",
+    latitude: 51.5155,
+    longitude: -0.1419,
+    defaultRadiusMeters: 1000,
+    isLocked: true
+  )
+  let school = SavedLocation(
+    name: "School",
+    latitude: 51.5200,
+    longitude: -0.1300,
+    defaultRadiusMeters: 250,
+    isLocked: false
+  )
+
   List {
     SavedLocationCard(
-      location: SavedLocation(
-        name: "Home",
-        latitude: 51.5074,
-        longitude: -0.1278,
-        defaultRadiusMeters: 500,
-        isLocked: false
-      ),
+      data: home.savedLocationCardData,
       onTap: {}
     )
 
     SavedLocationCard(
-      location: SavedLocation(
-        name: "Office",
-        latitude: 51.5155,
-        longitude: -0.1419,
-        defaultRadiusMeters: 1000,
-        isLocked: true
-      ),
+      data: office.savedLocationCardData,
       onTap: {}
     )
 
     SavedLocationCard(
-      location: SavedLocation(
-        name: "School",
-        latitude: 51.5200,
-        longitude: -0.1300,
-        defaultRadiusMeters: 250,
-        isLocked: false
-      ),
+      data: school.savedLocationCardData,
       onTap: {},
       inUseByProfile: "Focus Mode"
     )
