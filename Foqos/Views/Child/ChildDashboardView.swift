@@ -281,7 +281,8 @@ struct ChildDashboardView: View {
         VStack(spacing: 8) {
           ForEach(lockedProfiles) { profile in
             SafeModelView(profile) { p in
-              LockedProfileCard(profile: p)
+              // #298: snapshot inside the validity gate; do NOT hoist - see tripwire.
+              LockedProfileCard(data: p.lockedProfileCardData)
             }
           }
         }
@@ -349,7 +350,7 @@ struct ChildDashboardView: View {
 // MARK: - Locked Profile Card
 
 struct LockedProfileCard: View {
-  let profile: BlockedProfiles
+  let data: LockedProfileCardData
 
   var body: some View {
     HStack(spacing: 12) {
@@ -358,11 +359,11 @@ struct LockedProfileCard: View {
         .foregroundColor(.orange)
 
       VStack(alignment: .leading, spacing: 2) {
-        Text(profile.name)
+        Text(data.name)
           .font(.subheadline)
           .fontWeight(.medium)
 
-        Text("\(FamilyActivityUtil.countSelectedActivities(profile.selectedActivity)) apps blocked")
+        Text("\(data.appsBlockedCount) apps blocked")
           .font(.caption)
           .foregroundColor(.secondary)
       }

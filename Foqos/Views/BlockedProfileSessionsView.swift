@@ -10,7 +10,7 @@ struct SessionAlertIdentifier: Identifiable {
   }
 
   let id: AlertType
-  var session: BlockedProfileSession?
+  var sessionId: String?
   var errorMessage: String?
 }
 
@@ -52,7 +52,10 @@ struct BlockedProfileSessionsView: View {
       List {
         if let activeSession = activeSession {
           Section("Active Session") {
-            SessionRow(session: activeSession)
+            // #298: activeSession is a live @Model - gate before snapshotting.
+            SafeModelView(activeSession) { s in
+              SessionRow(data: s.sessionRowData)
+            }
           }
         }
 
@@ -60,12 +63,15 @@ struct BlockedProfileSessionsView: View {
           Section("Past Sessions") {
             ForEach(inactiveSessions) { session in
               SafeModelView(session) { s in
-                SessionRow(session: s)
+                // #298: build the snapshot ONLY here inside the validity gate
+                // (observation-tracked); do NOT hoist/memoize - see the sessionRowData tripwire.
+                let data = s.sessionRowData
+                SessionRow(data: data)
                   .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                     Button(role: .destructive) {
                       alertIdentifier = SessionAlertIdentifier(
                         id: .deleteSession,
-                        session: s
+                        sessionId: data.id
                       )
                     } label: {
                       Label("Delete", systemImage: "trash")
@@ -124,7 +130,7 @@ struct BlockedProfileSessionsView: View {
       .alert(item: $alertIdentifier) { alert in
         switch alert.id {
         case .deleteSession:
-          guard let session = alert.session else {
+          guard let sessionId = alert.sessionId else {
             return Alert(title: Text("Error"))
           }
           return Alert(
@@ -134,7 +140,7 @@ struct BlockedProfileSessionsView: View {
             ),
             primaryButton: .cancel(),
             secondaryButton: .destructive(Text("Delete")) {
-              deleteSession(session)
+              deleteSession(sessionId)
             }
           )
         case .error:
@@ -156,7 +162,12 @@ struct BlockedProfileSessionsView: View {
     }
   }
 
-  private func deleteSession(_ session: BlockedProfileSession) {
+  private func deleteSession(_ sessionId: String) {
+    guard let session = try? BlockedProfileSession.findSession(byID: sessionId, in: modelContext),
+      session.isPersistentModelValid
+    else {
+      return
+    }
     modelContext.delete(session)
     do {
       try modelContext.save()
