@@ -32,10 +32,6 @@ struct GeofencePicker: View {
     savedLocations.filter { selectedLocationIds.contains($0.id) }
   }
 
-  static func shouldShowAddLocationAffordance(savedLocationCount: Int) -> Bool {
-    true
-  }
-
   static func selectLocation(
     _ locationId: UUID,
     selectedLocationIds: inout Set<UUID>,
@@ -147,13 +143,11 @@ struct GeofencePicker: View {
               }
             }
 
-            if Self.shouldShowAddLocationAffordance(savedLocationCount: savedLocations.count) {
-              Button {
-                showingAddLocation = true
-              } label: {
-                Label("Add Location", systemImage: "plus")
-                  .foregroundStyle(themeManager.themeColor)
-              }
+            Button {
+              showingAddLocation = true
+            } label: {
+              Label("Add Location", systemImage: "plus")
+                .foregroundStyle(themeManager.themeColor)
             }
           }
         } header: {
