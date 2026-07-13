@@ -135,4 +135,21 @@ final class TwinViewSnapshotTests: XCTestCase {
     XCTAssertEqual(data.name, "Office")
     XCTAssertEqual(data.defaultRadiusMeters, 1000)
   }
+
+  func testGivenLockedProfileCardDataThenModelDeletedAndSaved_ThenValuesStillReadableNoTrap()
+    throws
+  {
+    let profile = BlockedProfiles(name: "Managed", selectedActivity: FamilyActivitySelection())
+    context.insert(profile)
+    try context.save()
+
+    let data = profile.lockedProfileCardData
+
+    context.delete(profile)
+    try context.save()
+
+    XCTAssertFalse(profile.isPersistentModelValid)
+    XCTAssertEqual(data.name, "Managed")
+    XCTAssertEqual(data.appsBlockedCount, 0)
+  }
 }
