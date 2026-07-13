@@ -2,6 +2,15 @@ import ActivityKit
 import Foundation
 import SwiftUI
 
+/// #249: pure startSessionActivity action, testable without ActivityKit runtime support.
+enum LiveActivityAction: Equatable {
+  case start
+  case update
+  case recreate
+  case end
+  case skip
+}
+
 @MainActor
 class LiveActivityManager: ObservableObject {
   // Published property for live activity reference
@@ -22,6 +31,23 @@ class LiveActivityManager: ObservableObject {
       return ActivityAuthorizationInfo().areActivitiesEnabled
     }
     return false
+  }
+
+  /// #249: a profile switch must recreate the activity because the profile name is an immutable
+  /// ActivityAttribute. Disabled switched-in profiles end any stale activity instead of updating it.
+  nonisolated static func decideAction(
+    currentProfileId: UUID?,
+    incomingProfileId: UUID,
+    enableLiveActivity: Bool,
+    hasCurrentActivity: Bool
+  ) -> LiveActivityAction {
+    guard enableLiveActivity else {
+      return hasCurrentActivity ? .end : .skip
+    }
+    guard hasCurrentActivity else {
+      return .start
+    }
+    return currentProfileId == incomingProfileId ? .update : .recreate
   }
 
   // Save activity ID using AppStorage
