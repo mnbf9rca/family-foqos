@@ -4,6 +4,7 @@ import SwiftUI
 // REGRESSION GUARD (#298): SessionRow accepts ONLY this value type - it can no longer hold a live
 // BlockedProfileSession @Model, so a re-render can never read a vacated store row.
 struct SessionRowData {
+  let id: String
   let startTime: Date
   let endTime: Date?
   let breakStartTime: Date?
@@ -83,6 +84,7 @@ extension BlockedProfileSession {
   /// device-gate edit step.
   var sessionRowData: SessionRowData {
     SessionRowData(
+      id: id,
       startTime: startTime,
       endTime: endTime,
       breakStartTime: breakStartTime,

@@ -91,29 +91,33 @@ struct GeofencePicker: View {
           } else {
             ForEach(savedLocations) { location in
               SafeModelView(location) { loc in
-                let isSelected = selectedLocationIds.contains(loc.id)
+                let data = loc.locationReferenceRowData
+                let locationId = data.id
+                let isSelected = selectedLocationIds.contains(locationId)
                 let binding = Binding<ProfileLocationReference>(
                   get: {
-                    locationReferences[loc.id] ?? ProfileLocationReference(savedLocationId: loc.id)
+                    locationReferences[locationId]
+                      ?? ProfileLocationReference(savedLocationId: locationId)
                   },
                   set: { newValue in
-                    locationReferences[loc.id] = newValue
+                    locationReferences[locationId] = newValue
                   }
                 )
 
                 // #298: snapshot the location inside the gate; the reference stays a live binding.
                 LocationReferenceRow(
-                  location: loc.locationReferenceRowData,
+                  location: data,
                   reference: binding,
                   isSelected: isSelected,
                   onToggle: { selected in
                     if selected {
-                      selectedLocationIds.insert(loc.id)
-                      if locationReferences[loc.id] == nil {
-                        locationReferences[loc.id] = ProfileLocationReference(savedLocationId: loc.id)
+                      selectedLocationIds.insert(locationId)
+                      if locationReferences[locationId] == nil {
+                        locationReferences[locationId] = ProfileLocationReference(
+                          savedLocationId: locationId)
                       }
                     } else {
-                      selectedLocationIds.remove(loc.id)
+                      selectedLocationIds.remove(locationId)
                     }
                   }
                 )

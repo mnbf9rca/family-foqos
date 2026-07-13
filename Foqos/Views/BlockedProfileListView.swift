@@ -70,11 +70,12 @@ struct BlockedProfileListView: View {
         SafeModelView(profile) { p in
           // #298: build the snapshot ONLY here inside the validity gate (observation-tracked);
           // do NOT hoist/memoize - see the profileRowData tripwire.
-          ProfileRow(data: p.profileRowData)
+          let data = p.profileRowData
+          ProfileRow(data: data)
             .contentShape(Rectangle())
             .onTapGesture {
               if editMode == .inactive {
-                profileToEdit = p
+                handleEditProfile(data.id)
               }
             }
         }
@@ -145,6 +146,15 @@ struct BlockedProfileListView: View {
           Text(deleteError?.message ?? "")
         }
     }
+  }
+
+  private func handleEditProfile(_ profileId: UUID) {
+    guard let profile = try? BlockedProfiles.findProfile(byID: profileId, in: context),
+      profile.isPersistentModelValid
+    else {
+      return
+    }
+    profileToEdit = profile
   }
 
   private func deleteProfiles(at offsets: IndexSet) {

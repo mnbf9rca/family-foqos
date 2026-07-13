@@ -56,6 +56,7 @@ final class TwinViewSnapshotTests: XCTestCase {
   func testGivenSessionRowData_WhenFormatted_ThenMatchesRawFieldLogic() throws {
     let now = Date()
     let data = SessionRowData(
+      id: "session-1",
       startTime: now,
       endTime: now.addingTimeInterval(3600),
       breakStartTime: nil,
