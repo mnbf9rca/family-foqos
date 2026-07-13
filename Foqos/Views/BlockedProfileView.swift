@@ -692,10 +692,7 @@ struct BlockedProfileView: View {
           )
         }
         .sheet(isPresented: $showingGeofencePicker) {
-          GeofencePicker(
-            geofenceRule: $geofenceRule,
-            savedLocations: savedLocations
-          )
+          GeofencePicker(geofenceRule: $geofenceRule)
         }
         .sheet(isPresented: $showingGeneratedQRCode) {
           if let profileToWrite = profile {

@@ -19,6 +19,7 @@ struct AddLocationView: View {
   // If editing an existing location
   var editingLocation: SavedLocation?
   var onDelete: (() -> Void)?
+  var onSave: ((UUID) -> Void)?
 
   @State private var name: String = ""
   @State private var showingDeleteConfirmation: Bool = false
@@ -75,9 +76,14 @@ struct AddLocationView: View {
     return !name.trimmingCharacters(in: .whitespaces).isEmpty && hasSetLocation && !isDuplicateName
   }
 
-  init(editingLocation: SavedLocation? = nil, onDelete: (() -> Void)? = nil) {
+  init(
+    editingLocation: SavedLocation? = nil,
+    onDelete: (() -> Void)? = nil,
+    onSave: ((UUID) -> Void)? = nil
+  ) {
     self.editingLocation = editingLocation
     self.onDelete = onDelete
+    self.onSave = onSave
 
     if let location = editingLocation {
       _name = State(initialValue: location.name)
@@ -502,6 +508,7 @@ struct AddLocationView: View {
         Log.warning("Location saved locally; sync engine not attached yet", category: .sync)
       }
 
+      onSave?(savedLocation.id)
       dismiss()
     } catch {
       errorMessage = "Failed to save location: \(error.localizedDescription)"
