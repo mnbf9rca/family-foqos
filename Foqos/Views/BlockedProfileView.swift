@@ -113,7 +113,9 @@ struct BlockedProfileView: View {
   }
 
   private var isBlocking: Bool {
-    strategyManager.activeSession?.isActive ?? false
+    if strategyManager.activeSession?.isActive == true { return true }
+    if let id = profile?.id, strategyManager.remotelyActiveProfileIds.contains(id) { return true }
+    return false
   }
 
   /// Whether this profile is managed and requires code for editing

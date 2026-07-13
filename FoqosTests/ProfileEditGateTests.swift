@@ -36,4 +36,11 @@ final class ProfileEditGateTests: XCTestCase {
       ProfileEditGate.editingDisabled(
         isBlocking: true, isManaged: false, isUnlocked: true, mode: .individual, lockActive: false))
   }
+
+  func testGivenRemoteActiveProfile_WhenComputingGate_ThenEditingDisabled() {
+    XCTAssertTrue(
+      ProfileEditGate.editingDisabled(
+        isBlocking: true, isManaged: false, isUnlocked: true, mode: .individual, lockActive: false),
+      "#311: a profile active on another device must be passed through as blocking")
+  }
 }
