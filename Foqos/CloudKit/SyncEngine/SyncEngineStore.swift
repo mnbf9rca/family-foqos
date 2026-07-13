@@ -185,7 +185,7 @@ final class SyncEngineStore {
   /// Guard value captured at delete time: `Double(syncVersion)` for profiles,
   /// `updatedAt.timeIntervalSinceReferenceDate` for locations. Unlike the I12 tombstone, this
   /// survives confirmation to gate locally-absent create branches against stale delete echoes.
-  static let maxDeleteWatermarkEntries = 512
+  static let deleteWatermarkWarningThreshold = 512
 
   private struct DeleteWatermarkEntry: Codable {
     var recordName: String
@@ -204,8 +204,11 @@ final class SyncEngineStore {
     locked {
       var all = self.deleteWatermarkEntries.filter { $0.recordName != recordName }
       all.append(DeleteWatermarkEntry(recordName: recordName, value: value))
-      if all.count > Self.maxDeleteWatermarkEntries {
-        all = Array(all.suffix(Self.maxDeleteWatermarkEntries))
+      if all.count > Self.deleteWatermarkWarningThreshold {
+        Log.warning(
+          "Delete watermark count \(all.count) exceeds telemetry threshold "
+            + "\(Self.deleteWatermarkWarningThreshold)",
+          category: .sync)
       }
       self.encodeStore(all, "delete_watermarks")
     }

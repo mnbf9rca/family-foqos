@@ -41,13 +41,13 @@ final class DeleteWatermarkStoreTests: XCTestCase {
     XCTAssertEqual(store.deleteWatermark(for: "p1"), 7)
   }
 
-  func testGivenMoreThanCap_WhenSet_ThenOldestEvicted() {
+  func testGivenMoreThanWarningThreshold_WhenSet_ThenOldestRetained() {
     let store = makeStore()
-    let cap = SyncEngineStore.maxDeleteWatermarkEntries
-    for index in 0...cap {
+    let threshold = SyncEngineStore.deleteWatermarkWarningThreshold
+    for index in 0...threshold {
       store.setDeleteWatermark(recordName: "r\(index)", value: Double(index))
     }
-    XCTAssertNil(store.deleteWatermark(for: "r0"), "oldest evicted past the FIFO cap")
-    XCTAssertEqual(store.deleteWatermark(for: "r\(cap)"), Double(cap))
+    XCTAssertEqual(store.deleteWatermark(for: "r0"), 0, "oldest retained past the warning threshold")
+    XCTAssertEqual(store.deleteWatermark(for: "r\(threshold)"), Double(threshold))
   }
 }
