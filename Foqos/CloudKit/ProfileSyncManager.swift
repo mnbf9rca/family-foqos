@@ -191,8 +191,9 @@ class ProfileSyncManager: ObservableObject {
     pendingController = controller
     ownedEngineController = controller
     engineController = controller
-    for recordName in PreAttachDeleteBuffer.drainAll(defaults: bufferDefaults) {
+    for recordName in PreAttachDeleteBuffer.pending(defaults: bufferDefaults) {
       controller.recordDisabledDeleteTombstone(recordName: recordName)
+      PreAttachDeleteBuffer.acknowledge(recordName, defaults: bufferDefaults)
     }
     if isEnabled {
       controller.start()

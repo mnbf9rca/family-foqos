@@ -12,6 +12,20 @@ enum PreAttachDeleteBuffer {
     defaults.set(Array(names), forKey: defaultsKey)
   }
 
+  static func pending(defaults: UserDefaults = .standard) -> [String] {
+    defaults.stringArray(forKey: defaultsKey) ?? []
+  }
+
+  static func acknowledge(_ recordName: String, defaults: UserDefaults = .standard) {
+    var names = Set(defaults.stringArray(forKey: defaultsKey) ?? [])
+    names.remove(recordName)
+    if names.isEmpty {
+      defaults.removeObject(forKey: defaultsKey)
+    } else {
+      defaults.set(Array(names), forKey: defaultsKey)
+    }
+  }
+
   static func drainAll(defaults: UserDefaults = .standard) -> [String] {
     let names = defaults.stringArray(forKey: defaultsKey) ?? []
     defaults.removeObject(forKey: defaultsKey)

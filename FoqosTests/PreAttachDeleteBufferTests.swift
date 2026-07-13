@@ -35,4 +35,24 @@ final class PreAttachDeleteBufferTests: XCTestCase {
   func testGivenNoBuffer_WhenDrained_ThenEmpty() {
     XCTAssertTrue(PreAttachDeleteBuffer.drainAll(defaults: defaults).isEmpty)
   }
+
+  func testGivenBufferedDeletes_WhenPendingReadWithoutAcknowledge_ThenBufferRemains() {
+    PreAttachDeleteBuffer.add("A", defaults: defaults)
+    PreAttachDeleteBuffer.add("B", defaults: defaults)
+
+    XCTAssertEqual(Set(PreAttachDeleteBuffer.pending(defaults: defaults)), ["A", "B"])
+    XCTAssertEqual(
+      Set(PreAttachDeleteBuffer.pending(defaults: defaults)),
+      ["A", "B"],
+      "reading pending names must not clear the only durable copy before tombstone promotion")
+  }
+
+  func testGivenBufferedDeletes_WhenAcknowledgingOne_ThenOnlyThatNameClears() {
+    PreAttachDeleteBuffer.add("A", defaults: defaults)
+    PreAttachDeleteBuffer.add("B", defaults: defaults)
+
+    PreAttachDeleteBuffer.acknowledge("A", defaults: defaults)
+
+    XCTAssertEqual(Set(PreAttachDeleteBuffer.pending(defaults: defaults)), ["B"])
+  }
 }
