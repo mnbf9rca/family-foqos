@@ -123,6 +123,7 @@ final class SyncApplyService {
     do {
       guard let profile = try BlockedProfiles.findProfile(byID: id, in: modelContext) else {
         clearDeletionBookkeeping(recordName: recordName)  // intent already satisfied
+        sessionController.setRemoteSessionActive(false, profileId: id)
         SyncDiagnostics.profileDeletionApplied(
           profileId: id, existed: false, stoppedActiveSession: false, outcome: .notPresent)
         return .notPresent
@@ -137,8 +138,9 @@ final class SyncApplyService {
       try BlockedProfiles.deleteProfile(profile, in: modelContext)  // defers save
       let saveOverride = saveOverride
       let profileDeleteCommitObserver = profileDeleteCommitObserver
+      let sessionController = sessionController
       scheduleProfileDeleteCommit {
-        [modelContext, store, id, recordName, saveOverride, profileDeleteCommitObserver] in
+        [modelContext, store, sessionController, id, recordName, saveOverride, profileDeleteCommitObserver] in
         do {
           // Remote apply failures are persisted as failedApplies and retried by the sync
           // controller, not surfaced as UI action errors. Controller side effects wait until
@@ -162,6 +164,7 @@ final class SyncApplyService {
           store.setSystemFields(nil, for: recordName)
           store.clearTombstone(recordName: recordName)
           store.removeFailedApply(recordName: recordName)
+          sessionController.setRemoteSessionActive(false, profileId: id)
           profileDeleteCommitObserver?(recordName)
         } catch {
           modelContext.rollback()

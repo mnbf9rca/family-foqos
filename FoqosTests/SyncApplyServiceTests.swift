@@ -676,11 +676,18 @@ final class SyncApplyServiceTests: XCTestCase {
   }
 
   func testGivenDeletionForAbsentProfile_WhenApplied_ThenNotPresentNoMutation() throws {
+    let id = UUID()
+
     XCTAssertEqual(
       makeService().applyFetchedDeletion(
-        recordID: CKRecord.ID(recordName: UUID().uuidString, zoneID: zoneID),
+        recordID: CKRecord.ID(recordName: id.uuidString, zoneID: zoneID),
         recordType: SyncedProfile.recordType),
       .notPresent)
+    XCTAssertEqual(
+      sessionController.setRemoteSessionActiveCalls.map { $0.1 },
+      [id],
+      "a satisfied profile delete clears any durable remote-active lock for that profile")
+    XCTAssertEqual(sessionController.setRemoteSessionActiveCalls.map { $0.0 }, [false])
   }
 
   func testGivenSessionDeletion_WhenLocalActive_ThenMirrorStopped() throws {
@@ -756,6 +763,33 @@ final class SyncApplyServiceTests: XCTestCase {
 
     XCTAssertNil(try BlockedProfiles.findProfile(byID: id, in: ModelContext(container)))
     XCTAssertNil(store.systemFields(for: id.uuidString))
+  }
+
+  func testGivenRemoteActiveProfile_WhenFetchedProfileDeleteCommits_ThenRemoteActiveClearsAfterCommit()
+    throws
+  {
+    let id = UUID()
+    let profile = BlockedProfiles(id: id, name: "RemoteDelete", syncVersion: 1)
+    context.insert(profile)
+    try context.save()
+
+    let scheduler = ManualProfileDeleteCommitScheduler()
+    let service = makeService(scheduleProfileDeleteCommit: scheduler.schedule)
+
+    XCTAssertEqual(
+      service.applyFetchedDeletion(
+        recordID: CKRecord.ID(recordName: id.uuidString, zoneID: zoneID),
+        recordType: SyncedProfile.recordType),
+      .deleted)
+    XCTAssertTrue(
+      sessionController.setRemoteSessionActiveCalls.isEmpty,
+      "remote-active must not clear before the deferred delete is durably saved")
+
+    scheduler.runNext()
+
+    XCTAssertEqual(sessionController.setRemoteSessionActiveCalls.count, 1)
+    XCTAssertEqual(sessionController.setRemoteSessionActiveCalls.first?.0, false)
+    XCTAssertEqual(sessionController.setRemoteSessionActiveCalls.first?.1, id)
   }
 
   func testGivenFetchedProfileDeleteAtV3_WhenSameVersionRepushFetched_ThenProfileNotRecreated()
@@ -845,6 +879,9 @@ final class SyncApplyServiceTests: XCTestCase {
     scheduler.runNext()
 
     XCTAssertTrue(committedNames.isEmpty)
+    XCTAssertTrue(
+      sessionController.setRemoteSessionActiveCalls.isEmpty,
+      "rollback must leave the remote-active lock intact for retry")
     XCTAssertNotNil(store.systemFields(for: id.uuidString), "failed commit keeps deletion bookkeeping")
     XCTAssertEqual(store.deleteTombstones[id.uuidString] ?? nil, "tag-1")
   }
