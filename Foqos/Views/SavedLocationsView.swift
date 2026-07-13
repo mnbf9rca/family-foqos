@@ -10,6 +10,7 @@ struct SavedLocationsView: View {
   @ObservedObject private var appModeManager = AppModeManager.shared
   @ObservedObject private var lockCodeManager = LockCodeManager.shared
   @ObservedObject private var profileSyncManager = ProfileSyncManager.shared
+  @ObservedObject private var strategyManager = StrategyManager.shared
 
   @SafeQuery(sort: \SavedLocation.name) private var locations: [SavedLocation]
   @SafeQuery private var profiles: [BlockedProfiles]
@@ -24,13 +25,22 @@ struct SavedLocationsView: View {
 
   /// Location IDs that are in use by profiles with active sessions
   private var locationsInUseByActiveProfiles: [UUID: String] {
+    Self.locationsInUse(
+      profiles: profiles,
+      hasLocalActiveSession: { $0.sessions.valid.contains { $0.isActive } },
+      remotelyActiveProfileIds: strategyManager.remotelyActiveProfileIds)
+  }
+
+  static func locationsInUse(
+    profiles: [BlockedProfiles],
+    hasLocalActiveSession: (BlockedProfiles) -> Bool,
+    remotelyActiveProfileIds: Set<UUID>
+  ) -> [UUID: String] {
     var result: [UUID: String] = [:]
     for profile in profiles {
-      // Check if profile has an active session
-      let hasActiveSession = profile.sessions.valid.contains { $0.isActive }
-      guard hasActiveSession else { continue }
+      let active = hasLocalActiveSession(profile) || remotelyActiveProfileIds.contains(profile.id)
+      guard active else { continue }
 
-      // Get location IDs from the profile's geofence rule
       if let rule = profile.geofenceRule {
         for ref in rule.locationReferences {
           result[ref.savedLocationId] = profile.name
@@ -193,6 +203,13 @@ struct SavedLocationsView: View {
 
   private func deleteLocation(_ location: SavedLocation) {
     let locationId = location.id
+
+    if let profileName = locationsInUseByActiveProfiles[locationId] {
+      errorMessage =
+        "\"\(location.name)\" is in use by \"\(profileName)\", which is currently running "
+        + "on this or another device. Stop that profile before deleting the location."
+      return
+    }
 
     do {
       if profileSyncManager.isEnabled {

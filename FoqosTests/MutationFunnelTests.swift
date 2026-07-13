@@ -336,6 +336,31 @@ final class MutationFunnelTests: XCTestCase {
     XCTAssertEqual(driver.pendingRecordZoneChanges, [.deleteRecord(recordID(recordName))])
   }
 
+  func testGivenProfileAtVersion_WhenEnqueueDelete_ThenDeleteWatermarkRecordsVersion() throws {
+    let profileId = UUID()
+    let recordName = profileId.uuidString
+    let container = try TestModelContainer.create()
+    let context = ModelContext(container)
+    try insertProfile(in: context, id: profileId, name: "Homework", syncVersion: 4)
+
+    let store = makeStore()
+    let driver = MockSyncEngineDriver()
+    let scheduler = ManualProfileDeleteCommitScheduler()
+    let funnel = MutationFunnel(
+      modelContext: context,
+      store: store,
+      driver: driver,
+      deviceId: "device-A",
+      scheduleProfileDeleteCommit: scheduler.schedule
+    )
+
+    try funnel.enqueueDelete(profileId: profileId)
+
+    XCTAssertEqual(
+      store.deleteWatermark(for: recordName), 4.0,
+      "#315: watermark must capture the profile version deleted by the funnel")
+  }
+
   func testGivenDeleteScheduledButCommitNotRun_WhenStoreReloads_ThenTombstoneSurvivesAndEntityStillExists()
     throws
   {
@@ -732,6 +757,39 @@ final class MutationFunnelTests: XCTestCase {
     XCTAssertTrue(store.deleteTombstones.keys.contains(recordName))
     XCTAssertEqual(driver.pendingRecordZoneChanges, [.deleteRecord(recordID(recordName))])
     _ = now
+  }
+
+  func testGivenLocation_WhenEnqueueDelete_ThenDeleteWatermarkRecordsUpdatedAt() throws {
+    let now = Date()
+    let locationId = UUID()
+    let recordName = locationId.uuidString
+    let container = try TestModelContainer.create()
+    let context = ModelContext(container)
+    let location = SavedLocation(
+      id: locationId,
+      name: "Home",
+      latitude: 1,
+      longitude: 2,
+      updatedAt: now
+    )
+    context.insert(location)
+    try context.save()
+
+    let store = makeStore()
+    let driver = MockSyncEngineDriver()
+    let funnel = MutationFunnel(
+      modelContext: context,
+      store: store,
+      driver: driver,
+      deviceId: "device-A"
+    )
+
+    try funnel.enqueueDelete(locationId: locationId)
+
+    let watermark = try XCTUnwrap(
+      store.deleteWatermark(for: recordName),
+      "#315: location delete watermark must capture updatedAt before delete")
+    XCTAssertEqual(watermark, now.timeIntervalSinceReferenceDate, accuracy: 0.000_001)
   }
 
   func testGivenLocationReferencedByProfile_WhenEnqueueDelete_ThenRepairsAndPushesProfile()

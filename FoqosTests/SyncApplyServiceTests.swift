@@ -106,6 +106,40 @@ final class SyncApplyServiceTests: XCTestCase {
     XCTAssertNotNil(store.systemFields(for: id.uuidString), "systemFields stored after durable apply")
   }
 
+  func testGivenConfirmedProfileDelete_WhenStaleEchoFetched_ThenProfileNotRecreated() throws {
+    let now = Date()
+    let id = UUID()
+    store.setDeleteWatermark(recordName: id.uuidString, value: 3)
+    let record = makeProfileRecord(
+      id: id, name: "Stale", version: 3, originDeviceId: "device-B", now: now)
+
+    let outcome = makeService().applyFetchedModification(
+      record, isPendingDeleteOrTombstoned: noPendingDelete)
+
+    XCTAssertEqual(outcome, .skippedStaleDelete)
+    XCTAssertNil(
+      try BlockedProfiles.findProfile(byID: id, in: context),
+      "#315: a stale <=-version echo must not recreate the deleted profile")
+    XCTAssertEqual(store.deleteWatermark(for: id.uuidString), 3)
+  }
+
+  func testGivenConfirmedProfileDelete_WhenHigherVersionRecreationFetched_ThenProfileCreated() throws {
+    let now = Date()
+    let id = UUID()
+    store.setDeleteWatermark(recordName: id.uuidString, value: 3)
+    let record = makeProfileRecord(
+      id: id, name: "Recreated", version: 4, originDeviceId: "device-B", now: now)
+
+    let outcome = makeService().applyFetchedModification(
+      record, isPendingDeleteOrTombstoned: noPendingDelete)
+
+    XCTAssertEqual(outcome, .applied)
+    XCTAssertEqual(try BlockedProfiles.findProfile(byID: id, in: context)?.name, "Recreated")
+    XCTAssertNil(
+      store.deleteWatermark(for: id.uuidString),
+      "higher-version recreation supersedes the delete watermark")
+  }
+
   // MARK: - S-18 / I9
 
   func testGivenSchemaVersions_WhenProfileModificationApplied_ThenI9GatePreserved() throws {
@@ -315,6 +349,44 @@ final class SyncApplyServiceTests: XCTestCase {
     XCTAssertEqual(try SavedLocation.find(byID: id, in: context)?.name, "Cafe")
   }
 
+  func testGivenDeletedLocation_WhenStaleEchoFetched_ThenLocationNotRecreated() throws {
+    let now = Date()
+    let id = UUID()
+    store.setDeleteWatermark(
+      recordName: id.uuidString, value: now.timeIntervalSinceReferenceDate)
+    let synced = SyncedLocation(
+      locationId: id, name: "Stale Cafe", latitude: 5, longitude: 6, defaultRadiusMeters: 80,
+      isLocked: false, lastModified: now)
+
+    let outcome = makeService().applyFetchedModification(
+      synced.toCKRecord(in: zoneID), isPendingDeleteOrTombstoned: noPendingDelete)
+
+    XCTAssertEqual(outcome, .skippedStaleDelete)
+    XCTAssertNil(
+      try SavedLocation.find(byID: id, in: context),
+      "#315: a location echo at or below the delete watermark must not recreate it")
+    XCTAssertEqual(store.deleteWatermark(for: id.uuidString), now.timeIntervalSinceReferenceDate)
+  }
+
+  func testGivenDeletedLocation_WhenNewerRecreationFetched_ThenLocationCreated() throws {
+    let now = Date()
+    let id = UUID()
+    store.setDeleteWatermark(
+      recordName: id.uuidString, value: now.timeIntervalSinceReferenceDate)
+    let synced = SyncedLocation(
+      locationId: id, name: "New Cafe", latitude: 5, longitude: 6, defaultRadiusMeters: 80,
+      isLocked: false, lastModified: now.addingTimeInterval(60))
+
+    let outcome = makeService().applyFetchedModification(
+      synced.toCKRecord(in: zoneID), isPendingDeleteOrTombstoned: noPendingDelete)
+
+    XCTAssertEqual(outcome, .applied)
+    XCTAssertEqual(try SavedLocation.find(byID: id, in: context)?.name, "New Cafe")
+    XCTAssertNil(
+      store.deleteWatermark(for: id.uuidString),
+      "newer location recreation supersedes the delete watermark")
+  }
+
   func testGivenNewerRemoteLocation_WhenApplied_ThenNothingReenqueued() throws {
     let now = Date()
     let apply = makeService()
@@ -513,6 +585,39 @@ final class SyncApplyServiceTests: XCTestCase {
     XCTAssertNil(try SavedLocation.find(byID: id, in: context))
   }
 
+  func testGivenFetchedLocationDelete_WhenSameTimestampEchoFetched_ThenLocationNotRecreated()
+    throws
+  {
+    let now = Date()
+    let id = UUID()
+    let location = SavedLocation(
+      id: id, name: "Home", latitude: 1, longitude: 2, defaultRadiusMeters: 100,
+      isLocked: false, updatedAt: now, syncVersion: 1)
+    context.insert(location)
+    try context.save()
+
+    let service = makeService()
+    XCTAssertEqual(
+      service.applyFetchedDeletion(
+        recordID: CKRecord.ID(recordName: id.uuidString, zoneID: zoneID),
+        recordType: SyncedLocation.recordType),
+      .deleted)
+
+    let watermark = try XCTUnwrap(store.deleteWatermark(for: id.uuidString))
+    XCTAssertEqual(watermark, now.timeIntervalSinceReferenceDate, accuracy: 0.000_001)
+
+    let echo = SyncedLocation(
+      locationId: id, name: "Echo", latitude: 1, longitude: 2, defaultRadiusMeters: 100,
+      isLocked: false, lastModified: now)
+    let outcome = service.applyFetchedModification(
+      echo.toCKRecord(in: zoneID), isPendingDeleteOrTombstoned: noPendingDelete)
+
+    XCTAssertEqual(outcome, .skippedStaleDelete)
+    XCTAssertNil(
+      try SavedLocation.find(byID: id, in: context),
+      "#329: fetched-delete location watermarks must block same-timestamp echoes")
+  }
+
   func testGivenReferencingProfile_WhenLocationDeletionApplied_ThenRepairedAndReenqueued()
     throws
   {
@@ -571,11 +676,18 @@ final class SyncApplyServiceTests: XCTestCase {
   }
 
   func testGivenDeletionForAbsentProfile_WhenApplied_ThenNotPresentNoMutation() throws {
+    let id = UUID()
+
     XCTAssertEqual(
       makeService().applyFetchedDeletion(
-        recordID: CKRecord.ID(recordName: UUID().uuidString, zoneID: zoneID),
+        recordID: CKRecord.ID(recordName: id.uuidString, zoneID: zoneID),
         recordType: SyncedProfile.recordType),
       .notPresent)
+    XCTAssertEqual(
+      sessionController.setRemoteSessionActiveCalls.map { $0.1 },
+      [id],
+      "a satisfied profile delete clears any durable remote-active lock for that profile")
+    XCTAssertEqual(sessionController.setRemoteSessionActiveCalls.map { $0.0 }, [false])
   }
 
   func testGivenSessionDeletion_WhenLocalActive_ThenMirrorStopped() throws {
@@ -653,6 +765,93 @@ final class SyncApplyServiceTests: XCTestCase {
     XCTAssertNil(store.systemFields(for: id.uuidString))
   }
 
+  func testGivenRemoteActiveProfile_WhenFetchedProfileDeleteCommits_ThenRemoteActiveClearsAfterCommit()
+    throws
+  {
+    let id = UUID()
+    let profile = BlockedProfiles(id: id, name: "RemoteDelete", syncVersion: 1)
+    context.insert(profile)
+    try context.save()
+
+    let scheduler = ManualProfileDeleteCommitScheduler()
+    let service = makeService(scheduleProfileDeleteCommit: scheduler.schedule)
+
+    XCTAssertEqual(
+      service.applyFetchedDeletion(
+        recordID: CKRecord.ID(recordName: id.uuidString, zoneID: zoneID),
+        recordType: SyncedProfile.recordType),
+      .deleted)
+    XCTAssertTrue(
+      sessionController.setRemoteSessionActiveCalls.isEmpty,
+      "remote-active must not clear before the deferred delete is durably saved")
+
+    scheduler.runNext()
+
+    XCTAssertEqual(sessionController.setRemoteSessionActiveCalls.count, 1)
+    XCTAssertEqual(sessionController.setRemoteSessionActiveCalls.first?.0, false)
+    XCTAssertEqual(sessionController.setRemoteSessionActiveCalls.first?.1, id)
+  }
+
+  func testGivenFetchedProfileDeleteAtV3_WhenSameVersionRepushFetched_ThenProfileNotRecreated()
+    throws
+  {
+    let now = Date()
+    let id = UUID()
+    let profile = BlockedProfiles(id: id, name: "RemoteDelete", syncVersion: 3)
+    context.insert(profile)
+    try context.save()
+
+    let scheduler = ManualProfileDeleteCommitScheduler()
+    let service = makeService(scheduleProfileDeleteCommit: scheduler.schedule)
+
+    XCTAssertEqual(
+      service.applyFetchedDeletion(
+        recordID: CKRecord.ID(recordName: id.uuidString, zoneID: zoneID),
+        recordType: SyncedProfile.recordType),
+      .deleted)
+    scheduler.runNext()
+
+    XCTAssertEqual(store.deleteWatermark(for: id.uuidString), 3)
+    XCTAssertNil(try BlockedProfiles.findProfile(byID: id, in: context))
+
+    let repush = makeProfileRecord(
+      id: id, name: "V1 Repush", version: 3, originDeviceId: "device-v1", now: now)
+    let outcome = service.applyFetchedModification(repush, isPendingDeleteOrTombstoned: noPendingDelete)
+
+    XCTAssertEqual(outcome, .skippedStaleDelete)
+    XCTAssertNil(
+      try BlockedProfiles.findProfile(byID: id, in: context),
+      "#329: fetched-delete devices must not materialize same-version V1 re-pushes")
+  }
+
+  func testGivenFetchedProfileDeleteAtV3_WhenHigherVersionRecreationFetched_ThenProfileCreated()
+    throws
+  {
+    let now = Date()
+    let id = UUID()
+    let profile = BlockedProfiles(id: id, name: "RemoteDelete", syncVersion: 3)
+    context.insert(profile)
+    try context.save()
+
+    let scheduler = ManualProfileDeleteCommitScheduler()
+    let service = makeService(scheduleProfileDeleteCommit: scheduler.schedule)
+
+    XCTAssertEqual(
+      service.applyFetchedDeletion(
+        recordID: CKRecord.ID(recordName: id.uuidString, zoneID: zoneID),
+        recordType: SyncedProfile.recordType),
+      .deleted)
+    scheduler.runNext()
+
+    let recreation = makeProfileRecord(
+      id: id, name: "Recreated", version: 4, originDeviceId: "device-B", now: now)
+    let outcome = service.applyFetchedModification(recreation, isPendingDeleteOrTombstoned: noPendingDelete)
+
+    XCTAssertEqual(outcome, .applied)
+    XCTAssertEqual(try BlockedProfiles.findProfile(byID: id, in: context)?.name, "Recreated")
+    XCTAssertNil(store.deleteWatermark(for: id.uuidString))
+  }
+
   func testGivenRemoteProfileDeletionSaveFails_WhenDeferredCommitRuns_ThenCommitObserverNotCalled()
     throws
   {
@@ -680,6 +879,9 @@ final class SyncApplyServiceTests: XCTestCase {
     scheduler.runNext()
 
     XCTAssertTrue(committedNames.isEmpty)
+    XCTAssertTrue(
+      sessionController.setRemoteSessionActiveCalls.isEmpty,
+      "rollback must leave the remote-active lock intact for retry")
     XCTAssertNotNil(store.systemFields(for: id.uuidString), "failed commit keeps deletion bookkeeping")
     XCTAssertEqual(store.deleteTombstones[id.uuidString] ?? nil, "tag-1")
   }

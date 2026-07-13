@@ -7,7 +7,7 @@ import SwiftData
 /// own-origin apply skip. Not wired into any engine in Phase B.
 @MainActor
 final class SyncApplyService {
-  enum ApplyOutcome { case applied, skippedPendingDelete, ignored, failed }
+  enum ApplyOutcome { case applied, skippedPendingDelete, skippedStaleDelete, ignored, failed }
   enum DeletionOutcome { case deleted, notPresent, ignored }
 
   private let modelContext: ModelContext
@@ -123,10 +123,12 @@ final class SyncApplyService {
     do {
       guard let profile = try BlockedProfiles.findProfile(byID: id, in: modelContext) else {
         clearDeletionBookkeeping(recordName: recordName)  // intent already satisfied
+        sessionController.setRemoteSessionActive(false, profileId: id)
         SyncDiagnostics.profileDeletionApplied(
           profileId: id, existed: false, stoppedActiveSession: false, outcome: .notPresent)
         return .notPresent
       }
+      store.setDeleteWatermark(recordName: recordName, value: Double(profile.syncVersion))
       // §5.2 / #203: if the deleted profile owns the active session, stop it first so
       // restrictions are deactivated and the manager does not retain a deleted model.
       let stoppedActiveSession = sessionController.activeSession?.blockedProfile.id == id
@@ -136,8 +138,9 @@ final class SyncApplyService {
       try BlockedProfiles.deleteProfile(profile, in: modelContext)  // defers save
       let saveOverride = saveOverride
       let profileDeleteCommitObserver = profileDeleteCommitObserver
+      let sessionController = sessionController
       scheduleProfileDeleteCommit {
-        [modelContext, store, id, recordName, saveOverride, profileDeleteCommitObserver] in
+        [modelContext, store, sessionController, id, recordName, saveOverride, profileDeleteCommitObserver] in
         do {
           // Remote apply failures are persisted as failedApplies and retried by the sync
           // controller, not surfaced as UI action errors. Controller side effects wait until
@@ -161,9 +164,11 @@ final class SyncApplyService {
           store.setSystemFields(nil, for: recordName)
           store.clearTombstone(recordName: recordName)
           store.removeFailedApply(recordName: recordName)
+          sessionController.setRemoteSessionActive(false, profileId: id)
           profileDeleteCommitObserver?(recordName)
         } catch {
           modelContext.rollback()
+          store.clearDeleteWatermark(recordName: recordName)
           store.addFailedApply(
             FailedApply(
               recordName: recordName, recordType: SyncedProfile.recordType, op: .delete))
@@ -178,6 +183,7 @@ final class SyncApplyService {
       return .deleted
     } catch {
       modelContext.rollback()
+      store.clearDeleteWatermark(recordName: recordName)
       store.addFailedApply(
         FailedApply(
           recordName: recordName, recordType: SyncedProfile.recordType, op: .delete))
@@ -193,6 +199,10 @@ final class SyncApplyService {
     do {
       let location = try SavedLocation.find(byID: id, in: modelContext)
       if let location {
+        store.setDeleteWatermark(
+          recordName: recordName,
+          value: location.updatedAt.timeIntervalSinceReferenceDate
+        )
         try SavedLocation.delete(location, in: modelContext)  // saves internally
       }
 
@@ -216,6 +226,7 @@ final class SyncApplyService {
       return outcome
     } catch {
       modelContext.rollback()
+      store.clearDeleteWatermark(recordName: recordName)
       store.addFailedApply(
         FailedApply(
           recordName: recordName, recordType: SyncedLocation.recordType, op: .delete))
@@ -233,6 +244,7 @@ final class SyncApplyService {
     else {
       return .ignored
     }
+    sessionController.setRemoteSessionActive(false, profileId: id)
     // §5.2: an explicit deletion stops the matching remote-started session (#203).
     if sessionController.activeSession?.blockedProfile.id == id {
       sessionController.stopRemoteSession(context: modelContext, profileId: id)
@@ -277,12 +289,25 @@ final class SyncApplyService {
   private func applyDecodedProfile(
     _ synced: SyncedProfile, record: CKRecord
   ) throws -> ApplyOutcome {
+    let recordName = record.recordID.recordName
     guard
       let existing = try BlockedProfiles.findProfile(byID: synced.profileId, in: modelContext)
     else {
+      if let watermark = store.deleteWatermark(for: recordName),
+        Double(synced.version) <= watermark
+      {
+        SyncDiagnostics.profileApply(
+          profileId: synced.profileId, branch: "stale_delete_echo_skipped",
+          remoteVersion: synced.version, localVersion: nil,
+          remoteSchema: synced.profileSchemaVersion, localSchema: nil,
+          remoteGeofenceRefCount: synced.geofenceRule?.locationReferences.count,
+          localGeofenceRefCount: nil)
+        return .skippedStaleDelete
+      }
       createLocalProfile(from: synced)
       try commit()
       storeSystemFields(record)
+      store.clearDeleteWatermark(recordName: recordName)
       SyncDiagnostics.profileApply(
         profileId: synced.profileId, branch: "created", remoteVersion: synced.version,
         localVersion: nil, remoteSchema: synced.profileSchemaVersion, localSchema: nil,
@@ -522,6 +547,15 @@ final class SyncApplyService {
             localVersion: localVersion, newLocalVersion: existing.syncVersion)
         }
       } else {
+        if let watermark = store.deleteWatermark(for: recordName),
+          synced.lastModified.timeIntervalSinceReferenceDate <= watermark
+        {
+          SyncDiagnostics.locationApply(
+            locationId: synced.locationId, branch: "stale_delete_echo_skipped",
+            localVersion: nil, newLocalVersion: 0)
+          store.removeFailedApply(recordName: recordName)
+          return .skippedStaleDelete
+        }
         let location = SavedLocation(
           id: synced.locationId,
           name: synced.name,
@@ -533,6 +567,7 @@ final class SyncApplyService {
         )
         modelContext.insert(location)
         try commit()
+        store.clearDeleteWatermark(recordName: recordName)
         SyncDiagnostics.locationApply(
           locationId: synced.locationId, branch: "created", localVersion: nil,
           newLocalVersion: location.syncVersion)
@@ -622,6 +657,7 @@ final class SyncApplyService {
       SyncDiagnostics.sessionApply(profileId: profileId, branch: "own_origin_noop")
       return
     }
+    sessionController.setRemoteSessionActive(session.isActive, profileId: profileId)
     let localActive = sessionController.activeSession?.blockedProfile.id == profileId
     if session.isActive && !localActive {
       if let startTime = session.startTime {

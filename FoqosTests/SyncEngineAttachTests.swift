@@ -12,6 +12,9 @@ final class SyncEngineAttachTests: XCTestCase {
   private var savedEnabled = false
   private var savedIsSyncReady = false
   private var savedController: (any SyncEngineControlling)?
+  private var savedBufferDefaults: UserDefaults!
+  private var bufferSuiteName: String!
+  private var bufferDefaults: UserDefaults!
 
   override func setUp() async throws {
     try await super.setUp()
@@ -22,6 +25,10 @@ final class SyncEngineAttachTests: XCTestCase {
     savedEnabled = manager.isEnabled
     savedIsSyncReady = manager.isSyncReady
     savedController = manager.engineController
+    savedBufferDefaults = manager.bufferDefaults
+    bufferSuiteName = "SyncEngineAttachTests-buffer-\(UUID().uuidString)"
+    bufferDefaults = UserDefaults(suiteName: bufferSuiteName)!
+    manager.bufferDefaults = bufferDefaults
     manager.isSyncReady = false
   }
 
@@ -29,6 +36,8 @@ final class SyncEngineAttachTests: XCTestCase {
     manager.engineController = savedController
     manager.isSyncReady = savedIsSyncReady
     manager.isEnabled = savedEnabled
+    manager.bufferDefaults = savedBufferDefaults
+    UserDefaults().removePersistentDomain(forName: bufferSuiteName)
     UserDefaults().removePersistentDomain(forName: testSuiteName)
     try await super.tearDown()
   }
@@ -60,6 +69,66 @@ final class SyncEngineAttachTests: XCTestCase {
 
     XCTAssertNotNil(manager.engineController)
     XCTAssertTrue(driver.enqueuedZoneSaveNames.isEmpty)  // start() not called
+  }
+
+  func testGivenPreAttachDeleteBuffer_WhenAttachEngine_ThenDrainedIntoStoreTombstone() async throws {
+    manager.isEnabled = false
+    let driver = CutoverRecordingDriver(stateSerialization: nil)
+    let recordName = "pre-attach-\(UUID().uuidString)"
+    let userRecordName = "user-attach-buffer-\(UUID().uuidString)"
+    PreAttachDeleteBuffer.add(recordName, defaults: bufferDefaults)
+
+    await manager.attachEngine(
+      modelContext: container.mainContext,
+      emergencyManager: EmergencyUnblockManager(),
+      userRecordNameProvider: { userRecordName },
+      driverFactory: { _ in driver })
+
+    XCTAssertTrue(PreAttachDeleteBuffer.drainAll(defaults: bufferDefaults).isEmpty)
+    let store = SyncEngineStore(userRecordName: userRecordName)
+    XCTAssertTrue(
+      store.deleteTombstones.keys.contains(recordName),
+      "#305: attach must promote buffered pre-attach deletes into store tombstones")
+    store.clearTombstone(recordName: recordName)
+  }
+
+  func testGivenPreAttachDeleteBufferedForAnotherUser_WhenAttachEngine_ThenEntrySurvivesForOriginalUser()
+    async throws
+  {
+    manager.isEnabled = false
+    let recordName = "pre-attach-\(UUID().uuidString)"
+    let userA = "user-attach-buffer-A-\(UUID().uuidString)"
+    let userB = "user-attach-buffer-B-\(UUID().uuidString)"
+    PreAttachDeleteBuffer.add(recordName, userRecordName: userA, defaults: bufferDefaults)
+
+    await manager.attachEngine(
+      modelContext: container.mainContext,
+      emergencyManager: EmergencyUnblockManager(),
+      userRecordNameProvider: { userB },
+      driverFactory: { _ in CutoverRecordingDriver(stateSerialization: nil) })
+
+    let storeB = SyncEngineStore(userRecordName: userB)
+    XCTAssertFalse(
+      storeB.deleteTombstones.keys.contains(recordName),
+      "a delete buffered under user A must not become a tombstone for user B")
+    XCTAssertEqual(
+      PreAttachDeleteBuffer.pending(defaults: bufferDefaults).map(\.recordName),
+      [recordName],
+      "mismatched provenance must remain pending for a later matching attach")
+
+    manager.engineController = nil
+    await manager.attachEngine(
+      modelContext: container.mainContext,
+      emergencyManager: EmergencyUnblockManager(),
+      userRecordNameProvider: { userA },
+      driverFactory: { _ in CutoverRecordingDriver(stateSerialization: nil) })
+
+    let storeA = SyncEngineStore(userRecordName: userA)
+    XCTAssertTrue(
+      storeA.deleteTombstones.keys.contains(recordName),
+      "the original user's later attach must promote its buffered delete")
+    XCTAssertTrue(PreAttachDeleteBuffer.pending(defaults: bufferDefaults).isEmpty)
+    storeA.clearTombstone(recordName: recordName)
   }
 
   func testGivenEngineAttachedWhileDisabled_WhenSyncEnabledLater_ThenStartupMarksReadyAndDrainsDeferredDelete()

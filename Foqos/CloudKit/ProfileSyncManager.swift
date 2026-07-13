@@ -40,6 +40,9 @@ class ProfileSyncManager: ObservableObject {
   /// Gates send-on-enqueue so a send can never flush restored state before T1 (#286 poison).
   var isSyncReady = false
 
+  /// Test-injectable defaults for the non-user-namespaced pre-attach delete buffer (#305).
+  var bufferDefaults: UserDefaults = .standard
+
   // MARK: - Private State
 
   private var cancellables = Set<AnyCancellable>()
@@ -63,6 +66,10 @@ class ProfileSyncManager: ObservableObject {
   // Device identifier for this device
   var deviceId: String {
     SharedData.deviceSyncId.uuidString
+  }
+
+  private var preAttachBufferUserRecordName: String? {
+    CloudKitManager.shared.currentUserRecordID?.recordName
   }
 
   // MARK: - Initialization
@@ -188,6 +195,14 @@ class ProfileSyncManager: ObservableObject {
     pendingController = controller
     ownedEngineController = controller
     engineController = controller
+    for entry in PreAttachDeleteBuffer.pending(defaults: bufferDefaults) {
+      guard entry.userRecordName == nil || entry.userRecordName == userRecordName else {
+        continue
+      }
+      controller.recordDisabledDeleteTombstone(recordName: entry.recordName)
+      PreAttachDeleteBuffer.acknowledge(
+        entry.recordName, userRecordName: entry.userRecordName, defaults: bufferDefaults)
+    }
     if isEnabled {
       controller.start()
       // Wait for the bounded startup sequence (I12 recovery, §5.6 retry sweep, T1 seed
@@ -248,12 +263,16 @@ class ProfileSyncManager: ObservableObject {
   func enqueueProfileDelete(_ id: UUID) throws {
     guard let engineController else {
       deferredDeleteRecordNames.insert(id.uuidString)
+      PreAttachDeleteBuffer.add(
+        id.uuidString, userRecordName: preAttachBufferUserRecordName, defaults: bufferDefaults)
       throw SyncEngineControllingError.notAttached
     }
     do {
       try engineController.enqueueProfileDelete(id, requestSyncAfterPendingDelete: isSyncReady)
     } catch SyncEngineControllingError.notAttached {
       deferredDeleteRecordNames.insert(id.uuidString)
+      PreAttachDeleteBuffer.add(
+        id.uuidString, userRecordName: preAttachBufferUserRecordName, defaults: bufferDefaults)
       throw SyncEngineControllingError.notAttached
     }
   }
@@ -273,12 +292,16 @@ class ProfileSyncManager: ObservableObject {
   func enqueueLocationDelete(_ id: UUID) throws {
     guard let engineController else {
       deferredDeleteRecordNames.insert(id.uuidString)
+      PreAttachDeleteBuffer.add(
+        id.uuidString, userRecordName: preAttachBufferUserRecordName, defaults: bufferDefaults)
       throw SyncEngineControllingError.notAttached
     }
     do {
       try engineController.enqueueLocationDelete(id)
     } catch SyncEngineControllingError.notAttached {
       deferredDeleteRecordNames.insert(id.uuidString)
+      PreAttachDeleteBuffer.add(
+        id.uuidString, userRecordName: preAttachBufferUserRecordName, defaults: bufferDefaults)
       throw SyncEngineControllingError.notAttached
     }
     if isSyncReady { engineController.requestSync() }
@@ -325,12 +348,16 @@ class ProfileSyncManager: ObservableObject {
   func enqueueEmergencyUnblockEventDelete(_ recordName: String) throws {
     guard let engineController else {
       deferredDeleteRecordNames.insert(recordName)
+      PreAttachDeleteBuffer.add(
+        recordName, userRecordName: preAttachBufferUserRecordName, defaults: bufferDefaults)
       throw SyncEngineControllingError.notAttached
     }
     do {
       try engineController.enqueueEmergencyUnblockEventDelete(recordName)
     } catch SyncEngineControllingError.notAttached {
       deferredDeleteRecordNames.insert(recordName)
+      PreAttachDeleteBuffer.add(
+        recordName, userRecordName: preAttachBufferUserRecordName, defaults: bufferDefaults)
       throw SyncEngineControllingError.notAttached
     }
     if isSyncReady { engineController.requestSync() }
@@ -340,9 +367,9 @@ class ProfileSyncManager: ObservableObject {
   /// Best-effort because the caller is already on a committed local-delete path.
   func recordDisabledDeleteTombstone(recordName: String) {
     guard let engineController else {
-      Log.warning(
-        "Disabled-delete tombstone dropped: engine not attached yet (\(recordName))",
-        category: .sync)
+      PreAttachDeleteBuffer.add(
+        recordName, userRecordName: preAttachBufferUserRecordName, defaults: bufferDefaults)
+      Log.info("Disabled-delete tombstone buffered pre-attach (\(recordName))", category: .sync)
       return
     }
     engineController.recordDisabledDeleteTombstone(recordName: recordName)

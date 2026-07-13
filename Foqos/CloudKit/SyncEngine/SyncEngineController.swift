@@ -861,6 +861,7 @@ final class SyncEngineController: SyncEngineDriverDelegate {
       if entityExists(recordName: name) {
         // Local delete never completed — fail-toward-keep (E-3).
         store.clearTombstone(recordName: name)
+        store.clearDeleteWatermark(recordName: name)
         continue
       }
       // Recovered intent ⇒ verify-before-delete.
@@ -1277,6 +1278,7 @@ enum SyncDiagnostics {
     switch outcome {
     case .applied: return "applied"
     case .skippedPendingDelete: return "skipped_pending_delete"
+    case .skippedStaleDelete: return "skipped_stale_delete"
     case .ignored: return "ignored"
     case .failed: return "failed"
     }
