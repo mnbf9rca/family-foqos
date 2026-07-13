@@ -115,10 +115,15 @@ final class ProfileSyncAccountResolverTests: XCTestCase {
   func testSentinelTreatedAsAmbiguousNeverPrompts() async throws {
     try await makeAttachedManager(namespace: "userA", isEnabled: true, engineState: .steady)
 
-    manager.resolveAccountChange(availability: .available(nil), newName: "__default_user__")
+    manager.resolveAccountChange(
+      availability: .available(nil), newName: CloudKitConstants.defaultUserRecordName)
 
     XCTAssertNil(manager.accountChangeConflict)
     XCTAssertNil(manager.syncPausedReason)
+  }
+
+  func testDefaultUserSentinelConstantRetainsFallbackNamespaceValue() {
+    XCTAssertEqual(CloudKitConstants.defaultUserRecordName, "__default_user__")
   }
 
   func testConfirmedDifferentUserTearsDownAndPublishesConflict() async throws {
@@ -165,6 +170,28 @@ final class ProfileSyncAccountResolverTests: XCTestCase {
     XCTAssertNil(manager.accountChangeConflict)
   }
 
+  func testSwitchWipeFailureKeepsConflictWithoutReattachOrEmergencyReset() async throws {
+    try await makeAttachedManager(namespace: "userA", isEnabled: true, engineState: .steady)
+    manager.resolveAccountChange(availability: .available(recB), newName: "userB")
+    let now = Date()
+    seedLocalProfiles(count: 1, now: now)
+    _ = emergencyManager.recordAndEnqueueUnblock(now: now)
+    manager.resetAccountChangeDebugCountersForTest()
+    manager.failNextSwitchWipeFinalSaveForTest = true
+
+    // Reattaching after a failed wipe with forceSeed=false would seed leftover local data into
+    // the new account's fresh namespace, silently turning Switch into unconsented Combine.
+    await manager.resolveConflictSwitchToCloud()
+
+    XCTAssertEqual(manager.attachedUserRecordName, "userA")
+    XCTAssertEqual(manager.syncPausedReason, .accountChanged)
+    XCTAssertEqual(manager.accountChangeConflict?.newUserRecordName, "userB")
+    XCTAssertEqual(manager.pendingConflictName, "userB")
+    XCTAssertEqual(try container.mainContext.fetch(FetchDescriptor<BlockedProfiles>()).count, 1)
+    XCTAssertEqual(emergencyManager.getRemainingEmergencyUnblocks(), 2)
+    XCTAssertFalse(manager.didTearDownForTest)
+  }
+
   func testSwitchWithActiveSessionEndsItAndClearsRestrictions() async throws {
     try await makeAttachedManager(namespace: "userA", isEnabled: true, engineState: .steady)
     manager.resolveAccountChange(availability: .available(recB), newName: "userB")
@@ -182,7 +209,7 @@ final class ProfileSyncAccountResolverTests: XCTestCase {
       removeOneMoreMinuteBackstop: { _ in }
     )
 
-    await manager.wipeAndReattachForTest(cleanup: cleanup, newName: "userB")
+    try await manager.wipeAndReattachForTest(cleanup: cleanup, newName: "userB")
 
     XCTAssertNotNil(session.endTime)
     XCTAssertTrue(removedStartSchedules.contains(profile.id))
@@ -204,6 +231,38 @@ final class ProfileSyncAccountResolverTests: XCTestCase {
     XCTAssertEqual(try container.mainContext.fetch(FetchDescriptor<BlockedProfiles>()).count, 2)
     XCTAssertEqual(manager.attachedUserRecordName, "userA")
     XCTAssertFalse((manager.engineController as? SyncEngineController)?.hasLiveDriver ?? true)
+  }
+
+  func testAccountResolutionRetryCancelsOnDisableBeforeFiring() async throws {
+    try await makeAttachedManager(namespace: "userA", isEnabled: true, engineState: .steady)
+    manager.disableAccountResolutionRetryForTest = false
+    manager.accountResolutionRetryDelayNanosecondsForTest = 10_000_000
+
+    manager.resolveAccountChange(availability: .ambiguous, newName: nil)
+
+    XCTAssertTrue(manager.hasAccountResolutionRetryTaskForTest)
+
+    manager.isEnabled = false
+
+    XCTAssertFalse(manager.hasAccountResolutionRetryTaskForTest)
+    try await Task.sleep(nanoseconds: 30_000_000)
+    XCTAssertFalse(manager.didCallStartForTest)
+  }
+
+  func testAccountResolutionRetryCancelsOnConfirmedSameUserResolution() async throws {
+    try await makeAttachedManager(namespace: "userA", isEnabled: true, engineState: .steady)
+    manager.disableAccountResolutionRetryForTest = false
+    manager.accountResolutionRetryDelayNanosecondsForTest = 10_000_000
+
+    manager.resolveAccountChange(availability: .ambiguous, newName: nil)
+
+    XCTAssertTrue(manager.hasAccountResolutionRetryTaskForTest)
+
+    manager.resolveAccountChange(availability: .available(recA), newName: "userA")
+
+    XCTAssertFalse(manager.hasAccountResolutionRetryTaskForTest)
+    try await Task.sleep(nanoseconds: 30_000_000)
+    XCTAssertFalse(manager.didCallStartForTest)
   }
 
   private func makeAttachedManager(
