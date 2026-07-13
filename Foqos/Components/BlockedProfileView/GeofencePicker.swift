@@ -32,6 +32,10 @@ struct GeofencePicker: View {
     savedLocations.filter { selectedLocationIds.contains($0.id) }
   }
 
+  static func shouldShowAddLocationAffordance(savedLocationCount: Int) -> Bool {
+    true
+  }
+
   struct LocationSelectionState {
     var selectedLocationIds: Set<UUID>
     var locationReferences: [UUID: ProfileLocationReference]
@@ -143,6 +147,15 @@ struct GeofencePicker: View {
                     }
                   }
                 )
+              }
+            }
+
+            if Self.shouldShowAddLocationAffordance(savedLocationCount: savedLocations.count) {
+              Button {
+                showingAddLocation = true
+              } label: {
+                Label("Add Location", systemImage: "plus")
+                  .foregroundStyle(themeManager.themeColor)
               }
             }
           }

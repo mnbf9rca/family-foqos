@@ -2,7 +2,13 @@ import XCTest
 
 @testable import FamilyFoqos
 
+@MainActor
 final class GeofencePickerSelectionTests: XCTestCase {
+  func testGivenSavedLocationsExist_WhenCheckingAddAffordance_ThenAddStillAvailable() {
+    XCTAssertTrue(GeofencePicker.shouldShowAddLocationAffordance(savedLocationCount: 0))
+    XCTAssertTrue(GeofencePicker.shouldShowAddLocationAffordance(savedLocationCount: 2))
+  }
+
   func testGivenNewLocationSaved_WhenApplyingAddResult_ThenLocationIsSelectedWithDefaultReference() {
     let locationId = UUID()
 
