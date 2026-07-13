@@ -13,6 +13,7 @@ class StrategyManager: ObservableObject {
   private let profileSyncManager: ProfileSyncManager
   private let sessionSyncService: SessionSyncService
   private let locationManager: LocationManager
+  private let remoteActiveDefaults: UserDefaults
 
   /// #201: persisted intents for session-stops dropped by a failed/exhausted CAS write.
   /// Internal (not private) so Phase-E tests can assert routing without a live CloudKit call.
@@ -21,6 +22,7 @@ class StrategyManager: ObservableObject {
   @Published var elapsedTime: TimeInterval = 0
   @Published var timerTask: Task<Void, Never>?
   @Published var activeSession: BlockedProfileSession?
+  @Published private(set) var remotelyActiveProfileIds: Set<UUID>
 
   @Published var showCustomStrategyView: Bool = false
   @Published var customStrategyView: (any View)? = nil
@@ -40,7 +42,8 @@ class StrategyManager: ObservableObject {
     locationManager: LocationManager = .shared,
     appBlocker: RestrictionApplying = AppBlockerUtil(),
     backstopRegistrar: BackstopRegistering = DeviceActivityBackstopRegistrar(),
-    timersUtil: TimersUtilScheduling = TimersUtil()
+    timersUtil: TimersUtilScheduling = TimersUtil(),
+    remoteActiveDefaults: UserDefaults = .standard
   ) {
     self.geofenceEvaluator = geofenceEvaluator
     self.emergencyUnblockManager = emergencyUnblockManager
@@ -48,9 +51,11 @@ class StrategyManager: ObservableObject {
     self.profileSyncManager = profileSyncManager
     self.sessionSyncService = sessionSyncService
     self.locationManager = locationManager
+    self.remoteActiveDefaults = remoteActiveDefaults
     self.appBlocker = appBlocker
     self.backstopRegistrar = backstopRegistrar
     self.timersUtil = timersUtil
+    self.remotelyActiveProfileIds = RemotelyActiveStore.load(defaults: remoteActiveDefaults)
   }
 
   // Track if we're currently processing a remote session change
@@ -67,6 +72,15 @@ class StrategyManager: ObservableObject {
 
   var isBlocking: Bool {
     return activeSession?.isActive == true
+  }
+
+  func setRemoteSessionActive(_ isActive: Bool, profileId: UUID) {
+    if isActive {
+      remotelyActiveProfileIds.insert(profileId)
+    } else {
+      remotelyActiveProfileIds.remove(profileId)
+    }
+    RemotelyActiveStore.save(remotelyActiveProfileIds, defaults: remoteActiveDefaults)
   }
 
   var isBreakActive: Bool {

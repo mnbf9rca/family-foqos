@@ -241,6 +241,7 @@ final class SyncApplyService {
     else {
       return .ignored
     }
+    sessionController.setRemoteSessionActive(false, profileId: id)
     // §5.2: an explicit deletion stops the matching remote-started session (#203).
     if sessionController.activeSession?.blockedProfile.id == id {
       sessionController.stopRemoteSession(context: modelContext, profileId: id)
@@ -653,6 +654,7 @@ final class SyncApplyService {
       SyncDiagnostics.sessionApply(profileId: profileId, branch: "own_origin_noop")
       return
     }
+    sessionController.setRemoteSessionActive(session.isActive, profileId: profileId)
     let localActive = sessionController.activeSession?.blockedProfile.id == profileId
     if session.isActive && !localActive {
       if let startTime = session.startTime {

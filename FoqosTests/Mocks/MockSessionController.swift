@@ -6,6 +6,7 @@ import SwiftData
 @MainActor
 class MockSessionController: SessionController {
   var activeSession: BlockedProfileSession? = nil
+  var setRemoteSessionActiveCalls: [(Bool, UUID)] = []
 
   var startRemoteSessionCalled = false
   var startRemoteSessionProfileId: UUID?
@@ -24,5 +25,9 @@ class MockSessionController: SessionController {
   func stopRemoteSession(context: ModelContext, profileId: UUID) {
     stopRemoteSessionCalled = true
     stopRemoteSessionProfileId = profileId
+  }
+
+  func setRemoteSessionActive(_ isActive: Bool, profileId: UUID) {
+    setRemoteSessionActiveCalls.append((isActive, profileId))
   }
 }
