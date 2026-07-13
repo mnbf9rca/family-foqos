@@ -36,18 +36,15 @@ struct GeofencePicker: View {
     true
   }
 
-  struct LocationSelectionState {
-    var selectedLocationIds: Set<UUID>
-    var locationReferences: [UUID: ProfileLocationReference]
-
-    func selectAddedLocation(_ locationId: UUID) -> LocationSelectionState {
-      var updated = self
-      updated.selectedLocationIds.insert(locationId)
-      if updated.locationReferences[locationId] == nil {
-        updated.locationReferences[locationId] = ProfileLocationReference(
-          savedLocationId: locationId)
-      }
-      return updated
+  static func selectLocation(
+    _ locationId: UUID,
+    selectedLocationIds: inout Set<UUID>,
+    locationReferences: inout [UUID: ProfileLocationReference]
+  ) {
+    selectedLocationIds.insert(locationId)
+    if locationReferences[locationId] == nil {
+      locationReferences[locationId] = ProfileLocationReference(
+        savedLocationId: locationId)
     }
   }
 
@@ -226,20 +223,12 @@ struct GeofencePicker: View {
     }
   }
 
-  private func selectionState() -> LocationSelectionState {
-    LocationSelectionState(
-      selectedLocationIds: selectedLocationIds,
-      locationReferences: locationReferences
-    )
-  }
-
-  private func applySelectionState(_ state: LocationSelectionState) {
-    selectedLocationIds = state.selectedLocationIds
-    locationReferences = state.locationReferences
-  }
-
   private func selectLocation(_ locationId: UUID) {
-    applySelectionState(selectionState().selectAddedLocation(locationId))
+    Self.selectLocation(
+      locationId,
+      selectedLocationIds: &selectedLocationIds,
+      locationReferences: &locationReferences
+    )
   }
 
   private func syncStateFromRule() {

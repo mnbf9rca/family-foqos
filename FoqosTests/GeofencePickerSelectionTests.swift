@@ -9,18 +9,19 @@ final class GeofencePickerSelectionTests: XCTestCase {
     XCTAssertTrue(GeofencePicker.shouldShowAddLocationAffordance(savedLocationCount: 2))
   }
 
-  func testGivenNewLocationSaved_WhenApplyingAddResult_ThenLocationIsSelectedWithDefaultReference() {
+  func testGivenNewLocationSaved_WhenSelectingLocation_ThenLocationIsSelectedWithDefaultReference() {
     let locationId = UUID()
+    var selectedLocationIds: Set<UUID> = []
+    var locationReferences: [UUID: ProfileLocationReference] = [:]
 
-    let state = GeofencePicker.LocationSelectionState(
-      selectedLocationIds: [],
-      locationReferences: [:]
+    GeofencePicker.selectLocation(
+      locationId,
+      selectedLocationIds: &selectedLocationIds,
+      locationReferences: &locationReferences
     )
 
-    let updated = state.selectAddedLocation(locationId)
-
-    XCTAssertTrue(updated.selectedLocationIds.contains(locationId))
-    XCTAssertEqual(updated.locationReferences[locationId]?.savedLocationId, locationId)
-    XCTAssertNil(updated.locationReferences[locationId]?.radiusOverrideMeters)
+    XCTAssertTrue(selectedLocationIds.contains(locationId))
+    XCTAssertEqual(locationReferences[locationId]?.savedLocationId, locationId)
+    XCTAssertNil(locationReferences[locationId]?.radiusOverrideMeters)
   }
 }
