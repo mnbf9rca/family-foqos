@@ -1,5 +1,14 @@
+import DeviceActivity
 import FoqosShared
 import XCTest
+
+private final class ReloadSpy: @unchecked Sendable {
+  private(set) var count = 0
+
+  func fire() {
+    count += 1
+  }
+}
 
 final class ScheduleTimerActivityTests: XCTestCase {
   private var suiteName: String!
@@ -196,5 +205,35 @@ final class ScheduleTimerActivityTests: XCTestCase {
     XCTAssertNil(
       SharedData.getActiveSharedSession(),
       "legacy branch must suppress a window already stopped this window (#229)")
+  }
+
+  func testGivenStartFunnelWithNoSnapshot_WhenInvoked_ThenWidgetReloadFiredOnce() {
+    let original = TimerActivityUtil.reloadWidgets
+    defer { TimerActivityUtil.reloadWidgets = original }
+    let spy = ReloadSpy()
+    TimerActivityUtil.reloadWidgets = { spy.fire() }
+
+    let activity = DeviceActivityName(
+      rawValue: "\(ScheduleTimerActivity.id):\(UUID().uuidString)")
+    TimerActivityUtil.startTimerActivity(for: activity)
+
+    XCTAssertEqual(
+      spy.count,
+      1,
+      "each start funnel must request exactly one widget reload (#238)"
+    )
+  }
+
+  func testGivenStopFunnelWithNoSnapshot_WhenInvoked_ThenWidgetReloadFiredOnce() {
+    let original = TimerActivityUtil.reloadWidgets
+    defer { TimerActivityUtil.reloadWidgets = original }
+    let spy = ReloadSpy()
+    TimerActivityUtil.reloadWidgets = { spy.fire() }
+
+    let activity = DeviceActivityName(
+      rawValue: "\(ScheduleTimerActivity.id):\(UUID().uuidString)")
+    TimerActivityUtil.stopTimerActivity(for: activity)
+
+    XCTAssertEqual(spy.count, 1)
   }
 }
