@@ -146,6 +146,11 @@ final class SyncEngineStore {
     set { defaults.set(newValue, forKey: key("pending_seed_intent")) }
   }
 
+  var establishmentGeneration: Int {
+    get { defaults.integer(forKey: key("establishment_generation")) }
+    set { locked { self.defaults.set(newValue, forKey: self.key("establishment_generation")) } }
+  }
+
   // MARK: - Delete tombstones (§2.1 deleteTombstones, I12)
 
   private struct TombstoneEntry: Codable {
