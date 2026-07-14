@@ -51,8 +51,9 @@
 (`SyncedEmergencySettings`, a single fixed-name record), and the Reset Sync feature — with
 **`CKSyncEngine`** (iOS 17+; project targets 18.6).
 
-**Keep unchanged:** all CKRecord schemas (no new record types or fields — the reset
-command reuses the `SyncResetRequest` type); the apply-side merge semantics in
+**Keep unchanged except §8.6:** existing CKRecord schemas and the reset-command
+mechanism; #310/#328 adds the `SyncEstablishment` control record and generation fields
+only for the totally-delete wipe variant. The apply-side merge semantics in
 `SyncCoordinator` — with two deliberate, named amendments (§5.1: the own-origin apply
 skip is removed; §5.1: fetched modifications shadowed by a pending delete are skipped);
 `SessionSyncService`'s CAS write path — with one deliberate amendment (§6:
@@ -187,7 +188,8 @@ deleted (D-5).
   `pullProfileSessionRecords`, `pullEmergencySettings`, `performFullSync`,
   `deleteAllSyncedData`, `handleRemoteNotification` + throttle, `pushLocalData`,
   `didRequestLocalDataPush`, deletion reconciliation (both handlers), the
-  `SyncResetRequest` consume/GC logic, `resetSync`'s wipe, `handleSessionSync`'s
+  `SyncResetRequest` consume/GC logic, the legacy pre-establishment `resetSync` wipe,
+  `handleSessionSync`'s
   `.notFound → stopRemoteSession` branch (§6), and the **own-origin apply skip**
   (`if syncedProfile.originDeviceId == deviceId { continue }`,
   `SyncCoordinator.swift:117`) — under version-ruled applies an own echo is an
@@ -207,7 +209,8 @@ All keys per-`userRecordID` (§7), new unless marked, compound updates under
 | `engineState[user]` | `Data` (`State.Serialization`) | new | `stateUpdate` (§5.0) | engine tokens + pending queues |
 | `systemFields[user]` | `[recordName: Data]`, **`SyncedProfile`/`SyncedLocation`/`SyncedEmergencySettings` records only, written only on successful apply/sent-save** (§5.1/§5.3) | new | sent saves; fetched modifications *after* durable apply | change-tag-correct saves. Never stores `ProfileSession` (SessionSyncService owns its CAS cache) or `SyncResetRequest` (never re-sent after supersession) — round-3 finding |
 | `processedResetCommandIds[user]` | `Set<UUID>` | new | §8.3 / §8.1 step 1 | identity idempotency; never pruned |
-| `resetIntent[user]` | `{id, clear, stage ∈ .deleting/.recreating/.seeding, priorCommandId?}` | new | origin reset machine (§8.1); cleared by completion, T6, T11 (abandonment also dequeues its zone changes) | crash-resumable origin reset |
+| `resetIntent[user]` | `{id, clear, wipe, stage ∈ .deleting/.recreating/.seeding/.wiping, priorCommandId?}` | new | origin reset machine (§8.1/§8.6); cleared by completion, T6, T11 (abandonment also dequeues its zone changes) | crash-resumable origin reset |
+| `establishmentGeneration[user]` | `Int` | new (#310/#328) | §8.6 origin wipe and adoption | monotonic generation for "totally delete all synced data" |
 | `lastAppliedResetCommandId[user]` | `UUID?` | new | §8.3 step 3 (every applied or self-marked command); §8.1 step 1 (own id) | defined provenance for `priorCommandId` snapshots |
 | `pendingSeedIntent[user]` | `Bool` | new | every I11 entry point | crash-durable seeding; cleared only per I11's observable rule |
 | `deleteTombstones[user]` | `[recordName: changeTag?]` | new | funnel delete path (§2) | crash-durable local deletion intent + verify tag; cleared per I12; **survives T11** |
@@ -584,6 +587,54 @@ next local edit — residual N7.
 
 - The origin no longer clears its own selections (resolves E-2 per shipped alert copy).
 - `.purged` disables sync instead of re-seeding (T6).
+
+### 8.6 Totally delete all synced data (wipe / establishment generation)
+
+Variant 3 of Reset Sync is a consented destructive wipe: delete the DeviceSync zone,
+recreate it, write only a fixed-name `SyncEstablishment` record
+(`recordName = "sync-establishment"`) with a monotonic `generation`, and seed nothing
+else. This is deliberately different from §8.1 variants 1-2: **no
+`SyncResetRequest` command is written** (MD3), because the command is the re-seed carrier
+and the wipe inverts re-seeding.
+
+Each device stores `establishmentGeneration[user]` locally. Restorable records that can
+resurrect data are stamped when materialized: `SyncedProfile`, `SyncedLocation`,
+`SyncedEmergencyEpoch`, and `SyncedEmergencyUnblockEvent`. Missing `generation` decodes
+as `0`, preserving pre-wipe/V1 behavior until the first wipe. `SyncedEmergencySettings`
+and sessions are not generation-gated: settings are parental-control/config state and
+sessions are V2-only ephemeral transport.
+
+There is one fetched-record materialization gate before normal apply dispatch:
+
+| fetched generation vs local `establishmentGeneration` | action |
+|---|---|
+| `<` | skip as dead-world (`.skippedDeadWorld`) |
+| `==` | apply normally |
+| `>` | skip for now (`.skippedNewerGeneration`); the establishment record triggers adoption |
+
+Adoption of a higher establishment generation is discard-and-adopt: delete local synced
+profiles and locations first using the normal model-owned delete paths, then clear
+generation-scoped bookkeeping (`systemFields`, tombstones, watermarks, failed applies;
+keep `processedResetCommandIds`), set `establishmentGeneration`, set `engineState = nil`,
+clear only the emergency ledger (`currentResetEpoch` and events; preserve settings lock
+and reset period), and reattach with `forceSeed: false`. Nulling `engineState` is
+required: records skipped as `>` must be redelivered by a token-less full refetch after
+the device adopts the new generation.
+
+The origin wipe arm extends §8.1 with `resetIntent.wipe = true` and a dedicated
+`.wiping` stage. After zone-save confirmation, the origin deletes its own local synced
+entities first, then bumps `establishmentGeneration`, enters `.wiping`, and enqueues
+only the establishment save. Resume from `.wiping` re-enqueues only the establishment
+save; confirmation clears `resetIntent`. A crash between entity deletion and generation
+bump fails toward wipe: the next establishment fetch is higher than local and adoption
+reruns idempotently.
+
+This deliberately inverts E-3 only for the explicit, user-confirmed wipe. Everywhere
+else, ambiguity remains keep-biased. The wipe does not infer deletion from absence; it is
+carried by an explicit higher-generation establishment record. A V1 peer can continue
+to write generation-0 records; after any wipe, V2 devices skip those records as
+dead-world. That residual is surfaced in Settings copy: old app versions should be
+updated because they cannot interoperate with the new sync.
 
 ## 9. What replaces the old guards
 
