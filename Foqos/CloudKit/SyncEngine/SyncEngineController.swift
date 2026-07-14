@@ -63,7 +63,20 @@ final class SyncEngineController: SyncEngineDriverDelegate {
   private(set) var startupTask: Task<Void, Never>?
   private(set) var flushTask: Task<Void, Never>?
   private(set) var fetchCycleSweepTask: Task<Void, Never>?
+  private var queueDrainTask: Task<Void, Never>?
+  private var queueDrainAttempt = 0
+  private var queueDrainNeedsSend = false
+  private var queueDrainRetryAfter: TimeInterval?
+  private static let queueDrainMaxDelaySeconds: Double = 64
   private var namespaceGeneration = 0
+
+  #if DEBUG
+    private var queueDrainDelayOverrideNanos: UInt64?
+    func setQueueDrainDelayForTest(_ nanos: UInt64) {
+      queueDrainDelayOverrideNanos = nanos
+    }
+    var drainTaskForTest: Task<Void, Never>? { queueDrainTask }
+  #endif
 
   // Phase E reset hooks (wired by SyncEngineController+Reset.swift).
   var onResumeReset: ((ResetIntent) -> Void)?
@@ -105,6 +118,10 @@ final class SyncEngineController: SyncEngineDriverDelegate {
     startupTask?.cancel()
     flushTask?.cancel()
     fetchCycleSweepTask?.cancel()
+    queueDrainTask?.cancel()
+    queueDrainTask = nil
+    isSending = false
+    isFetching = false
     driver?.shutdown()
     driver = nil
     endAccountResolution()
@@ -252,6 +269,10 @@ final class SyncEngineController: SyncEngineDriverDelegate {
     startupTask?.cancel()
     flushTask?.cancel()
     fetchCycleSweepTask?.cancel()
+    queueDrainTask?.cancel()
+    queueDrainTask = nil
+    isSending = false
+    isFetching = false
     store.engineState = nil  // pending unsent saves lost (N5); tombstones survive
     driver?.shutdown()
     driver = nil
@@ -328,10 +349,67 @@ final class SyncEngineController: SyncEngineDriverDelegate {
       handleAccountChange(kind)
     }
     notifyStatusChanged()
+    switch event {
+    case .sentRecordZoneChanges, .sentDatabaseChanges, .didFetchChanges:
+      if queueDrainNeedsSend { scheduleQueueDrain() }
+      queueDrainNeedsSend = false
+    default:
+      break
+    }
   }
 
   private func notifyStatusChanged() {
     onStatusChanged?()
+  }
+
+  private func markQueueDrainNeeded(after error: CKError? = nil) {
+    queueDrainNeedsSend = true
+    guard let retryAfter = error.flatMap(retryAfterSeconds) else { return }
+    queueDrainRetryAfter = max(queueDrainRetryAfter ?? 0, retryAfter)
+  }
+
+  /// §1.1-safe: the send runs in this task after the CKSyncEngine event handler returns.
+  /// Send-only; replicates `requestSync`'s operational-state guard instead of fetching.
+  private func scheduleQueueDrain() {
+    guard let driver, state == .bootstrapping || state == .steady, !accountResolutionInFlight
+    else { return }
+    guard !driver.pendingRecordZoneChanges.isEmpty || !driver.pendingDatabaseChanges.isEmpty
+    else { return }
+
+    queueDrainTask?.cancel()
+    let attempt = queueDrainAttempt
+    let delayNanos = drainDelayNanos(attempt: attempt, retryAfter: queueDrainRetryAfter)
+    queueDrainRetryAfter = nil
+    queueDrainAttempt = min(attempt + 1, 5)
+    queueDrainTask = Task { @MainActor [weak self] in
+      do {
+        try await Task.sleep(nanoseconds: delayNanos)
+      } catch {
+        return
+      }
+      guard let self, let driver = self.driver,
+        self.state == .bootstrapping || self.state == .steady,
+        !self.accountResolutionInFlight
+      else { return }
+      guard !driver.pendingRecordZoneChanges.isEmpty || !driver.pendingDatabaseChanges.isEmpty
+      else { return }
+
+      Log.debug("queue-drain re-send (attempt \(attempt))", category: .sync)
+      driver.sendChanges()
+    }
+  }
+
+  private func drainDelayNanos(attempt: Int, retryAfter: TimeInterval?) -> UInt64 {
+    #if DEBUG
+      if let override = queueDrainDelayOverrideNanos { return override }
+    #endif
+    let backoff = min(pow(2.0, Double(attempt + 1)), Self.queueDrainMaxDelaySeconds)
+    let delay = retryAfter ?? backoff
+    return UInt64(max(0, delay) * 1_000_000_000)
+  }
+
+  private func retryAfterSeconds(_ error: CKError) -> TimeInterval? {
+    error.retryAfterSeconds ?? (error as NSError).userInfo[CKErrorRetryAfterKey] as? TimeInterval
   }
 
   // MARK: - T5/T6 zone deletions (§8.4, S-3, S-4)
@@ -364,6 +442,10 @@ final class SyncEngineController: SyncEngineDriverDelegate {
         SharedData.deviceSyncEnabled = false
         flushTask = Task { [weak self] in await self?.sessionSync.flushSessionCache() }
         NotificationCenter.default.post(name: .syncEnginePurged, object: nil)  // one-time notice (Phase F UI)
+        queueDrainTask?.cancel()
+        queueDrainTask = nil
+        isSending = false
+        isFetching = false
         driver?.shutdown()
         driver = nil
         state = .purged
@@ -434,6 +516,7 @@ final class SyncEngineController: SyncEngineDriverDelegate {
     let modificationReenqueues = apply.drainReenqueues()
     SyncDiagnostics.repairReenqueue(source: "fetched_modifications", recordIDs: modificationReenqueues)
     for recordID in modificationReenqueues {  // CRA-1
+      markQueueDrainNeeded()
       driver.add(pendingRecordZoneChanges: [.saveRecord(recordID)])
     }
     var deletionOutcomes: [String] = []
@@ -449,6 +532,7 @@ final class SyncEngineController: SyncEngineDriverDelegate {
     let deletionReenqueues = apply.drainReenqueues()
     SyncDiagnostics.repairReenqueue(source: "fetched_deletions", recordIDs: deletionReenqueues)
     for recordID in deletionReenqueues {
+      markQueueDrainNeeded()
       driver.add(pendingRecordZoneChanges: [.saveRecord(recordID)])
     }
   }
@@ -524,6 +608,9 @@ final class SyncEngineController: SyncEngineDriverDelegate {
       SyncDiagnostics.sentDeleteFailed(recordID: id, error: error)
       handleFailedDelete(recordID: id, error: error)
     }
+    if (!savedRecords.isEmpty || !deletedRecordIDs.isEmpty) && !queueDrainNeedsSend {
+      queueDrainAttempt = 0
+    }
   }
 
   // MARK: - T4b sentDatabaseChanges routing (§5.5)
@@ -533,7 +620,7 @@ final class SyncEngineController: SyncEngineDriverDelegate {
   /// are all "confirmed" from the resetIntent's perspective — Phase E's `ResetController`
   /// advances its stage via `onZoneChangeConfirmed`; nothing is persisted here. A save
   /// failing with `.serverRecordChanged` (zone already exists) is likewise confirmed. Any
-  /// other retriable failure is re-added and left to the engine's own backoff; a
+  /// other retriable failure is re-added for the explicit gated queue-drain scheduler; a
   /// non-retriable save failure is logged and resetIntent is left as-is (nothing to
   /// recover to).
   private func handleSentDatabaseChanges(
@@ -559,7 +646,8 @@ final class SyncEngineController: SyncEngineDriverDelegate {
           resolveSeedName(Self.seedZoneMarkerName)  // I11 observable-clear (Fix 5)
         }
       } else if isRetriable(error) {
-        driver.add(pendingDatabaseChanges: [.saveZone(zone)])  // rely on engine backoff
+        markQueueDrainNeeded(after: error)
+        driver.add(pendingDatabaseChanges: [.saveZone(zone)])  // explicit gated queue-drain re-send
       } else {
         Log.error("Non-retriable zone save failure: \(error.code)", category: .sync)
       }
@@ -568,8 +656,12 @@ final class SyncEngineController: SyncEngineDriverDelegate {
       if error.code == .zoneNotFound {
         onZoneChangeConfirmed?([], [zoneID])  // already gone ⇒ confirmed
       } else if isRetriable(error) {
+        markQueueDrainNeeded(after: error)
         driver.add(pendingDatabaseChanges: [.deleteZone(zoneID)])
       }
+    }
+    if (!savedZones.isEmpty || !deletedZoneIDs.isEmpty) && !queueDrainNeedsSend {
+      queueDrainAttempt = 0
     }
   }
 
@@ -599,23 +691,28 @@ final class SyncEngineController: SyncEngineDriverDelegate {
       _ = apply.applyFetchedModification(server, isPendingDeleteOrTombstoned: blockedPredicate())
       // CRA-1: drain any re-enqueues the apply produced (§5.1 equal-version divergence).
       for recordID in apply.drainReenqueues() {
+        markQueueDrainNeeded(after: error)
         driver.add(pendingRecordZoneChanges: [.saveRecord(recordID)])
       }
       // branch 0 / server-newer: apply merged, no re-add. branch E (equal+differing): apply
       // bumped+enqueued+surfaced inside §5.1, drained above. local strictly newer: re-add
       // here.
       if localIsStrictlyNewer(record.recordType, name: name, server: server) {
+        markQueueDrainNeeded(after: error)
         driver.add(pendingRecordZoneChanges: [.saveRecord(record.recordID)])
       }
     case .zoneNotFound:
       seedZoneAndRecords()  // branch Z: saveZone + intent-first seed
+      markQueueDrainNeeded(after: error)
       driver.add(pendingRecordZoneChanges: [.saveRecord(record.recordID)])
     case .unknownItem:
       store.setSystemFields(nil, for: name)  // branch U-save
+      markQueueDrainNeeded(after: error)
       driver.add(pendingRecordZoneChanges: [.saveRecord(record.recordID)])
       resolveSeedName(name)  // I11 observable-clear (Fix 5): this attempt is resolved
     default:
       if isRetriable(error) {
+        markQueueDrainNeeded(after: error)
         driver.add(pendingRecordZoneChanges: [.saveRecord(record.recordID)])  // branch R, once
       } else {
         surfaceConflict(forRecordName: name, record: record)  // branch F
@@ -637,9 +734,11 @@ final class SyncEngineController: SyncEngineDriverDelegate {
       }
     case .zoneNotFound:  // branch Z (delete): recreate + re-add the delete
       seedZoneAndRecords()
+      markQueueDrainNeeded(after: error)
       driver.add(pendingRecordZoneChanges: [.deleteRecord(id)])
     default:
       if isRetriable(error) {
+        markQueueDrainNeeded(after: error)
         driver.add(pendingRecordZoneChanges: [.deleteRecord(id)])  // branch R
       } else {
         store.clearTombstone(recordName: name)  // branch F for a delete: surfaced, not looping
@@ -842,6 +941,7 @@ final class SyncEngineController: SyncEngineDriverDelegate {
           // CRA-1: drain any re-enqueues the apply produced (I9 auto-heal / §5.1
           // equal-version divergence) so they actually reach CloudKit.
           for recordID in apply.drainReenqueues() {
+            markQueueDrainNeeded()
             driver.add(pendingRecordZoneChanges: [.saveRecord(recordID)])
           }
           if outcome == .applied {
@@ -871,7 +971,12 @@ final class SyncEngineController: SyncEngineDriverDelegate {
       }
     }
     for recordID in apply.drainReenqueues() {
+      markQueueDrainNeeded()
       driver.add(pendingRecordZoneChanges: [.saveRecord(recordID)])
+    }
+    if queueDrainNeedsSend {
+      scheduleQueueDrain()
+      queueDrainNeedsSend = false
     }
   }
 
