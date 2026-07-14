@@ -117,6 +117,38 @@ final class SyncEngineStatusTests: XCTestCase {
     XCTAssertEqual(controller.lastSuccessfulSyncDate, afterProgress)
   }
 
+  func testPrepareForAccountSwitchClearsLastSuccessfulSyncDate() {
+    let controller = makeStartedController()
+    stampLastSuccessfulSync(on: controller)
+    XCTAssertNotNil(controller.lastSuccessfulSyncDate)
+
+    controller.prepareForAccountSwitch()
+
+    XCTAssertNil(controller.lastSuccessfulSyncDate)
+  }
+
+  func testStopClearsLastSuccessfulSyncDate() {
+    let controller = makeStartedController()
+    stampLastSuccessfulSync(on: controller)
+    XCTAssertNotNil(controller.lastSuccessfulSyncDate)
+
+    controller.stop()
+
+    XCTAssertNil(controller.lastSuccessfulSyncDate)
+  }
+
+  func testPurgedZoneDeletionClearsLastSuccessfulSyncDate() {
+    let controller = makeStartedController()
+    stampLastSuccessfulSync(on: controller)
+    XCTAssertNotNil(controller.lastSuccessfulSyncDate)
+
+    controller.handle(
+      .fetchedDatabaseChanges(
+        modifiedZoneIDs: [], deletedZones: [(zoneID: zoneID, reason: .purged)]))
+
+    XCTAssertNil(controller.lastSuccessfulSyncDate)
+  }
+
   private func makeStartedController() -> SyncEngineController {
     let controller = SyncEngineController(
       modelContext: context,
@@ -142,5 +174,9 @@ final class SyncEngineStatusTests: XCTestCase {
     record[SyncedProfile.FieldKey.version.rawValue] = 1
     record[SyncedProfile.FieldKey.originDeviceId.rawValue] = "device-B"
     return record
+  }
+
+  private func stampLastSuccessfulSync(on controller: SyncEngineController) {
+    controller.handle(.didFetchChanges)
   }
 }

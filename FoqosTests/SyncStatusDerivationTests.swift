@@ -93,19 +93,19 @@ final class SyncStatusDerivationTests: XCTestCase {
     manager.isEnabled = true
     manager.isSyncReady = true
 
-    manager.reachabilityMonitor.handlePathUpdate(isSatisfied: true)
-    manager.reachabilityMonitor.handlePathUpdate(isSatisfied: false)
-    manager.reachabilityMonitor.handlePathUpdate(isSatisfied: true)
+    manager.handleReachabilityPathUpdateForTest(isSatisfied: true)
+    manager.handleReachabilityPathUpdateForTest(isSatisfied: false)
+    manager.handleReachabilityPathUpdateForTest(isSatisfied: true)
 
     XCTAssertGreaterThanOrEqual(mock.requestSyncCount, 1)
   }
 
   func testDisableStopsMonitor() {
     manager.isEnabled = true
-    XCTAssertTrue(manager.reachabilityMonitor.isMonitoringForTest)
+    XCTAssertTrue(manager.isReachabilityMonitoringForTest)
 
     manager.isEnabled = false
 
-    XCTAssertFalse(manager.reachabilityMonitor.isMonitoringForTest)
+    XCTAssertFalse(manager.isReachabilityMonitoringForTest)
   }
 }

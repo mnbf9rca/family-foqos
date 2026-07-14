@@ -46,7 +46,7 @@ class ProfileSyncManager: ObservableObject {
 
   /// Test-injectable defaults for the non-user-namespaced pre-attach delete buffer (#305).
   var bufferDefaults: UserDefaults = .standard
-  let reachabilityMonitor = NetworkReachabilityMonitor()
+  private let reachabilityMonitor = NetworkReachabilityMonitor()
 
   // MARK: - Private State
 
@@ -76,6 +76,14 @@ class ProfileSyncManager: ObservableObject {
     var disableAccountResolutionRetryForTest = false
     var accountResolutionRetryDelayNanosecondsForTest: UInt64?
     var failNextSwitchWipeFinalSaveForTest = false
+
+    var isReachabilityMonitoringForTest: Bool {
+      reachabilityMonitor.isMonitoringForTest
+    }
+
+    func handleReachabilityPathUpdateForTest(isSatisfied: Bool) {
+      reachabilityMonitor.handlePathUpdate(isSatisfied: isSatisfied)
+    }
   #endif
 
   /// Test seam: true when nothing is pending re-enqueue.

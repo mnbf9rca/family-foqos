@@ -122,6 +122,7 @@ final class SyncEngineController: SyncEngineDriverDelegate {
     queueDrainTask = nil
     isSending = false
     isFetching = false
+    lastSuccessfulSyncDate = nil
     driver?.shutdown()
     driver = nil
     endAccountResolution()
@@ -273,6 +274,7 @@ final class SyncEngineController: SyncEngineDriverDelegate {
     queueDrainTask = nil
     isSending = false
     isFetching = false
+    lastSuccessfulSyncDate = nil
     store.engineState = nil  // pending unsent saves lost (N5); tombstones survive
     driver?.shutdown()
     driver = nil
@@ -404,6 +406,8 @@ final class SyncEngineController: SyncEngineDriverDelegate {
       if let override = queueDrainDelayOverrideNanos { return override }
     #endif
     let backoff = min(pow(2.0, Double(attempt + 1)), Self.queueDrainMaxDelaySeconds)
+    // Deliberately honor CKError retry-after semantics: a server-provided 0 means retry now
+    // and overrides this local exponential backoff.
     let delay = retryAfter ?? backoff
     return UInt64(max(0, delay) * 1_000_000_000)
   }
@@ -446,6 +450,7 @@ final class SyncEngineController: SyncEngineDriverDelegate {
         queueDrainTask = nil
         isSending = false
         isFetching = false
+        lastSuccessfulSyncDate = nil
         driver?.shutdown()
         driver = nil
         state = .purged
