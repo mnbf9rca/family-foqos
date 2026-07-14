@@ -174,6 +174,56 @@ final class SyncEngineResetTests: XCTestCase {
     XCTAssertEqual(outbox.sendCount, 2)  // begin + step 4
   }
 
+  func testGivenWipeReset_WhenZoneSaveConfirmed_ThenWritesOnlyEstablishmentAndAdvancesToWiping()
+    async
+  {
+    let now = Date()
+    store.establishmentGeneration = 1
+    let outbox = MockResetOutbox()
+    let seeder = MockResetSeeder()
+    let controller = makeController(outbox: outbox, seeder: seeder)
+    controller.beginReset(wipe: true, clearRemoteAppSelections: false, now: now)
+    await controller.handleZoneDeleteConfirmed()
+
+    controller.handleZoneSaveConfirmed()
+
+    XCTAssertEqual(store.establishmentGeneration, 2)
+    XCTAssertEqual(store.resetIntent?.stage, .wiping)
+    XCTAssertEqual(seeder.wipeLocalCount, 1)
+    XCTAssertEqual(outbox.establishmentSaveCount, 1)
+    XCTAssertEqual(outbox.commandSaveCount, 0)
+    XCTAssertEqual(seeder.seedCount, 0)
+  }
+
+  func testGivenWipingStage_WhenResume_ThenReenqueuesOnlyEstablishmentNoCommandNoSeed() async {
+    let outbox = MockResetOutbox()
+    let seeder = MockResetSeeder()
+    let controller = makeController(outbox: outbox, seeder: seeder)
+    store.establishmentGeneration = 2
+    store.resetIntent = ResetIntent(
+      id: UUID(), clear: false, wipe: true, stage: .wiping, priorCommandId: nil)
+
+    await controller.resume()
+
+    XCTAssertEqual(outbox.establishmentSaveCount, 1)
+    XCTAssertEqual(outbox.commandSaveCount, 0)
+    XCTAssertEqual(seeder.seedCount, 0)
+  }
+
+  func testGivenWipe_WhenEstablishmentSaveConfirmed_ThenClearsIntent() {
+    let now = Date()
+    let outbox = MockResetOutbox()
+    let seeder = MockResetSeeder()
+    let controller = makeController(outbox: outbox, seeder: seeder)
+    controller.beginReset(wipe: true, clearRemoteAppSelections: false, now: now)
+    store.resetIntent = ResetIntent(
+      id: store.resetIntent!.id, clear: false, wipe: true, stage: .wiping, priorCommandId: nil)
+
+    controller.handleEstablishmentSaveResult(.saved)
+
+    XCTAssertNil(store.resetIntent)
+  }
+
   func testGivenNonDeletingStage_WhenZoneDeleteConfirmedWithNilIntent_ThenNoOp() async {
     // Zone-delete confirmation with resetIntent == nil is a T5 concern (controller), not reset.
     let outbox = MockResetOutbox()

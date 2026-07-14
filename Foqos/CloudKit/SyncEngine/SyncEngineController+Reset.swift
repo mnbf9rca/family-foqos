@@ -16,6 +16,9 @@ final class DriverResetOutbox: ResetOutbox {
   private var commandRecordID: CKRecord.ID {
     CKRecord.ID(recordName: ResetController.commandRecordName, zoneID: zoneID)
   }
+  private var establishmentRecordID: CKRecord.ID {
+    CKRecord.ID(recordName: SyncedEstablishment.recordName, zoneID: zoneID)
+  }
 
   func enqueueZoneDelete() {
     Log.info("Reset sync: enqueue zone delete", category: .sync)
@@ -32,6 +35,10 @@ final class DriverResetOutbox: ResetOutbox {
   func enqueueCommandSave() {
     Log.info("Reset sync: enqueue reset command", category: .sync)
     driver.add(pendingRecordZoneChanges: [.saveRecord(commandRecordID)])
+  }
+  func enqueueEstablishmentSave() {
+    Log.info("Reset sync: enqueue establishment record", category: .sync)
+    driver.add(pendingRecordZoneChanges: [.saveRecord(establishmentRecordID)])
   }
   func removeCommandSave() {
     driver.remove(pendingRecordZoneChanges: [.saveRecord(commandRecordID)])

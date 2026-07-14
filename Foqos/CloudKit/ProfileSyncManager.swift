@@ -305,7 +305,11 @@ class ProfileSyncManager: ObservableObject {
       }
     let controller = SyncEngineController(
       modelContext: modelContext, store: store, driverFactory: factory,
-      apply: apply, provider: provider, sessionSync: SessionSyncCacheFlusher(), deviceId: deviceId)
+      apply: apply, provider: provider, sessionSync: SessionSyncCacheFlusher(), deviceId: deviceId,
+      wipeLocalSyncedEntitiesForGeneration: { [weak self] in
+        try self?.wipeLocalSyncedEntitiesForGeneration()
+        self?.attachedEmergencyManager?.clearLedgerForGenerationAdoption()
+      })
     pendingController = controller
     controller.onAccountChange = { [weak self] kind in self?.handleEngineAccountChange(kind) }
     controller.onFetchedEstablishment = { [weak self] record in
@@ -682,8 +686,12 @@ class ProfileSyncManager: ObservableObject {
   /// `SyncEngineControllingError.notAttached` instead of silently no-op'ing when the engine
   /// hasn't attached yet (review finding #3) so the caller can surface it.
   func resetSync(clearRemoteAppSelections: Bool) throws {
+    try resetSync(wipe: false, clearRemoteAppSelections: clearRemoteAppSelections)
+  }
+
+  func resetSync(wipe: Bool, clearRemoteAppSelections: Bool) throws {
     guard let engineController else { throw SyncEngineControllingError.notAttached }
-    engineController.beginReset(clearRemoteAppSelections: clearRemoteAppSelections)
+    engineController.beginReset(wipe: wipe, clearRemoteAppSelections: clearRemoteAppSelections)
   }
 
   /// Every verb below throws `SyncEngineControllingError.notAttached` when `engineController`

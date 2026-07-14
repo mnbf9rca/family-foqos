@@ -15,6 +15,7 @@ protocol SyncEngineControlling: AnyObject {
   func endAccountResolution()
   func prepareForAccountSwitch()
   func beginReset(clearRemoteAppSelections: Bool)
+  func beginReset(wipe: Bool, clearRemoteAppSelections: Bool)
   func enqueueProfileSave(_ id: UUID) throws
   func enqueueProfileDelete(_ id: UUID) throws
   func enqueueProfileDelete(_ id: UUID, requestSyncAfterPendingDelete: Bool) throws

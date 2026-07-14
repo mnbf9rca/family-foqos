@@ -41,6 +41,9 @@ final class MockSyncEngineControlling: SyncEngineControlling {
   func endAccountResolution() { endAccountResolutionCount += 1 }
   func prepareForAccountSwitch() { prepareForAccountSwitchCount += 1 }
   func beginReset(clearRemoteAppSelections: Bool) { beginResetCalls.append(clearRemoteAppSelections) }
+  func beginReset(wipe: Bool, clearRemoteAppSelections: Bool) {
+    beginResetCalls.append(clearRemoteAppSelections)
+  }
   func enqueueProfileSave(_ id: UUID) throws {
     if let errorToThrow { throw errorToThrow }
     enqueuedProfileSaves.append(id)

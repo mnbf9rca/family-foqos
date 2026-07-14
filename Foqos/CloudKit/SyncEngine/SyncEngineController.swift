@@ -28,6 +28,7 @@ final class SyncEngineController: SyncEngineDriverDelegate {
   private let provider: RecordProvider
   private let sessionSync: SessionSyncFlushing
   private let deviceId: String
+  private let wipeLocalSyncedEntitiesForGeneration: () throws -> Void
   private let scheduleProfileDeleteCommit: (@escaping @MainActor () -> Void) -> Void
   private let scheduleReconciler: (ModelContext) -> Void
 
@@ -82,8 +83,10 @@ final class SyncEngineController: SyncEngineDriverDelegate {
   var onResumeReset: ((ResetIntent) -> Void)?
   var onStopReset: (() -> Void)?
   var resetCommandSaveDidFail: ((CKRecord, CKError) -> Void)?
+  var resetEstablishmentSaveDidFail: ((CKRecord, CKError) -> Void)?
   // T4 §5.3 command-save success hook (CRA-3), wired to ResetController in Phase F.
   var resetCommandSaveDidSucceed: ((CKRecord) -> Void)?
+  var resetEstablishmentSaveDidSucceed: ((CKRecord) -> Void)?
   // Phase F reset hook: fetched SyncResetRequest records are routed here (§8.3),
   // never through the generic modification apply path (CRA-2).
   var onFetchedResetCommand: ((CKRecord) -> Void)?
@@ -144,6 +147,7 @@ final class SyncEngineController: SyncEngineDriverDelegate {
     provider: RecordProvider,
     sessionSync: SessionSyncFlushing,
     deviceId: String,
+    wipeLocalSyncedEntitiesForGeneration: @escaping () throws -> Void = {},
     scheduleProfileDeleteCommit: @escaping (@escaping @MainActor () -> Void) -> Void =
       BlockedProfiles.scheduleProfileDeleteCommit,
     scheduleReconciler: @escaping (ModelContext) -> Void =
@@ -156,6 +160,7 @@ final class SyncEngineController: SyncEngineDriverDelegate {
     self.provider = provider
     self.sessionSync = sessionSync
     self.deviceId = deviceId
+    self.wipeLocalSyncedEntitiesForGeneration = wipeLocalSyncedEntitiesForGeneration
     self.scheduleProfileDeleteCommit = scheduleProfileDeleteCommit
     self.scheduleReconciler = scheduleReconciler
     self.apply.profileDeleteCommitObserver = { [weak self] recordName in
@@ -194,6 +199,9 @@ final class SyncEngineController: SyncEngineDriverDelegate {
         store: store,
         flush: { [weak self] in await self?.sessionSync.flushSessionCache() },
         seed: { [weak self] in self?.seedZoneAndRecords() },
+        wipeLocalSyncedEntities: { [weak self] in
+          try self?.wipeLocalSyncedEntitiesForGeneration()
+        },
         clearSelections: { [weak self] in try self?.clearAllLocalProfileSelections() }),
       fetcher: DriverRecordFetcher(driver: driver),
       surfacer: ConflictManagerResetSurfacer(),
@@ -223,6 +231,9 @@ final class SyncEngineController: SyncEngineDriverDelegate {
       if !saved.isEmpty { self?.reset?.handleZoneSaveConfirmed() }
     }
     resetCommandSaveDidSucceed = { [weak self] _ in self?.reset?.handleCommandSaveResult(.saved) }
+    resetEstablishmentSaveDidSucceed = { [weak self] _ in
+      self?.reset?.handleEstablishmentSaveResult(.saved)
+    }
     // Fix 2 (§8.1 step 5): forward the SERVER record, not the device's own failed record —
     // the local record always carries the device's own requestId (fixed name), so
     // forwarding it made `handleCommandSaveResult` always take the "own ⇒ confirmed"
@@ -236,6 +247,12 @@ final class SyncEngineController: SyncEngineDriverDelegate {
         reset.handleCommandSaveResult(.serverRecordChanged(server))
       }
       // else transient/other: keep the intent — do NOT clear or abandon.
+    }
+    resetEstablishmentSaveDidFail = { [weak self] _, error in
+      guard let self, let reset = self.reset else { return }
+      if error.code == .serverRecordChanged, let server = error.serverRecord {
+        reset.handleEstablishmentSaveResult(.serverRecordChanged(server))
+      }
     }
     onResumeReset = { [weak self] _ in Task { await self?.reset?.resume() } }
     // T11 (Fix 7): dequeue a live resetIntent's pending zone/command changes BEFORE
@@ -578,9 +595,15 @@ final class SyncEngineController: SyncEngineDriverDelegate {
       savedRecords: savedRecords, failedRecordSaves: failedRecordSaves,
       deletedRecordIDs: deletedRecordIDs, failedRecordDeletes: failedRecordDeletes)
     var savedCommandRecords: [CKRecord] = []
+    var savedEstablishmentRecords: [CKRecord] = []
     store.transaction { s in
       for record in savedRecords {
         let name = record.recordID.recordName
+        if record.recordType == SyncedEstablishment.recordType {
+          savedEstablishmentRecords.append(record)
+          SyncDiagnostics.sentSaveConfirmed(record: record)
+          continue
+        }
         if record.recordType == SyncResetRequest.recordType {
           savedCommandRecords.append(record)  // CRA-3: command record, no systemFields
           SyncDiagnostics.sentSaveConfirmed(record: record)
@@ -605,6 +628,9 @@ final class SyncEngineController: SyncEngineDriverDelegate {
     // consumer that touches `SharedData` must never be invoked while the lock is held.
     for record in savedCommandRecords {
       resetCommandSaveDidSucceed?(record)  // CRA-3
+    }
+    for record in savedEstablishmentRecords {
+      resetEstablishmentSaveDidSucceed?(record)
     }
     for id in deletedRecordIDs {
       apply.recentlyConfirmedDeletes.insert(id.recordName)  // echo guard (§5.1)
@@ -685,6 +711,10 @@ final class SyncEngineController: SyncEngineDriverDelegate {
   /// (`.unknownItem`), R (retriable, re-add once), F (non-retriable, surfaced + dropped).
   private func handleFailedSave(record: CKRecord, error: CKError) {
     let name = record.recordID.recordName
+    if record.recordType == SyncedEstablishment.recordType {
+      resetEstablishmentSaveDidFail?(record, error)
+      return
+    }
     if record.recordType == SyncResetRequest.recordType {
       resetCommandSaveDidFail?(record, error)  // §8.1 step 5 (Phase E)
       return

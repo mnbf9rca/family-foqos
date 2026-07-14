@@ -5,9 +5,31 @@ import Foundation
 struct ResetIntent: Codable, Equatable {
   var id: UUID
   var clear: Bool
-  enum Stage: String, Codable { case deleting, recreating, seeding }
+  var wipe: Bool
+  enum Stage: String, Codable { case deleting, recreating, seeding, wiping }
   var stage: Stage
   var priorCommandId: UUID?
+
+  init(id: UUID, clear: Bool, wipe: Bool = false, stage: Stage, priorCommandId: UUID?) {
+    self.id = id
+    self.clear = clear
+    self.wipe = wipe
+    self.stage = stage
+    self.priorCommandId = priorCommandId
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case id, clear, wipe, stage, priorCommandId
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    id = try container.decode(UUID.self, forKey: .id)
+    clear = try container.decode(Bool.self, forKey: .clear)
+    wipe = try container.decodeIfPresent(Bool.self, forKey: .wipe) ?? false
+    stage = try container.decode(Stage.self, forKey: .stage)
+    priorCommandId = try container.decodeIfPresent(UUID.self, forKey: .priorCommandId)
+  }
 }
 
 /// A thrown apply persisted for §5.6 retry.
