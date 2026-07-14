@@ -109,6 +109,8 @@ class ProfileSyncManager: ObservableObject {
       .removeDuplicates()
       .sink { [weak self] _ in self?.recomputeSyncStatus() }
       .store(in: &cancellables)
+    reachabilityMonitor.onReconnect = { [weak self] in self?.reconnectDrivenSync() }
+    if isEnabled { reachabilityMonitor.start() }
 
     // Observe changes to sync enabled setting
     $isEnabled
@@ -118,8 +120,10 @@ class ProfileSyncManager: ObservableObject {
         SharedData.deviceSyncEnabled = enabled
         self?.recomputeSyncStatus(isEnabledOverride: enabled)
         if enabled {
+          self?.reachabilityMonitor.start()
           self?.startEngineAndMarkReadyWhenStartupCompletes()
         } else {
+          self?.reachabilityMonitor.stop()
           self?.cancelAccountResolutionRetry()
           self?.isSyncReady = false
           self?.engineController?.stop()
@@ -537,6 +541,19 @@ class ProfileSyncManager: ObservableObject {
     accountResolutionRetryTask?.cancel()
     accountResolutionRetryTask = nil
     didRetryAccountResolution = false
+  }
+
+  private func reconnectDrivenSync() {
+    guard isEnabled, isSyncReady else {
+      recomputeSyncStatus()
+      return
+    }
+    do {
+      try syncNow()
+    } catch {
+      Log.warning("reconnect syncNow skipped: \(error.localizedDescription)", category: .sync)
+    }
+    recomputeSyncStatus()
   }
 
   private func resumeAfterAmbiguity() {

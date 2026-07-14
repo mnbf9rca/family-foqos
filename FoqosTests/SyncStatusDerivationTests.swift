@@ -88,4 +88,24 @@ final class SyncStatusDerivationTests: XCTestCase {
     XCTAssertEqual(manager.syncStatusSnapshot.status, .synced)
     XCTAssertNotNil(manager.syncStatusSnapshot.lastSyncDate)
   }
+
+  func testReconnectDrivesSyncNowWhenReady() {
+    manager.isEnabled = true
+    manager.isSyncReady = true
+
+    manager.reachabilityMonitor.handlePathUpdate(isSatisfied: true)
+    manager.reachabilityMonitor.handlePathUpdate(isSatisfied: false)
+    manager.reachabilityMonitor.handlePathUpdate(isSatisfied: true)
+
+    XCTAssertGreaterThanOrEqual(mock.requestSyncCount, 1)
+  }
+
+  func testDisableStopsMonitor() {
+    manager.isEnabled = true
+    XCTAssertTrue(manager.reachabilityMonitor.isMonitoringForTest)
+
+    manager.isEnabled = false
+
+    XCTAssertFalse(manager.reachabilityMonitor.isMonitoringForTest)
+  }
 }
