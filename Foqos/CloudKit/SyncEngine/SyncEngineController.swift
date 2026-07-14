@@ -953,7 +953,7 @@ final class SyncEngineController: SyncEngineDriverDelegate {
             markQueueDrainNeeded()
             driver.add(pendingRecordZoneChanges: [.saveRecord(recordID)])
           }
-          if outcome == .applied {
+          if outcome == .applied || outcome == .skippedDeadWorld {
             store.removeFailedApply(recordName: entry.recordName)
           }
         case .notFound:
@@ -1472,6 +1472,8 @@ enum SyncDiagnostics {
     case .applied: return "applied"
     case .skippedPendingDelete: return "skipped_pending_delete"
     case .skippedStaleDelete: return "skipped_stale_delete"
+    case .skippedDeadWorld: return "skipped_dead_world"
+    case .skippedNewerGeneration: return "skipped_newer_generation"
     case .ignored: return "ignored"
     case .failed: return "failed"
     }

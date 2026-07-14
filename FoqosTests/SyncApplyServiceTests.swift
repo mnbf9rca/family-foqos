@@ -87,6 +87,105 @@ final class SyncApplyServiceTests: XCTestCase {
 
   // MARK: - S-27 (normal apply) / E-1
 
+  func testGivenDeadWorldProfileAfterWipe_WhenApplied_ThenSkippedDeadWorld() throws {
+    let now = Date()
+    let id = UUID()
+    store.establishmentGeneration = 1
+    let record = makeProfileRecord(
+      id: id, name: "Old", version: 1, originDeviceId: "device-B", now: now)
+    record[SyncedProfile.FieldKey.generation.rawValue] = 0
+
+    let outcome = makeService().applyFetchedModification(
+      record, isPendingDeleteOrTombstoned: noPendingDelete)
+
+    XCTAssertEqual(outcome, .skippedDeadWorld)
+    XCTAssertNil(try BlockedProfiles.findProfile(byID: id, in: context))
+  }
+
+  func testGivenEqualGenerationProfile_WhenApplied_ThenMaterializes() throws {
+    let now = Date()
+    let id = UUID()
+    store.establishmentGeneration = 1
+    let record = makeProfileRecord(
+      id: id, name: "Current", version: 1, originDeviceId: "device-B", now: now)
+    record[SyncedProfile.FieldKey.generation.rawValue] = 1
+
+    let outcome = makeService().applyFetchedModification(
+      record, isPendingDeleteOrTombstoned: noPendingDelete)
+
+    XCTAssertEqual(outcome, .applied)
+    XCTAssertEqual(try BlockedProfiles.findProfile(byID: id, in: context)?.name, "Current")
+  }
+
+  func testGivenNewerGenerationProfile_WhenApplied_ThenSkippedForAdoptionRefetch() throws {
+    let now = Date()
+    let id = UUID()
+    store.establishmentGeneration = 1
+    let record = makeProfileRecord(
+      id: id, name: "Future", version: 1, originDeviceId: "device-B", now: now)
+    record[SyncedProfile.FieldKey.generation.rawValue] = 2
+
+    let outcome = makeService().applyFetchedModification(
+      record, isPendingDeleteOrTombstoned: noPendingDelete)
+
+    XCTAssertEqual(outcome, .skippedNewerGeneration)
+    XCTAssertNil(try BlockedProfiles.findProfile(byID: id, in: context))
+  }
+
+  func testGivenGenerationlessProfileAfterWipe_WhenApplied_ThenSkippedDeadWorld() throws {
+    let now = Date()
+    let id = UUID()
+    store.establishmentGeneration = 1
+    let record = makeProfileRecord(
+      id: id, name: "V1", version: 1, originDeviceId: "device-B", now: now)
+    record[SyncedProfile.FieldKey.generation.rawValue] = nil
+
+    let outcome = makeService().applyFetchedModification(
+      record, isPendingDeleteOrTombstoned: noPendingDelete)
+
+    XCTAssertEqual(outcome, .skippedDeadWorld)
+    XCTAssertNil(try BlockedProfiles.findProfile(byID: id, in: context))
+  }
+
+  func testGivenPreWipeGenerationZeroProfile_WhenApplied_ThenMaterializes() throws {
+    let now = Date()
+    let id = UUID()
+    let record = makeProfileRecord(
+      id: id, name: "PreWipe", version: 1, originDeviceId: "device-B", now: now)
+    record[SyncedProfile.FieldKey.generation.rawValue] = nil
+
+    let outcome = makeService().applyFetchedModification(
+      record, isPendingDeleteOrTombstoned: noPendingDelete)
+
+    XCTAssertEqual(outcome, .applied)
+    XCTAssertEqual(try BlockedProfiles.findProfile(byID: id, in: context)?.name, "PreWipe")
+  }
+
+  func testGivenDeadWorldEmergencyEpoch_WhenApplied_ThenSkippedAndLedgerNotMerged() {
+    store.establishmentGeneration = 1
+    let record = SyncedEmergencyEpoch(epoch: 5, generation: 0).toCKRecord(in: zoneID)
+
+    let outcome = makeService().applyFetchedModification(
+      record, isPendingDeleteOrTombstoned: noPendingDelete)
+
+    XCTAssertEqual(outcome, .skippedDeadWorld)
+    XCTAssertEqual(emergencyManager.currentResetEpoch, 0)
+  }
+
+  func testGivenEmergencySettingsAfterWipe_WhenApplied_ThenPassesUngated() {
+    let now = Date()
+    store.establishmentGeneration = 1
+    let settings = SyncedEmergencySettings(
+      unblocksRemaining: 2, resetPeriodInDays: 14, lastResetDate: now,
+      settingsLocked: true, version: 1, lastModified: now, originDeviceId: "device-B")
+
+    let outcome = makeService().applyFetchedModification(
+      settings.toCKRecord(in: zoneID), isPendingDeleteOrTombstoned: noPendingDelete)
+
+    XCTAssertEqual(outcome, .applied)
+    XCTAssertNotEqual(outcome, .skippedDeadWorld)
+  }
+
   func testGivenAbsentProfile_WhenModificationApplied_ThenCreatedWithNeedsAppSelection() throws {
     let now = Date()
     let id = UUID()
