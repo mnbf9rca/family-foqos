@@ -25,9 +25,6 @@ class ProfileSyncManager: ObservableObject {
   // MARK: - Published State
 
   @Published var isEnabled: Bool = false
-  @Published var isSyncing: Bool = false
-  @Published var syncStatus: SyncStatus = .disabled
-  @Published var lastSyncDate: Date?
   @Published private(set) var syncStatusSnapshot = SyncStatusSnapshot(status: .disabled, lastSyncDate: nil)
   /// Set to true when legacy records were cleaned up and user should be notified
   @Published var shouldShowSyncUpgradeNotice = false
@@ -184,45 +181,6 @@ class ProfileSyncManager: ObservableObject {
     let next = SyncStatusSnapshot(
       status: status, lastSyncDate: engineController?.lastSuccessfulSyncDate)
     if next != syncStatusSnapshot { syncStatusSnapshot = next }
-
-    isSyncing = next.isSyncing
-    lastSyncDate = next.lastSyncDate
-    syncStatus = legacyStatus(for: status)
-  }
-
-  private func legacyStatus(for status: SyncDisplayStatus) -> SyncStatus {
-    switch status {
-    case .disabled:
-      return .disabled
-    case .syncing:
-      return .syncing
-    case .paused(let reason):
-      return .error(reason == .signedOut ? "Signed out of iCloud" : "iCloud account changed")
-    case .offline:
-      return .error("Offline")
-    case .synced, .waiting:
-      return .idle
-    }
-  }
-
-  enum SyncStatus: Equatable {
-    case disabled
-    case idle
-    case syncing
-    case error(String)
-
-    var displayText: String {
-      switch self {
-      case .disabled:
-        return "Disabled"
-      case .idle:
-        return "Synced"
-      case .syncing:
-        return "Syncing..."
-      case .error(let message):
-        return "Error: \(message)"
-      }
-    }
   }
 
   enum SyncPausedReason: Equatable {
