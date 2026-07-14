@@ -177,6 +177,15 @@ Every deferred/future device-verification row across PR bodies #333/#334/#341 (+
 | A30 | #310/#328 DV-1 (plan :775) | FUTURE (R3) | Total wipe → reinstall → world stays empty (wipe sticks through reinstall). |
 | A31 | #310/#328 DV-4 (plan :778) | FUTURE (R3) | Exhaust emergency ledger → wipe → reinstall → ledger cleared (the motivating 2026-07-11 case). |
 
+### Batch 7 — `[assumption-probes]` load-bearing assumptions from the 2026-07-13 fix-composition sweep (verify before/at the R5 device leg)
+| Row | Assumption (a clean verdict rests on it) | Probe |
+|---|---|---|
+| A32 | CKSyncEngine account-change event delivery/ordering on a real switch (`.signIn` echo timing vs `.switchAccounts`/`.signOut`) | Observe the permanent transition log during the A1 second-account run |
+| A33 | CloudKit server semantics: redelivery after change-token reuse on switch-back; stale ≤-version re-publish (mixed-V1, #329); shared-zone membership across an account switch (heartbeats, lock-code fetches) | Fold into Batch 1/3 runs |
+| A34 | DeviceActivity runtime: `intervalDidEnd` redelivery, wrap-anchor backstops, and whether accumulated backstops can approach the ~20-activity registration limit | Count registered activities on a long-lived device profile set |
+| A35 | SwiftData pending-delete fetch exclusion (`context.delete()` before save excludes from fetches) — load-bearing for the reconciler-vs-delete CLEAN verdict | One focused unit probe; cheap, do first |
+| A36 | UI reachability during the account-change pause banner/conflict dialog (assumed non-modal in #350's repro) | Visual check during the A1 run |
+
 **Coverage notes:** PRs #296/#300/#303/#306(except A16)/#308/#312/#314(except A23)/#318(except A22)/#325(deferred rows above)/#339(except A24)/#340(A25) were swept; rows already device-passed are excluded. Bundles merged before 2026-07-10 (B1/C1/D1/D2) were not re-mined — #326's general pass (A18) folds in their family legs; if completeness beyond that is wanted, sweep their PR bodies once before R5's device leg.
 
 ---
