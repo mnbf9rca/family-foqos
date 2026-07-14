@@ -43,6 +43,12 @@ final class SyncEngineController: SyncEngineDriverDelegate {
   private(set) var isSending = false
   private(set) var isFetching = false
   var isInFlight: Bool { isSending || isFetching }
+  var pendingChangeCount: Int {
+    guard let driver else { return 0 }
+    return driver.pendingRecordZoneChanges.count + driver.pendingDatabaseChanges.count
+  }
+  private(set) var lastSuccessfulSyncDate: Date?
+  var onStatusChanged: (@MainActor () -> Void)?
   // Widened to internal (Phase F, Task 131): `+Cutover`'s `requestSync`/`enqueue*` are the
   // only other-file collaborators that read/forward through these.
   var driver: SyncEngineDriver!
@@ -321,6 +327,11 @@ final class SyncEngineController: SyncEngineDriverDelegate {
     case .accountChange(let kind):
       handleAccountChange(kind)
     }
+    notifyStatusChanged()
+  }
+
+  private func notifyStatusChanged() {
+    onStatusChanged?()
   }
 
   // MARK: - T5/T6 zone deletions (§8.4, S-3, S-4)
@@ -464,6 +475,11 @@ final class SyncEngineController: SyncEngineDriverDelegate {
     failedRecordDeletes: [(recordID: CKRecord.ID, error: CKError)]
   ) {
     isSending = false
+    if (!savedRecords.isEmpty || !deletedRecordIDs.isEmpty) && failedRecordSaves.isEmpty
+      && failedRecordDeletes.isEmpty
+    {
+      lastSuccessfulSyncDate = Date()
+    }
     SyncDiagnostics.sentBatch(
       savedRecords: savedRecords, failedRecordSaves: failedRecordSaves,
       deletedRecordIDs: deletedRecordIDs, failedRecordDeletes: failedRecordDeletes)
@@ -527,6 +543,11 @@ final class SyncEngineController: SyncEngineDriverDelegate {
     failedZoneDeletes: [(zoneID: CKRecordZone.ID, error: CKError)]
   ) {
     isSending = false
+    if (!savedZones.isEmpty || !deletedZoneIDs.isEmpty) && failedZoneSaves.isEmpty
+      && failedZoneDeletes.isEmpty
+    {
+      lastSuccessfulSyncDate = Date()
+    }
     onZoneChangeConfirmed?(savedZones, deletedZoneIDs)
     if savedZones.contains(zoneID) {
       resolveSeedName(Self.seedZoneMarkerName)  // I11 observable-clear (Fix 5): saveZone confirmed
@@ -701,6 +722,7 @@ final class SyncEngineController: SyncEngineDriverDelegate {
   /// synchronously (never awaits from inside a fetch event, B-7).
   private func handleDidFetchChanges() {
     isFetching = false
+    lastSuccessfulSyncDate = Date()
     if state == .bootstrapping { state = .steady }  // T2
     let generation = namespaceGeneration
     fetchCycleSweepTask = Task { [weak self] in

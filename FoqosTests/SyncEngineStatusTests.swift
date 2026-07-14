@@ -70,6 +70,53 @@ final class SyncEngineStatusTests: XCTestCase {
     XCTAssertFalse(controller.isInFlight)
   }
 
+  func testPendingChangeCountCountsOutboundRecordAndDatabaseChanges() {
+    let controller = makeStartedController()
+    driver.setPendingRecordZoneChangesForTest([
+      .saveRecord(recordID("save-1")),
+      .deleteRecord(recordID("delete-1")),
+    ])
+    driver.setPendingDatabaseChangesForTest([.saveZone(CKRecordZone(zoneID: zoneID))])
+
+    XCTAssertEqual(controller.pendingChangeCount, 3)
+  }
+
+  func testDidFetchStampsLastSyncAndFiresStatusHook() {
+    let controller = makeStartedController()
+    var ticks = 0
+    controller.onStatusChanged = { ticks += 1 }
+
+    XCTAssertNil(controller.lastSuccessfulSyncDate)
+    controller.handle(.didFetchChanges)
+
+    XCTAssertNotNil(controller.lastSuccessfulSyncDate)
+    XCTAssertGreaterThanOrEqual(ticks, 1)
+  }
+
+  func testSentStampsLastSyncOnlyWithProgressAndNoFailure() {
+    let controller = makeStartedController()
+
+    controller.handle(
+      .sentRecordZoneChanges(
+        savedRecords: [], failedRecordSaves: [], deletedRecordIDs: [],
+        failedRecordDeletes: []))
+    XCTAssertNil(controller.lastSuccessfulSyncDate)
+
+    controller.handle(
+      .sentRecordZoneChanges(
+        savedRecords: [sampleRecord()], failedRecordSaves: [], deletedRecordIDs: [],
+        failedRecordDeletes: []))
+    let afterProgress = controller.lastSuccessfulSyncDate
+    XCTAssertNotNil(afterProgress)
+
+    controller.handle(
+      .sentRecordZoneChanges(
+        savedRecords: [sampleRecord()],
+        failedRecordSaves: [(sampleRecord(), CKError(.serviceUnavailable))],
+        deletedRecordIDs: [], failedRecordDeletes: []))
+    XCTAssertEqual(controller.lastSuccessfulSyncDate, afterProgress)
+  }
+
   private func makeStartedController() -> SyncEngineController {
     let controller = SyncEngineController(
       modelContext: context,
@@ -81,5 +128,19 @@ final class SyncEngineStatusTests: XCTestCase {
       deviceId: deviceId)
     controller.start()
     return controller
+  }
+
+  private func recordID(_ name: String) -> CKRecord.ID {
+    CKRecord.ID(recordName: name, zoneID: zoneID)
+  }
+
+  private func sampleRecord() -> CKRecord {
+    let record = CKRecord(recordType: SyncedProfile.recordType, recordID: recordID(UUID().uuidString))
+    record[SyncedProfile.FieldKey.profileId.rawValue] = UUID().uuidString
+    record[SyncedProfile.FieldKey.name.rawValue] = "Profile"
+    record[SyncedProfile.FieldKey.order.rawValue] = 0
+    record[SyncedProfile.FieldKey.version.rawValue] = 1
+    record[SyncedProfile.FieldKey.originDeviceId.rawValue] = "device-B"
+    return record
   }
 }

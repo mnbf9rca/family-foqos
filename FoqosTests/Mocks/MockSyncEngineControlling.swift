@@ -21,6 +21,10 @@ final class MockSyncEngineControlling: SyncEngineControlling {
   private(set) var enqueuedEmergencyUnblockEventDeletes: [String] = []
   private(set) var deferredDeletes: [String] = []
   private(set) var recordedDisabledTombstones: [String] = []
+  var isInFlight = false
+  var pendingChangeCount = 0
+  var lastSuccessfulSyncDate: Date?
+  var onStatusChanged: (@MainActor () -> Void)?
 
   /// Set by a test to make every `enqueue*` verb below throw instead of recording — used to
   /// verify a genuine funnel throw propagates through the facade instead of being swallowed
@@ -31,6 +35,7 @@ final class MockSyncEngineControlling: SyncEngineControlling {
   func start() { startCount += 1 }
   func stop() { stopCount += 1 }
   func requestSync() { requestSyncCount += 1 }
+  func fireStatusChangedForTest() { onStatusChanged?() }
   func beginAccountResolution() { beginAccountResolutionCount += 1 }
   func endAccountResolution() { endAccountResolutionCount += 1 }
   func prepareForAccountSwitch() { prepareForAccountSwitchCount += 1 }
