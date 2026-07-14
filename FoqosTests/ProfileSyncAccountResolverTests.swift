@@ -251,6 +251,19 @@ final class ProfileSyncAccountResolverTests: XCTestCase {
     XCTAssertFalse(manager.lastReattachForceSeedForTest)
   }
 
+  func testSW6GenerationZeroDeviceAdoptsAndDiscardsLocalProfiles() async throws {
+    try await makeAttachedManager(namespace: "userA", isEnabled: true, engineState: .steady)
+    let store = SyncEngineStore(userRecordName: "userA")
+    store.establishmentGeneration = 0
+    seedLocalProfiles(count: 2)
+
+    await manager.adoptEstablishmentGeneration(2)
+
+    XCTAssertEqual(store.establishmentGeneration, 2)
+    XCTAssertEqual(try container.mainContext.fetch(FetchDescriptor<BlockedProfiles>()).count, 0)
+    XCTAssertFalse(manager.lastReattachForceSeedForTest)
+  }
+
   func testAdoptEqualEstablishmentGenerationIsNoOp() async throws {
     try await makeAttachedManager(namespace: "userA", isEnabled: true, engineState: .steady)
     let store = SyncEngineStore(userRecordName: "userA")
