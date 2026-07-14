@@ -40,6 +40,9 @@ final class SyncEngineController: SyncEngineDriverDelegate {
       Log.debug("state \(oldValue) -> \(state) (main=\(Thread.isMainThread))", category: .sync)
     }
   }
+  private(set) var isSending = false
+  private(set) var isFetching = false
+  var isInFlight: Bool { isSending || isFetching }
   // Widened to internal (Phase F, Task 131): `+Cutover`'s `requestSync`/`enqueue*` are the
   // only other-file collaborators that read/forward through these.
   var driver: SyncEngineDriver!
@@ -295,6 +298,10 @@ final class SyncEngineController: SyncEngineDriverDelegate {
       handleWillFetchChanges()
     case .didFetchChanges:
       handleDidFetchChanges()
+    case .willSendChanges:
+      isSending = true
+    case .didSendChanges:
+      isSending = false
     case .fetchedRecordZoneChanges(let modifications, let deletions):
       handleFetchedRecordZoneChanges(modifications: modifications, deletions: deletions)
     case .sentRecordZoneChanges(
@@ -456,6 +463,7 @@ final class SyncEngineController: SyncEngineDriverDelegate {
     deletedRecordIDs: [CKRecord.ID],
     failedRecordDeletes: [(recordID: CKRecord.ID, error: CKError)]
   ) {
+    isSending = false
     SyncDiagnostics.sentBatch(
       savedRecords: savedRecords, failedRecordSaves: failedRecordSaves,
       deletedRecordIDs: deletedRecordIDs, failedRecordDeletes: failedRecordDeletes)
@@ -518,6 +526,7 @@ final class SyncEngineController: SyncEngineDriverDelegate {
     deletedZoneIDs: [CKRecordZone.ID],
     failedZoneDeletes: [(zoneID: CKRecordZone.ID, error: CKError)]
   ) {
+    isSending = false
     onZoneChangeConfirmed?(savedZones, deletedZoneIDs)
     if savedZones.contains(zoneID) {
       resolveSeedName(Self.seedZoneMarkerName)  // I11 observable-clear (Fix 5): saveZone confirmed
@@ -676,6 +685,7 @@ final class SyncEngineController: SyncEngineDriverDelegate {
   /// those recreations (round-5) — the drain must happen at the START of the first cycle
   /// after confirmation, not before.
   private func handleWillFetchChanges() {
+    isFetching = true
     currentCycle += 1
     let drained = confirmDeleteCycle.filter { $0.value < currentCycle }.map { $0.key }
     SyncDiagnostics.echoGuardDrained(currentCycle: currentCycle, recordNames: drained)
@@ -690,6 +700,7 @@ final class SyncEngineController: SyncEngineDriverDelegate {
   /// unit of async work rather than run inline, since `didFetchChanges` itself must return
   /// synchronously (never awaits from inside a fetch event, B-7).
   private func handleDidFetchChanges() {
+    isFetching = false
     if state == .bootstrapping { state = .steady }  // T2
     let generation = namespaceGeneration
     fetchCycleSweepTask = Task { [weak self] in

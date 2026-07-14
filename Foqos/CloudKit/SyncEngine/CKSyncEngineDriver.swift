@@ -179,8 +179,9 @@ final class CKSyncEngineDriver: NSObject, SyncEngineDriver, CKSyncEngineDelegate
         deletedZoneIDs: e.deletedZoneIDs, failedZoneDeletes: failedDeletes)
     case .willFetchChanges: return .willFetchChanges
     case .didFetchChanges: return .didFetchChanges
-    case .willFetchRecordZoneChanges, .didFetchRecordZoneChanges, .willSendChanges,
-      .didSendChanges:
+    case .willSendChanges: return .willSendChanges
+    case .didSendChanges: return .didSendChanges
+    case .willFetchRecordZoneChanges, .didFetchRecordZoneChanges:
       return nil  // not consumed by the controller
     @unknown default:
       return nil
