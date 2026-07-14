@@ -608,6 +608,52 @@ struct SyncedEmergencyEpoch: Codable, Equatable {
   }
 }
 
+// MARK: - Synced Establishment
+
+/// The zone's establishment generation, synced as a single fixed-name record and merged by max()
+/// so every device converges on one agreed generation boundary.
+struct SyncedEstablishment: Codable, Equatable {
+  var generation: Int
+  var establishedAt: Date
+
+  static let recordType = "SyncEstablishment"
+  static let recordName = "sync-establishment"
+
+  enum FieldKey: String {
+    case generation
+    case establishedAt
+  }
+
+  func toCKRecord(in zoneID: CKRecordZone.ID) -> CKRecord {
+    let record = CKRecord(
+      recordType: Self.recordType,
+      recordID: CKRecord.ID(recordName: Self.recordName, zoneID: zoneID))
+    updateCKRecord(record)
+    return record
+  }
+
+  func updateCKRecord(_ record: CKRecord) {
+    record[FieldKey.generation.rawValue] = generation
+    record[FieldKey.establishedAt.rawValue] = establishedAt
+  }
+
+  init(generation: Int, establishedAt: Date) {
+    self.generation = generation
+    self.establishedAt = establishedAt
+  }
+
+  init?(from record: CKRecord) {
+    guard record.recordType == Self.recordType,
+      let generation = record[FieldKey.generation.rawValue] as? Int
+    else {
+      return nil
+    }
+    self.generation = generation
+    self.establishedAt =
+      (record[FieldKey.establishedAt.rawValue] as? Date) ?? Date(timeIntervalSinceReferenceDate: 0)
+  }
+}
+
 // MARK: - Synced Emergency Unblock Event
 
 /// One immutable record per consumed emergency unblock. Union-merged across devices (write-once,
