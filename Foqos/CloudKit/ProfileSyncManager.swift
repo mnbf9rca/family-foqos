@@ -25,11 +25,7 @@ class ProfileSyncManager: ObservableObject {
   // MARK: - Published State
 
   @Published var isEnabled: Bool = false
-  @Published var isSyncing: Bool = false
-  @Published var syncStatus: SyncStatus = .disabled
-  @Published var connectedDeviceCount: Int = 0
-  @Published var lastSyncDate: Date?
-  @Published var error: SyncError?
+  @Published private(set) var syncStatusSnapshot = SyncStatusSnapshot(status: .disabled, lastSyncDate: nil)
   /// Set to true when legacy records were cleaned up and user should be notified
   @Published var shouldShowSyncUpgradeNotice = false
   @Published private(set) var syncPausedReason: SyncPausedReason?
@@ -37,7 +33,12 @@ class ProfileSyncManager: ObservableObject {
   private(set) var pendingConflictName: String?
 
   /// The engine owner (I10). Wired in `attachEngine(...)` once a ModelContext exists.
-  weak var engineController: (any SyncEngineControlling)?
+  weak var engineController: (any SyncEngineControlling)? {
+    didSet {
+      engineController?.onStatusChanged = { [weak self] in self?.recomputeSyncStatus() }
+      recomputeSyncStatus()
+    }
+  }
 
   /// True once the engine is attached AND startup, including the AB-4 T1 strip, has completed.
   /// Gates send-on-enqueue so a send can never flush restored state before T1 (#286 poison).
@@ -45,6 +46,7 @@ class ProfileSyncManager: ObservableObject {
 
   /// Test-injectable defaults for the non-user-namespaced pre-attach delete buffer (#305).
   var bufferDefaults: UserDefaults = .standard
+  private let reachabilityMonitor = NetworkReachabilityMonitor()
 
   // MARK: - Private State
 
@@ -74,6 +76,14 @@ class ProfileSyncManager: ObservableObject {
     var disableAccountResolutionRetryForTest = false
     var accountResolutionRetryDelayNanosecondsForTest: UInt64?
     var failNextSwitchWipeFinalSaveForTest = false
+
+    var isReachabilityMonitoringForTest: Bool {
+      reachabilityMonitor.isMonitoringForTest
+    }
+
+    func handleReachabilityPathUpdateForTest(isSatisfied: Bool) {
+      reachabilityMonitor.handlePathUpdate(isSatisfied: isSatisfied)
+    }
   #endif
 
   /// Test seam: true when nothing is pending re-enqueue.
@@ -97,7 +107,15 @@ class ProfileSyncManager: ObservableObject {
   private init() {
     // Load enabled state from SharedData
     isEnabled = SharedData.deviceSyncEnabled
-    syncStatus = isEnabled ? .idle : .disabled
+    recomputeSyncStatus()
+
+    reachabilityMonitor.$isOnline
+      .dropFirst()
+      .removeDuplicates()
+      .sink { [weak self] _ in self?.recomputeSyncStatus() }
+      .store(in: &cancellables)
+    reachabilityMonitor.onReconnect = { [weak self] in self?.reconnectDrivenSync() }
+    if isEnabled { reachabilityMonitor.start() }
 
     // Observe changes to sync enabled setting
     $isEnabled
@@ -105,10 +123,12 @@ class ProfileSyncManager: ObservableObject {
       .removeDuplicates()
       .sink { [weak self] enabled in
         SharedData.deviceSyncEnabled = enabled
-        self?.syncStatus = enabled ? .idle : .disabled
+        self?.recomputeSyncStatus(isEnabledOverride: enabled)
         if enabled {
+          self?.reachabilityMonitor.start()
           self?.startEngineAndMarkReadyWhenStartupCompletes()
         } else {
+          self?.reachabilityMonitor.stop()
           self?.cancelAccountResolutionRetry()
           self?.isSyncReady = false
           self?.engineController?.stop()
@@ -119,24 +139,56 @@ class ProfileSyncManager: ObservableObject {
 
   // MARK: - Sync Status
 
-  enum SyncStatus: Equatable {
+  enum SyncDisplayStatus: Equatable {
     case disabled
-    case idle
+    case synced
+    case waiting(Int)
     case syncing
-    case error(String)
+    case offline
+    case paused(SyncPausedReason)
+  }
 
-    var displayText: String {
-      switch self {
-      case .disabled:
-        return "Disabled"
-      case .idle:
-        return "Synced"
-      case .syncing:
-        return "Syncing..."
-      case .error(let message):
-        return "Error: \(message)"
-      }
-    }
+  struct SyncStatusSnapshot: Equatable {
+    let status: SyncDisplayStatus
+    let lastSyncDate: Date?
+
+    var isSyncing: Bool { status == .syncing }
+  }
+
+  static func deriveStatus(
+    isEnabled: Bool,
+    pausedReason: SyncPausedReason?,
+    isInFlight: Bool,
+    isOnline: Bool,
+    pendingCount: Int
+  ) -> SyncDisplayStatus {
+    guard isEnabled else { return .disabled }
+    if let pausedReason { return .paused(pausedReason) }
+    if isInFlight { return .syncing }
+    if !isOnline && pendingCount > 0 { return .offline }
+    if pendingCount > 0 { return .waiting(pendingCount) }
+    return .synced
+  }
+
+  private var totalPendingCount: Int {
+    let deferred =
+      deferredProfileSaveIds.count + deferredLocationSaveIds.count
+      + deferredDeleteRecordNames.count + (deferredEmergencySave ? 1 : 0)
+      + deferredEmergencyUnblockEvents.count + (deferredEmergencyEpochSave ? 1 : 0)
+    return (engineController?.pendingChangeCount ?? 0) + deferred
+  }
+
+  func recomputeSyncStatus(isEnabledOverride: Bool? = nil) {
+    let effectiveIsEnabled = isEnabledOverride ?? isEnabled
+    let status = Self.deriveStatus(
+      isEnabled: effectiveIsEnabled,
+      pausedReason: syncPausedReason,
+      isInFlight: engineController?.isInFlight ?? false,
+      isOnline: reachabilityMonitor.isOnline,
+      pendingCount: totalPendingCount)
+    let next = SyncStatusSnapshot(
+      status: status, lastSyncDate: engineController?.lastSuccessfulSyncDate)
+    if next != syncStatusSnapshot { syncStatusSnapshot = next }
   }
 
   enum SyncPausedReason: Equatable {
@@ -441,18 +493,33 @@ class ProfileSyncManager: ObservableObject {
       didTearDownForTest = true
     #endif
     syncPausedReason = reason
+    recomputeSyncStatus()
   }
 
   private func clearPause() {
     syncPausedReason = nil
     accountChangeConflict = nil
     pendingConflictName = nil
+    recomputeSyncStatus()
   }
 
   private func cancelAccountResolutionRetry() {
     accountResolutionRetryTask?.cancel()
     accountResolutionRetryTask = nil
     didRetryAccountResolution = false
+  }
+
+  private func reconnectDrivenSync() {
+    guard isEnabled, isSyncReady else {
+      recomputeSyncStatus()
+      return
+    }
+    do {
+      try syncNow()
+    } catch {
+      Log.warning("reconnect syncNow skipped: \(error.localizedDescription)", category: .sync)
+    }
+    recomputeSyncStatus()
   }
 
   private func resumeAfterAmbiguity() {
@@ -554,6 +621,7 @@ class ProfileSyncManager: ObservableObject {
   /// itself throws (review findings #4–#6, #15). Delete call sites MUST fall back to a direct
   /// local delete on `.notAttached` so the item is never silently left behind.
   func enqueueProfileSave(_ id: UUID) throws {
+    defer { recomputeSyncStatus() }
     guard let engineController else {
       deferredProfileSaveIds.insert(id)
       throw SyncEngineControllingError.notAttached
@@ -567,6 +635,7 @@ class ProfileSyncManager: ObservableObject {
     if isSyncReady { engineController.requestSync() }
   }
   func enqueueProfileDelete(_ id: UUID) throws {
+    defer { recomputeSyncStatus() }
     guard let engineController else {
       deferredDeleteRecordNames.insert(id.uuidString)
       PreAttachDeleteBuffer.add(
@@ -583,6 +652,7 @@ class ProfileSyncManager: ObservableObject {
     }
   }
   func enqueueLocationSave(_ id: UUID) throws {
+    defer { recomputeSyncStatus() }
     guard let engineController else {
       deferredLocationSaveIds.insert(id)
       throw SyncEngineControllingError.notAttached
@@ -596,6 +666,7 @@ class ProfileSyncManager: ObservableObject {
     if isSyncReady { engineController.requestSync() }
   }
   func enqueueLocationDelete(_ id: UUID) throws {
+    defer { recomputeSyncStatus() }
     guard let engineController else {
       deferredDeleteRecordNames.insert(id.uuidString)
       PreAttachDeleteBuffer.add(
@@ -613,6 +684,7 @@ class ProfileSyncManager: ObservableObject {
     if isSyncReady { engineController.requestSync() }
   }
   func enqueueEmergencySettingsSave() throws {
+    defer { recomputeSyncStatus() }
     guard let engineController else {
       deferredEmergencySave = true
       throw SyncEngineControllingError.notAttached
@@ -626,6 +698,7 @@ class ProfileSyncManager: ObservableObject {
     if isSyncReady { engineController.requestSync() }
   }
   func enqueueEmergencyUnblockEvent(_ event: SyncedEmergencyUnblockEvent) throws {
+    defer { recomputeSyncStatus() }
     guard let engineController else {
       deferredEmergencyUnblockEvents[event.recordName] = event
       throw SyncEngineControllingError.notAttached
@@ -639,6 +712,7 @@ class ProfileSyncManager: ObservableObject {
     if isSyncReady { engineController.requestSync() }
   }
   func enqueueEmergencyEpochSave() throws {
+    defer { recomputeSyncStatus() }
     guard let engineController else {
       deferredEmergencyEpochSave = true
       throw SyncEngineControllingError.notAttached
@@ -652,6 +726,7 @@ class ProfileSyncManager: ObservableObject {
     if isSyncReady { engineController.requestSync() }
   }
   func enqueueEmergencyUnblockEventDelete(_ recordName: String) throws {
+    defer { recomputeSyncStatus() }
     guard let engineController else {
       deferredDeleteRecordNames.insert(recordName)
       PreAttachDeleteBuffer.add(
@@ -712,6 +787,7 @@ class ProfileSyncManager: ObservableObject {
   func markSyncReadyAndFlush() {
     isSyncReady = true
     drainDeferredMutations()
+    recomputeSyncStatus()
     Log.debug("Sync ready; flushing deferred mutations", category: .sync)
     engineController?.requestSync()
   }

@@ -40,4 +40,6 @@ enum SyncEngineEvent {
     failedZoneDeletes: [(zoneID: CKRecordZone.ID, error: CKError)])  // T4b §5.5
   case willFetchChanges  // AB-3 cycle delimiter
   case didFetchChanges  // T2; AB-3; drives §5.6 sweep + echo-guard drain
+  case willSendChanges  // in-flight bracket (status, #316)
+  case didSendChanges  // in-flight bracket (status, #316)
 }

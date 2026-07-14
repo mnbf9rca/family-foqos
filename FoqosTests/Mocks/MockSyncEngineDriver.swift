@@ -80,6 +80,18 @@ final class MockSyncEngineDriver: SyncEngineDriver {
     sendChangesCount = 0
   }
 
+  func setPendingRecordZoneChangesForTest(
+    _ changes: [CKSyncEngine.PendingRecordZoneChange]
+  ) {
+    pendingRecordZoneChanges = changes
+  }
+
+  func setPendingDatabaseChangesForTest(
+    _ changes: [CKSyncEngine.PendingDatabaseChange]
+  ) {
+    pendingDatabaseChanges = changes
+  }
+
   func fetchRecord(_ id: CKRecord.ID) async -> FetchRecordResult {
     fetchedRecordIDs.append(id)
     return fetchRecordResults[id.recordName] ?? defaultFetchRecordResult

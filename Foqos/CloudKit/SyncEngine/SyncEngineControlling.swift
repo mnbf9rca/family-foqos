@@ -7,6 +7,10 @@ protocol SyncEngineControlling: AnyObject {
   func start()
   func stop()
   func requestSync()
+  var isInFlight: Bool { get }
+  var pendingChangeCount: Int { get }
+  var lastSuccessfulSyncDate: Date? { get }
+  var onStatusChanged: (@MainActor () -> Void)? { get set }
   func beginAccountResolution()
   func endAccountResolution()
   func prepareForAccountSwitch()

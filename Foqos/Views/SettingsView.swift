@@ -31,15 +31,38 @@ struct SettingsView: View {
   }
 
   private var syncStatusColor: Color {
-    switch profileSyncManager.syncStatus {
+    switch profileSyncManager.syncStatusSnapshot.status {
     case .disabled:
       return .gray
-    case .idle:
+    case .synced:
       return .green
     case .syncing:
+      return themeManager.themeColor
+    case .waiting:
       return .orange
-    case .error:
-      return .red
+    case .offline:
+      return .gray
+    case .paused:
+      return .orange
+    }
+  }
+
+  private var syncStatusLabel: String {
+    switch profileSyncManager.syncStatusSnapshot.status {
+    case .disabled:
+      return "Disabled"
+    case .synced:
+      return "Synced"
+    case .waiting(let count):
+      return "Waiting to sync (\(count) changes)"
+    case .syncing:
+      return "Syncing…"
+    case .offline:
+      return "Offline"
+    case .paused(.signedOut):
+      return "Signed out of iCloud"
+    case .paused(.accountChanged):
+      return "iCloud account changed"
     }
   }
 
@@ -170,7 +193,7 @@ struct SettingsView: View {
                 .foregroundStyle(.primary)
               Spacer()
               HStack(spacing: 8) {
-                if profileSyncManager.isSyncing {
+                if profileSyncManager.syncStatusSnapshot.isSyncing {
                   ProgressView()
                     .scaleEffect(0.8)
                 } else {
@@ -178,13 +201,13 @@ struct SettingsView: View {
                     .fill(syncStatusColor)
                     .frame(width: 8, height: 8)
                 }
-                Text(profileSyncManager.syncStatus.displayText)
+                Text(syncStatusLabel)
                   .foregroundStyle(.secondary)
                   .font(.subheadline)
               }
             }
 
-            if let lastSync = profileSyncManager.lastSyncDate {
+            if let lastSync = profileSyncManager.syncStatusSnapshot.lastSyncDate {
               HStack {
                 Text("Last Synced")
                   .foregroundStyle(.primary)
@@ -208,13 +231,13 @@ struct SettingsView: View {
                 Text("Sync Now")
                   .foregroundColor(.primary)
                 Spacer()
-                if profileSyncManager.isSyncing {
+                if profileSyncManager.syncStatusSnapshot.isSyncing {
                   ProgressView()
                     .scaleEffect(0.8)
                 }
               }
             }
-            .disabled(profileSyncManager.isSyncing)
+            .disabled(profileSyncManager.syncStatusSnapshot.isSyncing)
           }
         } header: {
           Text("Device Sync")
