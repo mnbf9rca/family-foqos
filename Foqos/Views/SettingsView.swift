@@ -13,9 +13,11 @@ struct SettingsView: View {
 
   @ObservedObject private var appModeManager = AppModeManager.shared
   @ObservedObject private var profileSyncManager = ProfileSyncManager.shared
+  @ObservedObject private var lockCodeManager = LockCodeManager.shared
 
   @State private var showResetBlockingStateAlert = false
   @State private var showResetSyncAlert = false
+  @State private var showWipeSyncConfirmation = false
   @State private var showParentDashboard = false
   @State private var showChildDashboard = false
   @State private var showSavedLocations = false
@@ -24,6 +26,13 @@ struct SettingsView: View {
 
   @AppStorage("family_foqos_warn_when_activating_away_from_location") private var warnWhenActivatingAwayFromLocation =
     true
+
+  nonisolated static let wipeConfirmationMessage =
+    "This deletes every synced profile, location, emergency unblock record, and pending sync reset from every device on your iCloud account. Devices still on the old app version won't be affected and should be updated - they can't interoperate with the new sync."
+
+  nonisolated static func wipeRequiresLockVerification(mode: AppMode, canVerifyCode: Bool) -> Bool {
+    mode == .child && canVerifyCode
+  }
 
   private var appVersion: String {
     Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
@@ -414,6 +423,12 @@ struct SettingsView: View {
                 Text("Reset Syncing")
                   .foregroundColor(themeManager.themeColor)
               }
+
+              Button(role: .destructive) {
+                showWipeSyncConfirmation = true
+              } label: {
+                Text("Wipe Synced Data Everywhere")
+              }
             }
           }
         }
@@ -479,11 +494,115 @@ struct SettingsView: View {
       .sheet(isPresented: $showDebugView) {
         DebugView()
       }
+      .fullScreenCover(isPresented: $showWipeSyncConfirmation) {
+        WipeSyncConfirmationView(
+          requiresLockVerification: Self.wipeRequiresLockVerification(
+            mode: appModeManager.currentMode,
+            canVerifyCode: lockCodeManager.canVerifyCode
+          ),
+          onCancel: {
+            showWipeSyncConfirmation = false
+          },
+          onConfirm: {
+            showWipeSyncConfirmation = false
+            performWipeSyncReset()
+          }
+        )
+      }
       .onChange(of: appModeManager.currentMode) { oldMode, newMode in
         // Auto-dismiss settings when switching from child to individual mode
         if oldMode == .child && newMode == .individual {
           dismiss()
         }
+      }
+    }
+  }
+
+  private func performWipeSyncReset() {
+    do {
+      try profileSyncManager.resetSync(wipe: true, clearRemoteAppSelections: false)
+    } catch {
+      syncErrorMessage = error.localizedDescription
+    }
+  }
+}
+
+private struct WipeSyncConfirmationView: View {
+  let requiresLockVerification: Bool
+  let onCancel: () -> Void
+  let onConfirm: () -> Void
+
+  @State private var showLockCodeEntry = false
+
+  var body: some View {
+    NavigationStack {
+      VStack(spacing: 24) {
+        Spacer(minLength: 24)
+
+        Image(systemName: "exclamationmark.triangle.fill")
+          .font(.system(size: 56))
+          .foregroundStyle(.red)
+
+        VStack(spacing: 12) {
+          Text("Wipe Synced Data Everywhere")
+            .font(.title2)
+            .fontWeight(.bold)
+            .multilineTextAlignment(.center)
+
+          Text(SettingsView.wipeConfirmationMessage)
+            .font(.body)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, 24)
+
+        Spacer()
+
+        VStack(spacing: 12) {
+          Button(role: .destructive) {
+            if requiresLockVerification {
+              showLockCodeEntry = true
+            } else {
+              onConfirm()
+            }
+          } label: {
+            Text(requiresLockVerification ? "Verify and Wipe" : "Wipe Everything")
+              .fontWeight(.semibold)
+              .frame(maxWidth: .infinity)
+              .frame(height: 50)
+          }
+          .buttonStyle(.borderedProminent)
+          .tint(.red)
+
+          Button("Cancel", role: .cancel) {
+            onCancel()
+          }
+          .frame(maxWidth: .infinity)
+          .frame(height: 44)
+        }
+        .padding(.horizontal, 24)
+        .padding(.bottom, 32)
+      }
+      .navigationTitle("Confirm Wipe")
+      .navigationBarTitleDisplayMode(.inline)
+      .toolbar {
+        ToolbarItem(placement: .topBarLeading) {
+          Button("Cancel") {
+            onCancel()
+          }
+        }
+      }
+      .sheet(isPresented: $showLockCodeEntry) {
+        LockCodeEntrySheet(
+          onSuccess: {
+            showLockCodeEntry = false
+            onConfirm()
+          },
+          onCancel: {
+            showLockCodeEntry = false
+          }
+        )
       }
     }
   }
