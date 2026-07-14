@@ -66,7 +66,8 @@ final class RecordProvider {
 
   private func profileRecord(_ profile: BlockedProfiles) -> CKRecord? {
     guard !profile.isNewerSchemaVersion else { return nil }
-    let synced = SyncedProfile(from: profile, originDeviceId: deviceId)
+    let synced = SyncedProfile(
+      from: profile, originDeviceId: deviceId, generation: store.establishmentGeneration)
     let record = materialize(
       recordName: profile.id.uuidString,
       recordType: SyncedProfile.recordType,
@@ -76,7 +77,7 @@ final class RecordProvider {
   }
 
   private func locationRecord(_ location: SavedLocation) -> CKRecord? {
-    let synced = SyncedLocation(from: location)
+    let synced = SyncedLocation(from: location, generation: store.establishmentGeneration)
     let record = materialize(
       recordName: location.id.uuidString,
       recordType: SyncedLocation.recordType,
@@ -100,16 +101,19 @@ final class RecordProvider {
       recordName: SyncedEmergencyEpoch.recordName,
       recordType: SyncedEmergencyEpoch.recordType,
       freshRecordID: CKRecord.ID(recordName: SyncedEmergencyEpoch.recordName, zoneID: zoneID))
-    emergencyManager.currentEpochRecord().updateCKRecord(record)
+    var epoch = emergencyManager.currentEpochRecord()
+    epoch.generation = store.establishmentGeneration
+    epoch.updateCKRecord(record)
     return record
   }
 
   private func emergencyUnblockEventRecord(recordName: String) -> CKRecord? {
-    guard let event = emergencyManager.eventRecord(forRecordName: recordName) else { return nil }
+    guard var event = emergencyManager.eventRecord(forRecordName: recordName) else { return nil }
     let record = materialize(
       recordName: recordName,
       recordType: SyncedEmergencyUnblockEvent.recordType,
       freshRecordID: CKRecord.ID(recordName: recordName, zoneID: zoneID))
+    event.generation = store.establishmentGeneration
     event.updateCKRecord(record)
     return record
   }

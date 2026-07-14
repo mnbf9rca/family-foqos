@@ -62,6 +62,31 @@ final class RecordProviderTests: XCTestCase {
     XCTAssertEqual(record?[SyncedProfile.FieldKey.originDeviceId.rawValue] as? String, deviceId)
   }
 
+  func testGivenEstablishmentGeneration_WhenProfileMaterialized_ThenStampsGeneration() throws {
+    let id = UUID()
+    let profile = BlockedProfiles(id: id, name: "Focus", syncVersion: 3)
+    context.insert(profile)
+    try context.save()
+    store.establishmentGeneration = 2
+
+    let record = try XCTUnwrap(makeProvider().record(forRecordName: id.uuidString))
+
+    XCTAssertEqual(record[SyncedProfile.FieldKey.generation.rawValue] as? Int, 2)
+    XCTAssertEqual(SyncedProfile(from: record)?.profileSchemaVersion, profile.profileSchemaVersion)
+  }
+
+  func testGivenGenerationlessProfile_WhenDecoded_ThenGenerationZeroAndSchemaVersionUntouched() {
+    let profile = BlockedProfiles(id: UUID(), name: "Focus", syncVersion: 3)
+    let synced = SyncedProfile(from: profile, originDeviceId: deviceId)
+    let record = synced.toCKRecord(in: zoneID)
+    record[SyncedProfile.FieldKey.generation.rawValue] = nil
+
+    let decoded = SyncedProfile(from: record)
+
+    XCTAssertEqual(decoded?.generation, 0)
+    XCTAssertEqual(decoded?.profileSchemaVersion, profile.profileSchemaVersion)
+  }
+
   func testGivenCachedSystemFields_WhenProfileMaterialized_ThenReusesCachedRecordID() throws {
     let id = UUID()
     let profile = BlockedProfiles(id: id, name: "Focus", syncVersion: 1)
@@ -95,6 +120,20 @@ final class RecordProviderTests: XCTestCase {
     XCTAssertEqual(record?[SyncedLocation.FieldKey.isLocked.rawValue] as? Bool, true)
   }
 
+  func testGivenEstablishmentGeneration_WhenLocationMaterialized_ThenStampsGeneration() throws {
+    let id = UUID()
+    let location = SavedLocation(
+      id: id, name: "Home", latitude: 1, longitude: 2, defaultRadiusMeters: 150,
+      isLocked: true, syncVersion: 1)
+    context.insert(location)
+    try context.save()
+    store.establishmentGeneration = 3
+
+    let record = try XCTUnwrap(makeProvider().record(forRecordName: id.uuidString))
+
+    XCTAssertEqual(record[SyncedLocation.FieldKey.generation.rawValue] as? Int, 3)
+  }
+
   func testGivenEmergencyRecordName_WhenMaterialized_ThenBuildsEmergencyRecord() {
     let now = Date()
     emergencyManager.seedForTesting(epoch: 1)
@@ -122,6 +161,15 @@ final class RecordProviderTests: XCTestCase {
     XCTAssertEqual(record?[SyncedEmergencyEpoch.FieldKey.epoch.rawValue] as? Int, 4)
   }
 
+  func testGivenEstablishmentGeneration_WhenEmergencyEpochMaterialized_ThenStampsGeneration() {
+    emergencyManager.seedForTesting(epoch: 4)
+    store.establishmentGeneration = 3
+
+    let record = makeProvider().record(forRecordName: SyncedEmergencyEpoch.recordName)
+
+    XCTAssertEqual(record?[SyncedEmergencyEpoch.FieldKey.generation.rawValue] as? Int, 3)
+  }
+
   func testGivenEstablishmentGeneration_WhenMaterialized_ThenBuildsEstablishmentRecord() {
     store.establishmentGeneration = 4
 
@@ -145,6 +193,17 @@ final class RecordProviderTests: XCTestCase {
       record?[SyncedEmergencyUnblockEvent.FieldKey.id.rawValue] as? String,
       event.id.uuidString)
     XCTAssertEqual(record?[SyncedEmergencyUnblockEvent.FieldKey.resetEpoch.rawValue] as? Int, 2)
+  }
+
+  func testGivenEstablishmentGeneration_WhenEmergencyUnblockEventMaterialized_ThenStampsGeneration() {
+    let now = Date()
+    emergencyManager.seedForTesting(epoch: 2)
+    let event = emergencyManager.consumeUnblockEvent(now: now)
+    store.establishmentGeneration = 3
+
+    let record = makeProvider().record(forRecordName: event.recordName)
+
+    XCTAssertEqual(record?[SyncedEmergencyUnblockEvent.FieldKey.generation.rawValue] as? Int, 3)
   }
 
   func testGivenAbsentEntity_WhenMaterialized_ThenNil() {
