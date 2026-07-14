@@ -18,6 +18,7 @@ final class MockSyncEngineControlling: SyncEngineControlling {
   private(set) var enqueuedEmergencySaves = 0
   private(set) var enqueuedEmergencyUnblockEvents: [SyncedEmergencyUnblockEvent] = []
   private(set) var enqueuedEmergencyEpochSaves = 0
+  private(set) var enqueuedEstablishmentSaves = 0
   private(set) var enqueuedEmergencyUnblockEventDeletes: [String] = []
   private(set) var deferredDeletes: [String] = []
   private(set) var recordedDisabledTombstones: [String] = []
@@ -71,6 +72,10 @@ final class MockSyncEngineControlling: SyncEngineControlling {
   func enqueueEmergencyEpochSave() throws {
     if let errorToThrow { throw errorToThrow }
     enqueuedEmergencyEpochSaves += 1
+  }
+  func enqueueEstablishmentSave() throws {
+    if let errorToThrow { throw errorToThrow }
+    enqueuedEstablishmentSaves += 1
   }
   func enqueueEmergencyUnblockEventDelete(_ recordName: String) throws {
     if let errorToThrow { throw errorToThrow }

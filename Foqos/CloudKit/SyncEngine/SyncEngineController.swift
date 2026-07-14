@@ -796,6 +796,10 @@ final class SyncEngineController: SyncEngineDriverDelegate {
       let localEpoch = localRecord[SyncedEmergencyEpoch.FieldKey.epoch.rawValue] as? Int ?? 0
       let serverEpoch = server[SyncedEmergencyEpoch.FieldKey.epoch.rawValue] as? Int ?? 0
       return localEpoch > serverEpoch
+    case SyncedEstablishment.recordType:
+      let localGeneration = store.establishmentGeneration
+      let serverGeneration = server[SyncedEstablishment.FieldKey.generation.rawValue] as? Int ?? 0
+      return localGeneration > serverGeneration
     default:
       return false
     }
@@ -1186,6 +1190,9 @@ final class SyncEngineController: SyncEngineDriverDelegate {
     let locations = (try? modelContext.fetch(FetchDescriptor<SavedLocation>())) ?? []
     names.append(contentsOf: locations.map { $0.id.uuidString })
     names.append(SyncedEmergencySettings.recordName)
+    if store.establishmentGeneration > 0 {
+      names.append(SyncedEstablishment.recordName)
+    }
     names.append(contentsOf: provider.restorableEmergencyRecordNames())
     return names.filter { provider.record(forRecordName: $0) != nil }
   }

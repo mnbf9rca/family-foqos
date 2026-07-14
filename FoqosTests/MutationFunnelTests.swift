@@ -293,6 +293,26 @@ final class MutationFunnelTests: XCTestCase {
     )
   }
 
+  func testGivenEstablishmentGeneration_WhenEnqueue_ThenEnqueuesFixedNameSaveRecord() throws {
+    let container = try TestModelContainer.create()
+    let syncContext = ModelContext(container)
+    let store = makeStore()
+    let driver = MockSyncEngineDriver()
+    let funnel = MutationFunnel(
+      modelContext: syncContext,
+      store: store,
+      driver: driver,
+      deviceId: "device-A"
+    )
+
+    funnel.enqueueEstablishmentSave()
+
+    XCTAssertEqual(
+      driver.pendingRecordZoneChanges,
+      [.saveRecord(recordID(SyncedEstablishment.recordName))]
+    )
+  }
+
   // MARK: - S-15 / S-29: delete writes a tombstone carrying the change tag, enqueues once
 
   func testGivenSyncedProfile_WhenEnqueueDelete_ThenDeleteIsMarkedBeforeDeferredSaveAndEnqueuedAfterCommit()

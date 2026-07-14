@@ -300,6 +300,16 @@ final class SyncEngineControllerTests: XCTestCase {
     XCTAssertTrue(names.contains(event.recordName))
   }
 
+  func testRestorableRecordNames_IncludesEstablishmentOnlyAfterGenerationBump() {
+    let controller = makeController()
+
+    XCTAssertFalse(Set(controller.restorableRecordNames()).contains(SyncedEstablishment.recordName))
+
+    store.establishmentGeneration = 1
+
+    XCTAssertTrue(Set(controller.restorableRecordNames()).contains(SyncedEstablishment.recordName))
+  }
+
   func testGivenNewerSchemaProfile_WhenSeed_ThenNotIncludedInRestorableSet() throws {
     let p = BlockedProfiles(name: "A")
     p.profileSchemaVersion = BlockedProfiles.currentSchemaVersion + 1
@@ -1074,6 +1084,25 @@ final class SyncEngineControllerTests: XCTestCase {
         SyncedEmergencyEpoch.recordType,
         name: SyncedEmergencyEpoch.recordName,
         server: equalServer))
+  }
+
+  func testGivenHigherLocalEstablishment_WhenServerRecordLower_ThenLocalIsStrictlyNewer() {
+    let now = Date()
+    store.establishmentGeneration = 5
+    let controller = makeController()
+    let lowerServer = SyncedEstablishment(generation: 3, establishedAt: now).toCKRecord(in: zoneID)
+    let higherServer = SyncedEstablishment(generation: 6, establishedAt: now).toCKRecord(in: zoneID)
+
+    XCTAssertTrue(
+      controller.localIsStrictlyNewer(
+        SyncedEstablishment.recordType,
+        name: SyncedEstablishment.recordName,
+        server: lowerServer))
+    XCTAssertFalse(
+      controller.localIsStrictlyNewer(
+        SyncedEstablishment.recordType,
+        name: SyncedEstablishment.recordName,
+        server: higherServer))
   }
 
   func testGivenEpochSaveServerRecordChanged_WhenLocalHigher_ThenStoresTagAndReaddsEpoch() {

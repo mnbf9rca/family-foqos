@@ -27,6 +27,9 @@ final class RecordProvider {
   }
 
   func record(forRecordName recordName: String) -> CKRecord? {
+    if recordName == SyncedEstablishment.recordName {
+      return establishmentRecord()
+    }
     if recordName == SyncedEmergencySettings.recordName {
       return emergencyRecord()
     }
@@ -54,6 +57,11 @@ final class RecordProvider {
 
   func restorableEmergencyRecordNames() -> [String] {
     [SyncedEmergencyEpoch.recordName] + emergencyManager.allUnblockEventRecordNames()
+  }
+
+  func establishmentRecord() -> CKRecord {
+    SyncedEstablishment(generation: store.establishmentGeneration, establishedAt: Date())
+      .toCKRecord(in: zoneID)
   }
 
   private func profileRecord(_ profile: BlockedProfiles) -> CKRecord? {

@@ -69,6 +69,10 @@ extension SyncEngineController: SyncEngineControlling {
     guard let funnel else { throw SyncEngineControllingError.notAttached }
     funnel.enqueueEmergencyEpochSave()
   }
+  func enqueueEstablishmentSave() throws {
+    guard let funnel else { throw SyncEngineControllingError.notAttached }
+    funnel.enqueueEstablishmentSave()
+  }
   func enqueueEmergencyUnblockEventDelete(_ recordName: String) throws {
     guard let funnel else { throw SyncEngineControllingError.notAttached }
     funnel.enqueueEmergencyUnblockEventDelete(recordName)

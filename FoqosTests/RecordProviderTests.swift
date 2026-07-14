@@ -122,6 +122,16 @@ final class RecordProviderTests: XCTestCase {
     XCTAssertEqual(record?[SyncedEmergencyEpoch.FieldKey.epoch.rawValue] as? Int, 4)
   }
 
+  func testGivenEstablishmentGeneration_WhenMaterialized_ThenBuildsEstablishmentRecord() {
+    store.establishmentGeneration = 4
+
+    let record = makeProvider().record(forRecordName: SyncedEstablishment.recordName)
+
+    XCTAssertEqual(record?.recordType, SyncedEstablishment.recordType)
+    XCTAssertEqual(record?.recordID.recordName, SyncedEstablishment.recordName)
+    XCTAssertEqual(record?[SyncedEstablishment.FieldKey.generation.rawValue] as? Int, 4)
+  }
+
   func testGivenEmergencyUnblockEventRecordName_WhenMaterialized_ThenBuildsEventRecord() {
     let now = Date()
     emergencyManager.seedForTesting(epoch: 2)
