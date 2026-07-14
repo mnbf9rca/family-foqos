@@ -351,15 +351,26 @@ public final class Log: @unchecked Sendable {  // SAFETY: entries/file I/O prote
   /// not provide an all-or-nothing filesystem transaction if a copy fails.
   /// - Parameter stagingDir: Destination directory (must already exist).
   public func copyLogFilesToStagingDirectory(_ stagingDir: URL) throws {
-    queue.sync {
+    try queue.sync {
       let urls = _getLogFileURLsUnsafe()
       for url in urls {
         let destURL = stagingDir.appendingPathComponent(Self.stagingDestinationName(for: url))
-        // #250 best-effort: sibling processes can rotate/remove their own files between
-        // enumeration and copy. Skip a vanished file rather than abort the whole export.
-        try? fileManager.copyItem(at: url, to: destURL)
+        do {
+          try fileManager.copyItem(at: url, to: destURL)
+        } catch {
+          // #250 best-effort only for sibling-process rotation/removal races. Other copy
+          // failures mean the export is incomplete for a real reason and should surface.
+          guard Self.isVanishedSourceCopyError(error) else { throw error }
+        }
       }
     }
+  }
+
+  private static func isVanishedSourceCopyError(_ error: Error) -> Bool {
+    let nsError = error as NSError
+    guard nsError.domain == NSCocoaErrorDomain else { return false }
+    let code = CocoaError.Code(rawValue: nsError.code)
+    return code == .fileNoSuchFile || code == .fileReadNoSuchFile
   }
 
   /// Get combined log content as a string

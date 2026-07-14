@@ -122,4 +122,25 @@ final class LogTailTests: XCTestCase {
     }
     XCTAssertTrue(hasMarker, "Copied files should contain the logged marker")
   }
+
+  func testGivenDestinationCollision_WhenCopyingToStaging_ThenThrows() throws {
+    let marker = "COPY_COLLISION_TEST_\(UUID().uuidString)"
+    Log.info(marker, category: .app)
+
+    guard let source = Log.shared.getLogFileURLs().first else {
+      XCTFail("Expected at least one log file")
+      return
+    }
+
+    let stagingDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("LogCopyCollisionTest-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(
+      at: stagingDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: stagingDir) }
+
+    let collision = stagingDir.appendingPathComponent(Log.stagingDestinationName(for: source))
+    try "existing".write(to: collision, atomically: true, encoding: .utf8)
+
+    XCTAssertThrowsError(try Log.shared.copyLogFilesToStagingDirectory(stagingDir))
+  }
 }
