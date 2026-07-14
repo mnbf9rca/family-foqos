@@ -27,10 +27,10 @@ final class SyncEngineFacadeTests: XCTestCase {
     bufferSuiteName = "SyncEngineFacadeTests-buffer-\(UUID().uuidString)"
     bufferDefaults = UserDefaults(suiteName: bufferSuiteName)!
     manager.bufferDefaults = bufferDefaults
-    mock = MockSyncEngineControlling()
-    manager.engineController = mock
     manager.isSyncReady = false
     manager.isEnabled = false
+    mock = MockSyncEngineControlling()
+    manager.engineController = mock
   }
 
   override func tearDown() async throws {
@@ -49,7 +49,7 @@ final class SyncEngineFacadeTests: XCTestCase {
     XCTAssertEqual(mock.startCount, 1)
     XCTAssertEqual(mock.stopCount, 0)
     XCTAssertTrue(SharedData.deviceSyncEnabled)
-    XCTAssertEqual(manager.syncStatus, .idle)
+    XCTAssertEqual(manager.syncStatusSnapshot.status, .synced)
   }
 
   func testGivenController_WhenToggledOffAfterOn_ThenStopIsCalled() {
@@ -59,7 +59,7 @@ final class SyncEngineFacadeTests: XCTestCase {
     XCTAssertEqual(mock.startCount, 1)
     XCTAssertEqual(mock.stopCount, 1)
     XCTAssertFalse(SharedData.deviceSyncEnabled)
-    XCTAssertEqual(manager.syncStatus, .disabled)
+    XCTAssertEqual(manager.syncStatusSnapshot.status, .disabled)
   }
 
   func testGivenController_WhenFacadeVerbsCalled_ThenTheyForward() throws {
