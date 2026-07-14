@@ -66,6 +66,8 @@ class ProfileSyncManager: ObservableObject {
   private var attachedDriverFactory: ((Data?) -> SyncEngineDriver)?
   private var didRetryAccountResolution = false
   private var accountResolutionRetryTask: Task<Void, Never>?
+  private var isAdoptingEstablishmentGeneration = false
+  private var pendingAdoptionGeneration: Int?
 
   private static let accountResolutionRetryDelayNanoseconds: UInt64 = 5_000_000_000
 
@@ -306,6 +308,10 @@ class ProfileSyncManager: ObservableObject {
       apply: apply, provider: provider, sessionSync: SessionSyncCacheFlusher(), deviceId: deviceId)
     pendingController = controller
     controller.onAccountChange = { [weak self] kind in self?.handleEngineAccountChange(kind) }
+    controller.onFetchedEstablishment = { [weak self] record in
+      guard let establishment = SyncedEstablishment(from: record) else { return }
+      Task { await self?.adoptEstablishmentGeneration(establishment.generation) }
+    }
     ownedEngineController = controller
     engineController = controller
     for entry in PreAttachDeleteBuffer.pending(defaults: bufferDefaults) {
@@ -484,6 +490,70 @@ class ProfileSyncManager: ObservableObject {
 
     try context.save()
     attachedEmergencyManager?.resetAllStateForAccountSwitch()
+  }
+
+  func wipeLocalSyncedEntitiesForGeneration(
+    cleanup: BlockedProfiles.DeleteCleanup? = nil
+  ) throws {
+    guard let context = attachedModelContext else { throw SyncError.syncDisabled }
+
+    let profiles = try context.fetch(FetchDescriptor<BlockedProfiles>())
+    for profile in profiles {
+      try BlockedProfiles.deleteProfile(profile, in: context, cleanup: cleanup)
+    }
+
+    let locations = try context.fetch(FetchDescriptor<SavedLocation>())
+    for location in locations {
+      try SavedLocation.delete(location, in: context)
+    }
+
+    try context.save()
+  }
+
+  func adoptEstablishmentGeneration(_ newGeneration: Int) async {
+    guard let userRecordName = attachedUserRecordName else { return }
+    let store = SyncEngineStore(userRecordName: userRecordName)
+    guard newGeneration > store.establishmentGeneration else { return }
+
+    if isAdoptingEstablishmentGeneration {
+      pendingAdoptionGeneration = max(pendingAdoptionGeneration ?? newGeneration, newGeneration)
+      return
+    }
+
+    isAdoptingEstablishmentGeneration = true
+    var targetGeneration = newGeneration
+
+    while targetGeneration > store.establishmentGeneration {
+      do {
+        try wipeLocalSyncedEntitiesForGeneration()
+      } catch {
+        attachedModelContext?.rollback()
+        Log.error(
+          "Establishment generation adoption local wipe failed: \(error.localizedDescription)",
+          category: .sync)
+        break
+      }
+
+      store.transaction { s in
+        s.clearGenerationScopedBookkeeping()
+        s.establishmentGeneration = targetGeneration
+        s.engineState = nil
+      }
+      attachedEmergencyManager?.clearLedgerForGenerationAdoption()
+
+      await reattachEngine(userRecordName: userRecordName, forceSeed: false)
+      NotificationCenter.default.post(name: .syncEnginePurged, object: nil)
+
+      if let pending = pendingAdoptionGeneration, pending > store.establishmentGeneration {
+        pendingAdoptionGeneration = nil
+        targetGeneration = pending
+      } else {
+        pendingAdoptionGeneration = nil
+        break
+      }
+    }
+
+    isAdoptingEstablishmentGeneration = false
   }
 
   private func pauseSync(reason: SyncPausedReason) {

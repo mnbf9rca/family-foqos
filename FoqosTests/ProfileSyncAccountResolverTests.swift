@@ -218,6 +218,70 @@ final class ProfileSyncAccountResolverTests: XCTestCase {
     XCTAssertEqual(try container.mainContext.fetch(FetchDescriptor<BlockedProfiles>()).count, 0)
   }
 
+  func testAdoptHigherEstablishmentGenerationWipesBookkeepingAndForcesRefetch() async throws {
+    try await makeAttachedManager(namespace: "userA", isEnabled: true, engineState: .steady)
+    let store = SyncEngineStore(userRecordName: "userA")
+    store.establishmentGeneration = 1
+    store.engineState = Data([0x01])
+    store.setTombstone(recordName: "dead", changeTag: "tag")
+    store.setDeleteWatermark(recordName: "dead", value: 3)
+    store.setSystemFields(Data([0x02]), for: "dead")
+    store.addFailedApply(FailedApply(recordName: "dead", recordType: SyncedProfile.recordType, op: .upsert))
+    let processed = UUID()
+    store.markProcessed(processed)
+    let now = Date()
+    seedLocalProfiles(count: 2, now: now)
+    let location = SavedLocation(
+      name: "Library", latitude: 51.5, longitude: -0.1, createdAt: now, updatedAt: now)
+    container.mainContext.insert(location)
+    try container.mainContext.save()
+
+    await manager.adoptEstablishmentGeneration(2)
+
+    XCTAssertEqual(store.establishmentGeneration, 2)
+    XCTAssertNil(store.engineState)
+    XCTAssertTrue(store.deleteTombstones.isEmpty)
+    XCTAssertNil(store.deleteWatermark(for: "dead"))
+    XCTAssertNil(store.systemFields(for: "dead"))
+    XCTAssertTrue(store.failedApplies.isEmpty)
+    XCTAssertTrue(store.processedResetCommandIds.contains(processed))
+    XCTAssertEqual(try container.mainContext.fetch(FetchDescriptor<BlockedProfiles>()).count, 0)
+    XCTAssertEqual(try container.mainContext.fetch(FetchDescriptor<SavedLocation>()).count, 0)
+    XCTAssertEqual(manager.attachedUserRecordName, "userA")
+    XCTAssertFalse(manager.lastReattachForceSeedForTest)
+  }
+
+  func testAdoptEqualEstablishmentGenerationIsNoOp() async throws {
+    try await makeAttachedManager(namespace: "userA", isEnabled: true, engineState: .steady)
+    let store = SyncEngineStore(userRecordName: "userA")
+    store.establishmentGeneration = 2
+    seedLocalProfiles(count: 1)
+
+    await manager.adoptEstablishmentGeneration(2)
+
+    XCTAssertEqual(try container.mainContext.fetch(FetchDescriptor<BlockedProfiles>()).count, 1)
+    XCTAssertFalse(manager.didTearDownForTest)
+  }
+
+  func testAdoptionClearsEmergencyLedgerButPreservesSettingsLock() async throws {
+    try await makeAttachedManager(namespace: "userA", isEnabled: true, engineState: .steady)
+    let now = Date()
+    let store = SyncEngineStore(userRecordName: "userA")
+    store.establishmentGeneration = 1
+    _ = emergencyManager.recordAndEnqueueUnblock(now: now)
+    emergencyManager.applyRemoteEmergencySettings(
+      SyncedEmergencySettings(
+        unblocksRemaining: 1, resetPeriodInDays: 14, lastResetDate: now,
+        settingsLocked: true, version: 7, lastModified: now, originDeviceId: "parent"))
+
+    await manager.adoptEstablishmentGeneration(2)
+
+    XCTAssertEqual(emergencyManager.currentResetEpoch, 0)
+    XCTAssertEqual(emergencyManager.getRemainingEmergencyUnblocks(), 3)
+    XCTAssertTrue(emergencyManager.currentEmergencySettings(deviceId: "device").settingsLocked)
+    XCTAssertEqual(emergencyManager.currentEmergencySettings(deviceId: "device").resetPeriodInDays, 14)
+  }
+
   func testNotNowLeavesEngineOffButRePromptable() async throws {
     try await makeAttachedManager(namespace: "userA", isEnabled: true, engineState: .steady)
     manager.resolveAccountChange(availability: .available(recB), newName: "userB")

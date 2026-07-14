@@ -253,6 +253,12 @@ class EmergencyUnblockManager: ObservableObject {
     SyncedEmergencyEpoch(epoch: currentResetEpoch)
   }
 
+  func clearLedgerForGenerationAdoption() {
+    currentResetEpoch = 0
+    defaults.removeObject(forKey: LedgerKey.events)
+    objectWillChange.send()
+  }
+
   func resetAllStateForAccountSwitch() {
     emergencyUnblocksResetPeriodInDays = 28
     lastEmergencyUnblocksResetDateTimestamp = 0

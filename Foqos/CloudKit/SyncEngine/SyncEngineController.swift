@@ -87,6 +87,7 @@ final class SyncEngineController: SyncEngineDriverDelegate {
   // Phase F reset hook: fetched SyncResetRequest records are routed here (§8.3),
   // never through the generic modification apply path (CRA-2).
   var onFetchedResetCommand: ((CKRecord) -> Void)?
+  var onFetchedEstablishment: ((CKRecord) -> Void)?
   // T4b §5.5 zone-change confirmation hook (CRA-3-style), wired to ResetController in
   // Phase E to advance resetIntent stages.
   var onZoneChangeConfirmed: (([CKRecordZone.ID], [CKRecordZone.ID]) -> Void)?
@@ -502,6 +503,10 @@ final class SyncEngineController: SyncEngineDriverDelegate {
     }
     var modificationOutcomes: [String] = []
     for record in modifications {
+      if record.recordType == SyncedEstablishment.recordType {
+        onFetchedEstablishment?(record)
+        continue
+      }
       if record.recordType == SyncResetRequest.recordType {
         onFetchedResetCommand?(record)  // §8.3 — never applied via applyFetchedModification
         continue

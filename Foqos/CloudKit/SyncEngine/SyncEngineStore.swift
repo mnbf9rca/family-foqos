@@ -249,6 +249,15 @@ final class SyncEngineStore {
     }
   }
 
+  func clearGenerationScopedBookkeeping() {
+    locked {
+      self.defaults.removeObject(forKey: self.key("system_fields"))
+      self.defaults.removeObject(forKey: self.key("delete_tombstones"))
+      self.defaults.removeObject(forKey: self.key("delete_watermarks"))
+      self.defaults.removeObject(forKey: self.key("failed_applies"))
+    }
+  }
+
   // MARK: - Legacy cleanup one-shot (§2.1, §11)
 
   /// Reuses the pre-existing per-user key `family_foqos_legacy_session_cleanup_complete_<user>`.
