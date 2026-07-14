@@ -1,7 +1,13 @@
 import DeviceActivity
 
 public class TimerActivityUtil {
+  /// #238: reload the home-screen widget after every scheduled interval event. Overridable in
+  /// tests and configured by the monitor extension so FoqosShared does not link WidgetKit.
+  public nonisolated(unsafe) static var reloadWidgets: @Sendable () -> Void = {}
+
   public static func startTimerActivity(for activity: DeviceActivityName) {
+    defer { Self.reloadWidgets() }
+
     let parts = getTimerParts(from: activity)
 
     guard let timerActivity = getTimerActivity(for: parts.deviceActivityId),
@@ -14,6 +20,8 @@ public class TimerActivityUtil {
   }
 
   public static func stopTimerActivity(for activity: DeviceActivityName) {
+    defer { Self.reloadWidgets() }
+
     let parts = getTimerParts(from: activity)
 
     guard let timerActivity = getTimerActivity(for: parts.deviceActivityId),

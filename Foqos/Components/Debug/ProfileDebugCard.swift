@@ -52,8 +52,20 @@ struct ProfileDebugCard: View {
 
       // Physical Unlock
       Group {
-        DebugRow(label: "NFC Tag ID", value: profile.physicalUnblockNFCTagId ?? "nil")
-        DebugRow(label: "QR Code ID", value: profile.physicalUnblockQRCodeId ?? "nil")
+        DebugRow(
+          label: "NFC Tag ID",
+          value: DebugRedaction.physicalUnblockNFCTagIdForDisplay(
+            profile.physicalUnblockNFCTagId,
+            mode: AppModeManager.shared.currentMode
+          ) ?? "nil"
+        )
+        DebugRow(
+          label: "QR Code ID",
+          value: DebugRedaction.physicalUnblockQRCodeIdForDisplay(
+            profile.physicalUnblockQRCodeId,
+            mode: AppModeManager.shared.currentMode
+          ) ?? "nil"
+        )
       }
 
       Divider()

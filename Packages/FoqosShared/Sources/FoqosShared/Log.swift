@@ -103,14 +103,67 @@ public final class Log: @unchecked Sendable {  // SAFETY: entries/file I/O prote
   /// Whether to persist logs to file
   public let fileLoggingEnabled: Bool = true
 
-  private var logDirectory: URL? {
+  // MARK: - Per-process log file naming (#250)
+
+  public static let appGroupIdentifier = "group.com.cynexia.family-foqos"
+  private static let processLogTag = logBaseName(forBundleIdentifier: Bundle.main.bundleIdentifier)
+
+  /// #250: a distinct per-process basename tag so app/extensions never write to the same file.
+  public static func logBaseName(forBundleIdentifier bundleID: String?) -> String {
+    guard let bundleID, !bundleID.isEmpty else { return "app" }
+    if bundleID.hasSuffix(".FoqosDeviceMonitor") { return "monitor" }
+    if bundleID.hasSuffix(".FoqosWidget") { return "widget" }
+    if bundleID.hasSuffix(".FoqosShieldConfig") { return "shield" }
+    if bundleID == "com.cynexia.family-foqos" { return "app" }
+    return bundleID.lowercased()
+      .replacingOccurrences(of: ".", with: "-")
+      .replacingOccurrences(of: "_", with: "-")
+      .replacingOccurrences(of: "/", with: "-")
+  }
+
+  /// #250: every per-process log file in the shared directory, newest-first with a stable tie-break.
+  public static func allLogFileURLs(inDirectory dir: URL, using fileManager: FileManager) -> [URL] {
     guard
-      let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)
-        .first
-    else {
+      let entries = try? fileManager.contentsOfDirectory(
+        at: dir, includingPropertiesForKeys: [.contentModificationDateKey])
+    else { return [] }
+
+    let logFiles = entries.filter {
+      $0.lastPathComponent.hasPrefix("foqos-") && $0.pathExtension == "log"
+    }
+    return logFiles.sorted { lhs, rhs in
+      let lhsDate =
+        (try? lhs.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+        ?? .distantPast
+      let rhsDate =
+        (try? rhs.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+        ?? .distantPast
+      if lhsDate != rhsDate { return lhsDate > rhsDate }
+      return lhs.lastPathComponent < rhs.lastPathComponent
+    }
+  }
+
+  /// #250: staging destination name = already-unique per-process basename.
+  public static func stagingDestinationName(for fileURL: URL) -> String {
+    fileURL.lastPathComponent
+  }
+
+  private var logDirectory: URL? {
+    let baseDir: URL
+    if let container = fileManager.containerURL(
+      forSecurityApplicationGroupIdentifier: Self.appGroupIdentifier)
+    {
+      baseDir = container
+    } else if let appSupport = fileManager.urls(
+      for: .applicationSupportDirectory,
+      in: .userDomainMask
+    ).first {
+      baseDir = appSupport
+    } else {
       return nil
     }
-    let logsDir = appSupport.appendingPathComponent("Logs", isDirectory: true)
+
+    let logsDir = baseDir.appendingPathComponent("Logs", isDirectory: true)
     if !fileManager.fileExists(atPath: logsDir.path) {
       try? fileManager.createDirectory(at: logsDir, withIntermediateDirectories: true)
     }
@@ -118,7 +171,7 @@ public final class Log: @unchecked Sendable {  // SAFETY: entries/file I/O prote
   }
 
   private var currentLogFile: URL? {
-    logDirectory?.appendingPathComponent("foqos.log")
+    logDirectory?.appendingPathComponent("foqos-\(Self.processLogTag).log")
   }
 
   private init() {
@@ -249,11 +302,12 @@ public final class Log: @unchecked Sendable {  // SAFETY: entries/file I/O prote
 
   private func rotateLogFiles() {
     guard let logDir = logDirectory, let currentFile = currentLogFile else { return }
+    let tag = Self.processLogTag
 
     // Remove oldest if at max
     for i in stride(from: maxLogFiles - 1, through: 1, by: -1) {
-      let oldFile = logDir.appendingPathComponent("foqos.\(i).log")
-      let newFile = logDir.appendingPathComponent("foqos.\(i + 1).log")
+      let oldFile = logDir.appendingPathComponent("foqos-\(tag).\(i).log")
+      let newFile = logDir.appendingPathComponent("foqos-\(tag).\(i + 1).log")
       if fileManager.fileExists(atPath: oldFile.path) {
         if i == maxLogFiles - 1 {
           try? fileManager.removeItem(at: oldFile)
@@ -264,7 +318,7 @@ public final class Log: @unchecked Sendable {  // SAFETY: entries/file I/O prote
     }
 
     // Move current to .1
-    let rotatedFile = logDir.appendingPathComponent("foqos.1.log")
+    let rotatedFile = logDir.appendingPathComponent("foqos-\(tag).1.log")
     try? fileManager.moveItem(at: currentFile, to: rotatedFile)
   }
 
@@ -280,24 +334,11 @@ public final class Log: @unchecked Sendable {  // SAFETY: entries/file I/O prote
     return queue.sync { entries }
   }
 
-  /// Get all log file URLs — MUST be called from within `queue` (or `queue.sync`)
+  /// Get all log file URLs (every process's files in the shared container) — MUST be called from
+  /// within `queue` (or `queue.sync`).
   private func _getLogFileURLsUnsafe() -> [URL] {
     guard let logDir = logDirectory else { return [] }
-
-    var urls: [URL] = []
-
-    if let currentFile = currentLogFile, fileManager.fileExists(atPath: currentFile.path) {
-      urls.append(currentFile)
-    }
-
-    for i in 1..<maxLogFiles {
-      let rotatedFile = logDir.appendingPathComponent("foqos.\(i).log")
-      if fileManager.fileExists(atPath: rotatedFile.path) {
-        urls.append(rotatedFile)
-      }
-    }
-
-    return urls
+    return Self.allLogFileURLs(inDirectory: logDir, using: fileManager)
   }
 
   /// Get all log file URLs for export (thread-safe)
@@ -309,16 +350,27 @@ public final class Log: @unchecked Sendable {  // SAFETY: entries/file I/O prote
   /// Runs within the serial queue so no rotation can occur mid-copy, but does
   /// not provide an all-or-nothing filesystem transaction if a copy fails.
   /// - Parameter stagingDir: Destination directory (must already exist).
-  /// - Throws: If any file copy fails.
   public func copyLogFilesToStagingDirectory(_ stagingDir: URL) throws {
     try queue.sync {
       let urls = _getLogFileURLsUnsafe()
-      for (index, url) in urls.enumerated() {
-        let destName = index == 0 ? "foqos-current.log" : "foqos-\(index).log"
-        let destURL = stagingDir.appendingPathComponent(destName)
-        try fileManager.copyItem(at: url, to: destURL)
+      for url in urls {
+        let destURL = stagingDir.appendingPathComponent(Self.stagingDestinationName(for: url))
+        do {
+          try fileManager.copyItem(at: url, to: destURL)
+        } catch {
+          // #250 best-effort only for sibling-process rotation/removal races. Other copy
+          // failures mean the export is incomplete for a real reason and should surface.
+          guard Self.isVanishedSourceCopyError(error) else { throw error }
+        }
       }
     }
+  }
+
+  private static func isVanishedSourceCopyError(_ error: Error) -> Bool {
+    let nsError = error as NSError
+    guard nsError.domain == NSCocoaErrorDomain else { return false }
+    let code = CocoaError.Code(rawValue: nsError.code)
+    return code == .fileNoSuchFile || code == .fileReadNoSuchFile
   }
 
   /// Get combined log content as a string

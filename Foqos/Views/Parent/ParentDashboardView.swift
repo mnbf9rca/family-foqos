@@ -550,8 +550,10 @@ struct ParentDashboardView: View {
       if heartbeatManager.monitoredDevices.isEmpty {
         EmptyMemberCard(
           icon: "antenna.radiowaves.left.and.right",
-          title: "No Devices",
-          description: "Child devices will appear here when they activate a profile"
+          title: "No devices reporting",
+          description:
+            "Devices appear here once they report status. A child on an older app version won't "
+            + "appear even while actively blocking — update their app to see it here."
         )
       } else {
         ForEach(heartbeatManager.monitoredDevices) { device in
@@ -997,7 +999,7 @@ struct FamilyMemberCard: View {
   @State private var showRemoveConfirmation = false
   @State private var isResettingEmergency = false
   @State private var isResettingThrottle = false
-  @State private var showResetSuccess = false
+  @State private var resetStatus: ParentResetCommandStatus = .idle
   @State private var showResetError = false
   @State private var resetErrorMessage = ""
 
@@ -1026,6 +1028,12 @@ struct FamilyMemberCard: View {
         Text("Added \(member.enrolledAt, style: .date)")
           .font(.caption)
           .foregroundColor(.secondary)
+
+        if let statusText = resetStatus.displayText {
+          Text(statusText)
+            .font(.caption2)
+            .foregroundColor(resetStatus == .confirmed ? .green : .secondary)
+        }
       }
 
       Spacer()
@@ -1060,14 +1068,21 @@ struct FamilyMemberCard: View {
         if isResettingEmergency || isResettingThrottle {
           ProgressView()
             .scaleEffect(0.8)
-        } else if showResetSuccess {
-          Image(systemName: "checkmark.circle.fill")
-            .foregroundColor(.green)
         } else {
-          Image(systemName: "ellipsis.circle")
-            .foregroundColor(.secondary)
+          switch resetStatus {
+          case .awaitingChild:
+            Image(systemName: "paperplane.circle")
+              .foregroundColor(.secondary)
+          case .confirmed:
+            Image(systemName: "checkmark.circle.fill")
+              .foregroundColor(.green)
+          case .idle:
+            Image(systemName: "ellipsis.circle")
+              .foregroundColor(.secondary)
+          }
         }
       }
+      .accessibilityLabel(resetStatus.displayText ?? "More")
       .alert("Error", isPresented: $showResetError) {
         Button("OK", role: .cancel) {}
       } message: {
@@ -1102,6 +1117,7 @@ struct FamilyMemberCard: View {
       return
     }
 
+    resetStatus = .idle
     isResettingEmergency = true
 
     Task {
@@ -1115,14 +1131,9 @@ struct FamilyMemberCard: View {
 
         await MainActor.run {
           isResettingEmergency = false
-          showResetSuccess = true
+          resetStatus = .afterSuccessfulSave
         }
-
-        // Auto-dismiss success after 2 seconds
-        try? await Task.sleep(nanoseconds: 2_000_000_000)
-        await MainActor.run {
-          showResetSuccess = false
-        }
+        await pollForConfirmation(command)
       } catch {
         await MainActor.run {
           isResettingEmergency = false
@@ -1142,6 +1153,7 @@ struct FamilyMemberCard: View {
       return
     }
 
+    resetStatus = .idle
     isResettingThrottle = true
 
     Task {
@@ -1155,14 +1167,9 @@ struct FamilyMemberCard: View {
 
         await MainActor.run {
           isResettingThrottle = false
-          showResetSuccess = true
+          resetStatus = .afterSuccessfulSave
         }
-
-        // Auto-dismiss success after 2 seconds
-        try? await Task.sleep(nanoseconds: 2_000_000_000)
-        await MainActor.run {
-          showResetSuccess = false
-        }
+        await pollForConfirmation(command)
       } catch {
         await MainActor.run {
           isResettingThrottle = false
@@ -1170,6 +1177,24 @@ struct FamilyMemberCard: View {
           showResetError = true
         }
       }
+    }
+  }
+
+  private func pollForConfirmation(_ command: FamilyCommand) async {
+    for _ in 0..<5 {
+      try? await Task.sleep(nanoseconds: 3_000_000_000)
+
+      let stillPending: Bool
+      do {
+        stillPending = try await CloudKitManager.shared.commandIsPending(command)
+      } catch {
+        return
+      }
+
+      let next = ParentResetCommandStatus.afterConfirmationProbe(
+        commandStillPending: stillPending)
+      await MainActor.run { resetStatus = next }
+      if next == .confirmed { return }
     }
   }
 }

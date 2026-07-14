@@ -9,6 +9,7 @@ import DeviceActivity
 import FoqosShared
 import ManagedSettings
 import OSLog
+import WidgetKit
 
 private let log = Logger(
   subsystem: "com.cynexia.family-foqos.monitor",
@@ -24,6 +25,9 @@ class DeviceActivityMonitorExtension: DeviceActivityMonitor {
     SharedData.configure(
       suite: UserDefaults(suiteName: "group.com.cynexia.family-foqos")!
     )
+    TimerActivityUtil.reloadWidgets = {
+      WidgetCenter.shared.reloadTimelines(ofKind: "ProfileControlWidget")
+    }
     super.init()
   }
 

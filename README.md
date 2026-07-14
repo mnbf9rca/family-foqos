@@ -2,7 +2,7 @@
   <img src="./Foqos/Assets.xcassets/AppIcon.appiconset/AppIcon~ios-marketing.png" width="250" style="border-radius: 40px;">
 </p>
 
-<h1 align="center"><a href="TODO">Family Foqos</a></h1>
+<h1 align="center"><a href="https://github.com/mnbf9rca/family-foqos">Family Foqos</a></h1>
 
 <p align="center">
   <strong>Focus, the physical way</strong>
@@ -25,7 +25,7 @@ Family Foqos adds:
 But still has all these features from the original Foqos app:
 
 - **🏷️ NFC & QR Blocking**: Start or stop sessions with a quick tag tap or QR scan
-- **🧩 Mix & Match Strategies**: Manual, NFC, QR, NFC + Manual, QR + Manual, NFC + Timer, QR + Timer
+- **🧩 Start Triggers & Stop Conditions**: Mix and match how each profile *starts* (manual, NFC, QR, schedule, deep link) and how it *stops* (manual, timer, NFC, QR, schedule, deep link) — no fixed "strategy" to pick
 - **⏱️ Timer-Based Blocking**: Block for a set duration, then unblock with NFC or QR
 - **🔐 Physical Unblock**: Optionally require a specific tag or code to stop
 - **📱 Profiles for Life**: Create profiles for work, study, sleep — whatever you need
@@ -36,7 +36,7 @@ But still has all these features from the original Foqos app:
 
 ## 📋 Requirements
 
-- iOS 17.6+
+- iOS 18.6+
 - iPhone with NFC capability (for NFC features)
 - Screen Time permissions (for app blocking)
 
@@ -44,7 +44,7 @@ But still has all these features from the original Foqos app:
 
 ### From the App Store
 
-1. Download Foqos from the [App Store](TODO)
+1. Family Foqos is not yet published on the App Store — build it from source (see the Development section below)
 2. Grant Screen Time permissions when prompted
 3. Create your first blocking profile
 4. Optionally set up NFC tags or a QR code and start focusing
@@ -71,9 +71,9 @@ But still has all these features from the original Foqos app:
 
 ### Prerequisites
 
-- Xcode 15.0+
-- iOS 17.0+ SDK
-- Swift 5.9+
+- Xcode 16.0+
+- iOS 18.6+ SDK
+- Swift 6.0
 - Apple Developer Account (for Screen Time and NFC entitlements)
 
 ### Building the Project
@@ -112,48 +112,55 @@ family-foqos/
 - **WidgetKit** — Home Screen widgets
 - **App Intents** — Shortcuts and automation
 
-## 🔒 Blocking Strategies
+## 🔒 Start Triggers & Stop Conditions
 
-All strategies live in `Foqos/Models/Strategies/` and are orchestrated by `Foqos/Utils/StrategyManager.swift`.
+A profile in Family Foqos (schema v2) is configured by two independent value types — **how it
+starts** and **how it stops** — rather than by picking a single "strategy". Both are stored as
+JSON on the profile (`startTriggersData` / `stopConditionsData` in
+`Foqos/Models/BlockedProfiles.swift`) and surfaced through the computed `startTriggers` /
+`stopConditions` properties.
 
-- **NFC Tags (`NFCBlockingStrategy`)**
+### Start triggers (`Foqos/Models/ProfileStartTriggers.swift`)
 
-  - Start: scan any NFC tag to start the selected profile
-  - Stop: scan the same tag to stop the session
-  - **Physical Unblock (optional)**: set `physicalUnblockNFCTagId` on a profile to require that exact tag to stop (ignores the session's start tag)
+Any combination of:
 
-- **QR Codes (`QRCodeBlockingStrategy`)**
+- `manual` — start from within the app
+- `anyNFC` — start by scanning any NFC tag
+- `specificNFC` — start only by scanning the tag stored in `startNFCTagId`
+- `anyQR` — start by scanning any QR code
+- `specificQR` — start only by scanning the code stored in `startQRCodeId`
+- `schedule` — start automatically on the profile's schedule
+- `deepLink` — start via the profile's deep link (see below)
 
-  - Start: scan any QR code to start the selected profile
-  - Stop: scan the same QR code to stop the session
-  - **Physical Unblock (optional)**: set `physicalUnblockQRCodeId` on a profile to require that exact code to stop (ignores the session's start code)
-  - The app can display/share a QR representing the profile's deep link using `QRCodeView`
+Helpers: `hasNFC` (any NFC start), `hasQR` (any QR start), `isValid` (at least one trigger set).
 
-- **Manual (`ManualBlockingStrategy`)**
+### Stop conditions (`Packages/FoqosShared/Sources/FoqosShared/ProfileStopConditions.swift`)
 
-  - Start/Stop entirely from within the app (no external tag/code required)
+Any combination of:
 
-- **NFC + Manual (`NFCManualBlockingStrategy`)**
+- `manual` — stop from within the app
+- `timer` — stop automatically after a chosen duration
+- `anyNFC` — stop by scanning any NFC tag
+- `sameNFC` — stop only by scanning the same tag that started the session
+- `specificNFC` — stop only by scanning the tag stored in `stopNFCTagId`
+- `anyQR` / `sameQR` / `specificQR` — the QR-code equivalents (`stopQRCodeId` holds the specific code)
+- `schedule` — stop automatically on the profile's schedule
+- `deepLink` — stop via the profile's deep link
 
-  - Start: manually from within the app
-  - Stop: scan any NFC tag (restricted to `physicalUnblockNFCTagId` if set)
+Helpers: `isValid`, `hasNFC`, `hasQR`, `requiresPhysicalItemOnly` (true when the only way to stop
+is a physical tag/code — used to warn the user before they start).
 
-- **QR + Manual (`QRManualBlockingStrategy`)**
+The specific-item IDs `startNFCTagId` / `startQRCodeId` / `stopNFCTagId` / `stopQRCodeId`
+supersede the legacy `physicalUnblockNFCTagId` / `physicalUnblockQRCodeId` fields.
 
-  - Start: manually from within the app
-  - Stop: scan any QR code (restricted to `physicalUnblockQRCodeId` if set)
-
-- **NFC + Timer (`NFCTimerBlockingStrategy`)** ⏱️
-
-  - Start: select a duration (timer) from within the app
-  - Stop: scan any NFC tag to end early (restricted to `physicalUnblockNFCTagId` if set)
-  - Perfect for time-boxed focus sessions with a physical exit mechanism
-
-- **QR + Timer (`QRTimerBlockingStrategy`)** ⏱️
-
-  - Start: select a duration (timer) from within the app
-  - Stop: scan any QR code to end early (restricted to `physicalUnblockQRCodeId` if set)
-  - Perfect for time-boxed focus sessions with a physical exit mechanism
+> **Legacy V1 strategy classes.** The classes in `Foqos/Models/Strategies/` (`NFCBlockingStrategy`,
+> `QRCodeBlockingStrategy`, `ManualBlockingStrategy`, `NFCManualBlockingStrategy`,
+> `QRManualBlockingStrategy`, `NFCTimerBlockingStrategy`, `QRTimerBlockingStrategy`, …) and the
+> `physicalUnblock*` fields exist **only** to execute unmigrated V1 profiles and to sync with V1
+> devices; V1 profiles are resolved to start/stop actions via
+> `Foqos/Utils/StartStopActionResolver.swift`. V2 profiles carry `profileSchemaVersion == 2` and
+> leave `blockingStrategyId` unset — there is no strategy-picker UI. (Removal of the legacy
+> `blockingStrategyId` system is tracked in #59.)
 
 ### QR deep links
 
@@ -202,7 +209,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🔗 Links
 
-- [App Store](TODO)
+- App Store — not yet published (build from source via the GitHub repo above)
 - [GitHub Issues](https://github.com/mnbf9rca/family-foqos/issues)
 - [Donate to Common Sense Media](https://www.commonsensemedia.org/donate)
 

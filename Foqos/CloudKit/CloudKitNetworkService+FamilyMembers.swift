@@ -6,8 +6,9 @@ extension CloudKitNetworkService {
   // MARK: - Family Member Management
 
   func saveFamilyMember(_ member: FamilyMember) async throws {
+    // PII-SAFE LOG (#252): log the UUID + role, never the real person name.
     Log.info(
-      "Saving family member '\(member.displayName)' as \(member.role.displayName)",
+      "Saving family member \(member.redactedLogLabel) as \(member.role.displayName)",
       category: .cloudKit)
 
     try await createPolicyZoneIfNeeded()
@@ -17,7 +18,7 @@ extension CloudKitNetworkService {
 
     do {
       _ = try await privateDatabase.save(record)
-      Log.info("Saved family member: \(member.displayName)", category: .cloudKit)
+      Log.info("Saved family member: \(member.redactedLogLabel)", category: .cloudKit)
     } catch {
       Log.error("Failed to save family member: \(error)", category: .cloudKit)
       throw CloudKitError.saveFailed(error)
@@ -33,7 +34,7 @@ extension CloudKitNetworkService {
 
     do {
       try await privateDatabase.deleteRecord(withID: recordID)
-      Log.info("Deleted family member: \(member.displayName)", category: .cloudKit)
+      Log.info("Deleted family member: \(member.redactedLogLabel)", category: .cloudKit)
     } catch {
       throw CloudKitError.deleteFailed(error)
     }
@@ -58,10 +59,9 @@ extension CloudKitNetworkService {
     try await privateDatabase.save(share)
     self.activeZoneShare = share
 
-    let name =
-      participant.userIdentity.nameComponents?.formatted()
-      ?? participant.userIdentity.lookupInfo?.emailAddress ?? "Unknown"
-    Log.info("Removed participant '\(name)' from share", category: .cloudKit)
+    let participantId = participant.userIdentity.userRecordID?.recordName ?? "unknown"
+    // PII-SAFE LOG (#252): log only the opaque CK record name, never nameComponents/email.
+    Log.info("Removed participant \(participantId) from share", category: .cloudKit)
     // NOTE: Manager handles refreshShareParticipants() after this call
   }
 
