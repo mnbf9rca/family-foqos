@@ -59,7 +59,13 @@ struct ProfileDebugCard: View {
             mode: AppModeManager.shared.currentMode
           ) ?? "nil"
         )
-        DebugRow(label: "QR Code ID", value: profile.physicalUnblockQRCodeId ?? "nil")
+        DebugRow(
+          label: "QR Code ID",
+          value: DebugRedaction.physicalUnblockQRCodeIdForDisplay(
+            profile.physicalUnblockQRCodeId,
+            mode: AppModeManager.shared.currentMode
+          ) ?? "nil"
+        )
       }
 
       Divider()
