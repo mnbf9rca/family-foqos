@@ -161,6 +161,7 @@ final class ResetController {
       }
       store.transaction { s in
         s.establishmentGeneration += 1
+        s.clearGenerationScopedBookkeeping()
         s.resetIntent = ResetIntent(
           id: intent.id, clear: intent.clear, wipe: true, stage: .wiping,
           priorCommandId: intent.priorCommandId)

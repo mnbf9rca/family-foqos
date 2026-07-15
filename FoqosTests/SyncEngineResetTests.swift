@@ -179,6 +179,12 @@ final class SyncEngineResetTests: XCTestCase {
   {
     let now = Date()
     store.establishmentGeneration = 1
+    let processed = UUID()
+    store.markProcessed(processed)
+    store.setSystemFields(Data([0x01]), for: "stale")
+    store.setTombstone(recordName: "stale", changeTag: "tag")
+    store.setDeleteWatermark(recordName: "stale", value: 4)
+    store.addFailedApply(FailedApply(recordName: "stale", recordType: SyncedProfile.recordType, op: .upsert))
     let outbox = MockResetOutbox()
     let seeder = MockResetSeeder()
     let controller = makeController(outbox: outbox, seeder: seeder)
@@ -189,6 +195,11 @@ final class SyncEngineResetTests: XCTestCase {
 
     XCTAssertEqual(store.establishmentGeneration, 2)
     XCTAssertEqual(store.resetIntent?.stage, .wiping)
+    XCTAssertNil(store.systemFields(for: "stale"))
+    XCTAssertTrue(store.deleteTombstones.isEmpty)
+    XCTAssertNil(store.deleteWatermark(for: "stale"))
+    XCTAssertTrue(store.failedApplies.isEmpty)
+    XCTAssertTrue(store.processedResetCommandIds.contains(processed))
     XCTAssertEqual(seeder.wipeLocalCount, 1)
     XCTAssertEqual(outbox.establishmentSaveCount, 1)
     XCTAssertEqual(outbox.commandSaveCount, 0)

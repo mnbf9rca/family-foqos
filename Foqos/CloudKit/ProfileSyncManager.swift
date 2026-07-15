@@ -66,6 +66,7 @@ class ProfileSyncManager: ObservableObject {
   private var attachedDriverFactory: ((Data?) -> SyncEngineDriver)?
   private var didRetryAccountResolution = false
   private var accountResolutionRetryTask: Task<Void, Never>?
+  // ProfileSyncManager is @MainActor; adoption coalescing state is serialized by actor isolation.
   private var isAdoptingEstablishmentGeneration = false
   private var pendingAdoptionGeneration: Int?
 

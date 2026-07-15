@@ -99,18 +99,28 @@ final class SyncApplyService {
   }
 
   private func generationGate(_ record: CKRecord) -> ApplyOutcome? {
-    let isStampedType =
-      record.recordType == SyncedProfile.recordType
-      || record.recordType == SyncedLocation.recordType
-      || record.recordType == SyncedEmergencyEpoch.recordType
-      || record.recordType == SyncedEmergencyUnblockEvent.recordType
-    guard isStampedType else { return nil }
+    guard let generationKey = generationFieldKey(for: record.recordType) else { return nil }
 
-    let recordGeneration = record["generation"] as? Int ?? 0
+    let recordGeneration = record[generationKey] as? Int ?? 0
     let localGeneration = store.establishmentGeneration
     if recordGeneration < localGeneration { return .skippedDeadWorld }
     if recordGeneration > localGeneration { return .skippedNewerGeneration }
     return nil
+  }
+
+  private func generationFieldKey(for recordType: CKRecord.RecordType) -> String? {
+    switch recordType {
+    case SyncedProfile.recordType:
+      return SyncedProfile.FieldKey.generation.rawValue
+    case SyncedLocation.recordType:
+      return SyncedLocation.FieldKey.generation.rawValue
+    case SyncedEmergencyEpoch.recordType:
+      return SyncedEmergencyEpoch.FieldKey.generation.rawValue
+    case SyncedEmergencyUnblockEvent.recordType:
+      return SyncedEmergencyUnblockEvent.FieldKey.generation.rawValue
+    default:
+      return nil
+    }
   }
 
   // MARK: - Fetched deletions (§5.2)
