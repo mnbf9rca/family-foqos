@@ -79,7 +79,7 @@ Activation: `ScreenshotDemoMode.isActive` = launch args contain `--screenshot-de
 ### Release-blocker gates (release lane only; beta skips them)
 
 1. **CloudKit production schema gate:** the lane runs `xcrun cktool export-schema --environment production` and verifies every record type/field listed in a repo-committed `required-schema` file exists in the deployed production schema; anything missing aborts the lane before build. This makes #346 unmissable and permanently catches any future code-ahead-of-schema drift. Requires a CloudKit Management Token (CloudKit Console; expires periodically — the lane fails loudly asking for a fresh one).
-2. **Issue gate:** a `RELEASE_BLOCKERS` list of GitHub issue numbers in the Fastfile (initially `[345]`; #346 is covered by the schema gate). The lane checks each via `gh issue view --json state` and aborts, printing titles, while any remain open. Future blockers are a one-line edit.
+2. **Issue gate (label-based):** the lane runs `gh issue list --state open --label release-blocking` and aborts, printing titles, if any issues are returned. Query failure also aborts (fail closed). Maintenance = filing a labeled issue; no Fastfile edits. One-time setup: maintainer creates the `release-blocking` label (agent tooling is deny-ruled from `gh label create`) and it gets applied to #345/#346, matching their existing `[release-blocking]` title convention. (#346 is additionally covered by the schema gate.)
 - `screenshots`: as above; produces `fastlane/screenshots/` consumed by `release`.
 
 ## Archive storage (shared step in beta and release)
@@ -105,9 +105,10 @@ Activation: `ScreenshotDemoMode.isActive` = launch args contain `--screenshot-de
 ## One-time manual steps (maintainer)
 
 1. **Enable App Store Connect API access** (not currently enabled): App Store Connect → Users and Access → Integrations → App Store Connect API → Request Access (Account Holder only; approval is immediate). Then create a **Team Key with the App Manager role** (Developer is insufficient for some deliver operations) and store the `.p8` locally — it downloads exactly once.
-2. Generate a CloudKit Management Token in the CloudKit Console for `cktool` (schema gate); regenerate when it expires.
-3. Confirm/pick the TestFlight beta group.
-4. `brew install ruby` (if not present) + `bundle install`.
+2. Generate a CloudKit Management Token for `cktool` (schema gate): run `xcrun cktool save-token` **in a plain Terminal, not inside an agent session** — the pasted token must not land in a transcript. Regenerate when it expires.
+3. Create the `release-blocking` GitHub label and apply it to #345/#346 (agent tooling is deny-ruled from label creation).
+4. Confirm/pick the TestFlight beta group.
+5. `brew install ruby` (if not present) + `bundle install`.
 
 ## Decisions log
 
