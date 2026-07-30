@@ -15,7 +15,7 @@
 - CI: all lanes run locally on the maintainer's Mac.
 - Widget / Live Activity screenshots (snapshot cannot capture them).
 - V1 branch tooling, `match`, multi-locale screenshots (single locale, matching the live listing).
-- Privacy-manifest work (#345) and CloudKit prod schema deploy (#346) remain separate runway items.
+- Privacy-manifest work (#345) and CloudKit prod schema deploy (#346) remain separate runway items — but the `release` lane enforces both via its release-blocker gates (see Lanes).
 
 ## Toolchain and repo layout
 
@@ -61,6 +61,7 @@ Activation: `ScreenshotDemoMode.isActive` = launch args contain `--screenshot-de
 - `bundle exec fastlane screenshots` runs `snapshot` against a dedicated shared scheme + test plan containing only `FoqosUITests`, so the fast unit-test loop (2–3 s) never boots UI tests.
 - `ScreenshotTests` launches the app once per scenario and calls `snapshot("01-home-active")` etc. Status bar (9:41, full signal/battery) handled by snapshot.
 - Devices: both sets are captured and uploaded — iPhone 6.9" (ASC-required size) and 6.5". Language: whatever the live listing uses, confirmed when metadata is first pulled.
+- **Captions:** the live listing uses marketing composites (large caption + screenshot), which raw snapshot output does not reproduce. `frameit` closes the gap: it frames each screenshot in a device bezel with a caption above, captions versioned in the repo as frameit strings files (maintainer accepted the bezel style change from the current frameless look).
 - **Simulator hygiene (shared machine — other apps use Xcode/sims):** snapshot addresses simulators by name, the pattern AGENTS.md bans for tests because it clones sims into `~/Library/Developer/XCTestDevices` (~16 GB each). The lane records the XCTestDevices directory listing before the run and afterwards deletes only entries created during the run. Never `snapshot reset_simulators` (erases ALL simulators) and never a blanket XCTestDevices purge — other projects' simulators must remain untouched. Actual disk behavior verified during implementation.
 - The screenshots lane counts as a build/test activity under the one-implementation-stream-per-machine rule.
 
@@ -73,7 +74,12 @@ Activation: `ScreenshotDemoMode.isActive` = launch args contain `--screenshot-de
 ## Lanes
 
 - `beta`: preflight (clean tree, on `main`) → `gym` Release archive, automatic signing (`-allowProvisioningUpdates` + API key) → `pilot` upload to TestFlight beta group → archive-storage step.
-- `release`: same build path → `deliver` uploads build + screenshots + `metadata/` → submit for review only after explicit interactive confirmation → archive-storage step.
+- `release`: release-blocker gates (below) → same build path → `deliver` uploads build + screenshots + `metadata/` → submit for review only after explicit interactive confirmation → archive-storage step.
+
+### Release-blocker gates (release lane only; beta skips them)
+
+1. **CloudKit production schema gate:** the lane runs `xcrun cktool export-schema --environment production` and verifies every record type/field listed in a repo-committed `required-schema` file exists in the deployed production schema; anything missing aborts the lane before build. This makes #346 unmissable and permanently catches any future code-ahead-of-schema drift. Requires a CloudKit Management Token (CloudKit Console; expires periodically — the lane fails loudly asking for a fresh one).
+2. **Issue gate:** a `RELEASE_BLOCKERS` list of GitHub issue numbers in the Fastfile (initially `[345]`; #346 is covered by the schema gate). The lane checks each via `gh issue view --json state` and aborts, printing titles, while any remain open. Future blockers are a one-line edit.
 - `screenshots`: as above; produces `fastlane/screenshots/` consumed by `release`.
 
 ## Archive storage (shared step in beta and release)
@@ -98,9 +104,10 @@ Activation: `ScreenshotDemoMode.isActive` = launch args contain `--screenshot-de
 
 ## One-time manual steps (maintainer)
 
-1. Generate the App Store Connect API key and place the `.p8` locally.
-2. Confirm/pick the TestFlight beta group.
-3. `brew install ruby` (if not present) + `bundle install`.
+1. **Enable App Store Connect API access** (not currently enabled): App Store Connect → Users and Access → Integrations → App Store Connect API → Request Access (Account Holder only; approval is immediate). Then create a **Team Key with the App Manager role** (Developer is insufficient for some deliver operations) and store the `.p8` locally — it downloads exactly once.
+2. Generate a CloudKit Management Token in the CloudKit Console for `cktool` (schema gate); regenerate when it expires.
+3. Confirm/pick the TestFlight beta group.
+4. `brew install ruby` (if not present) + `bundle install`.
 
 ## Decisions log
 
@@ -111,3 +118,4 @@ Activation: `ScreenshotDemoMode.isActive` = launch args contain `--screenshot-de
 - Approach: canonical fastlane, Bundler-pinned (Approach 1 of 3 presented).
 - Build number = commit count (maintainer-confirmed); git hash injection reuses the existing BuildInfo.plist build phase.
 - Simulator cleanup must be surgical; machine is shared with other Xcode/simulator work.
+- Captions via frameit (bezel style accepted); release lane gated on cktool prod-schema verification + open-blocker-issue check; ASC API access to be enabled by Account Holder (App Manager team key).
