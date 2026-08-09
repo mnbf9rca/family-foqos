@@ -73,4 +73,40 @@ final class ScreenshotDemoStrategyManagerTests: XCTestCase {
     XCTAssertTrue(sessions.isEmpty)
     XCTAssertNil(manager.activeSession)
   }
+
+  func testGivenDemoBreak_WhenTimerTicks_ThenSharedGrantRemainsUnchanged() async throws {
+    let now = Date()
+    let profile = BlockedProfiles(name: "Homework", enableBreaks: true)
+    let session = BlockedProfileSession(
+      tag: "demo", blockedProfile: profile, startTime: now.addingTimeInterval(-2400))
+    session.breakStartTime = now.addingTimeInterval(-120)
+    session.breakEndDeadline = now.addingTimeInterval(-1)
+    context.insert(profile)
+    context.insert(session)
+    try context.save()
+
+    let expectedSharedSession = session.toSnapshot()
+    SharedData.createActiveSharedSession(for: expectedSharedSession)
+
+    try manager.loadScreenshotDemoSession(context: context)
+    try await Task.sleep(for: .milliseconds(1200))
+
+    XCTAssertEqual(SharedData.getActiveSharedSession(), expectedSharedSession)
+    XCTAssertTrue(applier.calls.isEmpty)
+    XCTAssertTrue(registrar.calls.isEmpty)
+  }
+
+  func testGivenDemoMode_WhenTogglingBlocking_ThenDoesNotStartSession() throws {
+    let profile = BlockedProfiles(name: "Homework")
+    profile.blockingStrategyId = ManualBlockingStrategy.id
+    context.insert(profile)
+    try context.save()
+
+    manager.toggleBlocking(context: context, activeProfile: profile)
+
+    XCTAssertNil(manager.activeSession)
+    XCTAssertTrue(try context.fetch(FetchDescriptor<BlockedProfileSession>()).isEmpty)
+    XCTAssertTrue(applier.calls.isEmpty)
+    XCTAssertTrue(registrar.calls.isEmpty)
+  }
 }

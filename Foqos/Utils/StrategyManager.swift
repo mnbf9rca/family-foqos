@@ -146,6 +146,7 @@ class StrategyManager: ObservableObject {
   #endif
 
   func toggleBlocking(context: ModelContext, activeProfile: BlockedProfiles?) {
+    guard !ScreenshotDemoMode.isActive else { return }
     if isBlocking {
       // #237 / MD3: reconcile against cross-process state before ending a possibly stale
       // on-screen session. The next Stop acts on the refreshed state.
@@ -285,6 +286,7 @@ class StrategyManager: ObservableObject {
   }
 
   func evaluateGrantExpiry(now: Date = Date()) {
+    guard !ScreenshotDemoMode.isActive else { return }
     guard let session = activeSession else { return }
     let profile = session.blockedProfile
     let live = BlockedProfiles.getSnapshot(for: profile)
