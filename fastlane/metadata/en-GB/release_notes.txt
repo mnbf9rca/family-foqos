@@ -1,0 +1,4 @@
+- Multi-parent support - A second parent can now join and manage the family. Just send them the share invite and they'll automatically get parent access.
+- Bug fix - Kids can now stop their own focus sessions without needing a lock code. Lock codes are still required to edit or delete locked profiles.
+- Stability - Fixed a crash that could happen when profiles were synced across devices.
+- Under the hood changes to prepare for more granular profile settings.
