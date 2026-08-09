@@ -3,25 +3,31 @@ require "securerandom"
 
 module ArchiveStorage
   def self.replace_directory(source:, destination:, logger: ->(message) { warn(message) })
-    Dir.glob("#{destination}.{tmp,backup}-*").each { |path| FileUtils.rm_rf(path) }
+    Dir.glob("#{destination}.tmp-*").each { |path| FileUtils.rm_rf(path) }
+    stale_backups = Dir.glob("#{destination}.backup-*")
+    if !File.exist?(destination) && !stale_backups.empty?
+      recovery = stale_backups.max_by { |path| [File.mtime(path), path] }
+      File.rename(recovery, destination)
+      logger.call("Archive backup recovered: #{recovery}")
+    end
+    stale_backups.each { |path| FileUtils.rm_rf(path) } if File.exist?(destination)
 
     suffix = "#{Process.pid}-#{SecureRandom.hex(6)}"
     temporary = "#{destination}.tmp-#{suffix}"
     backup = "#{destination}.backup-#{suffix}"
-    backup_created = false
 
     begin
       FileUtils.cp_r(source, temporary)
       if File.exist?(destination)
         File.rename(destination, backup)
-        backup_created = true
         logger.call("Archive backup created: #{backup}")
       end
       File.rename(temporary, destination)
-      FileUtils.rm_rf(backup) if backup_created
+      FileUtils.rm_rf(backup)
     rescue Exception
-      if backup_created && File.exist?(backup) && !File.exist?(destination)
+      if File.exist?(backup) && !File.exist?(destination)
         File.rename(backup, destination)
+        logger.call("Archive backup restored: #{backup}")
       end
       raise
     ensure

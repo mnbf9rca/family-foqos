@@ -103,6 +103,56 @@ Dir.mktmpdir do |root|
     warn "FAIL: interrupt did not restore the known-good backup to the expected path"
     exit 1
   end
+
+  interrupt_messages = []
+  rename_count = 0
+  File.define_singleton_method(:rename) do |source_path, destination_path|
+    rename_count += 1
+    rename.call(source_path, destination_path)
+    raise Interrupt if rename_count == 1
+  end
+  begin
+    ArchiveStorage.replace_directory(
+      source: source,
+      destination: destination,
+      logger: ->(message) { interrupt_messages << message }
+    )
+    warn "FAIL: interrupt immediately after backup rename should raise"
+    exit 1
+  rescue Interrupt
+    # Expected: Ctrl-C lands after the destination moved but before the call returns.
+  ensure
+    File.define_singleton_method(:rename, rename)
+  end
+
+  unless File.exist?(destination) && File.read(File.join(destination, "marker")) == "known-good"
+    warn "FAIL: post-rename interrupt did not restore the known-good backup"
+    exit 1
+  end
+  unless interrupt_messages.any? { |message| message.include?("#{destination}.backup-") }
+    warn "FAIL: post-rename interrupt did not report the backup path"
+    exit 1
+  end
+
+  FileUtils.rm_rf(destination)
+  stale_backup = "#{destination}.backup-stale-recovery"
+  FileUtils.mkdir_p(stale_backup)
+  File.write(File.join(stale_backup, "marker"), "recoverable")
+  begin
+    ArchiveStorage.replace_directory(
+      source: File.join(root, "still-missing.xcarchive"),
+      destination: destination
+    )
+    warn "FAIL: missing replacement source should raise after stale-backup recovery"
+    exit 1
+  rescue Errno::ENOENT
+    # Expected: replacement fails, but the stale known-good backup must survive.
+  end
+
+  unless File.exist?(destination) && File.read(File.join(destination, "marker")) == "recoverable"
+    warn "FAIL: stale backup was not recovered before the failed replacement"
+    exit 1
+  end
 end
 
 create_calls = []
