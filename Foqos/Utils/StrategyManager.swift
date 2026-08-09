@@ -136,6 +136,15 @@ class StrategyManager: ObservableObject {
     }
   }
 
+  #if DEBUG
+    func loadScreenshotDemoSession(context: ModelContext) throws {
+      activeSession = try BlockedProfileSession.mostRecentActiveSession(in: context)
+      if activeSession?.isActive == true {
+        startTimer()
+      }
+    }
+  #endif
+
   func toggleBlocking(context: ModelContext, activeProfile: BlockedProfiles?) {
     if isBlocking {
       // #237 / MD3: reconcile against cross-process state before ending a possibly stale
@@ -321,6 +330,7 @@ class StrategyManager: ObservableObject {
   }
 
   func reconcileGrants(context: ModelContext, now: Date = Date()) {
+    guard !ScreenshotDemoMode.isActive else { return }
     guard let session = activeSession else {
       SharedData.applyRestrictionsForCurrentState(
         process: .mainApp,
@@ -1087,6 +1097,7 @@ class StrategyManager: ObservableObject {
   }
 
   private func syncScheduleSessions(context: ModelContext) {
+    guard !ScreenshotDemoMode.isActive else { return }
     var hadDanglingGrant = false
 
     // Process any active scheduled sessions
@@ -1434,6 +1445,7 @@ class StrategyManager: ObservableObject {
   }
 
   func cleanUpGhostSchedules(context: ModelContext) {
+    guard !ScreenshotDemoMode.isActive else { return }
     let allActivities = DeviceActivityCenterUtil.getDeviceActivities()
     let scheduleTimerActivity = ScheduleTimerActivity()
     let scheduleActivities = scheduleTimerActivity.getAllScheduleTimerActivities(

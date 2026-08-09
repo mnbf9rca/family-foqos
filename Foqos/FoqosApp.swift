@@ -112,10 +112,12 @@ struct FoqosApp: App {
       suite: UserDefaults(suiteName: "group.com.cynexia.family-foqos")!
     )
     #if DEBUG
-      do {
-        try ScreenshotDemoSeeder.seed(container: container)
-      } catch {
-        Log.error("Demo seed failed: \(error.localizedDescription)", category: .app)
+      if ScreenshotDemoMode.isActive {
+        do {
+          try ScreenshotDemoSeeder.seed(container: container)
+        } catch {
+          Log.error("Demo seed failed: \(error.localizedDescription)", category: .app)
+        }
       }
     #endif
     Log.info("init() called", category: .app)

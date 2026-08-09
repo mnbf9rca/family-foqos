@@ -6,17 +6,37 @@ import XCTest
 @MainActor
 final class ScreenshotDemoSeederTests: XCTestCase {
   private var container: ModelContainer!
+  private let defaultsKeys = [
+    "family_foqos_app_mode",
+    "family_foqos_has_selected_mode",
+    "family_foqos_has_completed_onboarding",
+    "family_foqos_show_intro_screen",
+    "family_foqos_show_mode_selection",
+  ]
+  private var originalDefaults: [String: Any] = [:]
+  private var originallyAbsentKeys: Set<String> = []
+  private var originalMode: AppMode = .individual
+  private var originalHasSelectedMode = false
 
   override func setUp() async throws {
     try await super.setUp()
     container = try TestModelContainer.create()
+    originalDefaults.removeAll()
+    originallyAbsentKeys.removeAll()
+    originalMode = AppModeManager.shared.currentMode
+    originalHasSelectedMode = AppModeManager.shared.hasSelectedMode
+    for key in defaultsKeys {
+      if let value = UserDefaults.standard.object(forKey: key) {
+        originalDefaults[key] = value
+      } else {
+        originallyAbsentKeys.insert(key)
+      }
+    }
     ScreenshotDemoMode.overrideForTesting = true
     ScreenshotDemoMode.scenarioOverrideForTesting = .homeActive
   }
 
   override func tearDown() async throws {
-    ScreenshotDemoMode.overrideForTesting = nil
-    ScreenshotDemoMode.scenarioOverrideForTesting = nil
     // Seeder mutates shared singletons; reset so later test classes see clean state.
     CloudKitManager.shared.isSignedIn = false
     CloudKitManager.shared.familyMembers = []
@@ -24,10 +44,18 @@ final class ScreenshotDemoSeederTests: XCTestCase {
     CloudKitManager.shared.isShareOwner = false
     HeartbeatManager.shared.monitoredDevices = []
     LockCodeManager.shared.seedForScreenshots([])
-    AppModeManager.shared.selectMode(.individual)
-    UserDefaults.standard.removeObject(forKey: "family_foqos_has_completed_onboarding")
-    UserDefaults.standard.removeObject(forKey: "family_foqos_show_intro_screen")
-    UserDefaults.standard.removeObject(forKey: "family_foqos_show_mode_selection")
+    AppModeManager.shared.currentMode = originalMode
+    AppModeManager.shared.hasSelectedMode = originalHasSelectedMode
+    await Task.yield()
+    for key in defaultsKeys {
+      if originallyAbsentKeys.contains(key) {
+        UserDefaults.standard.removeObject(forKey: key)
+      } else if let value = originalDefaults[key] {
+        UserDefaults.standard.set(value, forKey: key)
+      }
+    }
+    ScreenshotDemoMode.scenarioOverrideForTesting = nil
+    ScreenshotDemoMode.overrideForTesting = nil
     try await super.tearDown()
   }
 
@@ -39,6 +67,7 @@ final class ScreenshotDemoSeederTests: XCTestCase {
     let profiles = try context.fetch(FetchDescriptor<BlockedProfiles>())
     XCTAssertEqual(profiles.count, 4)
     XCTAssertTrue(profiles.contains { $0.isManaged })
+    XCTAssertFalse(profiles.contains { $0.needsMigration })
 
     let sessions = try context.fetch(FetchDescriptor<BlockedProfileSession>())
     let activeSessions = sessions.filter(\.isActive)

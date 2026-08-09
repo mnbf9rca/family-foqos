@@ -192,6 +192,7 @@ class LockCodeManager: ObservableObject {
   /// Fetch shared lock codes for verification (child operation)
   /// Verifies child authorization before fetching to ensure security
   func refreshSharedLockCodesForVerification() async {
+    guard !ScreenshotDemoMode.isActive else { return }
     guard appModeManager.currentMode == .child else { return }
 
     isLoading = true
@@ -319,6 +320,7 @@ class LockCodeManager: ObservableObject {
   /// Check for and process any pending commands from parent.
   /// Called from child lock-code refresh, the PIN-dialog poll, and child foreground.
   func processPendingCommands(cleanupStale: Bool = true) async {
+    guard !ScreenshotDemoMode.isActive else { return }
     guard appModeManager.currentMode == .child else {
       return
     }
