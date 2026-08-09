@@ -16,7 +16,7 @@ committed but contain only `op://` references.
 
 ## Global Constraints
 
-- Authoritative design: commit `0fe0d05f453a8463223115e43b98e667e5e5c9b1`, plus the maintainer's
+- Authoritative design: commit `0944afeb0e6dcdec150af9c0772f3b0f3a98c76d`, plus the maintainer's
   later superseding decision to reject runtime Transporter residue scans as overengineering.
 - Never print a private key, service-account token, resolved 1Password value, or new issuer ID.
 - Strictly decode `ASC_KEY_CONTENT_BASE64` once in Ruby and pass raw PEM as `key_content`; never set
