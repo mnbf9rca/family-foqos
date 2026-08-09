@@ -167,7 +167,7 @@ struct FoqosApp: App {
               }
             }
             // Only reschedule on warm returns — .onAppear handles cold launch
-            if hasPerformedInitialSetup {
+            if hasPerformedInitialSetup && !ScreenshotDemoMode.isActive {
               PreActivationReminderScheduler.mergeExtensionScheduleSuppression(
                 context: container.mainContext)
               PreActivationReminderScheduler.reconcileScheduleRegistrations(
