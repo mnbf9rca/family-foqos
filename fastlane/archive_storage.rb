@@ -2,7 +2,9 @@ require "fileutils"
 require "securerandom"
 
 module ArchiveStorage
-  def self.replace_directory(source:, destination:)
+  def self.replace_directory(source:, destination:, logger: ->(message) { warn(message) })
+    Dir.glob("#{destination}.{tmp,backup}-*").each { |path| FileUtils.rm_rf(path) }
+
     suffix = "#{Process.pid}-#{SecureRandom.hex(6)}"
     temporary = "#{destination}.tmp-#{suffix}"
     backup = "#{destination}.backup-#{suffix}"
@@ -13,10 +15,11 @@ module ArchiveStorage
       if File.exist?(destination)
         File.rename(destination, backup)
         backup_created = true
+        logger.call("Archive backup created: #{backup}")
       end
       File.rename(temporary, destination)
       FileUtils.rm_rf(backup) if backup_created
-    rescue
+    rescue Exception
       if backup_created && File.exist?(backup) && !File.exist?(destination)
         File.rename(backup, destination)
       end

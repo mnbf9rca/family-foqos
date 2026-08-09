@@ -61,6 +61,16 @@ if [[ "$GATE_STATUS" -eq 0 || "$GATE_OUTPUT" != *"Required GitHub label is missi
   exit 1
 fi
 
+FAKE_LABEL_PRESENT=1 \
+  FAKE_ISSUES_JSON='[{"number":1,"title":"x"}]' \
+  run_gates
+if [[ "$GATE_STATUS" -eq 0 || "$GATE_OUTPUT" != *"#1 x"* ]]; then
+  echo "FAIL: an open release-blocking issue must abort and name the issue"
+  echo "actual exit: $GATE_STATUS"
+  echo "$GATE_OUTPUT"
+  exit 1
+fi
+
 FAKE_LABEL_PRESENT=1 run_gates
 if [[ "$GATE_STATUS" -ne 0 ]]; then
   echo "FAIL: existing label with no blockers and a matching schema must pass"

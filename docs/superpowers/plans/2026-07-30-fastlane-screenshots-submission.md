@@ -244,8 +244,8 @@ build uses. Generate into a temporary file, validate it, then atomically replace
 
 ```bash
 set -euo pipefail
-app_types_tmp=$(mktemp fastlane/required-prod-schema.app-types.XXXXXX)
-schema_tmp=$(mktemp fastlane/required-prod-schema.XXXXXX)
+app_types_tmp=$(mktemp "${TMPDIR:-/tmp}/family-foqos-required-prod-schema.app-types.XXXXXX")
+schema_tmp=$(mktemp "${TMPDIR:-/tmp}/family-foqos-required-prod-schema.XXXXXX")
 trap 'rm -f "$app_types_tmp" "$schema_tmp"' EXIT
 {
   rg --no-filename -o 'static let recordType\s*=\s*"[^"]+"' \

@@ -36,6 +36,17 @@ if [[ "$GATE_STATUS" -ne 2 || "$GATE_OUTPUT" != *"empty or unreadable"* ]]; then
   exit 1
 fi
 
+printf 'RECORD TYPE Unreadable\n' >"$TEST_ROOT/fastlane/required-prod-schema.txt"
+chmod 000 "$TEST_ROOT/fastlane/required-prod-schema.txt"
+run_gate
+chmod 600 "$TEST_ROOT/fastlane/required-prod-schema.txt"
+if [[ "$GATE_STATUS" -ne 2 || "$GATE_OUTPUT" != *"empty or unreadable"* ]]; then
+  echo "FAIL: unreadable manifest must exit 2 with an empty-or-unreadable error"
+  echo "actual exit: $GATE_STATUS"
+  echo "$GATE_OUTPUT"
+  exit 1
+fi
+
 printf '# comments do not count\n\n' >"$TEST_ROOT/fastlane/required-prod-schema.txt"
 run_gate
 if [[ "$GATE_STATUS" -ne 2 || "$GATE_OUTPUT" != *"empty or unreadable"* ]]; then
