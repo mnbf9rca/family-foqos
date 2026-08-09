@@ -33,7 +33,7 @@ SCHEMA=$(xcrun cktool export-schema \
 missing=0
 while IFS= read -r line; do
   [[ -z "$line" || "$line" == \#* ]] && continue
-  if ! grep -qF "$line" <<<"$SCHEMA"; then
+  if ! grep -qF "$line (" <<<"$SCHEMA"; then
     echo "MISSING in production schema: $line"
     missing=1
   fi

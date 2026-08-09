@@ -49,6 +49,28 @@ Dir.mktmpdir do |root|
     warn "FAIL: failed replacement damaged the known-good destination"
     exit 1
   end
+
+  rename = File.method(:rename)
+  rename_count = 0
+  File.define_singleton_method(:rename) do |source_path, destination_path|
+    rename_count += 1
+    raise Errno::EIO if rename_count == 2
+    rename.call(source_path, destination_path)
+  end
+  begin
+    ArchiveStorage.replace_directory(source: source, destination: destination)
+    warn "FAIL: simulated swap failure should raise"
+    exit 1
+  rescue Errno::EIO
+    # Expected: the completed temporary copy fails to swap after backup creation.
+  ensure
+    File.define_singleton_method(:rename, rename)
+  end
+
+  unless File.read(File.join(destination, "marker")) == "known-good"
+    warn "FAIL: swap failure did not restore the known-good backup"
+    exit 1
+  end
 end
 
 create_calls = []

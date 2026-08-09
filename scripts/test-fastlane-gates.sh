@@ -35,7 +35,7 @@ EOF
 
 cat >"$TEST_ROOT/bin/xcrun" <<'EOF'
 #!/bin/bash
-grep -v '^#' "$FAKE_SCHEMA_FILE"
+sed '/^#/d; /^$/d; s/$/ (/' "$FAKE_SCHEMA_FILE"
 EOF
 
 chmod +x "$TEST_ROOT/bin/gh" "$TEST_ROOT/bin/xcrun"

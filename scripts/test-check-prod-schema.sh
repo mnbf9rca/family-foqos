@@ -30,6 +30,12 @@ run_gate() {
   set -e
 }
 
+run_gate
+if [[ "$GATE_STATUS" -ne 2 || "$GATE_OUTPUT" != *"empty or unreadable"* ]]; then
+  echo "FAIL: missing manifest must exit 2 with an empty-or-unreadable error"
+  exit 1
+fi
+
 printf '# comments do not count\n\n' >"$TEST_ROOT/fastlane/required-prod-schema.txt"
 run_gate
 if [[ "$GATE_STATUS" -ne 2 || "$GATE_OUTPUT" != *"empty or unreadable"* ]]; then
@@ -42,9 +48,15 @@ EMPTY_OUTPUT=$GATE_OUTPUT
 EMPTY_STATUS=$GATE_STATUS
 
 printf 'RECORD TYPE Present\n' >"$TEST_ROOT/fastlane/required-prod-schema.txt"
-FAKE_SCHEMA='RECORD TYPE Present' run_gate
+FAKE_SCHEMA='RECORD TYPE Present (' run_gate
 if [[ "$GATE_STATUS" -ne 0 || "$GATE_OUTPUT" != *"Production schema OK."* ]]; then
   echo "FAIL: matching production schema must pass"
+  exit 1
+fi
+
+FAKE_SCHEMA='RECORD TYPE PresentExtra (' run_gate
+if [[ "$GATE_STATUS" -ne 1 ]]; then
+  echo "FAIL: a prefixed record type must not satisfy the exact requirement"
   exit 1
 fi
 

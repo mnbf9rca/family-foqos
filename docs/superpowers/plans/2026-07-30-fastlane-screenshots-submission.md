@@ -50,7 +50,7 @@ Expected: `ruby 3.x`. (System Ruby 2.6 must not be used; all `bundle` invocation
 ```ruby
 source "https://rubygems.org"
 
-gem "fastlane"
+gem "fastlane", "2.237.0"
 ```
 
 - [ ] **Step 3: Install and pin**
@@ -142,6 +142,12 @@ platform :ios do
   lane :build_number do
     UI.message("Derived build number: #{derived_build_number}")
   end
+
+  desc "Validate the ASC API key loads (prints no secret material)"
+  lane :check_asc_key do
+    key = asc_api_key
+    UI.success("ASC key loaded: key_id=#{key[:key_id]}, issuer_id=#{key[:issuer_id]}, key_present=#{!key[:key].to_s.empty?}")
+  end
 end
 ```
 
@@ -149,7 +155,10 @@ end
 
 Run: `bundle exec fastlane lanes` → lists `build_number` without error.
 Run: `bundle exec fastlane build_number` → prints an integer > 19 (current commit count).
-Run: `bundle exec fastlane run app_store_connect_api_key key_id:"$ASC_KEY_ID" issuer_id:"$ASC_ISSUER_ID" key_filepath:"$HOME/.appstoreconnect/AuthKey_U2UZLVHKA5.p8"` → succeeds (validates the .p8 loads).
+Run: `bundle exec fastlane check_asc_key` → prints `key_present=true` without printing PEM contents.
+
+Never use `fastlane run app_store_connect_api_key`: action mode echoes the returned hash,
+including the private key contents.
 
 - [ ] **Step 4: Commit**
 
@@ -164,12 +173,16 @@ git commit -m "build: fastlane Appfile + Fastfile skeleton (preflight, build num
 
 **Files:**
 - Modify: `fastlane/Fastfile`
+- Create: `fastlane/archive_storage.rb`
 - Create: `scripts/check-prod-schema.sh`
 - Create: `fastlane/required-prod-schema.txt`
+- Create: `scripts/test-archive-storage.rb`
+- Create: `scripts/test-check-prod-schema.sh`
+- Create: `scripts/test-fastlane-gates.sh`
 
 **Interfaces:**
 - Consumes: `derived_build_number` from Task 2.
-- Produces: `store_archive(prerelease:)` private lane (reads `lane_context[SharedValues::XCODEBUILD_ARCHIVE]`); `assert_no_release_blockers` private lane; `scripts/check-prod-schema.sh` (exit 0 = schema OK, exit 1 = missing entries, other = query failure).
+- Produces: `store_archive(prerelease:)` private lane (reads `lane_context[SharedValues::XCODEBUILD_ARCHIVE]`); `assert_no_release_blockers` private lane; recoverable archive replacement and idempotent dSYM upload helpers; `scripts/check-prod-schema.sh` (exit 0 = schema OK, exit 1 = missing entries, exit 2 = empty/unreadable requirements, other = query failure).
 
 - [ ] **Step 1: Write the schema-gate script**
 
@@ -178,12 +191,29 @@ git commit -m "build: fastlane Appfile + Fastfile skeleton (preflight, build num
 #!/bin/bash
 # Release gate: verify every record type this build requires exists in the
 # DEPLOYED CloudKit PRODUCTION schema. Fails closed: any cktool error aborts.
+# This checks record-type existence only; it does not compare field definitions.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 REQUIRED_FILE="$REPO_ROOT/fastlane/required-prod-schema.txt"
 TEAM_ID="BU7526J4QY"
 CONTAINER_ID="iCloud.com.cynexia.family-foqos"
+
+if [[ ! -r "$REQUIRED_FILE" ]]; then
+  echo "Required schema file is empty or unreadable: $REQUIRED_FILE" >&2
+  exit 2
+fi
+
+checked=0
+while IFS= read -r line; do
+  [[ -z "$line" || "$line" == \#* ]] && continue
+  checked=$((checked + 1))
+done <"$REQUIRED_FILE"
+
+if [[ "$checked" -eq 0 ]]; then
+  echo "Required schema file is empty or unreadable: $REQUIRED_FILE" >&2
+  exit 2
+fi
 
 SCHEMA=$(xcrun cktool export-schema \
   --team-id "$TEAM_ID" \
@@ -193,7 +223,7 @@ SCHEMA=$(xcrun cktool export-schema \
 missing=0
 while IFS= read -r line; do
   [[ -z "$line" || "$line" == \#* ]] && continue
-  if ! grep -qF "$line" <<<"$SCHEMA"; then
+  if ! grep -qF "$line (" <<<"$SCHEMA"; then
     echo "MISSING in production schema: $line"
     missing=1
   fi
@@ -213,26 +243,30 @@ their first write, so exporting the development schema can silently omit types t
 build uses. Generate into a temporary file, validate it, then atomically replace the manifest:
 
 ```bash
+set -euo pipefail
+app_types_tmp=$(mktemp fastlane/required-prod-schema.app-types.XXXXXX)
 schema_tmp=$(mktemp fastlane/required-prod-schema.XXXXXX)
-trap 'rm -f "$schema_tmp"' EXIT
+trap 'rm -f "$app_types_tmp" "$schema_tmp"' EXIT
+{
+  rg --no-filename -o 'static let recordType\s*=\s*"[^"]+"' \
+    Foqos FoqosDeviceMonitor FoqosShieldConfig FoqosWidget \
+    | sed -E 's/.*"([^"]+)"/\1/'
+  rg --no-filename -o 'CKRecord\(recordType:\s*"[^"]+"' \
+    Foqos FoqosDeviceMonitor FoqosShieldConfig FoqosWidget \
+    | sed -E 's/.*"([^"]+)"/\1/'
+} | sort -u | sed 's/^/RECORD TYPE /' >"$app_types_tmp"
+grep -q '^RECORD TYPE ' "$app_types_tmp"
 {
   echo '# Source of truth: record types referenced by app/extension code, reconciled by hand.'
   echo "# Last reconciled: $(date +%F)."
   echo '# Repeat both searches, review the results, and preserve required CloudKit built-ins:'
   echo '#   rg -n '\''static let recordType\s*=\s*"[^"]+"'\'' Foqos FoqosDeviceMonitor FoqosShieldConfig FoqosWidget'
   echo '#   rg -n '\''CKRecord\(recordType:\s*"[^"]+"'\'' Foqos FoqosDeviceMonitor FoqosShieldConfig FoqosWidget'
-  {
-    rg --no-filename -o 'static let recordType\s*=\s*"[^"]+"' \
-      Foqos FoqosDeviceMonitor FoqosShieldConfig FoqosWidget \
-      | sed -E 's/.*"([^"]+)"/\1/'
-    rg --no-filename -o 'CKRecord\(recordType:\s*"[^"]+"' \
-      Foqos FoqosDeviceMonitor FoqosShieldConfig FoqosWidget \
-      | sed -E 's/.*"([^"]+)"/\1/'
-  } | sort -u | sed 's/^/RECORD TYPE /'
+  cat "$app_types_tmp"
   echo 'RECORD TYPE "cloudkit.share"'
 } >"$schema_tmp"
-grep -q '^RECORD TYPE ' "$schema_tmp"
 mv "$schema_tmp" fastlane/required-prod-schema.txt
+rm -f "$app_types_tmp"
 trap - EXIT
 ```
 
@@ -246,17 +280,81 @@ Expected: prints `MISSING in production schema: ...` for the V2 sync record type
 
 - [ ] **Step 4: Add gates + archive storage to Fastfile**
 
+Create `fastlane/archive_storage.rb` with recoverable same-filesystem replacement and
+argument-array GitHub commands:
+
+```ruby
+require "fileutils"
+require "securerandom"
+
+module ArchiveStorage
+  def self.replace_directory(source:, destination:)
+    suffix = "#{Process.pid}-#{SecureRandom.hex(6)}"
+    temporary = "#{destination}.tmp-#{suffix}"
+    backup = "#{destination}.backup-#{suffix}"
+    backup_created = false
+
+    begin
+      FileUtils.cp_r(source, temporary)
+      if File.exist?(destination)
+        File.rename(destination, backup)
+        backup_created = true
+      end
+      File.rename(temporary, destination)
+      FileUtils.rm_rf(backup) if backup_created
+    rescue
+      if backup_created && File.exist?(backup) && !File.exist?(destination)
+        File.rename(backup, destination)
+      end
+      raise
+    ensure
+      FileUtils.rm_rf(temporary)
+    end
+  end
+
+  def self.upload_dsyms(tag:, prerelease:, title:, notes:, asset:)
+    create_args = ["gh", "release", "create", tag]
+    create_args << "--prerelease" if prerelease
+    create_args += ["--title", title, "--notes", notes, asset]
+
+    begin
+      yield(create_args)
+    rescue
+      yield(["gh", "release", "upload", tag, asset, "--clobber"])
+    end
+  end
+end
+```
+
+Add `require "json"`, `require "fileutils"`, and
+`require File.expand_path("archive_storage", __dir__)` at the top of the Fastfile. Define:
+
+```ruby
+REPO_ROOT = File.expand_path("..", __dir__)
+RELEASE_BLOCKING_LABEL = "release-blocking"
+```
+
 Inside `platform :ios do`:
+
 ```ruby
   private_lane :assert_no_release_blockers do
     # Fail closed: if gh errors (network, auth), sh raises and the lane aborts.
-    out = sh("gh issue list --state open --label release-blocking --json number,title", log: false)
+    labels_out = sh("gh label list --json name --limit 1000", log: false)
+    labels = JSON.parse(labels_out)
+    unless labels.any? { |label| label["name"] == RELEASE_BLOCKING_LABEL }
+      UI.user_error!("Required GitHub label is missing: #{RELEASE_BLOCKING_LABEL}")
+    end
+
+    out = sh(
+      "gh issue list --state open --label #{RELEASE_BLOCKING_LABEL} --json number,title",
+      log: false
+    )
     issues = JSON.parse(out)
     unless issues.empty?
       list = issues.map { |i| "##{i["number"]} #{i["title"]}" }.join("\n  ")
       UI.user_error!("Release blocked by open release-blocking issues:\n  #{list}")
     end
-    sh("./scripts/check-prod-schema.sh")
+    sh("bash", File.join(REPO_ROOT, "scripts/check-prod-schema.sh"))
   end
 
   # Copies the .xcarchive locally, zips dSYMs, attaches them to a GitHub release.
@@ -272,35 +370,58 @@ Inside `platform :ios do`:
 
     FileUtils.mkdir_p(ARCHIVE_DIR)
     local_copy = File.join(ARCHIVE_DIR, "#{stem}.xcarchive")
-    FileUtils.rm_rf(local_copy)
-    FileUtils.cp_r(archive, local_copy)
+    ArchiveStorage.replace_directory(source: archive, destination: local_copy)
     UI.success("Archive stored: #{local_copy}")
 
     dsym_zip = File.join(ARCHIVE_DIR, "#{stem}-dSYMs.zip")
-    sh("cd '#{archive}/dSYMs' && zip -qr '#{dsym_zip}' .")
+    FileUtils.rm_f(dsym_zip)
+    Dir.chdir(File.join(archive, "dSYMs")) do
+      sh("zip", "-qr", dsym_zip, ".")
+    end
 
     tag = options[:prerelease] ? "build/#{build}" : "v#{version}"
     begin
-      flags = options[:prerelease] ? "--prerelease" : ""
-      sh("gh release create '#{tag}' #{flags} --title '#{stem}' " \
-         "--notes 'Automated archive upload (dSYMs) for #{stem}.' '#{dsym_zip}'")
+      ArchiveStorage.upload_dsyms(
+        tag: tag,
+        prerelease: options[:prerelease],
+        title: stem,
+        notes: "Automated archive upload (dSYMs) for #{stem}.",
+        asset: dsym_zip
+      ) { |args| sh(*args) }
       UI.success("dSYMs attached to GitHub release #{tag}")
     rescue => e
       UI.important("GitHub release upload FAILED (local archive is safe): #{e.message}")
     end
   end
 ```
-Add `require "json"` and `require "fileutils"` at the top of the Fastfile.
 
 - [ ] **Step 5: Verify the pieces without a real build**
 
 Run: `bundle exec fastlane run get_version_number xcodeproj:FamilyFoqos.xcodeproj target:FamilyFoqos` → `2.0.0`.
-Create a throwaway lane temporarily (delete before commit) or use `bundle exec fastlane lanes` to confirm parsing. Then exercise the blocker gate directly by adding a temporary public lane `lane :gates do assert_no_release_blockers end`, running `bundle exec fastlane gates`, and confirming it ABORTS listing #345 and #346 (both open). Keep the `gates` lane — it is useful standalone; document it with `desc "Run release-blocker gates only"`.
+Run the focused non-Xcode tests:
+
+```bash
+./scripts/test-check-prod-schema.sh
+ruby scripts/test-archive-storage.rb
+./scripts/test-fastlane-gates.sh
+```
+
+They must prove empty/unreadable requirements exit `2`, cktool failures preserve a distinct
+exit code, record names match exactly, a missing GitHub label aborts, archive replacement is
+recoverable, and existing releases fall back to `upload --clobber`.
+
+Run `bundle exec fastlane lanes` to confirm parsing. Exercise the blocker gate through the
+public `lane :gates do assert_no_release_blockers end`; `bundle exec fastlane gates` must
+ABORT listing #345 and #346. Keep the lane and document it with
+`desc "Run release-blocker gates only"`.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add fastlane/Fastfile scripts/check-prod-schema.sh fastlane/required-prod-schema.txt
+git add fastlane/Fastfile fastlane/archive_storage.rb fastlane/required-prod-schema.txt \
+  scripts/check-prod-schema.sh scripts/test-archive-storage.rb \
+  scripts/test-check-prod-schema.sh scripts/test-fastlane-gates.sh \
+  docs/superpowers/plans/2026-07-30-fastlane-screenshots-submission.md
 git commit -m "build: release-blocker gates (label + prod-schema) and archive storage step"
 ```
 
