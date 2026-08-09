@@ -40,8 +40,9 @@ files when a downstream Apple tool requires a path.
 - Truly unattended lanes must not wait indefinitely for a biometric prompt. The design must also
   retain a usable personal/biometric mode for maintainers who do not accept a new service-account
   token.
-- The credential setup composes with #363 through one named interface: the **session-start unlock
-  step**. This design does not depend on that step's internal implementation.
+- The credential setup consumes the **Session Credential Warm-up** interface defined by #363. That
+  specification owns credential inputs, token-injection custody, per-stage outcomes, and
+  failure/expiry policy; this design does not duplicate them.
 - `xcodebuild -allowProvisioningUpdates` may need ASC authentication for automatic signing.
   `-authenticationKeyPath` accepts a file path, not in-memory key content. Xcode documents the path,
   key ID, and issuer ID as a required set
@@ -56,19 +57,18 @@ files when a downstream Apple tool requires a path.
 ### Option A — read-only 1Password service account (recommended)
 
 Create a dedicated non-built-in automation vault containing only the Family Foqos ASC item. Give a
-service account `read_items` access to that vault and inject its token into the worker session as
-`OP_SERVICE_ACCOUNT_TOKEN`. The service account cannot use a Personal, Private, Employee, or default
-Shared vault, so a dedicated vault is required. Its access can be limited, inspected, rotated, and
-revoked. These constraints follow 1Password's
+service account `read_items` access to that vault. 1Password CLI uses this mode when
+`OP_SERVICE_ACCOUNT_TOKEN` is present. The service account cannot use a Personal, Private, Employee,
+or default Shared vault, so a dedicated vault is required. Its access can be limited, inspected,
+rotated, and revoked. These constraints follow 1Password's
 [service-account model](https://www.1password.dev/service-accounts/get-started) and
 [CLI authentication contract](https://www.1password.dev/service-accounts/use-with-1password-cli).
 
 This is the reliable unattended mode: `op read` does not require a biometric interaction once the
 token is present. The trade-off is real: `OP_SERVICE_ACCOUNT_TOKEN` is itself a long-lived secret in
 the worker's environment. It must never live in `.envrc`, an env file, shell history, or the repo.
-The session-start unlock step owns injecting it from an operator-approved secret store. Limiting the
-account to a one-item vault makes compromise narrower than today's raw, effectively immortal `.p8`,
-and the token is revocable and its use report is inspectable.
+Limiting the account to a one-item vault makes compromise narrower than today's raw, effectively
+immortal `.p8`, and the token is revocable and its use report is inspectable.
 
 **Status: RECOMMENDED, OPEN-FOR-MAINTAINER.** The maintainer chooses whether the unattended benefit
 justifies custody of this new token.
@@ -76,9 +76,8 @@ justifies custody of this new token.
 ### Option B — personal 1Password app integration with biometrics
 
 If `OP_SERVICE_ACCOUNT_TOKEN` is absent, `op` uses the maintainer's personal 1Password CLI/app
-integration. The session-start unlock step performs the biometric warm-up before unattended work.
-This avoids a service token, attributes access to the maintainer, and uses the existing 1Password
-unlock boundary described by the
+integration. Run **Session Credential Warm-up** before unattended work. This avoids a service token,
+attributes access to the maintainer, and uses the existing 1Password unlock boundary described by the
 [1Password app integration](https://www.1password.dev/cli/app-integration).
 
 The limitation is that a later app relock can reintroduce a prompt during a lane. A warm-up reduces
@@ -121,8 +120,7 @@ The committed setup flow is:
 1. Install the 1Password CLI and direnv; configure personal app integration if Option B is used.
 2. Add the direnv hook to the shell once.
 3. Review `.envrc`, then run `direnv allow .`. A changed `.envrc` requires a fresh allow.
-4. Enter through the session-start unlock step. It either injects `OP_SERVICE_ACCOUNT_TOKEN` for
-   Option A or warms personal biometric access for Option B.
+4. Run **Session Credential Warm-up** before any credential-using lane.
 
 Add `.direnv/` to `.gitignore`. Do not ignore `.envrc`: it is the reviewed, committed replacement for
 the env template. Retain `fastlane/.env` in `.gitignore` as defense in depth even after deleting the
@@ -221,12 +219,14 @@ credential test.
 
 1. **Choose operator-owned settings.** Select Option A or B and choose the dedicated vault/item
    names. If Option A is chosen, create a service account with read-only access to only the dedicated
-   automation vault and arrange `OP_SERVICE_ACCOUNT_TOKEN` injection through the session-start
-   unlock step. Never paste the token into a command recorded by an agent.
+   automation vault and register the required inputs with **Session Credential Warm-up**. Never
+   paste the token into a command recorded by an agent.
 2. **Prepare the code migration before creating the key.** Implement the committed `.envrc`, secret
    resolver, base64 decode, raw `key_content` handoff, gym-scoped tempfile helper, deletion of the old
    env files, `.gitignore` change, Transporter postcondition, and non-submitting verification
-   lanes/tests. The references may point to an empty placeholder item until the next step.
+   lanes/tests. The references may point to an empty placeholder item until the next step. Treat
+   steps 2-9 as a maintenance window: do not run a lane that invokes `pilot` or `deliver`, and
+   activate the no-standing-key postcondition when step 9 removes the legacy key.
 3. **Create the replacement App Manager key in App Store Connect.** Use the browser's one-time
    download. Configure an explicit private download location, keep the window between download and
    import as short as practical, and do not expose the values in a terminal transcript.
@@ -237,7 +237,7 @@ credential test.
    the browser artifact and its empty staging directory. APFS snapshots and SSD wear leveling mean
    physical erasure cannot be guaranteed.
 5. **Activate the new references.** Replace `.envrc` placeholders with the chosen vault/item/field
-   references, review them, run `direnv allow .`, and enter via the session-start unlock step.
+   references, review them, run `direnv allow .`, and run **Session Credential Warm-up**.
 6. **Verify Fastlane authentication safely.** Run `bundle exec fastlane check_asc_key`. That lane
    may report only non-sensitive facts such as key/issuer presence; it must never print the returned
    key hash or any resolved value.
@@ -285,11 +285,11 @@ restore the revoked credential.
 
 ### Authentication matrix
 
-| Mode | Setup | Expected behavior |
+| Mode | Setup via **Session Credential Warm-up** | Expected behavior |
 | --- | --- | --- |
-| Service account | Session-start unlock step injects `OP_SERVICE_ACCOUNT_TOKEN` | `.envrc` stays non-secret; Fastlane resolves the same refs with no biometric prompt. |
-| Personal/biometric | Token absent; 1Password app integration enabled and warmed by session-start unlock step | The same `.envrc` and Fastfile work. A relocked app may prompt and is an acknowledged fallback limitation. |
-| Neither available | Token absent and personal CLI unavailable/locked | Lane fails before build with a redacted authentication error; it does not use a disk fallback. |
+| Service account | Service-account mode ready | `.envrc` stays non-secret; Fastlane resolves the same refs with no biometric prompt. |
+| Personal/biometric | Personal mode ready | The same `.envrc` and Fastfile work. A relocked app may prompt and is an acknowledged fallback limitation. |
+| Neither available | Not ready | Lane fails before build with a redacted authentication error; it does not use a disk fallback. |
 
 ### Manual acceptance
 
