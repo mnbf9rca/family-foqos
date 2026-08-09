@@ -22,7 +22,10 @@ if [[ ! -f "$REFS_FILE" ]]; then
   exit 1
 fi
 
-mapfile -t REF_LINES < <(sed '/^[[:space:]]*#/d; /^[[:space:]]*$/d' "$REFS_FILE")
+REF_LINES=()
+while IFS= read -r line; do
+  REF_LINES+=("$line")
+done < <(sed '/^[[:space:]]*#/d; /^[[:space:]]*$/d' "$REFS_FILE")
 EXPECTED_REFS=(
   'ASC_KEY_ID=op://family-foqos/app_store_connect_key/ASC_KEY_ID_REF'
   'ASC_ISSUER_ID=op://family-foqos/app_store_connect_key/ASC_ISSUER_ID_REF'

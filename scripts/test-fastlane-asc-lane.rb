@@ -41,20 +41,36 @@ if output.include?(raw_pem) || output.include?(encoded) || output.include?(issue
   exit 1
 end
 
-bare_env = {
-  "ASC_KEY_ID" => nil,
-  "ASC_ISSUER_ID" => nil,
-  "ASC_KEY_CONTENT_BASE64" => nil,
-  "FASTLANE_SKIP_UPDATE_CHECK" => "1"
-}
-bare_stdout, bare_stderr, bare_status = Open3.capture3(
-  bare_env,
-  "bundle", "exec", "fastlane", "check_asc_key",
-  chdir: repo_root
-)
-bare_output = bare_stdout + bare_stderr
+legacy_env_path = File.join(repo_root, "fastlane", ".env")
+created_legacy_fixture = false
+begin
+  unless File.exist?(legacy_env_path)
+    File.open(legacy_env_path, File::WRONLY | File::CREAT | File::EXCL, 0o600) do |file|
+      created_legacy_fixture = true
+      file.puts("ASC_KEY_ID=LEGACYTEST")
+      file.puts("ASC_ISSUER_ID=legacy-issuer-for-test")
+      file.puts("ASC_KEY_PATH=/tmp/deleted-legacy-key.p8")
+    end
+  end
+
+  bare_env = {
+    "ASC_KEY_ID" => nil,
+    "ASC_ISSUER_ID" => nil,
+    "ASC_KEY_CONTENT_BASE64" => nil,
+    "FASTLANE_SKIP_UPDATE_CHECK" => "1"
+  }
+  bare_stdout, bare_stderr, bare_status = Open3.capture3(
+    bare_env,
+    "bundle", "exec", "fastlane", "check_asc_key",
+    chdir: repo_root
+  )
+  bare_output = bare_stdout + bare_stderr
+ensure
+  File.delete(legacy_env_path) if created_legacy_fixture && File.exist?(legacy_env_path)
+end
+
 if bare_status.success? || !bare_output.include?("ASC_KEY_CONTENT_BASE64")
-  warn "FAIL: bare check_asc_key must fail closed at the namespaced key-content fetch"
+  warn "FAIL: legacy .env must not let bare check_asc_key bypass the namespaced key-content fetch"
   warn redacted(bare_output, [raw_pem, encoded, issuer_id])
   exit 1
 end
