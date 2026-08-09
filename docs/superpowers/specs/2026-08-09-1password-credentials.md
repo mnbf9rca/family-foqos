@@ -1,7 +1,7 @@
 # App Store Connect Credentials: 1Password, direnv, and Key Rotation
 
 **Date:** 2026-08-09
-**Status:** Approved design; implementation plan is a separate step
+**Status:** Approved design; two operator decisions remain open; implementation plan is separate
 **Scope:** Local Fastlane credentials for V2 / `main`; resolves storage issue
 [#365](https://github.com/mnbf9rca/family-foqos/issues/365) and makes the rotation from
 [#364](https://github.com/mnbf9rca/family-foqos/issues/364) part of the migration cutover.
@@ -128,11 +128,11 @@ Add `.direnv/` to `.gitignore`. Do not ignore `.envrc`: it is the reviewed, comm
 the env template. Retain `fastlane/.env` in `.gitignore` as defense in depth even after deleting the
 file and removing all runtime use.
 
-At base `bf97c18`, the current `.gitignore` ignores neither `.envrc` nor `.direnv/`; the
-`feat/fastlane-setup` branch adds `fastlane/.env` at `.gitignore:63`. Integration adds only
-`.direnv/` to that credential-related set and preserves the `fastlane/.env` denylist entry. A scan
-of both feature branches finds credential-path references only on `feat/fastlane-setup`;
-`feat/fastlane-demo-mode:fastlane/Fastfile` adds screenshot behavior and no credential dependency.
+At base `bf97c18`, the current `.gitignore` ignores neither `.envrc` nor `.direnv/`; Fastlane setup
+commit `2404139` adds `fastlane/.env` at `.gitignore:63`. Integration adds only `.direnv/` to that
+credential-related set and preserves the `fastlane/.env` denylist entry. A scan of both feature
+branches finds credential-path references only in Fastlane setup commit `2404139`;
+`85593e0:fastlane/Fastfile` adds screenshot behavior and no credential dependency.
 
 A leaked `op://` reference reveals vault/item/field naming metadata. It does **not** reveal or grant
 access to the referenced value; an attacker still needs an authorized 1Password user session or
@@ -178,26 +178,39 @@ Because Xcode requires `-authenticationKeyPath`, wrap only the `gym` call in a h
 
 This extends the cleanup pattern already used by `pull_metadata`, which creates its API-key JSON in
 a `Tempfile.create` block and invokes `deliver download_metadata` entirely inside that block
-(`feat/fastlane-setup:fastlane/Fastfile:106-125`). The implementation must add an ensure-path test
-that forces the wrapped operation to fail and verifies the path no longer exists.
+(`2404139:fastlane/Fastfile:106-125`). The JSON contains the same raw PEM as the gym file, so
+implementation must explicitly assert mode `0600` for both tempfiles, cover cleanup after success
+and an injected failure for both, and add `log: false` to the nested `sh` call so the live JSON path
+is not advertised in lane output.
 
 Temporary materialization is not equivalent to durable storage. The key exists briefly in process
-memory and in mode-`0600` temporary files required by Xcode or Fastlane. Fastlane's Transporter also
-materializes an API key for upload and removes its key directory in an `ensure` block
-(`fastlane_core/lib/fastlane_core/itunes_transporter.rb:864-882`). The invariant is therefore: **no
-standing plaintext private-key file survives a lane or cutover**, not the untrue claim that the key
-never exists outside 1Password.
+memory and in mode-`0600` temporary files required by Xcode or Fastlane. Fastlane's Transporter
+cleanup is not uniform. `upload` and `provider_ids` remove the generated key directory in `ensure`
+blocks (`fastlane_core/lib/fastlane_core/itunes_transporter.rb:864-882,959-982`), but `verify` calls
+the same `prepare` writer without cleanup (`itunes_transporter.rb:903-953`). For a
+`ShellScriptTransporterExecutor`, that writer creates
+`~/.appstoreconnect/private_keys/AuthKey_<key-id>.p8` instead of a temporary directory
+(`itunes_transporter.rb:68-90`). Whether current project lanes reach `verify` is not an acceptable
+security dependency.
+
+Every project lane that invokes `pilot` or `deliver`, including `pull_metadata`, must therefore
+enforce its own postcondition in an `ensure`: remove only the expected project-key file at that
+known Transporter path, then fail if any `.p8` remains below `~/.appstoreconnect/`. An unrelated
+standing key is reported for operator remediation, not silently deleted. The scoped invariant is:
+**no standing plaintext private-key file survives a credential-using Family Foqos lane or the
+cutover**. It is not the untrue claim that the key never exists outside 1Password or that the gem
+always cleans up after itself.
 
 ### What dies and what replaces it
 
 | Current dependency | Current references | Replacement |
 | --- | --- | --- |
 | `fastlane/.env` | Fastlane auto-load; `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_PATH` | Delete the file and all runtime dependence. Keep its ignore rule as a tripwire. `.envrc` supplies only `*_REF` values. |
-| `fastlane/.env.template` | `feat/fastlane-setup:fastlane/.env.template:1-4` | Delete it. Committed `.envrc` plus setup documentation is the single template. |
-| `ASC_KEY_PATH` in `asc_api_key` | `feat/fastlane-setup:fastlane/Fastfile:21-26` | Resolve base64 content, decode in Ruby, and pass raw `key_content:`. |
-| `ASC_KEY_PATH` in `gym` `xcargs` | `feat/fastlane-setup:fastlane/Fastfile:128-143` | A helper-owned mode-`0600` temporary `.p8` path scoped to `gym`. Key and issuer IDs are resolved values, never committed literals. |
-| `pull_metadata` API-key JSON | `feat/fastlane-setup:fastlane/Fastfile:106-125` | Retain the proven `Tempfile.create` handoff. Its hash now contains raw PEM produced from 1Password rather than a home-directory path. |
-| `~/.appstoreconnect/` | Existing plan/spec and the old plaintext key | Remove the old `.p8` and empty directory after successful cutover. Fastlane may recreate a transient key directory internally during Transporter work; its ensure cleanup must leave no standing key. |
+| `fastlane/.env.template` | `2404139:fastlane/.env.template:1-4` | Delete it. Committed `.envrc` plus setup documentation is the single template. |
+| `ASC_KEY_PATH` in `asc_api_key` | `2404139:fastlane/Fastfile:21-26` | Resolve base64 content, decode in Ruby, and pass raw `key_content:`. |
+| `ASC_KEY_PATH` in `gym` `xcargs` | `2404139:fastlane/Fastfile:128-143` | A helper-owned mode-`0600` temporary `.p8` path scoped to `gym`. Key and issuer IDs are resolved values, never committed literals. |
+| `pull_metadata` API-key JSON | `2404139:fastlane/Fastfile:106-125` | Retain the `Tempfile.create` handoff, require mode `0600` and symmetric cleanup tests, and suppress logging of its live path. Its hash now contains raw PEM produced from 1Password rather than a home-directory path. |
+| `~/.appstoreconnect/` | Existing plan/spec, the old plaintext key, and Fastlane Transporter's cleanup-deficient `verify` path | Remove the old `.p8` and empty directory after successful cutover. After each project lane that can invoke Transporter, surgically remove the expected project-key path and fail if any `.p8` remains. |
 | Old IDs and absolute path in docs | `docs/superpowers/plans/2026-07-30-fastlane-screenshots-submission.md` and `docs/superpowers/specs/2026-07-30-fastlane-screenshots-submission-design.md` | After revocation, replace them with a neutral 1Password item reference and scrub the obsolete path. History remains, but the revoked identifiers no longer compose with a live key. |
 
 ## Migration/cutover plan
@@ -212,8 +225,8 @@ credential test.
    unlock step. Never paste the token into a command recorded by an agent.
 2. **Prepare the code migration before creating the key.** Implement the committed `.envrc`, secret
    resolver, base64 decode, raw `key_content` handoff, gym-scoped tempfile helper, deletion of the old
-   env files, `.gitignore` change, and non-submitting verification lanes/tests. The references may
-   point to an empty placeholder item until the next step.
+   env files, `.gitignore` change, Transporter postcondition, and non-submitting verification
+   lanes/tests. The references may point to an empty placeholder item until the next step.
 3. **Create the replacement App Manager key in App Store Connect.** Use the browser's one-time
    download. Configure an explicit private download location, keep the window between download and
    import as short as practical, and do not expose the values in a terminal transcript.
@@ -259,9 +272,14 @@ restore the revoked credential.
   missing/invalid field.
 - Base64 decode rejects malformed input; the decoded value loads through the real
   `app_store_connect_api_key` path.
-- The gym helper creates a mode-`0600` file, exposes it only for the duration of the block, and
-  removes it on both success and an injected failure.
-- The existing `pull_metadata` temporary JSON cleanup remains intact.
+- The gym helper and `pull_metadata` JSON handoff both create mode-`0600` files, expose them only
+  for the duration of their blocks, and remove them on both success and an injected failure.
+- `pull_metadata` invokes its nested Fastlane process with `log: false`, so the live tempfile path
+  is not emitted to lane output.
+- Every lane that invokes `pilot` or `deliver` removes the expected project-key file and asserts
+  that no `.p8` remains below `~/.appstoreconnect/`, including when the downstream action fails.
+- A repository scan enumerates every `fastlane run` occurrence and fails if any credential-returning
+  action is invoked that way. Non-secret action examples require an explicit allowlist rationale.
 - Repository scans find no private key block, service-account token, replacement identifiers, or
   absolute credential path.
 
@@ -279,7 +297,8 @@ Before revocation, the maintainer confirms:
 
 1. `check_asc_key` succeeds without printing a key or returned credential hash;
 2. the archive-only gym probe authenticates without upload/submission;
-3. no gym `.p8` or `pull_metadata` JSON tempfile remains after success or forced failure;
+3. no gym `.p8`, `pull_metadata` JSON tempfile, or Transporter `.p8` remains after success or forced
+   failure;
 4. the selected authentication mode meets the maintainer's unattended-run policy; and
 5. the 1Password item and, if selected, service-account usage are visible to the maintainer.
 
@@ -295,6 +314,8 @@ by rotation and #365 as remediated by the 1Password migration.
 - **DECIDED:** Store/transport private-key content as base64, decode in Ruby, and pass raw PEM to
   Fastlane.
 - **DECIDED:** Xcode receives a mode-`0600`, gym-scoped temporary `.p8` with ensure cleanup.
+- **DECIDED:** Family Foqos lanes enforce the no-standing-key postcondition instead of trusting
+  Fastlane Transporter's non-uniform cleanup.
 - **RECOMMENDED / OPEN-FOR-MAINTAINER:** Use a read-only service account for reliable unattended
   runs; personal biometric authentication remains a supported runtime fallback.
 - **OPEN-FOR-MAINTAINER:** Final dedicated vault and ASC item names.
