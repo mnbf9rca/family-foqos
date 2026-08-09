@@ -59,8 +59,8 @@ never holds ASC key material.
 
 ### Option A — read-only 1Password service account (ratified)
 
-Create a dedicated non-built-in automation vault containing only the Family Foqos ASC item. Give a
-service account `read_items` access to that vault. 1Password CLI uses this mode when
+Create a dedicated non-built-in automation vault containing only Family Foqos credential material.
+Give a service account `read_items` access to that vault. 1Password CLI uses this mode when
 `OP_SERVICE_ACCOUNT_TOKEN` is present. The service account cannot use a Personal, Private, Employee,
 or default Shared vault, so a dedicated vault is required. Its access can be limited, inspected,
 rotated, and revoked. These constraints follow 1Password's
@@ -70,9 +70,9 @@ rotated, and revoked. These constraints follow 1Password's
 This is the reliable unattended mode: `op run` does not require a biometric interaction once the
 token is present. The trade-off is real: `OP_SERVICE_ACCOUNT_TOKEN` is itself a long-lived secret in
 the worker's ambient environment for the release session. It must never live in a committed file,
-shell history, or the repository. Limiting the account to a one-item vault makes compromise narrower
-than today's raw, effectively immortal `.p8`, and the token is revocable and its use report is
-inspectable.
+shell history, or the repository. Limiting the account to a dedicated, narrowly scoped application
+vault makes compromise narrower than today's raw, effectively immortal `.p8`, and the token is
+revocable and its use report is inspectable.
 
 **Status: RATIFIED AND PROVISIONED.** The read-only token is stored at
 `op://family-foqos/service_auth_token/OP_SERVICE_ACCOUNT_TOKEN`. Personal 1Password authentication
@@ -104,11 +104,13 @@ migration's purpose.
 
 The ratified architecture separates operator bootstrap from ASC credential delivery.
 
-**Layer 1 — operator-local bootstrap.** Personal 1Password app integration and direnv use an
-operator-owned `.env.tpl` to export only `OP_SERVICE_ACCOUNT_TOKEN`, resolved from
-`op://family-foqos/service_auth_token/OP_SERVICE_ACCOUNT_TOKEN`. This costs one biometric touch per
-release session. The repository documents this setup but does not ship `.env.tpl`, `.envrc`, or the
-resolved token. No ASC key ID, issuer ID, or key content enters the ambient shell.
+**Layer 1 — committed reference-only bootstrap.** Personal 1Password app integration and direnv use
+committed `.env.tpl` and `.envrc` files to export only `OP_SERVICE_ACCOUNT_TOKEN`, resolved from
+`op://family-foqos/service_auth_token/OP_SERVICE_ACCOUNT_TOKEN`. Both files contain references and
+non-secret bootstrap logic only; neither contains the resolved token. The operator reviews them and
+runs `direnv allow` as the one-time consent step for that version, then personal 1Password costs one
+biometric touch per release session. No ASC key ID, issuer ID, or key content enters the ambient
+shell.
 
 **Layer 2 — per-invocation ASC injection.** Commit `fastlane/asc.env` with exactly three non-secret
 reference mappings:
@@ -140,13 +142,17 @@ credential-using lane joins the wrapped set explicitly.
 The setup flow is:
 
 1. Install the 1Password CLI and direnv; enable personal app integration.
-2. Configure the operator-local direnv/`.env.tpl` bootstrap for only `OP_SERVICE_ACCOUNT_TOKEN`.
+2. Review the committed `.env.tpl`/`.envrc` bootstrap, confirm it handles only
+   `OP_SERVICE_ACCOUNT_TOKEN`, and run `direnv allow` once to consent to that version.
 3. Run **Session Credential Warm-up** once at the start of the release session.
 4. Invoke Fastlane through `scripts/fastlane.sh`; do not call an ASC lane bare.
 
 Retain `fastlane/.env` in `.gitignore` as defense in depth after deleting the file and removing all
-runtime use. Commit `fastlane/asc.env`; it contains references, not resolved values. Delete
-`fastlane/.env.template` because the operator no longer copies or edits a Fastlane env template.
+runtime use. Commit `.envrc` and `.env.tpl`; they contain only the service-token reference and
+non-secret bootstrap logic. Add a root-anchored `/.direnv/` ignore rule because that directory may
+cache the resolved service token. Commit `fastlane/asc.env`; it contains references, not resolved
+values. Delete `fastlane/.env.template` because the operator no longer copies or edits a Fastlane
+env template.
 
 A leaked `op://` reference reveals vault/item/field naming metadata. It does **not** reveal or grant
 access to the referenced value; an attacker still needs an authorized 1Password user session or
@@ -215,14 +221,21 @@ the same `prepare` writer without cleanup (`itunes_transporter.rb:903-953`). For
 (`itunes_transporter.rb:68-90`). Whether current project lanes reach `verify` is not an acceptable
 security dependency.
 
-Every project lane that invokes `pilot` or `deliver`, including `pull_metadata`, must therefore
-enforce its own postcondition in an `ensure`: remove only the expected project-key file at that
-known Transporter path, then fail if any `.p8` remains below `~/.appstoreconnect/`. An unrelated
-standing key is reported for operator remediation, not silently deleted. The scoped invariant is:
+Every credential-using project lane must therefore enforce its own postcondition in an `ensure`.
+First, remove only the expected replacement-key file at the known Transporter path. Then recursively
+scan `~/.appstoreconnect/` for `*.p8`. During the maintenance window, the scan has one hardcoded
+allowlist entry: the exact legacy path
+`~/.appstoreconnect/private_keys/AuthKey_U2UZLVHKA5.p8`. That file produces a warning pointing to
+cutover step 9; every other residual `.p8` fails the lane, so a leaked replacement-key file is never
+tolerated. Deleting the legacy file at step 9 naturally makes the check total. There is no
+environment variable, feature flag, or activation toggle: the filesystem state that cutover already
+changes controls the transition. An unrelated standing key is reported for operator remediation,
+not silently deleted. The scoped invariant is:
 **no standing plaintext private-key file survives a credential-using Family Foqos lane or the
-cutover**. It is not the untrue claim that the key never exists outside 1Password or that the gem
-always cleans up after itself. Child-only `op run` injection strengthens this postcondition: the
-cleanup proof no longer has to account for ASC values lingering in the parent shell after a lane.
+cutover, except for the explicitly warned legacy path before step 9**. It is not the untrue claim
+that the key never exists outside 1Password or that the gem always cleans up after itself.
+Child-only `op run` injection strengthens this postcondition: the cleanup proof no longer has to
+account for ASC values lingering in the parent shell after a lane.
 
 ### What dies and what replaces it
 
@@ -230,10 +243,12 @@ cleanup proof no longer has to account for ASC values lingering in the parent sh
 | --- | --- | --- |
 | `fastlane/.env` | Fastlane auto-load; `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_PATH` | Delete the file and all runtime dependence at cutover. Keep its ignore rule as a tripwire. `scripts/fastlane.sh` injects child-only values through committed, non-secret `fastlane/asc.env`. |
 | `fastlane/.env.template` | `2404139:fastlane/.env.template:1-4` | Delete it. Its copy-and-edit job no longer exists; committed `fastlane/asc.env` plus bootstrap documentation replaces it. |
+| `.envrc`, `.env.tpl`, and `.direnv/` | Layer 1 reference-only bootstrap and direnv's cached exported environment | Commit `.envrc` and `.env.tpl` with references/non-secret logic only. Ignore `/.direnv/`, assert it is untracked, and scan the committed files for resolved service-account tokens. |
 | `ASC_KEY_PATH` in `asc_api_key` | `2404139:fastlane/Fastfile:21-26` | Fetch the child-only base64 value injected by `op run`, decode in Ruby, and pass raw `key_content:`. |
 | `ASC_KEY_PATH` in `release` and `beta` `gym` `xcargs` | `4e6b28b:fastlane/Fastfile` | A helper-owned mode-`0600` temporary `.p8` path scoped to each `gym` call. Key and issuer IDs come from the same child-only environment, never committed literals. |
 | `pull_metadata` API-key JSON | `2404139:fastlane/Fastfile:106-125` | Retain the `Tempfile.create` handoff, require mode `0600` and symmetric cleanup tests, and suppress logging of its live path. Its hash now contains raw PEM produced from 1Password rather than a home-directory path. |
-| `~/.appstoreconnect/` | Existing plan/spec, the old plaintext key, and Fastlane Transporter's cleanup-deficient `verify` path | Remove the old `.p8` and empty directory after successful cutover. After each project lane that can invoke Transporter, surgically remove the expected project-key path and fail if any `.p8` remains. |
+| `~/.appstoreconnect/` | Existing plan/spec, the old plaintext key, and Fastlane Transporter's cleanup-deficient `verify` path | After every credential-using lane, surgically remove the expected replacement-key path and recursively scan for `.p8` files. Before step 9, warn only for exact legacy path `AuthKey_U2UZLVHKA5.p8` and fail on every other match; deleting the legacy file makes the same scan require zero matches. |
+| Retained document `3jey32ebbf3d4s2ktuyb64i4rq` | Accepted backup copy of the replacement PEM | Keep it under the same vault access control for this cutover. Every future key rotation must update or remove both this document and `ASC_KEY_CONTENT_BASE64_REF` so retired private-key material is not silently retained. |
 | Old IDs and absolute path in docs | `docs/superpowers/plans/2026-07-30-fastlane-screenshots-submission.md` and `docs/superpowers/specs/2026-07-30-fastlane-screenshots-submission-design.md` | After revocation, replace them with a neutral 1Password item reference and scrub the obsolete path. History remains, but the revoked identifiers no longer compose with a live key. |
 
 ## Migration/cutover plan
@@ -246,12 +261,14 @@ while old key `U2UZLVHKA5` is not yet revoked.
 1. **Record the completed provisioning.** The maintainer has provisioned the read-only service
    account, vault `family-foqos`, item `app_store_connect_key`, and the three decided fields. The
    replacement key is present in the concealed base64 field.
-2. **Implement the two layers before activating them.** Document the operator-local
-   `OP_SERVICE_ACCOUNT_TOKEN` bootstrap, commit `fastlane/asc.env` and `scripts/fastlane.sh`, fetch
-   child-only values in Fastlane, strictly decode raw `key_content`, add the gym-scoped tempfile
-   helper, retire the old env files, and implement the Transporter postcondition and non-submitting
-   tests. From this step through old-key revocation, treat the work as a maintenance window: do not
-   invoke `pilot` or `deliver` merely for credential testing.
+2. **Implement the two layers before activating them.** Commit the reference-only `.env.tpl` and
+   `.envrc` bootstrap for `OP_SERVICE_ACCOUNT_TOKEN`, `fastlane/asc.env`, and
+   `scripts/fastlane.sh`; fetch child-only values in Fastlane, strictly decode raw `key_content`, add
+   the gym-scoped tempfile helper, retire the old env files, and implement the Transporter
+   postcondition and non-submitting tests. From this step through old-key revocation, treat the work
+   as a maintenance window. Every credential-using lane must use the wrapper and enforce the
+   single-entry legacy-path allowlist; do not invoke `pilot` or `deliver` merely for credential
+   testing.
 3. **Verify the 1Password field round trip.** Through an operator-controlled `op run` child, confirm
    all three mappings resolve, the base64 field strictly decodes, and the decoded value parses as the
    expected PEM without printing any value.
@@ -276,7 +293,9 @@ while old key `U2UZLVHKA5` is not yet revoked.
 9. **Remove old local material and references.** Best-effort remove the old `.p8` and now-empty
    standing `~/.appstoreconnect/` directory, delete `fastlane/.env` and
    `fastlane/.env.template`, and scrub the old identifiers and absolute path from the Fastlane plan
-   and spec. Do not rewrite git history.
+   and spec. Removing `AuthKey_U2UZLVHKA5.p8` also removes the postcondition's only allowlisted
+   match, so subsequent scans require zero residual `.p8` files without a configuration change. Do
+   not rewrite git history.
 10. **Close the exposure loop.** Search the working tree for the old key ID, issuer ID,
     `ASC_KEY_PATH`, and the old home-directory path. Expected results are historical issue context
     only, not active configuration or current plan/spec prose. Record the replacement key only by
@@ -293,11 +312,15 @@ restore the revoked credential.
 
 - `fastlane/asc.env` is tracked and contains exactly the three decided `op://` mappings; it contains
   no resolved value.
-- The repository ships neither the operator's `.env.tpl`/`.envrc` bootstrap nor a service-account
-  token, while `fastlane/.env` remains ignored as a tripwire.
+- `.envrc` and `.env.tpl` are tracked and contain only
+  `op://family-foqos/service_auth_token/OP_SERVICE_ACCOUNT_TOKEN` plus non-secret bootstrap logic;
+  neither contains a resolved token or any ASC value. Root-anchored `/.direnv/` prevents staging
+  direnv's cached service token, and `fastlane/.env` remains ignored as a tripwire.
 - `scripts/fastlane.sh` routes `beta`, `release`, `pull_metadata`, and `check_asc_key` through
   `op run --env-file fastlane/asc.env`; `screenshots` remains credential-free.
-- A bare credential-using Fastlane invocation fails at `ENV.fetch` before build or network mutation.
+- With the legacy `fastlane/.env` still present, a bare credential-using Fastlane invocation fails
+  at `ENV.fetch("ASC_KEY_CONTENT_BASE64")` before build or network mutation even though Fastlane may
+  auto-load the legacy key and issuer IDs.
 - No active Fastfile or script reads `ASC_KEY_PATH` or auto-loads `fastlane/.env`.
 - `op run` resolution is child-scoped, masks the concealed key value, and fails closed on every
   missing/invalid reference; Fastlane does not print the injected values.
@@ -307,8 +330,12 @@ restore the revoked credential.
   for the duration of their blocks, and remove them on both success and an injected failure.
 - `pull_metadata` invokes its nested Fastlane process with `log: false`, so the live tempfile path
   is not emitted to lane output.
-- Every lane that invokes `pilot` or `deliver` removes the expected project-key file and asserts
-  that no `.p8` remains below `~/.appstoreconnect/`, including when the downstream action fails.
+- After every credential-using lane, the recursive `~/.appstoreconnect/**/*.p8` postcondition removes
+  the expected replacement-key path, tolerates only the exact hardcoded legacy path with a step-9
+  warning, and fails for every other residual key, including when the downstream action fails.
+- Tests prove that the legacy path is the only allowlisted entry, a leaked replacement or unrelated
+  `.p8` always fails, and deleting the legacy file makes the same postcondition require zero keys
+  without an environment variable or toggle.
 - A repository scan enumerates every `fastlane run` occurrence and fails if any credential-returning
   action is invoked that way. Non-secret action examples require an explicit allowlist rationale.
 - Repository scans find no private key block, service-account token, replacement identifiers, or
@@ -329,8 +356,9 @@ Before revocation, the maintainer confirms:
 
 1. `check_asc_key` succeeds without printing a key or returned credential hash;
 2. the archive-only gym probe authenticates without upload/submission;
-3. no gym `.p8`, `pull_metadata` JSON tempfile, or Transporter `.p8` remains after success or forced
-   failure;
+3. no gym `.p8`, `pull_metadata` JSON tempfile, or replacement-key Transporter `.p8` remains after
+   success or forced failure; before step 9, the only tolerated match is the warned exact legacy
+   path;
 4. the ambient shell contains the service token but no ASC value before, during, or after the lane;
    and
 5. the provisioned 1Password item, retained document backup, and service-account usage are visible
@@ -344,7 +372,9 @@ by rotation and #365 as remediated by the 1Password migration.
 - **DECIDED:** Rotation of the transcript-exposed ASC key is part of this migration's cutover.
 - **DECIDED:** 1Password is the only durable source of truth for the replacement ASC key.
 - **DECIDED:** Personal 1Password plus direnv bootstraps only `OP_SERVICE_ACCOUNT_TOKEN` once per
-  session; the operator-owned `.env.tpl`/`.envrc` is documented but not committed.
+  session; `.env.tpl` and `.envrc` are committed with references/non-secret logic only,
+  `direnv allow` records operator consent, and only `.direnv/` is ignored because it may cache the
+  resolved token.
 - **DECIDED:** The repository commits non-secret `fastlane/asc.env`; `scripts/fastlane.sh` uses
   child-scoped `op run` injection for every ASC lane, while `screenshots` is exempt.
 - **DECIDED:** Use the provisioned read-only service account in vault `family-foqos`; its token is
@@ -354,8 +384,9 @@ by rotation and #365 as remediated by the 1Password migration.
 - **DECIDED:** Store/transport private-key content as base64, decode in Ruby, and pass raw PEM to
   Fastlane.
 - **DECIDED:** Xcode receives a mode-`0600`, gym-scoped temporary `.p8` with ensure cleanup.
-- **DECIDED:** Family Foqos lanes enforce the no-standing-key postcondition instead of trusting
-  Fastlane Transporter's non-uniform cleanup.
+- **DECIDED:** Every credential-using Family Foqos lane recursively enforces the no-standing-key
+  postcondition instead of trusting Fastlane Transporter's non-uniform cleanup. Until step 9, its
+  only hardcoded exception is the exact warned legacy path; no runtime activation toggle exists.
 - **DECIDED:** Retain document item `3jey32ebbf3d4s2ktuyb64i4rq` as the maintainer's backup copy
   alongside the concealed field under the same vault access control.
 - **PENDING CUTOVER:** Old key `U2UZLVHKA5` remains active until wrapped `check_asc_key` and the
