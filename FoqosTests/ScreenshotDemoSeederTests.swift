@@ -86,6 +86,11 @@ final class ScreenshotDemoSeederTests: XCTestCase {
     XCTAssertEqual(
       Set(completedSessions.map { $0.blockedProfile.name }),
       Set(["School Nights", "Homework", "Bedtime", "Deep Focus"]))
+    let sessionsByProfile = Dictionary(grouping: completedSessions, by: { $0.blockedProfile.name })
+    XCTAssertTrue(
+      sessionsByProfile.values.contains { sessions in
+        Set(sessions.map { Int($0.duration(now: now)) }).count > 1
+      })
     XCTAssertEqual(
       completedSessions.compactMap(\.endTime).min(),
       now.addingTimeInterval(-21 * 86400))

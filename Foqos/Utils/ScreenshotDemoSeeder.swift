@@ -94,7 +94,7 @@ import SwiftData
 
       for (index, dayOffset) in dayOffsets.enumerated() {
         let endTime = now.addingTimeInterval(-TimeInterval(dayOffset) * 86400)
-        let duration = durations[index % durations.count]
+        let duration = durations[(index + index / profiles.count) % durations.count]
         let session = BlockedProfileSession(
           tag: "demo-history",
           blockedProfile: profiles[index % profiles.count],
