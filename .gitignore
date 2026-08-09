@@ -62,6 +62,8 @@ fastlane/screenshots/**/*.png
 fastlane/test_output
 fastlane/.env
 fastlane/README.md
+# App Review demo credentials and contact details must never be committed.
+fastlane/metadata/review_information/
 vendor/bundle/
 .bundle/
 

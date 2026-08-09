@@ -1,5 +1,6 @@
 require "fileutils"
 require "json"
+require "tempfile"
 require File.expand_path("archive_storage", __dir__)
 
 # Runs under Homebrew Ruby via Bundler: export PATH="$(brew --prefix ruby)/bin:$PATH" && bundle exec fastlane <lane>
@@ -100,5 +101,27 @@ platform :ios do
   desc "Run release-blocker gates only"
   lane :gates do
     assert_no_release_blockers
+  end
+
+  desc "Pull current App Store metadata into fastlane/metadata"
+  lane :pull_metadata do
+    api_key = asc_api_key
+    Tempfile.create(["asc-api-key", ".json"]) do |key_file|
+      key_file.write(JSON.generate(api_key))
+      key_file.flush
+      sh(
+        "bundle",
+        "exec",
+        "fastlane",
+        "deliver",
+        "download_metadata",
+        "--api_key_path",
+        key_file.path,
+        "--metadata_path",
+        File.join(REPO_ROOT, "fastlane", "metadata"),
+        "--force",
+        "true"
+      )
+    end
   end
 end

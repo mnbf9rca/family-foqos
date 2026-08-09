@@ -1,0 +1,5 @@
+app_identifier("com.cynexia.family-foqos")
+submit_for_review(false)
+automatic_release(false)
+force(false)
+precheck_include_in_app_purchases(false)
