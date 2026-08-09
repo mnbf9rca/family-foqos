@@ -33,10 +33,11 @@ Today's session supplied three concrete examples:
   erase another stream's active build output. Per-stream DerivedData is ineffective unless
   cleanup is also per-stream.
 
-The session's dead production-schema gate is a related process lesson: fastlane changed its
-working directory, so a repo-relative script path resolved somewhere else. Concurrency helpers
-must resolve the worktree and resource paths to absolute paths before starting a child command;
-they must not rely on a caller's current directory.
+The session's dead production-schema gate is a related process lesson: fastlane lane bodies run
+with `fastlane/` as their working directory, and `FastFile#sh` intercepts the call before the
+`chdir("..")` behavior used by real actions. A repo-relative script therefore resolved somewhere
+else. Concurrency helpers must resolve the worktree and resource paths to absolute paths before
+starting a child command; they must not rely on a caller's current directory.
 
 ## Constraints
 
@@ -74,7 +75,8 @@ dependency.
 Benefits:
 
 - The three-stream cap and duplicate UUID/DerivedData claims are atomic.
-- Kernel locks release on normal exit, exception, interrupt, or process death.
+- Kernel locks release after the wrapper and the resource-using child have both closed their
+  inherited descriptors, including after either process dies.
 - Persistent JSON metadata makes active and crashed holders diagnosable.
 - Worktrees and clones coordinate through one machine-wide path.
 
@@ -110,14 +112,21 @@ Use this machine-wide root, independent of repository/worktree location:
 ```text
 ~/Library/Caches/family-foqos/xcode-streams/
   slots/1.lock
+  slots/1.json
   slots/2.lock
+  slots/2.json
   slots/3.lock
+  slots/3.json
   simulators/<UUID>.lock
+  simulators/<UUID>.json
   derived-data/<sha256-of-canonical-absolute-path>.lock
+  derived-data/<sha256-of-canonical-absolute-path>.json
   resources/screenshots-xctestdevices.lock
+  resources/screenshots-xctestdevices.json
 ```
 
-The root is mode `0700`; files are mode `0600`. Each slot file contains JSON while held:
+The root is mode `0700`; files are mode `0600`. Each slot's `.json` sidecar contains metadata while
+held:
 
 ```json
 {
@@ -136,15 +145,26 @@ The root is mode `0700`; files are mode `0600`. Each slot file contains JSON whi
 
 The wrapper acquires locks in one fixed order: slot, simulator UUID, canonical DerivedData path,
 then any command-specific resource lock. A duplicate simulator or DerivedData claim fails before
-the child starts and releases everything already acquired. The parent retains every open file
-descriptor while it spawns and waits for the child, forwards `INT`/`TERM`, and exits with the
-child's status.
+the child starts and releases everything already acquired. Before `Process.spawn`, the wrapper
+sets every lock descriptor's `close_on_exec` to `false` and explicitly maps the descriptors into
+the child. The resource-using child therefore remains a kernel lock holder even if the wrapper is
+`SIGKILL`ed: the lock tracks the process actually using the resource, not merely the process that
+requested it. The wrapper starts the child in its own process group, forwards `INT`/`TERM` to that
+group, waits for it, and exits with the child's status. If the wrapper is exiting abnormally but
+can still run cleanup, it terminates the entire child group, waits through a bounded grace period,
+then escalates the group to `KILL`; a hard-killed wrapper instead relies on the child's inherited
+locks until that resource user exits.
 
-The kernel lock is the source of truth. On normal release the wrapper truncates metadata and
-unlocks. If a process dies, the kernel releases its locks but the JSON remains. The next holder
-that successfully locks the file reports the stale metadata and overwrites it. It never kills or
-reclaims based only on age or a recorded PID. If a live holder is hung, a human inspects the
-metadata and explicitly terminates that process.
+The kernel lock is the source of truth. Lock files are stable inodes and are never replaced.
+Diagnostic JSON lives in separate sidecars: the wrapper writes a same-directory temporary file,
+sets mode `0600`, then atomically renames it over the `.json` sidecar. Readers can therefore inspect
+complete metadata without touching the lock or observing a torn write. On normal release the
+wrapper atomically publishes an inactive record and unlocks. If the wrapper dies while its child
+runs, the inherited child descriptors keep every lock held; the metadata still identifies both
+PIDs. Once the final holder exits, the kernel releases the locks but the last JSON remains. The
+next successful holder reports that stale metadata and overwrites it. It never kills or reclaims
+based only on age or a recorded PID. If a live holder is hung, a human inspects the metadata and
+explicitly terminates the recorded process group.
 
 The implementation shape is:
 
@@ -162,14 +182,19 @@ derived_key = Digest::SHA256.hexdigest(File.realpath(derived_data_parent) +
 derived = try_lock("#{root}/derived-data/#{derived_key}.lock", metadata)
 abort("DerivedData path is already claimed: #{derived_data}") unless derived
 
-# The parent keeps the flock descriptors open for the complete child lifetime.
-child_pid = Process.spawn(*command)
+# Both parent and child keep the flock descriptors. Explicit descriptor mappings avoid Ruby's
+# close-on-exec/default close-others behavior, so an orphan child cannot outlive its locks.
+lock_ios.each { |io| io.close_on_exec = false }
+inherited_locks = lock_ios.to_h { |io| [io.fileno, io.fileno] }
+child_pid = Process.spawn(*command, inherited_locks.merge(pgroup: true))
 status = Process.wait2(child_pid).last
 exit(status.exitstatus || 1)
 ```
 
-The real helper must use `ensure` to truncate/unlock/close in reverse order and must forward
-signals. It must canonicalize paths without requiring the not-yet-created leaf directory.
+The real helper must use `ensure` to publish inactive metadata and close parent descriptors in
+reverse order, and must forward signals to the child process group. Closing the parent's copy does
+not release a lock while the child still holds its inherited copy. It must canonicalize paths
+without requiring the not-yet-created leaf directory.
 
 ### Advisory enforcement
 
@@ -179,8 +204,10 @@ The wrapper cannot police a command that bypasses it. Mitigation is layered:
    archive/screenshot lanes, and mutating `simctl` commands.
 2. Every plan and task assignment provides the wrapper command, UUID, DerivedData path, and file
    set rather than a raw `xcodebuild` command.
-3. The wrapper emits a warning if it observes an `xcodebuild` process whose PID/parent PID is not
-   represented by an active slot. This is a cheap detector, not proof of enforcement.
+3. The wrapper emits a warning if it observes an `xcodebuild` process whose ancestor chain does
+   not reach an active slot's recorded `child_pid`. Checking only the immediate parent would
+   falsely flag the compliant wrapper → Bundler → fastlane → `xcodebuild` chain. This remains a
+   cheap detector, not proof of enforcement.
 4. Read-only `simctl list` discovery may run outside a slot. Boot, clone, delete, erase, test,
    build, archive, and screenshot operations may not.
 
@@ -197,7 +224,11 @@ and records a table like:
 
 The assignment appears in each worker's first message as `FOQOS_SIMULATOR_UUID` and
 `FOQOS_DERIVED_DATA`. The wrapper validates UUID syntax, requires an absolute DerivedData path,
-and locks both. `xcodebuild` receives both:
+locks both, and exports the validated values to its child. For a direct `xcodebuild`, it also
+requires the command arguments to contain the exact assigned destination and DerivedData path.
+Fastlane integration tests must assert that `gym` consumes both values and `snapshot` consumes the
+DerivedData assignment plus its singleton claim; until that plumbing lands, declared locks are not
+evidence of actual resource use. Direct `xcodebuild` receives both:
 
 ```bash
 -destination "platform=iOS Simulator,id=$FOQOS_SIMULATOR_UUID" \
@@ -220,11 +251,36 @@ ruby scripts/with-xcode-stream.rb \
 ```
 
 The singleton screenshots resource prevents two snapshot clone/cleanup windows from overlapping.
-The Fastfile records lane start time and the exact XCTestDevices UUID set before snapshot. After
-snapshot it computes the new UUIDs, retains only entries created after lane start, and deletes
-only those exact UUIDs. The model-name filter in `85593e0` is explicitly interim and is
-superseded by this ownership rule. No code may delete all simulators, all XCTestDevices entries,
-or entries selected only by model/name.
+Cleanup ownership is a three-part invariant, not something the before/after UUID diff establishes
+alone:
+
+1. every compliant non-screenshot stream uses an explicit simulator UUID and never causes a
+   device-name XCTestDevices clone;
+2. only one lane holds `screenshots-xctestdevices` from inventory through cleanup; and
+3. that lane deletes only exact UUIDs absent from its baseline and created after its start.
+
+The wrapper atomically enforces the singleton among compliant commands, and the Fastfile enforces
+the timestamp/UUID filter plus an assertion of the wrapper-exported singleton claim before deleting
+anything. The explicit-UUID rule is advisory for indirect Fastlane commands and argument-validated
+for direct `xcodebuild`; plans, wrapper validation, and integration tests keep that leg visible. A
+future change may not drop either the explicit-UUID rule or singleton on the theory that the UUID
+diff is sufficient: an unrelated clone created inside the window would also be new. The model-name
+filter in `85593e0` is explicitly interim and is superseded by this composed ownership rule. No
+code may delete all simulators, all XCTestDevices entries, or entries selected only by model/name.
+
+`Snapfile` currently selects `iPhone 17 Pro Max` by name, so snapshot creates arbitrary clone UUIDs
+and does not use `FOQOS_SIMULATOR_UUID`. Reserving the assigned UUID remains harmless and keeps one
+uniform wrapper interface, but the singleton—not that UUID lock—is what protects the screenshots
+clone window.
+
+An `ensure` cleanup cannot run after `SIGKILL`. Before snapshot, the wrapper atomically records the
+lane start, expected snapshot model, and baseline UUID set in the singleton's metadata sidecar.
+When a later holder acquires an otherwise-free singleton and finds prior active metadata, it
+reconstructs exact candidates that were absent from the baseline, created after the prior start,
+and match the expected snapshot-clone pattern. It reports candidates immediately. Candidates with
+no live singleton holder enter a 24-hour quarantine; after that threshold the helper may offer an
+operator-confirmed deletion listing every exact UUID, but it never auto-deletes. Age and a dead PID
+are filters for the confirmation list, not authority to reclaim by themselves.
 
 ### File ownership and integration
 
@@ -257,8 +313,11 @@ literal text when the helper and cleanup fixes land:
   - **`fastlane screenshots` is one Xcode-mutating stream.** Wrap the complete
     `bundle exec fastlane screenshots` command, from its pre-run XCTestDevices inventory through
     cleanup. Simulator cleanup may delete only exact UUIDs created by that lane after its recorded
-    start; never select cleanup targets only by model/name, and never reset or blanket-purge
-    simulators. The screenshots lane also holds its singleton XCTestDevices-cleanup resource.
+    start, while every other stream uses an explicit UUID destination and the screenshots lane
+    holds its singleton XCTestDevices-cleanup resource. All three conditions are required; the UUID
+    diff alone is not ownership. Never select cleanup targets only by model/name, and never reset or
+    blanket-purge simulators. A hard-killed lane's candidates are reported and require explicit
+    operator confirmation after the documented quarantine before exact-UUID deletion.
   - **DerivedData cleanup is stream-local.** Every build passes its assigned
     `-derivedDataPath`. Clean only that exact validated path; never use a `FamilyFoqos-*` wildcard
     while streams may overlap.
@@ -276,17 +335,21 @@ design decisions; every real task message substitutes concrete values.
 
 1. Land and test `scripts/with-xcode-stream.rb` before or atomically with the `AGENTS.md` change.
    Tests cover three simultaneous holders, fourth-holder refusal, duplicate UUID/path refusal,
-   fixed acquisition order, signal forwarding, child exit propagation, normal cleanup, and stale
-   metadata recovery after a killed holder.
+   fixed acquisition order, signal forwarding to the child process group, child exit propagation,
+   normal cleanup, atomic metadata reads, and stale metadata recovery. Kill a wrapper around a
+   long-running child and prove the inherited child descriptors prevent a duplicate claim until
+   that child exits.
 2. Replace `scripts/clean-build.sh` wildcard deletion with one validated absolute-path argument.
    Refuse an empty path, `/`, a home directory, the DerivedData root itself, or any path outside
    the expected FamilyFoqos DerivedData prefix.
 3. Update every documented build/test command to pass the assigned UUID and
    `-derivedDataPath`, wrapped by the helper. Update fastlane `gym`/`snapshot` plumbing to consume
    the same assignment.
-4. Update the merged screenshots Fastfile: outer wrapper for the whole lane, singleton cleanup
-   resource, exact before/after UUID ownership, and created-after-start filtering. Remove the
-   interim model-name-only cleanup from `85593e0`.
+4. Update the merged screenshots Fastfile: outer wrapper for the whole lane, asserted singleton
+   cleanup resource, exact before/after UUID candidates, created-after-start filtering, and a
+   startup sweep using prior singleton metadata. Test immediate reporting, the 24-hour quarantine,
+   refusal without operator confirmation, and confirmed deletion of only the displayed UUIDs.
+   Remove the interim model-name-only cleanup from `85593e0`.
 5. Land the literal `AGENTS.md` replacement above in the same reviewed change as the working
    helper and safe cleanup. Do not publish a mandate for a helper that does not yet exist.
 6. Validate without Xcode first: three wrapped `sleep` children acquire slots, a fourth fails,
