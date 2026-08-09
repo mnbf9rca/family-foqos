@@ -620,6 +620,14 @@ struct HomeView: View {
 
   private func onAppearApp() {
     try? strategyManager.loadActiveSession(context: context)
+    #if DEBUG
+      if ScreenshotDemoMode.scenario == .profileEditor {
+        profileToEdit = profiles.valid.first
+      }
+      if ScreenshotDemoMode.scenario == .parentDashboard {
+        showParentDashboard = true
+      }
+    #endif
     strategyManager.cleanUpGhostSchedules(context: context)
 
     // Migration: existing users upgrading from a version without hasCompletedOnboarding.

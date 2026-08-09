@@ -111,6 +111,13 @@ struct FoqosApp: App {
     SharedData.configure(
       suite: UserDefaults(suiteName: "group.com.cynexia.family-foqos")!
     )
+    #if DEBUG
+      do {
+        try ScreenshotDemoSeeder.seed(container: container)
+      } catch {
+        Log.error("Demo seed failed: \(error.localizedDescription)", category: .app)
+      }
+    #endif
     Log.info("init() called", category: .app)
     TimersUtil.registerBackgroundTasks()
     UNUserNotificationCenter.current().delegate = NotificationDelegate.shared
@@ -287,15 +294,6 @@ struct FoqosApp: App {
                 emergencyManager: emergencyManager)
             }
           }
-          #if DEBUG
-            if ScreenshotDemoMode.isActive {
-              do {
-                try ScreenshotDemoSeeder.seed(container: container)
-              } catch {
-                Log.error("Demo seed failed: \(error.localizedDescription)", category: .app)
-              }
-            }
-          #endif
           if !ScreenshotDemoMode.isActive {
             // Reschedule pre-activation reminders for today
             PreActivationReminderScheduler.mergeExtensionScheduleSuppression(
