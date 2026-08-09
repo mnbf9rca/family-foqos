@@ -138,10 +138,12 @@ Dir.mktmpdir do |root|
   stale_backup = "#{destination}.backup-stale-recovery"
   FileUtils.mkdir_p(stale_backup)
   File.write(File.join(stale_backup, "marker"), "recoverable")
+  recovery_messages = []
   begin
     ArchiveStorage.replace_directory(
       source: File.join(root, "still-missing.xcarchive"),
-      destination: destination
+      destination: destination,
+      logger: ->(message) { recovery_messages << message }
     )
     warn "FAIL: missing replacement source should raise after stale-backup recovery"
     exit 1
@@ -151,6 +153,57 @@ Dir.mktmpdir do |root|
 
   unless File.exist?(destination) && File.read(File.join(destination, "marker")) == "recoverable"
     warn "FAIL: stale backup was not recovered before the failed replacement"
+    exit 1
+  end
+  unless recovery_messages.any? { |message| message.include?(stale_backup) }
+    warn "FAIL: stale-backup recovery did not report the discovered path"
+    exit 1
+  end
+
+  copy = FileUtils.method(:cp_r)
+  FileUtils.define_singleton_method(:cp_r) do |_source_path, destination_path|
+    FileUtils.mkdir_p(destination_path)
+    File.write(File.join(destination_path, "partial"), "incomplete")
+    raise Interrupt
+  end
+  begin
+    ArchiveStorage.replace_directory(source: source, destination: destination)
+    warn "FAIL: interrupt during archive copy should raise"
+    exit 1
+  rescue Interrupt
+    # Expected: a partial temporary copy exists, but no complete copy has moved.
+  ensure
+    FileUtils.define_singleton_method(:cp_r, copy)
+  end
+
+  unless File.read(File.join(source, "marker")) == "new" &&
+      File.read(File.join(destination, "marker")) == "recoverable"
+    warn "FAIL: copy interrupt damaged a complete source or stored archive"
+    exit 1
+  end
+  unless Dir.glob("#{destination}.tmp-*").empty?
+    warn "FAIL: copy interrupt left a partial temporary archive"
+    exit 1
+  end
+
+  rename_count = 0
+  File.define_singleton_method(:rename) do |_source_path, _destination_path|
+    rename_count += 1
+    raise Interrupt if rename_count == 1
+  end
+  begin
+    ArchiveStorage.replace_directory(source: source, destination: destination)
+    warn "FAIL: interrupt before the first rename should raise"
+    exit 1
+  rescue Interrupt
+    # Expected: the completed temporary copy never displaces the stored archive.
+  ensure
+    File.define_singleton_method(:rename, rename)
+  end
+
+  unless File.read(File.join(source, "marker")) == "new" &&
+      File.read(File.join(destination, "marker")) == "recoverable"
+    warn "FAIL: pre-rename interrupt damaged a complete source or stored archive"
     exit 1
   end
 end
