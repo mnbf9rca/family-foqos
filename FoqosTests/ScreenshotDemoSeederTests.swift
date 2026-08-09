@@ -27,7 +27,7 @@ final class ScreenshotDemoSeederTests: XCTestCase {
     try await super.tearDown()
   }
 
-  func testGivenDemoMode_WhenSeeding_ThenProfilesAndActiveSessionExist() throws {
+  func testGivenDemoMode_WhenSeeding_ThenProfilesHistoryAndActiveSessionExist() throws {
     let now = Date()
     try ScreenshotDemoSeeder.seed(container: container, now: now)
 
@@ -37,10 +37,28 @@ final class ScreenshotDemoSeederTests: XCTestCase {
     XCTAssertTrue(profiles.contains { $0.isManaged })
 
     let sessions = try context.fetch(FetchDescriptor<BlockedProfileSession>())
-    XCTAssertEqual(sessions.count, 1)
-    let session = try XCTUnwrap(sessions.first)
-    XCTAssertTrue(session.isActive)
-    XCTAssertEqual(session.startTime, now.addingTimeInterval(-2400))
+    let activeSessions = sessions.filter(\.isActive)
+    let completedSessions = sessions.filter { !$0.isActive }
+    XCTAssertEqual(sessions.count, 17)
+    XCTAssertEqual(activeSessions.count, 1)
+    XCTAssertEqual(completedSessions.count, 16)
+
+    let activeSession = try XCTUnwrap(activeSessions.first)
+    XCTAssertEqual(activeSession.blockedProfile.name, "Homework")
+    XCTAssertEqual(activeSession.startTime, now.addingTimeInterval(-2400))
+
+    XCTAssertEqual(
+      Set(completedSessions.map { Int($0.duration(now: now)) }),
+      Set([1800, 5400, 12600, 19800]))
+    XCTAssertEqual(
+      Set(completedSessions.map { $0.blockedProfile.name }),
+      Set(["School Nights", "Homework", "Bedtime", "Deep Focus"]))
+    XCTAssertEqual(
+      completedSessions.compactMap(\.endTime).min(),
+      now.addingTimeInterval(-21 * 86400))
+    XCTAssertEqual(
+      completedSessions.compactMap(\.endTime).max(),
+      now.addingTimeInterval(-86400))
   }
 
   func testGivenDemoMode_WhenSeeding_ThenFamilyStateIsStaged() throws {
@@ -60,7 +78,7 @@ final class ScreenshotDemoSeederTests: XCTestCase {
     XCTAssertTrue(profiles.isEmpty)
   }
 
-  func testGivenParentDashboardScenario_WhenSeeding_ThenProfilesExistWithoutActiveSession() throws {
+  func testGivenParentDashboardScenario_WhenSeeding_ThenProfilesAndCompletedHistoryExist() throws {
     let now = Date()
     ScreenshotDemoMode.scenarioOverrideForTesting = .parentDashboard
     try ScreenshotDemoSeeder.seed(container: container, now: now)
@@ -69,6 +87,7 @@ final class ScreenshotDemoSeederTests: XCTestCase {
     let profiles = try context.fetch(FetchDescriptor<BlockedProfiles>())
     let sessions = try context.fetch(FetchDescriptor<BlockedProfileSession>())
     XCTAssertEqual(profiles.count, 4)
-    XCTAssertTrue(sessions.isEmpty)
+    XCTAssertEqual(sessions.count, 16)
+    XCTAssertTrue(sessions.allSatisfy { !$0.isActive })
   }
 }

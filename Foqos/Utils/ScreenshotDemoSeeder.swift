@@ -40,6 +40,8 @@ import SwiftData
       for profile in [school, homework, bedtime, focus] {
         context.insert(profile)
       }
+      seedHistory(
+        profiles: [school, homework, bedtime, focus], context: context, now: now)
 
       if ScreenshotDemoMode.scenario == .homeActive {
         // Direct init (NOT createSession) so no SharedData/app-group write occurs.
@@ -82,6 +84,24 @@ import SwiftData
       UserDefaults.standard.set(true, forKey: "family_foqos_has_completed_onboarding")
       UserDefaults.standard.set(false, forKey: "family_foqos_show_intro_screen")
       UserDefaults.standard.set(false, forKey: "family_foqos_show_mode_selection")
+    }
+
+    private static func seedHistory(
+      profiles: [BlockedProfiles], context: ModelContext, now: Date
+    ) {
+      let dayOffsets = [1, 2, 3, 5, 6, 7, 8, 10, 11, 12, 13, 15, 16, 18, 19, 21]
+      let durations: [TimeInterval] = [1800, 5400, 12600, 19800]
+
+      for (index, dayOffset) in dayOffsets.enumerated() {
+        let endTime = now.addingTimeInterval(-TimeInterval(dayOffset) * 86400)
+        let duration = durations[index % durations.count]
+        let session = BlockedProfileSession(
+          tag: "demo-history",
+          blockedProfile: profiles[index % profiles.count],
+          startTime: endTime.addingTimeInterval(-duration))
+        session.endTime = endTime
+        context.insert(session)
+      }
     }
   }
 #endif
