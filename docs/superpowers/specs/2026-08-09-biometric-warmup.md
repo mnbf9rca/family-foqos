@@ -3,6 +3,8 @@
 **Status:** Approved for the repository's `AGENTS.md`
 **Scope:** Exact session-start `AGENTS.md` rule and brief expiry fallback.
 
+This warm-up procedure is what the #365 credentials spec refers to as the Session Credential Warm-up; that name resolves here.
+
 ## Exact AGENTS.md addition
 
 Add this under the repository's key rules:
