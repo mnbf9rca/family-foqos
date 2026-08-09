@@ -36,7 +36,8 @@ if [[ "${REF_LINES[*]}" != "${EXPECTED_REFS[*]}" ]]; then
   exit 1
 fi
 
-mkdir -p "$TEST_ROOT/bootstrap" "$TEST_ROOT/ruby/bin" "$TEST_ROOT/no-op-ruby/bin"
+mkdir -p "$TEST_ROOT/bootstrap" "$TEST_ROOT/failing-brew" "$TEST_ROOT/ruby/bin" \
+  "$TEST_ROOT/no-op-ruby/bin"
 
 cat >"$TEST_ROOT/bootstrap/brew" <<EOF
 #!/bin/bash
@@ -45,6 +46,11 @@ if [[ "\${1:-}" != "--prefix" || "\${2:-}" != "ruby" ]]; then
   exit 64
 fi
 printf '%s\n' "\${FAKE_RUBY_PREFIX}"
+EOF
+
+cat >"$TEST_ROOT/failing-brew/brew" <<'EOF'
+#!/bin/bash
+exit 1
 EOF
 
 cat >"$TEST_ROOT/ruby/bin/op" <<'EOF'
@@ -62,8 +68,29 @@ printf '\n' >>"$COMMAND_LOG"
 EOF
 
 cp "$TEST_ROOT/ruby/bin/bundle" "$TEST_ROOT/no-op-ruby/bin/bundle"
-chmod +x "$TEST_ROOT/bootstrap/brew" "$TEST_ROOT/ruby/bin/op" \
+chmod +x "$TEST_ROOT/bootstrap/brew" "$TEST_ROOT/failing-brew/brew" "$TEST_ROOT/ruby/bin/op" \
   "$TEST_ROOT/ruby/bin/bundle" "$TEST_ROOT/no-op-ruby/bin/bundle"
+
+assert_ruby_prerequisite_failure() {
+  local test_name=$1
+  local test_path=$2
+  local output
+  local status
+
+  set +e
+  output=$(PATH="$test_path" "$WRAPPER" lanes 2>&1)
+  status=$?
+  set -e
+  if [[ "$status" -eq 0 || "$output" != *"brew install ruby"* ]]; then
+    echo "FAIL: $test_name must fail with the Homebrew Ruby prerequisite"
+    printf 'exit: %s\n%s\n' "$status" "$output"
+    exit 1
+  fi
+}
+
+assert_ruby_prerequisite_failure "missing brew" "/usr/bin:/bin"
+assert_ruby_prerequisite_failure \
+  "missing Homebrew Ruby formula" "$TEST_ROOT/failing-brew:/usr/bin:/bin"
 
 run_wrapper() {
   local ruby_prefix=$1

@@ -27,7 +27,7 @@ committed but contain only `op://` references.
 - Do not delete `fastlane/.env` during this implementation. Its key path now dangles and is not a
   credential fallback; never recreate the deleted legacy key file.
 - Do not scan `~/.appstoreconnect`, add residue allowlists, or implement a per-lane residue
-  postcondition. Transporter verify residue is a maintainer-accepted known limitation.
+  postcondition. Transporter verification residue is a maintainer-accepted known limitation.
 - Bootstrap configuration is a maintainer-approved exception to test-first code: its exact two
   reference-only files and ignore entries are specified verbatim and verified structurally.
 
