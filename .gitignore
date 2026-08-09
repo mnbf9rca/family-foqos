@@ -60,6 +60,10 @@ fastlane/report.xml
 fastlane/Preview.html
 fastlane/screenshots/**/*.png
 fastlane/test_output
+fastlane/.env
+fastlane/README.md
+vendor/bundle/
+.bundle/
 
 # Claude Code local settings
 .claude/settings.local.json
