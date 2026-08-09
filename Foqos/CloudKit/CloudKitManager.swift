@@ -57,6 +57,7 @@ class CloudKitManager: ObservableObject {
   // MARK: - Account Status
 
   func checkAccountStatus() async {
+    guard !ScreenshotDemoMode.isActive else { return }
     let result = await networkService.checkAccountStatus()
     self.isSignedIn = result.isSignedIn
     if result.isSignedIn, let recordID = result.userRecordID {
@@ -123,6 +124,7 @@ class CloudKitManager: ObservableObject {
   }
 
   func fetchFamilyMembers() async throws -> [FamilyMember] {
+    guard !ScreenshotDemoMode.isActive else { return familyMembers }
     let members = try await networkService.fetchFamilyMembers()
     self.familyMembers = members
     return members
@@ -204,6 +206,7 @@ class CloudKitManager: ObservableObject {
   }
 
   func refreshShareParticipants() async {
+    guard !ScreenshotDemoMode.isActive else { return }
     let participants = await networkService.refreshShareParticipants()
     self.shareParticipants = participants
     self.isShareOwner = await networkService.getIsShareOwner()
@@ -231,6 +234,7 @@ class CloudKitManager: ObservableObject {
   // MARK: - Verification
 
   func verifySelfFamilyMemberRecord() async {
+    guard !ScreenshotDemoMode.isActive else { return }
     let result = await networkService.verifySelfFamilyMember(
       cachedUserRecordID: currentUserRecordID,
       localMode: AppModeManager.shared.currentMode
@@ -251,6 +255,7 @@ class CloudKitManager: ObservableObject {
   // MARK: - Share Participant Sync
 
   func syncShareParticipantsToFamilyMembers() async throws {
+    guard !ScreenshotDemoMode.isActive else { return }
     let result = try await networkService.syncShareParticipantsToFamilyMembers()
     self.pendingParticipants = result.pendingParticipants
     self.familyMembers = result.familyMembers

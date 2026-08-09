@@ -132,6 +132,7 @@ class LockCodeManager: ObservableObject {
 
   /// Fetch all lock codes created by this user (parent or individual mode)
   func fetchLockCodes() async {
+    guard !ScreenshotDemoMode.isActive else { return }
     guard appModeManager.currentMode != .child else { return }
 
     isLoading = true
