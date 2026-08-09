@@ -180,6 +180,13 @@ class LockCodeManager: ObservableObject {
     !lockCodes.isEmpty
   }
 
+  #if DEBUG
+    /// Screenshot/demo + test seeding only — `lockCodes` is private(set).
+    func seedForScreenshots(_ codes: [FamilyLockCode]) {
+      lockCodes = codes
+    }
+  #endif
+
   // MARK: - Child Operations
 
   /// Fetch shared lock codes for verification (child operation)

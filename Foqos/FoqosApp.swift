@@ -287,11 +287,24 @@ struct FoqosApp: App {
                 emergencyManager: emergencyManager)
             }
           }
-          // Reschedule pre-activation reminders for today
-          PreActivationReminderScheduler.mergeExtensionScheduleSuppression(context: container.mainContext)
-          PreActivationReminderScheduler.reconcileScheduleRegistrations(context: container.mainContext)
-          // Catch up any missed schedule starts
-          PreActivationReminderScheduler.catchUpMissedScheduleStarts(context: container.mainContext)
+          #if DEBUG
+            if ScreenshotDemoMode.isActive {
+              do {
+                try ScreenshotDemoSeeder.seed(container: container)
+              } catch {
+                Log.error("Demo seed failed: \(error.localizedDescription)", category: .app)
+              }
+            }
+          #endif
+          if !ScreenshotDemoMode.isActive {
+            // Reschedule pre-activation reminders for today
+            PreActivationReminderScheduler.mergeExtensionScheduleSuppression(
+              context: container.mainContext)
+            PreActivationReminderScheduler.reconcileScheduleRegistrations(
+              context: container.mainContext)
+            // Catch up any missed schedule starts
+            PreActivationReminderScheduler.catchUpMissedScheduleStarts(context: container.mainContext)
+          }
           hasPerformedInitialSetup = true
         }
     }
