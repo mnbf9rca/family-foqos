@@ -4,7 +4,7 @@
 
 **Goal:** One-command screenshot regeneration (`snapshot` + demo-mode seams), TestFlight/App Store lanes with release-blocker gates, and dual archive storage (local folder + GitHub release assets), per the approved spec `docs/superpowers/specs/2026-07-30-fastlane-screenshots-submission-design.md`.
 
-**Architecture:** Bundler-pinned fastlane with three lanes (`screenshots`, `beta`, `release`) sharing a preflight and an archive-storage step. App-side, a `#if DEBUG`-only `ScreenshotDemoMode` (launch-argument activated) switches the SwiftData container to in-memory, seeds fixtures, forces published state on the manager singletons, and suppresses all CloudKit/network startup work. UI tests in the (currently sourceless) `FoqosUITests` target drive one launch per scenario.
+**Architecture:** Bundler-pinned fastlane with three lanes (`screenshots`, `beta`, `release`) sharing preflight, local archive preservation before Apple upload, and GitHub dSYM publication after upload. App-side, a `#if DEBUG`-only `ScreenshotDemoMode` (launch-argument activated) switches the SwiftData container to in-memory, seeds fixtures, forces published state on the manager singletons, and suppresses all CloudKit/network startup work. UI tests in the (currently sourceless) `FoqosUITests` target drive one launch per scenario.
 
 **Tech Stack:** fastlane (snapshot/frameit/gym/pilot/deliver), Bundler + Homebrew Ruby 3.x, `gh` CLI, `xcrun cktool`, ImageMagick (frameit dependency), Swift/SwiftUI/SwiftData.
 
@@ -182,7 +182,7 @@ git commit -m "build: fastlane Appfile + Fastfile skeleton (preflight, build num
 
 **Interfaces:**
 - Consumes: `derived_build_number` from Task 2.
-- Produces: `store_archive(prerelease:)` private lane (reads `lane_context[SharedValues::XCODEBUILD_ARCHIVE]`); `assert_no_release_blockers` private lane; recoverable archive replacement and idempotent dSYM upload helpers; `scripts/check-prod-schema.sh` (exit 0 = schema OK, exit 1 = missing entries, exit 2 = empty/unreadable requirements, other = query failure).
+- Produces: `preserve_archive_locally` and `publish_archive_dsyms(artifacts:prerelease:)` private lanes; `assert_no_release_blockers` private lane; recoverable archive replacement and idempotent dSYM upload helpers; `scripts/check-prod-schema.sh` (exit 0 = schema OK, exit 1 = missing entries, exit 2 = empty/unreadable requirements, other = query failure).
 
 - [ ] **Step 1: Write the schema-gate script**
 
@@ -278,7 +278,7 @@ such as `"cloudkit.share"`; remove stale app record types that the code no longe
 Run: `./scripts/check-prod-schema.sh; echo "exit: $?"`
 Expected: prints `MISSING in production schema: ...` for the V2 sync record types (production currently holds only V1-era family types — confirmed 2026-07-30) and `exit: 1`. If it prints `Production schema OK.`, STOP — the required file was generated wrong (it must contain V2 types absent from production while #346 is open).
 
-- [ ] **Step 4: Add gates + archive storage to Fastfile**
+- [ ] **Step 4: Add gates + split archive preservation/publication to Fastfile**
 
 Create `fastlane/archive_storage.rb` with recoverable same-filesystem replacement and
 argument-array GitHub commands:
@@ -357,9 +357,8 @@ Inside `platform :ios do`:
     sh("bash", File.join(REPO_ROOT, "scripts/check-prod-schema.sh"))
   end
 
-  # Copies the .xcarchive locally, zips dSYMs, attaches them to a GitHub release.
-  # GitHub failure warns but does not fail (local copy is the safety net and is written first).
-  private_lane :store_archive do |options|
+  # Preserves the archive and dSYMs before anything is uploaded to Apple.
+  private_lane :preserve_archive_locally do
     archive = lane_context[SharedValues::XCODEBUILD_ARCHIVE]
     UI.user_error!("No xcarchive in lane context") if archive.nil? || !File.exist?(archive)
 
@@ -379,14 +378,26 @@ Inside `platform :ios do`:
       sh("zip", "-qr", dsym_zip, ".")
     end
 
-    tag = options[:prerelease] ? "build/#{build}" : "v#{version}"
+    {
+      version: version,
+      build: build,
+      stem: stem,
+      dsym_zip: dsym_zip
+    }
+  end
+
+  # Publishes dSYMs only after Apple accepts the upload. GitHub failure is warn-only.
+  private_lane :publish_archive_dsyms do |options|
+    artifacts = options.fetch(:artifacts)
+    prerelease = options.fetch(:prerelease)
+    tag = prerelease ? "build/#{artifacts[:build]}" : "v#{artifacts[:version]}"
     begin
       ArchiveStorage.upload_dsyms(
         tag: tag,
-        prerelease: options[:prerelease],
-        title: stem,
-        notes: "Automated archive upload (dSYMs) for #{stem}.",
-        asset: dsym_zip
+        prerelease: prerelease,
+        title: artifacts[:stem],
+        notes: "Automated archive upload (dSYMs) for #{artifacts[:stem]}.",
+        asset: artifacts[:dsym_zip]
       ) { |args| sh(*args) }
       UI.success("dSYMs attached to GitHub release #{tag}")
     rescue => e
@@ -433,15 +444,16 @@ git commit -m "build: release-blocker gates (label + prod-schema) and archive st
 - Modify: `fastlane/Fastfile`
 
 **Interfaces:**
-- Consumes: `preflight`, `asc_api_key`, `derived_build_number`, `store_archive` (Tasks 2–3).
+- Consumes: `preflight`, `assert_no_release_blockers`, `asc_api_key`, `derived_build_number`, `preserve_archive_locally`, and `publish_archive_dsyms` (Tasks 2–3).
 - Produces: `lane :beta` — the TestFlight command.
 
 - [ ] **Step 1: Add the beta lane**
 
 ```ruby
-  desc "Build and upload to TestFlight, then store the archive (local + GitHub prerelease)"
+  desc "Preserve the archive, upload to TestFlight, then publish dSYMs"
   lane :beta do
     preflight
+    assert_no_release_blockers
     api_key = asc_api_key
     build = derived_build_number
     gym(
@@ -454,8 +466,9 @@ git commit -m "build: release-blocker gates (label + prod-schema) and archive st
               "-authenticationKeyID #{ENV.fetch('ASC_KEY_ID')} " \
               "-authenticationKeyIssuerID #{ENV.fetch('ASC_ISSUER_ID')}"
     )
+    archive_artifacts = preserve_archive_locally
     pilot(api_key: api_key, skip_waiting_for_build_processing: true)
-    store_archive(prerelease: true)
+    publish_archive_dsyms(artifacts: archive_artifacts, prerelease: true)
   end
 ```
 
@@ -1280,7 +1293,7 @@ git commit -m "build: deliver config + live listing metadata under version contr
 - Modify: `fastlane/Fastfile`
 
 **Interfaces:**
-- Consumes: everything — `preflight`, `assert_no_release_blockers`, `asc_api_key`, gym config from Task 4, `store_archive`, metadata (Task 12), screenshots (Task 11).
+- Consumes: everything — `preflight`, `assert_no_release_blockers`, `asc_api_key`, gym config from Task 4, `preserve_archive_locally`, `publish_archive_dsyms`, metadata (Task 12), screenshots (Task 11).
 - Produces: `lane :release` — the App Store submission command.
 
 - [ ] **Step 1: Add the release lane**
@@ -1302,6 +1315,7 @@ git commit -m "build: deliver config + live listing metadata under version contr
               "-authenticationKeyID #{ENV.fetch('ASC_KEY_ID')} " \
               "-authenticationKeyIssuerID #{ENV.fetch('ASC_ISSUER_ID')}"
     )
+    archive_artifacts = preserve_archive_locally
     unless UI.confirm("Submit this build for App Store review?")
       UI.user_error!("Submission cancelled by user")
     end
@@ -1312,7 +1326,7 @@ git commit -m "build: deliver config + live listing metadata under version contr
       screenshots_path: "./fastlane/screenshots",
       metadata_path: "./fastlane/metadata"
     )
-    store_archive(prerelease: false)
+    publish_archive_dsyms(artifacts: archive_artifacts, prerelease: false)
   end
 ```
 

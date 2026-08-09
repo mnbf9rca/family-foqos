@@ -40,7 +40,7 @@ private let container: ModelContainer = {
     let schema = Schema([BlockedProfileSession.self, BlockedProfiles.self, SavedLocation.self])
     let modelConfiguration = ModelConfiguration(
       schema: schema,
-      isStoredInMemoryOnly: false,
+      isStoredInMemoryOnly: ScreenshotDemoMode.isActive,
       cloudKitDatabase: .none  // Disable automatic CloudKit sync for these models
     )
     return try ModelContainer(for: schema, configurations: [modelConfiguration])
@@ -111,6 +111,15 @@ struct FoqosApp: App {
     SharedData.configure(
       suite: UserDefaults(suiteName: "group.com.cynexia.family-foqos")!
     )
+    #if DEBUG
+      if ScreenshotDemoMode.isActive {
+        do {
+          try ScreenshotDemoSeeder.seed(container: container)
+        } catch {
+          Log.error("Demo seed failed: \(error.localizedDescription)", category: .app)
+        }
+      }
+    #endif
     Log.info("init() called", category: .app)
     TimersUtil.registerBackgroundTasks()
     UNUserNotificationCenter.current().delegate = NotificationDelegate.shared
@@ -135,30 +144,32 @@ struct FoqosApp: App {
         .onChange(of: scenePhase) { oldPhase, newPhase in
           Log.debug("scenePhase changed from \(oldPhase) to \(newPhase)", category: .app)
           if newPhase == .active {
-            Task {
-              // Determine iCloud sign-in status (independent of family sharing)
-              await CloudKitManager.shared.checkAccountStatus()
-              // Enforce CloudKit FamilyMember role as local app mode (must complete before auth check)
-              await CloudKitManager.shared.verifySelfFamilyMemberRecord()
-              // Verify child authorization when app becomes active
-              verifyChildAuthorizationIfNeeded()
-              if AppModeManager.shared.currentMode == .child {
-                await LockCodeManager.shared.processPendingCommands()
+            if !ScreenshotDemoMode.isActive {
+              Task {
+                // Determine iCloud sign-in status (independent of family sharing)
+                await CloudKitManager.shared.checkAccountStatus()
+                // Enforce CloudKit FamilyMember role as local app mode (must complete before auth check)
+                await CloudKitManager.shared.verifySelfFamilyMemberRecord()
+                // Verify child authorization when app becomes active
+                verifyChildAuthorizationIfNeeded()
+                if AppModeManager.shared.currentMode == .child {
+                  await LockCodeManager.shared.processPendingCommands()
+                }
               }
-            }
-            // #201: re-drive persisted session-stop retries so a remote device doesn't see a
-            // stopped session as perpetually active
-            Task { await StrategyManager.shared.drainSessionStopOutbox() }
-            // #200: pull/push on foreground instead of the deleted notification throttle
-            if profileSyncManager.isEnabled {
-              do {
-                try profileSyncManager.syncNow()
-              } catch {
-                Log.warning("syncNow skipped: \(error.localizedDescription)", category: .sync)
+              // #201: re-drive persisted session-stop retries so a remote device doesn't see a
+              // stopped session as perpetually active
+              Task { await StrategyManager.shared.drainSessionStopOutbox() }
+              // #200: pull/push on foreground instead of the deleted notification throttle
+              if profileSyncManager.isEnabled {
+                do {
+                  try profileSyncManager.syncNow()
+                } catch {
+                  Log.warning("syncNow skipped: \(error.localizedDescription)", category: .sync)
+                }
               }
             }
             // Only reschedule on warm returns — .onAppear handles cold launch
-            if hasPerformedInitialSetup {
+            if hasPerformedInitialSetup && !ScreenshotDemoMode.isActive {
               PreActivationReminderScheduler.mergeExtensionScheduleSuppression(
                 context: container.mainContext)
               PreActivationReminderScheduler.reconcileScheduleRegistrations(
@@ -278,18 +289,22 @@ struct FoqosApp: App {
           // Construct + wire the sync engine with the live ModelContext (I10).
           // Skipped under the XCTest host so hosted unit tests own `attachEngine`'s
           // one-shot idempotency guard themselves.
-          if !isRunningUnitTests {
+          if !isRunningUnitTests && !ScreenshotDemoMode.isActive {
             Task {
               await profileSyncManager.attachEngine(
                 modelContext: container.mainContext,
                 emergencyManager: emergencyManager)
             }
           }
-          // Reschedule pre-activation reminders for today
-          PreActivationReminderScheduler.mergeExtensionScheduleSuppression(context: container.mainContext)
-          PreActivationReminderScheduler.reconcileScheduleRegistrations(context: container.mainContext)
-          // Catch up any missed schedule starts
-          PreActivationReminderScheduler.catchUpMissedScheduleStarts(context: container.mainContext)
+          if !ScreenshotDemoMode.isActive {
+            // Reschedule pre-activation reminders for today
+            PreActivationReminderScheduler.mergeExtensionScheduleSuppression(
+              context: container.mainContext)
+            PreActivationReminderScheduler.reconcileScheduleRegistrations(
+              context: container.mainContext)
+            // Catch up any missed schedule starts
+            PreActivationReminderScheduler.catchUpMissedScheduleStarts(context: container.mainContext)
+          }
           hasPerformedInitialSetup = true
         }
     }
@@ -357,7 +372,9 @@ class AppDelegate: NSObject, UIApplicationDelegate {
     Log.info("didFinishLaunchingWithOptions", category: .app)
 
     // Register for remote notifications to receive CloudKit push notifications
-    application.registerForRemoteNotifications()
+    if !ScreenshotDemoMode.isActive {
+      application.registerForRemoteNotifications()
+    }
 
     return true
   }

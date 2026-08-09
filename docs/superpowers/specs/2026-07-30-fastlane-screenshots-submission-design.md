@@ -73,22 +73,23 @@ Activation: `ScreenshotDemoMode.isActive` = launch args contain `--screenshot-de
 
 ## Lanes
 
-- `beta`: preflight (clean tree, on `main`) → `gym` Release archive, automatic signing (`-allowProvisioningUpdates` + API key) → `pilot` upload to TestFlight beta group → archive-storage step.
-- `release`: release-blocker gates (below) → same build path → `deliver` uploads build + screenshots + `metadata/` → submit for review only after explicit interactive confirmation → archive-storage step.
+- `beta`: preflight (clean tree, on `main`) → release-blocker gates → `gym` Release archive, automatic signing (`-allowProvisioningUpdates` + API key) → local archive/dSYM preservation → `pilot` upload to TestFlight beta group → GitHub prerelease dSYM publication.
+- `release`: release-blocker gates (below) → same build path → local archive/dSYM preservation → explicit interactive confirmation → `deliver` uploads build + screenshots + `metadata/` → GitHub release dSYM publication.
 
-### Release-blocker gates (release lane only; beta skips them)
+### Release-blocker gates (release and beta lanes)
 
 1. **CloudKit production schema gate:** the lane runs `xcrun cktool export-schema --environment production` and verifies every record type/field listed in a repo-committed `required-schema` file exists in the deployed production schema; anything missing aborts the lane before build. This makes #346 unmissable and permanently catches any future code-ahead-of-schema drift. Requires a CloudKit Management Token (CloudKit Console; expires periodically — the lane fails loudly asking for a fresh one).
 2. **Issue gate (label-based):** the lane runs `gh issue list --state open --label release-blocking` and aborts, printing titles, if any issues are returned. Query failure also aborts (fail closed). Maintenance = filing a labeled issue; no Fastfile edits. The `release-blocking` label exists and is applied to #345/#346 (done 2026-07-30, matching their `[release-blocking]` title convention); the gate query is verified live. (#346 is additionally covered by the schema gate.)
 - `screenshots`: as above; produces `fastlane/screenshots/` consumed by `release`.
 
-## Archive storage (shared step in beta and release)
+## Archive preservation and publication (shared by beta and release)
 
-1. Copy the `.xcarchive` to `~/Archives/family-foqos/FamilyFoqos-<version>-<build>-<shortsha>.xcarchive` (covered by Mac backups).
-2. Zip dSYMs and attach to a GitHub release via `gh release create`: betas → prerelease on tag `build/<n>`; App Store releases → release on `v<version>`.
+1. Immediately after `gym`, copy the `.xcarchive` to `~/Archives/family-foqos/FamilyFoqos-<version>-<build>-<shortsha>.xcarchive` (covered by Mac backups) and zip its dSYMs. Any local-preservation failure aborts before upload.
+2. Upload to Apple only after the local archive and dSYM zip exist.
+3. After Apple accepts the upload, attach the dSYMs to a GitHub release via `gh release create`: betas → prerelease on tag `build/<n>`; App Store releases → release on `v<version>`.
    - GitHub release assets have no expiry (unlike Actions artifacts), 2 GiB/file cap — but no contractual durability SLA, hence the local copy as the second leg.
    - Implementation must confirm the "Protect release tags" ruleset does not block `build/*` tag creation; fallback is attaching beta assets to a rolling prerelease.
-3. Failure policy: once the build is safely at Apple, archive-storage failures (e.g. `gh` hiccup) warn but do not fail the lane; the local copy is written first.
+4. Failure policy: once the build is safely at Apple, GitHub-publication failures (e.g. `gh` hiccup) warn but do not fail the lane; local preservation has already completed.
 
 ## Testing
 

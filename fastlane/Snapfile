@@ -1,0 +1,17 @@
+devices([
+  "iPhone 17 Pro Max"
+])
+
+languages(["en-GB"])
+
+scheme("FoqosScreenshots")
+project("FamilyFoqos.xcodeproj")
+app_identifier("com.cynexia.family-foqos")
+output_directory("./fastlane/screenshots")
+# Keep this true so the Fastfile's exactly-three framed check cannot pass on stale output.
+clear_previous_screenshots(true)
+override_status_bar(true)
+stop_after_first_error(true)
+concurrent_simulators(false)
+reinstall_app(true)
+xcodebuild_formatter(File.join(Gem.bindir, "xcpretty"))
