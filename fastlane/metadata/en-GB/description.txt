@@ -1,0 +1,17 @@
+Screen time control for the whole family.
+
+Block distracting apps with a tap, a schedule, or a physical NFC scan - making the choice to unblock deliberate, not automatic.
+
+BUILT FOR FAMILIES
+Parents create a Family Lock Code and manage settings. Kids set up their own profiles and activate focus modes freely - but can't change the rules. Only parents can unlock and edit locked profiles.
+
+BLOCK WHAT STEALS YOUR ATTENTION
+TikTok, Instagram, Snapchat, games - choose the apps that pull you in and block them your way. Schedule blocks ahead of time, toggle them instantly, or require a physical trigger to stay accountable.
+
+PHYSICAL TRIGGERS, INTENTIONAL CHOICES
+Tap an NFC tag or scan a QR code to unblock. Adding friction to the moment makes mindless scrolling harder and deliberate focus easier.
+
+SYNC BLOCKS ACROSS DEVICES
+Stay accountable to yourself - once set up, blocks can be synced across devices so that you can't cheat by switching to your iPad.
+
+Based on the open-source Foqos app, with added support for lockable profiles and family PIN syncing.
