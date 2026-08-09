@@ -1,0 +1,18 @@
+# Record types the current build requires in the PRODUCTION CloudKit schema.
+# Checked by scripts/check-prod-schema.sh (release lane gate).
+# Regenerate from the development environment when the schema grows.
+RECORD TYPE EmergencyResetEpoch
+RECORD TYPE EmergencySettings
+RECORD TYPE EmergencyUnblockEvent
+RECORD TYPE FamilyCommand
+RECORD TYPE FamilyLockCode
+RECORD TYPE FamilyMember
+RECORD TYPE FamilyPolicy
+RECORD TYPE FamilyRoot
+RECORD TYPE ProfileSession
+RECORD TYPE SyncResetRequest
+RECORD TYPE SyncedLocation
+RECORD TYPE SyncedProfile
+RECORD TYPE SyncedSession
+RECORD TYPE Users
+RECORD TYPE "cloudkit.share"

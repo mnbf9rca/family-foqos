@@ -1,3 +1,6 @@
+require "fileutils"
+require "json"
+
 # Runs under Homebrew Ruby via Bundler: export PATH="$(brew --prefix ruby)/bin:$PATH" && bundle exec fastlane <lane>
 default_platform(:ios)
 
@@ -19,6 +22,48 @@ platform :ios do
     )
   end
 
+  private_lane :assert_no_release_blockers do
+    # Fail closed: if gh errors (network, auth), sh raises and the lane aborts.
+    out = sh("gh issue list --state open --label release-blocking --json number,title", log: false)
+    issues = JSON.parse(out)
+    unless issues.empty?
+      list = issues.map { |i| "##{i["number"]} #{i["title"]}" }.join("\n  ")
+      UI.user_error!("Release blocked by open release-blocking issues:\n  #{list}")
+    end
+    sh("./scripts/check-prod-schema.sh")
+  end
+
+  # Copies the .xcarchive locally, zips dSYMs, attaches them to a GitHub release.
+  # GitHub failure warns but does not fail (local copy is the safety net and is written first).
+  private_lane :store_archive do |options|
+    archive = lane_context[SharedValues::XCODEBUILD_ARCHIVE]
+    UI.user_error!("No xcarchive in lane context") if archive.nil? || !File.exist?(archive)
+
+    version = get_version_number(xcodeproj: XCODEPROJ, target: "FamilyFoqos")
+    build = derived_build_number
+    sha = sh("git rev-parse --short=7 HEAD", log: false).strip
+    stem = "FamilyFoqos-#{version}-#{build}-#{sha}"
+
+    FileUtils.mkdir_p(ARCHIVE_DIR)
+    local_copy = File.join(ARCHIVE_DIR, "#{stem}.xcarchive")
+    FileUtils.rm_rf(local_copy)
+    FileUtils.cp_r(archive, local_copy)
+    UI.success("Archive stored: #{local_copy}")
+
+    dsym_zip = File.join(ARCHIVE_DIR, "#{stem}-dSYMs.zip")
+    sh("cd '#{archive}/dSYMs' && zip -qr '#{dsym_zip}' .")
+
+    tag = options[:prerelease] ? "build/#{build}" : "v#{version}"
+    begin
+      flags = options[:prerelease] ? "--prerelease" : ""
+      sh("gh release create '#{tag}' #{flags} --title '#{stem}' " \
+         "--notes 'Automated archive upload (dSYMs) for #{stem}.' '#{dsym_zip}'")
+      UI.success("dSYMs attached to GitHub release #{tag}")
+    rescue => e
+      UI.important("GitHub release upload FAILED (local archive is safe): #{e.message}")
+    end
+  end
+
   def derived_build_number
     sh("git rev-list --count HEAD", log: false).strip
   end
@@ -32,5 +77,10 @@ platform :ios do
   lane :check_asc_key do
     key = asc_api_key
     UI.success("ASC key loaded: key_id=#{key[:key_id]}, issuer_id=#{key[:issuer_id]}, key_present=#{!key[:key].to_s.empty?}")
+  end
+
+  desc "Run release-blocker gates only"
+  lane :gates do
+    assert_no_release_blockers
   end
 end
