@@ -124,4 +124,33 @@ platform :ios do
       )
     end
   end
+
+  desc "Build, upload metadata+screenshots+binary, and (after confirmation) submit for review"
+  lane :release do
+    preflight
+    assert_no_release_blockers
+    api_key = asc_api_key
+    build = derived_build_number
+    gym(
+      project: XCODEPROJ,
+      scheme: SCHEME,
+      configuration: "Release",
+      export_method: "app-store",
+      xcargs: "CURRENT_PROJECT_VERSION=#{build} -allowProvisioningUpdates " \
+              "-authenticationKeyPath #{File.expand_path(ENV.fetch('ASC_KEY_PATH'))} " \
+              "-authenticationKeyID #{ENV.fetch('ASC_KEY_ID')} " \
+              "-authenticationKeyIssuerID #{ENV.fetch('ASC_ISSUER_ID')}"
+    )
+    unless UI.confirm("Submit this build for App Store review?")
+      UI.user_error!("Submission cancelled by user")
+    end
+    deliver(
+      api_key: api_key,
+      submit_for_review: true,
+      automatic_release: false,
+      screenshots_path: "./fastlane/screenshots",
+      metadata_path: "./fastlane/metadata"
+    )
+    store_archive(prerelease: false)
+  end
 end
