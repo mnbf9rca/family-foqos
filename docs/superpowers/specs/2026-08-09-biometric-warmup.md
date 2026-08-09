@@ -1,7 +1,8 @@
-# Biometric Credential Warm-Up Design (#363)
+# Session Credential Warm-up Design (#363)
 
 **Status:** Proposed
-**Scope:** Planner and subagent startup protocol; no application-code changes
+**Scope:** Session Credential Warm-up interface and subagent startup protocol; no application-code
+changes
 **Related:** #365 (move App Store Connect credentials to 1Password + direnv)
 
 ## Problem
@@ -11,9 +12,9 @@ SSH. Either operation can request biometric approval. If the first request occur
 finishes unattended work, the agent stalls at the delivery boundary even though the code is
 ready.
 
-The planner needs a startup warm-up that happens while the human is present. It must exercise
-both independent credential paths without changing the assigned feature branch or leaving a
-remote branch behind:
+The planner needs a named **Session Credential Warm-up** that happens while the human is present.
+It must exercise both independent Git credential paths without changing the assigned feature
+branch or leaving a remote branch behind:
 
 1. Create a signed, empty commit on a disposable local branch to exercise Git commit signing.
 2. Perform an SSH `git push --dry-run` from that commit to exercise push authentication.
@@ -25,7 +26,10 @@ cache is scoped or how long it remains valid.
 ## Constraints
 
 - The planner sends the warm-up as the first instruction to every implementation subagent while
-  the human is present. Real task work does not begin until both checks succeed.
+  the human is present. Real task work does not begin until every declared stage succeeds.
+- At dispatch, the planner declares which credentials the session will need: Git commit signing,
+  GitHub SSH push authentication, and either personal/biometric or service-account `op` access when
+  the task reads 1Password secrets. The warm-up runs and reports every declared stage.
 - The assigned worktree must be clean before warm-up. The procedure must restore its exact
   starting branch or detached `HEAD` and delete the disposable branch on success or failure.
 - The disposable commit is always `git commit -S --allow-empty`; it is never merged, rebased, or
@@ -56,6 +60,8 @@ and delete the local scratch branch with an exit trap.
 
 - Exercises both credential paths without modifying a production branch.
 - Does not leave a commit in production history or a branch on GitHub.
+- Avoids evaluating server-side branch rules or creating unrelated audit events; those are outside
+  credential warm-up and could reject a real scratch push for irrelevant reasons.
 - Is safe to repeat per subagent and can be wrapped in a small auditable helper.
 - A failure identifies which path—signing or push authentication—needs human action.
 
@@ -115,6 +121,39 @@ normal push path.
 local scratch-branch procedure while the human is present. The planner records separate success
 for the signed empty commit and the SSH push dry run before releasing real work.
 
+### Session Credential Warm-up interface
+
+**DECIDED:** **Session Credential Warm-up** is the exact cross-document interface name. It replaces
+the informal “session-start unlock step” wording. #363 owns this interface; #365 and later
+credential consumers declare their needs to it without depending on its implementation.
+
+Inputs are planner-owned and declared at dispatch:
+
+- the session/agent identity and clean assigned worktree;
+- the required credential stages: `git-signing`, `git-ssh-push`, and, when applicable,
+  `op-personal` or `op-service-account`;
+- the SSH push remote; and
+- for service-account mode, an operator-approved secret-store injection source or launcher—not the
+  token value in a task message, command argument, repository file, or log.
+
+The interface warms and reports these stages independently:
+
+1. `git-signing`: create and verify the signed disposable commit.
+2. `git-ssh-push`: authenticate an SSH push dry run without creating a remote ref.
+3. `op-personal`: when the declared 1Password mode is biometric, execute a no-output `op read`
+   probe for a permitted non-secret fact or discard the secret value before logging. A successful
+   Git stage says nothing about this stage.
+4. `op-service-account`: when service-account mode is declared, this step is the boundary where
+   `OP_SERVICE_ACCOUNT_TOKEN` enters the worker environment from the operator-approved injector.
+   The step owns redacting output, never echoing or persisting the token, and validating access with
+   a no-output probe. It does not manufacture or retrieve the token through repository code.
+
+The output is one passed/failed/not-run result and UTC completion time per declared stage, with no
+credential values. Real work starts only when every required stage passes. The expiry policy below
+is part of the interface: any later prompt or authentication failure expires that individual
+stage, and the planner applies the human-present retry or human-absent fallback without inferring
+that the other stages share cache state.
+
 The proposed helper performs the equivalent of the following. A repository script should encode
 this flow before the AGENTS.md rule is landed; the literal shell is included to make state and
 cleanup semantics reviewable.
@@ -140,7 +179,28 @@ cleanup_warmup() {
   fi
   git branch -D "${scratch_branch}" >/dev/null 2>&1 || true
 }
+
+verify_warmup_cleanup() {
+  test "$(git rev-parse HEAD)" = "${starting_head}" || return 1
+  if test -n "${starting_branch}"; then
+    test "$(git symbolic-ref --quiet --short HEAD)" = "${starting_branch}" || return 1
+  else
+    test -z "$(git symbolic-ref --quiet --short HEAD || true)" || return 1
+  fi
+  test -z "$(git status --porcelain)" || return 1
+  ! git show-ref --verify --quiet "refs/heads/${scratch_branch}"
+}
 trap cleanup_warmup EXIT
+
+handle_warmup_signal() {
+  exit_code="$1"
+  trap - EXIT HUP INT TERM
+  cleanup_warmup
+  exit "${exit_code}"
+}
+trap 'handle_warmup_signal 129' HUP
+trap 'handle_warmup_signal 130' INT
+trap 'handle_warmup_signal 143' TERM
 
 push_url="$(git remote get-url --push origin)"
 case "${push_url}" in
@@ -152,17 +212,60 @@ case "${push_url}" in
 esac
 
 git switch -c "${scratch_branch}" "${starting_head}"
-git commit -S --allow-empty -m "chore: biometric warm-up (discard)"
-git push --dry-run origin "HEAD:refs/heads/${scratch_branch}"
+
+signing_status="failed"
+signing_exit=0
+signature_result="N"
+if git commit -S --allow-empty -m "chore: biometric warm-up (discard)"; then
+  if signature_result="$(git log -1 --format=%G?)"; then
+    case "${signature_result}" in
+      G|U) signing_status="passed" ;;
+      *) signing_exit=1 ;;
+    esac
+  else
+    signing_exit=$?
+  fi
+else
+  signing_exit=$?
+fi
+signing_completed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+printf 'stage=git-signing status=%s exit=%s signature=%s completed_at=%s\n' \
+  "${signing_status}" "${signing_exit}" "${signature_result}" "${signing_completed_at}"
+
+push_status="not-run"
+push_exit=0
+if test "${signing_status}" = "passed"; then
+  if git push --dry-run origin "HEAD:refs/heads/${scratch_branch}"; then
+    push_status="passed"
+  else
+    push_exit=$?
+    push_status="failed"
+  fi
+fi
+push_completed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+printf 'stage=git-ssh-push status=%s exit=%s completed_at=%s\n' \
+  "${push_status}" "${push_exit}" "${push_completed_at}"
+
+if test "${signing_status}" != "passed" || test "${push_status}" != "passed"; then
+  exit 1
+fi
 
 cleanup_warmup
-trap - EXIT
+if ! verify_warmup_cleanup; then
+  echo "stage=cleanup status=failed; operator inspection required" >&2
+  exit 1
+fi
+trap - EXIT HUP INT TERM
 ```
 
-The helper must report the signing and push stages separately. Its cleanup trap is best-effort so
-it does not hide the original failure; after any nonzero exit, the planner verifies the starting
-branch/`HEAD`, a clean status, and absence of the scratch branch before retrying or assigning
-work. Scratch names include the agent label, UTC time, and process ID to avoid collisions.
+The helper reports signing and push separately even when signing fails; in that case push is
+reported as `not-run`, and the helper exits nonzero only after both outcomes are emitted. A
+successful commit is accepted only when Git reports a good (`G`) or good-with-unknown-trust (`U`)
+signature. Its cleanup trap is best-effort so it does not hide the original failure; explicit
+`HUP`, `INT`, and `TERM` handlers restore state and preserve conventional signal exit codes. After
+any nonzero exit, the planner verifies the starting branch/`HEAD`, a clean status, and absence of
+the scratch branch before retrying or assigning work. Scratch names include the agent label, UTC
+time, and process ID to avoid collisions.
 
 ### Cache scope and lifetime
 
@@ -175,10 +278,10 @@ Run a timestamped experiment before choosing an expiry interval:
 
 1. Record UTC time, agent identity, terminal identity, process context, and whether the screen was
    locked. Do not record credential material.
-2. With the human present, run the recommended signing and push warm-up and record prompt/no-prompt
-   independently for each stage.
-3. Repeat disposable signed commits and SSH push dry runs after 5, 15, 30, and 60 minutes from the
-   same agent and terminal.
+2. With the human present, run every planner-declared Session Credential Warm-up stage and record
+   prompt/no-prompt independently for Git signing, SSH push, and personal `op` access when used.
+3. Repeat disposable signed commits, SSH push dry runs, and the no-output personal `op` probe after
+   5, 15, 30, and 60 minutes from the same agent and terminal.
 4. At the same offsets, test a fresh subagent and fresh terminal without deliberately approving
    another prompt first.
 5. Repeat one controlled sequence across screen lock/unlock if the maintainer is comfortable doing
@@ -186,9 +289,10 @@ Run a timestamped experiment before choosing an expiry interval:
 6. Publish only timings and prompt outcomes. Use the shortest reproducible expiry boundary when
    setting any future refresh interval.
 
-Until that experiment establishes a safe bound, the only valid warm-up assertion is timestamped:
-“signing and SSH push authentication succeeded at `<UTC time>`.” If either operation prompts or
-fails later, its warm state has expired regardless of elapsed time.
+Until that experiment establishes a safe bound, valid assertions are per-stage and timestamped,
+for example: “Git signing succeeded at `<UTC time>`; SSH push authentication succeeded at `<UTC
+time>`; personal `op` access succeeded at `<UTC time>`.” If an operation prompts or fails later,
+that stage's warm state has expired regardless of elapsed time.
 
 ### Expiry policy and fallbacks
 
@@ -196,8 +300,8 @@ The expiry response is deliberately conservative because this policy is load-bea
 
 | Situation | Required action | Why |
 |---|---|---|
-| Planner startup; human present | Run both warm-up stages per subagent | Establishes a point-in-time baseline for each agent |
-| Either stage expires; human present | Repeat the full warm-up and update its timestamp | Avoids inferring shared cache state |
+| Planner startup; human present | Run every declared warm-up stage per subagent | Establishes a point-in-time baseline for each agent |
+| Any stage expires; human present | Repeat the expired stage and update its timestamp | Avoids inferring shared cache state |
 | Human absent; final change can be represented as one server-side commit | Use GitHub `createCommitOnBranch` through the authorized connector | Complements local Git without bypassing signing or SSH settings |
 | Human absent; local commits or push topology must be preserved | Stop at an operator gate and wait | API commit creation cannot faithfully replace the required push |
 | Warm-up cleanup cannot restore the starting state | Stop and report exact branch, `HEAD`, and status | Real work must not begin in an ambiguous scratch state |
@@ -208,57 +312,66 @@ expected head are known and one server-side commit accurately represents the int
 
 ### Relationship to #365 and `op` authentication
 
-#365 should decide the App Store Connect secret path independently:
+#365 consumes the **Session Credential Warm-up** interface and decides the App Store Connect secret
+path independently:
 
 | #365 choice | App Store Connect warm-up | Git signing warm-up | SSH push warm-up | Tradeoff |
 |---|---|---|---|---|
 | Interactive user account with `op read` | Run a no-output probe while the human is present; discard the value | Still required | Still required | Preserves user-scoped vault access but adds a third biometric/cache dependency |
 | 1Password service account token | Validate non-interactive `op` access without printing values | Still required | Still required | Removes the `op` biometric dependency, but introduces token storage, scope, and rotation duties |
-| Plaintext `~/.appstoreconnect` retained | None | Still required | Still required | Avoids an `op` prompt but leaves the plaintext-secret risk #365 is intended to remove |
 
 If #365 keeps interactive `op read`, its startup probe must redirect the secret value away from
 logs and use only the command exit status. A service account changes only 1Password CLI
 authentication. It does not unlock the 1Password SSH agent for commit signing or GitHub pushes.
+Retaining a standing plaintext `~/.appstoreconnect` key is #365's rejected Option C, not a supported
+Session Credential Warm-up mode.
 
 ## Exact AGENTS.md diff
 
 After the warm-up helper exists and has been manually validated, add the following literal text
 under the repository's key rules:
 
-```diff
-+  - **WARM BIOMETRIC GIT CREDENTIALS BEFORE DELEGATING IMPLEMENTATION.** While the human is
-+    present, the planner's first instruction to every implementation subagent must be to run the
-+    repository biometric warm-up helper in its clean assigned worktree. The helper creates a
-+    signed `--allow-empty` commit on a uniquely named local scratch branch, verifies an SSH
-+    `git push --dry-run`, restores the exact starting branch or detached `HEAD`, and deletes the
-+    scratch branch. The disposable commit must never be merged or pushed. Commit signing and SSH
-+    push authentication are separate checks; real task work starts only after both succeed and
-+    the planner records the UTC completion time. A successful warm-up is point-in-time evidence,
-+    not a guarantee that approval lasts for the session. If either check expires, repeat it while
-+    the human is present. If the human is absent, use an authorized GitHub server-side commit only
-+    when it exactly represents the intended single-commit change; otherwise stop at an operator
-+    gate. Never disable signing, amend, force-push, expose credentials, or leave the worktree on a
-+    scratch ref to bypass a biometric prompt.
+```markdown
+  - **RUN THE SESSION CREDENTIAL WARM-UP BEFORE DELEGATING IMPLEMENTATION.** While the human is
+    present, the planner declares which credentials each implementation subagent will need and
+    makes the Session Credential Warm-up its first instruction. Required stages are Git commit
+    signing, GitHub SSH push authentication, and either personal/biometric or service-account `op`
+    access when the task reads 1Password. The Git helper runs in the clean assigned worktree: it
+    creates and verifies a signed `--allow-empty` commit on a unique local scratch branch, verifies
+    an SSH `git push --dry-run`, reports both outcomes, restores the exact starting branch or
+    detached `HEAD`, and deletes the scratch branch. The disposable commit must never be merged or
+    pushed. In personal mode, warm `op` with a no-output probe. In service-account mode, this step
+    is where the operator-approved injector places `OP_SERVICE_ACCOUNT_TOKEN` in the environment;
+    never log, echo, persist, or put that token in a task message or command argument. Real work
+    starts only after every declared stage passes and the planner records per-stage UTC times. This
+    is point-in-time evidence, not a guarantee that approval lasts for the session. If a stage
+    expires, repeat it while the human is present. If the human is absent, use an authorized GitHub
+    server-side commit only when it exactly represents the intended single-commit change; otherwise
+    stop at an operator gate. Never disable signing, amend, force-push, expose credentials, or leave
+    the worktree on a scratch ref to bypass a biometric prompt.
 ```
 
-The final documentation should replace “repository biometric warm-up helper” with its checked-in
-path when the helper is implemented. Landing the mandate and the helper together avoids directing
-agents to a command that does not exist.
+The final documentation should replace the conceptual Git helper wording with its checked-in path
+when the helper is implemented. Landing the mandate and the helper together avoids directing agents
+to a command that does not exist.
 
 ## Rollout
 
-1. Implement a small repository helper that follows the recommended flow, emits separate stage
-   results, and never prints credential material. Review it before changing AGENTS.md.
-2. Test cleanup without network or Xcode: successful run, signing failure, non-SSH origin, dry-run
-   failure, starting detached `HEAD`, and an injected interruption after scratch-branch creation.
+1. Implement the Session Credential Warm-up coordinator and small Git helper that follow the
+   recommended flow, emit separate stage results/timestamps, and never print credential material.
+   Review them before changing AGENTS.md.
+2. Test cleanup without network or Xcode: successful run, signing failure with push reported
+   `not-run`, invalid signature state, non-SSH origin, dry-run failure, starting detached `HEAD`, and
+   injected `HUP`, `INT`, and `TERM` after scratch-branch creation.
 3. With the maintainer present, run it in two clean disposable worktrees and confirm each returns
    to the starting branch/commit with clean status and no local scratch branch.
 4. Confirm `git ls-remote --heads origin 'scratch/biometric-warmup/*'` finds no remote branch after
    the dry-run validation.
-5. Run the timestamped cache experiment above. Record signing and push outcomes separately and
-   keep cache lifetime marked unverified until the results are reproducible.
-6. Coordinate with #365: choose interactive `op` versus a scoped service account, document token
-   ownership and rotation if applicable, and retain the two Git warm-up stages in either case.
+5. Run the timestamped cache experiment above. Record signing, push, and personal `op` outcomes
+   separately and keep cache lifetime marked unverified until the results are reproducible.
+6. Coordinate with #365 using the exact **Session Credential Warm-up** interface name. Choose
+   interactive `op` versus a scoped service account, test redacted token injection/no-logging when
+   applicable, and retain the two Git warm-up stages in either case.
 7. Land the exact AGENTS.md addition with the validated helper. Train planners to send it before
    implementation instructions and to preserve the warm-up timestamp in task status.
 8. Audit the first week of tasks for leftover scratch refs, blocked end-of-task pushes, and cache
