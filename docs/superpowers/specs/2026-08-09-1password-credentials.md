@@ -33,9 +33,10 @@ wrapped `check_asc_key`.
 The target state has one durable source of truth for ASC credentials: 1Password. The repository
 contains only non-secret 1Password references in `fastlane/asc.env`. A committed wrapper invokes
 credential-using lanes through `op run`, which resolves those references only into that child
-process. Fastlane keeps the private key in process memory and materializes it only in narrowly
-scoped temporary files when a downstream Apple tool requires a path. The maintainer's ambient shell
-never holds ASC key material.
+process. Family Foqos lane code keeps the private key in process memory and materializes it only in
+narrowly scoped temporary files when a downstream Apple tool requires a path; Fastlane Transporter's
+accepted residue limitation is documented below. The maintainer's ambient shell never holds ASC key
+material.
 
 ## Constraints
 
@@ -215,28 +216,20 @@ implementation must explicitly assert mode `0600` for both tempfiles, cover clea
 and an injected failure for both, and add `log: false` to the nested `sh` call so the live JSON path
 is not advertised in lane output.
 
-Temporary materialization is not equivalent to durable storage. The lifecycle is: at rest in
-1Password → resolved values in a credential-using `op run` child environment for that invocation →
-Fastlane memory and sensitive lane context → a gym-only or metadata-only mode-`0600` tempfile →
-ensure-driven deletion. ASC material never enters the ambient shell. Fastlane's Transporter cleanup
-is not uniform. `upload` and `provider_ids` remove the generated key directory in `ensure`
+Temporary materialization is not equivalent to durable storage. The project-owned lifecycle is: at
+rest in 1Password → resolved values in a credential-using `op run` child environment for that
+invocation → Fastlane memory and sensitive lane context → a gym-only or metadata-only mode-`0600`
+tempfile → ensure-driven deletion. ASC material never enters the ambient shell. Separately,
+Fastlane's Transporter cleanup is not uniform. `upload` and `provider_ids` remove the generated key
+directory in `ensure`
 blocks (`fastlane_core/lib/fastlane_core/itunes_transporter.rb:864-882,959-982`), but `verify` calls
 the same `prepare` writer without cleanup (`itunes_transporter.rb:903-953`). For a
 `ShellScriptTransporterExecutor`, that writer creates
 `~/.appstoreconnect/private_keys/AuthKey_<key-id>.p8` instead of a temporary directory
-(`itunes_transporter.rb:68-90`). Whether current project lanes reach `verify` is not an acceptable
-security dependency.
+(`itunes_transporter.rb:68-90`). Current project lanes may reach `verify`, so this behavior is an
+explicit accepted limitation rather than a cleanup guarantee.
 
-Every credential-using project lane must therefore enforce its own postcondition in an `ensure`.
-First, remove only the expected replacement-key file at the known Transporter path. Then recursively
-scan `~/.appstoreconnect/` for `*.p8`. Any residual `.p8` fails the lane from the first implementation
-run onward. There is no allowlist, warning branch, environment variable, feature flag, or activation
-toggle. An unrelated standing key is reported for operator remediation, not silently deleted. The
-scoped invariant is: **no standing plaintext private-key file survives a credential-using Family
-Foqos lane or the cutover**. It is not the untrue claim that the key never exists outside 1Password
-or that the gem always cleans up after itself.
-Child-only `op run` injection strengthens this postcondition: the cleanup proof no longer has to
-account for ASC values lingering in the parent shell after a lane.
+No runtime residue scanning. A per-lane scan of ~/.appstoreconnect was designed (allowlist, then total variants) and rejected by the maintainer as overengineering. Known limitation, accepted: fastlane Transporter's verify path may write AuthKey_<key-id>.p8 under ~/.appstoreconnect/private_keys/ without cleanup. The lanes clean up only the temporary files they themselves create (gym .p8 tempfile, pull_metadata key JSON), via ensure blocks.
 
 ### What dies and what replaces it
 
@@ -248,7 +241,7 @@ account for ASC values lingering in the parent shell after a lane.
 | `ASC_KEY_PATH` in `asc_api_key` | `2404139:fastlane/Fastfile:21-26` | Fetch the child-only base64 value injected by `op run`, decode in Ruby, and pass raw `key_content:`. |
 | `ASC_KEY_PATH` in `release` and `beta` `gym` `xcargs` | `4e6b28b:fastlane/Fastfile` | A helper-owned mode-`0600` temporary `.p8` path scoped to each `gym` call. Key and issuer IDs come from the same child-only environment, never committed literals. |
 | `pull_metadata` API-key JSON | `2404139:fastlane/Fastfile:106-125` | Retain the `Tempfile.create` handoff, require mode `0600` and symmetric cleanup tests, and suppress logging of its live path. Its hash now contains raw PEM produced from 1Password rather than a home-directory path. |
-| `~/.appstoreconnect/` | Fastlane Transporter's cleanup-deficient `verify` path; the old top-level `AuthKey_U2UZLVHKA5.p8` was deleted on 2026-08-09 | After every credential-using lane, surgically remove the expected replacement-key path, recursively scan for `.p8` files, and fail on any match. No legacy exception exists. |
+| `~/.appstoreconnect/` | Fastlane Transporter's cleanup-deficient `verify` path; the old top-level `AuthKey_U2UZLVHKA5.p8` was deleted on 2026-08-09 | Accept possible Transporter-created residue as a known limitation. Project lanes do not scan this directory; they clean up only their own gym and metadata tempfiles. |
 | Retained document `3jey32ebbf3d4s2ktuyb64i4rq` | Accepted backup copy of the replacement PEM | Keep it under the same vault access control for this cutover. Every future key rotation must update or remove both this document and `ASC_KEY_CONTENT_BASE64_REF` so retired private-key material is not silently retained. |
 | Old IDs and absolute path in docs | `docs/superpowers/plans/2026-07-30-fastlane-screenshots-submission.md` and `docs/superpowers/specs/2026-07-30-fastlane-screenshots-submission-design.md` | With revocation complete, replace them with a neutral 1Password item reference and scrub the obsolete path. History remains, but the revoked identifiers no longer compose with a live key. |
 
@@ -262,6 +255,10 @@ maintenance-window exception. The remaining cutover is repository wiring plus a 
 verification for Xcode's path consumer; it does not gate an already-completed revocation. No step
 uploads a build or submits a release merely to test credentials.
 
+Until that wiring lands, `main` cannot authenticate: its credential-using lanes still fetch the
+deleted `ASC_KEY_PATH` and fail closed before build or network mutation. `screenshots` is unaffected.
+Do not respond to the missing-file failure by recreating a standing `.p8`.
+
 1. **Record the completed provisioning and retirement.** The maintainer has provisioned the
    read-only service account, vault `family-foqos`, item `app_store_connect_key`, and the three
    decided fields. The replacement key is present in the concealed base64 field. The old key is
@@ -269,9 +266,8 @@ uploads a build or submits a release merely to test credentials.
 2. **Implement the two layers.** Commit the reference-only `.env.tpl` and
    `.envrc` bootstrap for `OP_SERVICE_ACCOUNT_TOKEN`, `fastlane/asc.env`, and
    `scripts/fastlane.sh`; fetch child-only values in Fastlane, strictly decode raw `key_content`, add
-   the gym-scoped tempfile helper, retire the old env files, and implement the Transporter
-   postcondition and non-submitting tests. From its first run, every credential-using lane must use
-   the wrapper and fail if the total recursive postcondition finds any residual `.p8`.
+   the gym-scoped tempfile helper, retire the old env files, and add non-submitting tests for
+   lane-owned tempfile cleanup. Every credential-using lane must use the wrapper.
 3. **Verify the 1Password field round trip.** Through an operator-controlled `op run` child, confirm
    all three mappings resolve, the base64 field strictly decodes, and the decoded value parses as the
    expected PEM without printing any value.
@@ -325,12 +321,6 @@ or create another replacement key. Never restore the revoked credential or recre
   for the duration of their blocks, and remove them on both success and an injected failure.
 - `pull_metadata` invokes its nested Fastlane process with `log: false`, so the live tempfile path
   is not emitted to lane output.
-- After every credential-using lane, the recursive `~/.appstoreconnect/**/*.p8` postcondition removes
-  only the expected replacement-key path and fails on any residual key, including when the
-  downstream action fails.
-- Tests prove the postcondition is total from its first implementation run: a legacy-path,
-  replacement-path, or unrelated `.p8` residual fails with no allowlist, warning branch,
-  environment variable, or activation toggle.
 - A repository scan enumerates every `fastlane run` occurrence and fails if any credential-returning
   action is invoked that way. Non-secret action examples require an explicit allowlist rationale.
 - Repository scans find no private key block, service-account token, replacement identifiers, or
@@ -351,8 +341,7 @@ Before completing the implementation, the maintainer confirms:
 
 1. `check_asc_key` succeeds without printing a key or returned credential hash;
 2. the archive-only gym probe authenticates without upload/submission;
-3. no gym `.p8`, `pull_metadata` JSON tempfile, or Transporter `.p8` remains after success or forced
-   failure;
+3. no gym `.p8` or `pull_metadata` JSON tempfile remains after success or forced failure;
 4. the ambient shell contains the service token but no ASC value before, during, or after the lane;
    and
 5. the provisioned 1Password item, retained document backup, and service-account usage are visible
@@ -379,10 +368,6 @@ pass, rerun repository scans and close #365 as remediated by the 1Password migra
 - **DECIDED:** Store/transport private-key content as base64, decode in Ruby, and pass raw PEM to
   Fastlane.
 - **DECIDED:** Xcode receives a mode-`0600`, gym-scoped temporary `.p8` with ensure cleanup.
-- **DECIDED:** Every credential-using Family Foqos lane recursively enforces the no-standing-key
-  postcondition instead of trusting Fastlane Transporter's non-uniform cleanup. It is total from the
-  first implementation run: every residual `.p8` fails, with no allowlist, warning branch, or
-  runtime activation toggle.
 - **DECIDED:** Retain document item `3jey32ebbf3d4s2ktuyb64i4rq` as the maintainer's backup copy
   alongside the concealed field under the same vault access control.
 - **PENDING CUTOVER:** Complete repository wiring and obtain a green wrapped `check_asc_key` against
