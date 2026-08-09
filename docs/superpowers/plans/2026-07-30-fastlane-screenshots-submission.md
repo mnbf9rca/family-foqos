@@ -433,7 +433,7 @@ git commit -m "build: release-blocker gates (label + prod-schema) and archive st
 - Modify: `fastlane/Fastfile`
 
 **Interfaces:**
-- Consumes: `preflight`, `asc_api_key`, `derived_build_number`, `store_archive` (Tasks 2–3).
+- Consumes: `preflight`, `assert_no_release_blockers`, `asc_api_key`, `derived_build_number`, `store_archive` (Tasks 2–3).
 - Produces: `lane :beta` — the TestFlight command.
 
 - [ ] **Step 1: Add the beta lane**
@@ -442,6 +442,7 @@ git commit -m "build: release-blocker gates (label + prod-schema) and archive st
   desc "Build and upload to TestFlight, then store the archive (local + GitHub prerelease)"
   lane :beta do
     preflight
+    assert_no_release_blockers
     api_key = asc_api_key
     build = derived_build_number
     gym(

@@ -73,10 +73,10 @@ Activation: `ScreenshotDemoMode.isActive` = launch args contain `--screenshot-de
 
 ## Lanes
 
-- `beta`: preflight (clean tree, on `main`) → `gym` Release archive, automatic signing (`-allowProvisioningUpdates` + API key) → `pilot` upload to TestFlight beta group → archive-storage step.
+- `beta`: preflight (clean tree, on `main`) → release-blocker gates → `gym` Release archive, automatic signing (`-allowProvisioningUpdates` + API key) → `pilot` upload to TestFlight beta group → archive-storage step.
 - `release`: release-blocker gates (below) → same build path → `deliver` uploads build + screenshots + `metadata/` → submit for review only after explicit interactive confirmation → archive-storage step.
 
-### Release-blocker gates (release lane only; beta skips them)
+### Release-blocker gates (release and beta lanes)
 
 1. **CloudKit production schema gate:** the lane runs `xcrun cktool export-schema --environment production` and verifies every record type/field listed in a repo-committed `required-schema` file exists in the deployed production schema; anything missing aborts the lane before build. This makes #346 unmissable and permanently catches any future code-ahead-of-schema drift. Requires a CloudKit Management Token (CloudKit Console; expires periodically — the lane fails loudly asking for a fresh one).
 2. **Issue gate (label-based):** the lane runs `gh issue list --state open --label release-blocking` and aborts, printing titles, if any issues are returned. Query failure also aborts (fail closed). Maintenance = filing a labeled issue; no Fastfile edits. The `release-blocking` label exists and is applied to #345/#346 (done 2026-07-30, matching their `[release-blocking]` title convention); the gate query is verified live. (#346 is additionally covered by the schema gate.)
