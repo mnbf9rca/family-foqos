@@ -48,9 +48,8 @@ platform :ios do
     sh("bash", File.join(REPO_ROOT, "scripts/check-prod-schema.sh"))
   end
 
-  # Copies the .xcarchive locally, zips dSYMs, attaches them to a GitHub release.
-  # GitHub failure warns but does not fail (local copy is the safety net and is written first).
-  private_lane :store_archive do |options|
+  # Preserves the archive and dSYMs before anything is uploaded to Apple.
+  private_lane :preserve_archive_locally do
     archive = lane_context[SharedValues::XCODEBUILD_ARCHIVE]
     UI.user_error!("No xcarchive in lane context") if archive.nil? || !File.exist?(archive)
 
@@ -70,14 +69,26 @@ platform :ios do
       sh("zip", "-qr", dsym_zip, ".")
     end
 
-    tag = options[:prerelease] ? "build/#{build}" : "v#{version}"
+    {
+      version: version,
+      build: build,
+      stem: stem,
+      dsym_zip: dsym_zip
+    }
+  end
+
+  # Publishes dSYMs only after Apple accepts the upload. GitHub failure is warn-only.
+  private_lane :publish_archive_dsyms do |options|
+    artifacts = options.fetch(:artifacts)
+    prerelease = options.fetch(:prerelease)
+    tag = prerelease ? "build/#{artifacts[:build]}" : "v#{artifacts[:version]}"
     begin
       ArchiveStorage.upload_dsyms(
         tag: tag,
-        prerelease: options[:prerelease],
-        title: stem,
-        notes: "Automated archive upload (dSYMs) for #{stem}.",
-        asset: dsym_zip
+        prerelease: prerelease,
+        title: artifacts[:stem],
+        notes: "Automated archive upload (dSYMs) for #{artifacts[:stem]}.",
+        asset: artifacts[:dsym_zip]
       ) { |args| sh(*args) }
       UI.success("dSYMs attached to GitHub release #{tag}")
     rescue => e
@@ -140,6 +151,7 @@ platform :ios do
               "-authenticationKeyID #{ENV.fetch('ASC_KEY_ID')} " \
               "-authenticationKeyIssuerID #{ENV.fetch('ASC_ISSUER_ID')}"
     )
+    archive_artifacts = preserve_archive_locally
     unless UI.confirm("Submit this build for App Store review?")
       UI.user_error!("Submission cancelled by user")
     end
@@ -151,10 +163,10 @@ platform :ios do
       screenshots_path: "./fastlane/screenshots",
       metadata_path: "./fastlane/metadata"
     )
-    store_archive(prerelease: false)
+    publish_archive_dsyms(artifacts: archive_artifacts, prerelease: false)
   end
 
-  desc "Build and upload to TestFlight, then store the archive (local + GitHub prerelease)"
+  desc "Preserve the archive, upload to TestFlight, then publish dSYMs"
   lane :beta do
     preflight
     assert_no_release_blockers
@@ -170,8 +182,9 @@ platform :ios do
               "-authenticationKeyID #{ENV.fetch('ASC_KEY_ID')} " \
               "-authenticationKeyIssuerID #{ENV.fetch('ASC_ISSUER_ID')}"
     )
+    archive_artifacts = preserve_archive_locally
     pilot(api_key: api_key, skip_waiting_for_build_processing: true)
-    store_archive(prerelease: true)
+    publish_archive_dsyms(artifacts: archive_artifacts, prerelease: true)
   end
 
   desc "Pull current App Store metadata into fastlane/metadata"
