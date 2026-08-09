@@ -17,7 +17,7 @@ final class ScreenshotTests: XCTestCase {
   @MainActor
   func testHomeActiveScreenshot() throws {
     let app = launch(scenario: "home-active")
-    XCTAssertTrue(app.staticTexts["Homework"].waitForExistence(timeout: 15))
+    XCTAssertTrue(app.buttons["Stop"].waitForExistence(timeout: 15))
     sleep(3)
     snapshot("01-home-active")
   }

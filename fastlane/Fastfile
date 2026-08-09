@@ -1,6 +1,26 @@
 XCTEST_DEVICES_DIR = File.expand_path("~/Library/Developer/XCTestDevices")
+SNAPSHOT_DEVICE_NAME = "iPhone 17 Pro Max"
 
 platform :ios do
+  private_lane :assert_framed_screenshots do
+    screenshots_directory = File.expand_path("screenshots", __dir__)
+    expected_names = [
+      "01-home-active",
+      "02-profile-editor",
+      "03-parent-dashboard"
+    ]
+    framed = Dir.glob(File.join(screenshots_directory, "en-GB", "*_framed.png"))
+    missing = expected_names.reject do |name|
+      framed.any? { |path| File.basename(path).include?(name) }
+    end
+    unless framed.count == expected_names.count && missing.empty?
+      UI.user_error!(
+        "Expected 3 framed en-GB screenshots; found #{framed.count}, missing: #{missing.join(', ')}"
+      )
+    end
+    UI.success("Validated 3 framed en-GB screenshots")
+  end
+
   desc "Regenerate all App Store screenshots (demo mode + snapshot + frameit)"
   lane :screenshots do
     before = Dir.exist?(XCTEST_DEVICES_DIR) ? Dir.children(XCTEST_DEVICES_DIR) : []
@@ -16,6 +36,21 @@ platform :ios do
       created.each do |udid|
         unless udid.match?(/\A[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\z/)
           UI.important("Refusing to delete unexpected XCTestDevices entry: #{udid}")
+          next
+        end
+
+        device_plist = File.join(XCTEST_DEVICES_DIR, udid, "device.plist")
+        begin
+          device_name = sh(
+            "plutil", "-extract", "name", "raw", "-o", "-", device_plist, log: false
+          ).strip
+        rescue => error
+          UI.important("Preserving XCTestDevices entry #{udid}; name unavailable: #{error.message}")
+          next
+        end
+        expected_name = /\A(?:Clone \d+ of )?#{Regexp.escape(SNAPSHOT_DEVICE_NAME)}\z/
+        unless device_name.match?(expected_name)
+          UI.message("Preserving concurrent test simulator #{udid} named '#{device_name}'")
           next
         end
 
@@ -53,8 +88,6 @@ platform :ios do
       File.delete(font_link) if created_font_link && File.symlink?(font_link)
     end
 
-    framed = Dir.glob(File.join(screenshots_directory, "en-GB", "*_framed.png"))
-    UI.user_error!("Expected 3 framed screenshots, found #{framed.count}") unless framed.count == 3
-    UI.success("Generated 3 framed en-GB screenshots")
+    assert_framed_screenshots
   end
 end

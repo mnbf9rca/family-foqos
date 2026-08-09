@@ -76,6 +76,29 @@ final class ScreenshotDemoStrategyManagerTests: XCTestCase {
 
   func testGivenDemoBreak_WhenTimerTicks_ThenSharedGrantRemainsUnchanged() async throws {
     let now = Date()
+    let expectedSharedSession = try seedExpiredBreak(now: now)
+
+    try manager.loadScreenshotDemoSession(context: context)
+    try await Task.sleep(for: .milliseconds(1200))
+
+    XCTAssertEqual(SharedData.getActiveSharedSession(), expectedSharedSession)
+    XCTAssertTrue(applier.calls.isEmpty)
+    XCTAssertTrue(registrar.calls.isEmpty)
+  }
+
+  func testGivenDemoGuardInactive_WhenTimerTicks_ThenSharedGrantExpires() async throws {
+    let now = Date()
+    let expectedSharedSession = try seedExpiredBreak(now: now)
+    ScreenshotDemoMode.overrideForTesting = false
+
+    try manager.loadScreenshotDemoSession(context: context)
+    try await Task.sleep(for: .milliseconds(1200))
+
+    XCTAssertNotEqual(SharedData.getActiveSharedSession(), expectedSharedSession)
+    XCTAssertNotNil(SharedData.getActiveSharedSession()?.breakEndTime)
+  }
+
+  private func seedExpiredBreak(now: Date) throws -> SharedData.SessionSnapshot {
     let profile = BlockedProfiles(name: "Homework", enableBreaks: true)
     let session = BlockedProfileSession(
       tag: "demo", blockedProfile: profile, startTime: now.addingTimeInterval(-2400))
@@ -87,13 +110,7 @@ final class ScreenshotDemoStrategyManagerTests: XCTestCase {
 
     let expectedSharedSession = session.toSnapshot()
     SharedData.createActiveSharedSession(for: expectedSharedSession)
-
-    try manager.loadScreenshotDemoSession(context: context)
-    try await Task.sleep(for: .milliseconds(1200))
-
-    XCTAssertEqual(SharedData.getActiveSharedSession(), expectedSharedSession)
-    XCTAssertTrue(applier.calls.isEmpty)
-    XCTAssertTrue(registrar.calls.isEmpty)
+    return expectedSharedSession
   }
 
   func testGivenDemoMode_WhenTogglingBlocking_ThenDoesNotStartSession() throws {
