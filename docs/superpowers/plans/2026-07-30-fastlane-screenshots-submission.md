@@ -206,16 +206,38 @@ fi
 echo "Production schema OK."
 ```
 
-- [ ] **Step 2: Generate the required-schema file from the development environment**
+- [ ] **Step 2: Reconcile the required-schema file against code**
 
-Run: `xcrun cktool export-schema --team-id BU7526J4QY --container-id iCloud.com.cynexia.family-foqos --environment development | grep "RECORD TYPE" | sed 's/ (//' | sed 's/^ *//' > fastlane/required-prod-schema.txt`
+The code is the source of truth. Development CloudKit auto-creates record types only after
+their first write, so exporting the development schema can silently omit types the current
+build uses. Generate into a temporary file, validate it, then atomically replace the manifest:
 
-Then open `fastlane/required-prod-schema.txt`, prepend this header, and review the list against what V2 actually reads/writes (keep all `RECORD TYPE X` lines; they are the V2 requirement set):
+```bash
+schema_tmp=$(mktemp fastlane/required-prod-schema.XXXXXX)
+trap 'rm -f "$schema_tmp"' EXIT
+{
+  echo '# Source of truth: record types referenced by app/extension code, reconciled by hand.'
+  echo "# Last reconciled: $(date +%F)."
+  echo '# Repeat both searches, review the results, and preserve required CloudKit built-ins:'
+  echo '#   rg -n '\''static let recordType\s*=\s*"[^"]+"'\'' Foqos FoqosDeviceMonitor FoqosShieldConfig FoqosWidget'
+  echo '#   rg -n '\''CKRecord\(recordType:\s*"[^"]+"'\'' Foqos FoqosDeviceMonitor FoqosShieldConfig FoqosWidget'
+  {
+    rg --no-filename -o 'static let recordType\s*=\s*"[^"]+"' \
+      Foqos FoqosDeviceMonitor FoqosShieldConfig FoqosWidget \
+      | sed -E 's/.*"([^"]+)"/\1/'
+    rg --no-filename -o 'CKRecord\(recordType:\s*"[^"]+"' \
+      Foqos FoqosDeviceMonitor FoqosShieldConfig FoqosWidget \
+      | sed -E 's/.*"([^"]+)"/\1/'
+  } | sort -u | sed 's/^/RECORD TYPE /'
+  echo 'RECORD TYPE "cloudkit.share"'
+} >"$schema_tmp"
+grep -q '^RECORD TYPE ' "$schema_tmp"
+mv "$schema_tmp" fastlane/required-prod-schema.txt
+trap - EXIT
 ```
-# Record types the current build requires in the PRODUCTION CloudKit schema.
-# Checked by scripts/check-prod-schema.sh (release lane gate).
-# Regenerate from the development environment when the schema grows.
-```
+
+Open the result and reconcile it by hand before committing. Keep required CloudKit built-ins
+such as `"cloudkit.share"`; remove stale app record types that the code no longer references.
 
 - [ ] **Step 3: Verify the gate fails today (that is the correct current state)**
 

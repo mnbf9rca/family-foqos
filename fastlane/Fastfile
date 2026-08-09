@@ -1,5 +1,6 @@
 require "fileutils"
 require "json"
+require File.expand_path("archive_storage", __dir__)
 
 # Runs under Homebrew Ruby via Bundler: export PATH="$(brew --prefix ruby)/bin:$PATH" && bundle exec fastlane <lane>
 default_platform(:ios)
@@ -7,6 +8,8 @@ default_platform(:ios)
 XCODEPROJ = "FamilyFoqos.xcodeproj"
 SCHEME = "FamilyFoqos"
 ARCHIVE_DIR = File.expand_path("~/Archives/family-foqos")
+REPO_ROOT = File.expand_path("..", __dir__)
+RELEASE_BLOCKING_LABEL = "release-blocking"
 
 platform :ios do
   private_lane :preflight do
@@ -24,13 +27,22 @@ platform :ios do
 
   private_lane :assert_no_release_blockers do
     # Fail closed: if gh errors (network, auth), sh raises and the lane aborts.
-    out = sh("gh issue list --state open --label release-blocking --json number,title", log: false)
+    labels_out = sh("gh label list --json name --limit 1000", log: false)
+    labels = JSON.parse(labels_out)
+    unless labels.any? { |label| label["name"] == RELEASE_BLOCKING_LABEL }
+      UI.user_error!("Required GitHub label is missing: #{RELEASE_BLOCKING_LABEL}")
+    end
+
+    out = sh(
+      "gh issue list --state open --label #{RELEASE_BLOCKING_LABEL} --json number,title",
+      log: false
+    )
     issues = JSON.parse(out)
     unless issues.empty?
       list = issues.map { |i| "##{i["number"]} #{i["title"]}" }.join("\n  ")
       UI.user_error!("Release blocked by open release-blocking issues:\n  #{list}")
     end
-    sh("./scripts/check-prod-schema.sh")
+    sh("bash", File.join(REPO_ROOT, "scripts/check-prod-schema.sh"))
   end
 
   # Copies the .xcarchive locally, zips dSYMs, attaches them to a GitHub release.
@@ -46,18 +58,24 @@ platform :ios do
 
     FileUtils.mkdir_p(ARCHIVE_DIR)
     local_copy = File.join(ARCHIVE_DIR, "#{stem}.xcarchive")
-    FileUtils.rm_rf(local_copy)
-    FileUtils.cp_r(archive, local_copy)
+    ArchiveStorage.replace_directory(source: archive, destination: local_copy)
     UI.success("Archive stored: #{local_copy}")
 
     dsym_zip = File.join(ARCHIVE_DIR, "#{stem}-dSYMs.zip")
-    sh("cd '#{archive}/dSYMs' && zip -qr '#{dsym_zip}' .")
+    FileUtils.rm_f(dsym_zip)
+    Dir.chdir(File.join(archive, "dSYMs")) do
+      sh("zip", "-qr", dsym_zip, ".")
+    end
 
     tag = options[:prerelease] ? "build/#{build}" : "v#{version}"
     begin
-      flags = options[:prerelease] ? "--prerelease" : ""
-      sh("gh release create '#{tag}' #{flags} --title '#{stem}' " \
-         "--notes 'Automated archive upload (dSYMs) for #{stem}.' '#{dsym_zip}'")
+      ArchiveStorage.upload_dsyms(
+        tag: tag,
+        prerelease: options[:prerelease],
+        title: stem,
+        notes: "Automated archive upload (dSYMs) for #{stem}.",
+        asset: dsym_zip
+      ) { |args| sh(*args) }
       UI.success("dSYMs attached to GitHub release #{tag}")
     rescue => e
       UI.important("GitHub release upload FAILED (local archive is safe): #{e.message}")
