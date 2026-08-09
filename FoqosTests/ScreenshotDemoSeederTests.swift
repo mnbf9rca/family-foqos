@@ -24,6 +24,10 @@ final class ScreenshotDemoSeederTests: XCTestCase {
     CloudKitManager.shared.isShareOwner = false
     HeartbeatManager.shared.monitoredDevices = []
     LockCodeManager.shared.seedForScreenshots([])
+    AppModeManager.shared.selectMode(.individual)
+    UserDefaults.standard.removeObject(forKey: "family_foqos_has_completed_onboarding")
+    UserDefaults.standard.removeObject(forKey: "family_foqos_show_intro_screen")
+    UserDefaults.standard.removeObject(forKey: "family_foqos_show_mode_selection")
     try await super.tearDown()
   }
 
