@@ -1,0 +1,60 @@
+XCTEST_DEVICES_DIR = File.expand_path("~/Library/Developer/XCTestDevices")
+
+platform :ios do
+  desc "Regenerate all App Store screenshots (demo mode + snapshot + frameit)"
+  lane :screenshots do
+    before = Dir.exist?(XCTEST_DEVICES_DIR) ? Dir.children(XCTEST_DEVICES_DIR) : []
+    UI.message("XCTestDevices before snapshot: #{before.count}")
+
+    begin
+      snapshot
+    ensure
+      after = Dir.exist?(XCTEST_DEVICES_DIR) ? Dir.children(XCTEST_DEVICES_DIR) : []
+      created = after - before
+      UI.message("XCTestDevices after snapshot: #{after.count}; created this run: #{created.count}")
+
+      created.each do |udid|
+        unless udid.match?(/\A[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\z/)
+          UI.important("Refusing to delete unexpected XCTestDevices entry: #{udid}")
+          next
+        end
+
+        begin
+          sh("xcrun", "simctl", "--set", XCTEST_DEVICES_DIR, "shutdown", udid, log: false)
+        rescue => error
+          UI.message("Test simulator #{udid} was already stopped: #{error.message}")
+        end
+        sh("xcrun", "simctl", "--set", XCTEST_DEVICES_DIR, "delete", udid, log: false)
+        UI.message("Removed run-created test simulator #{udid}")
+      end
+
+      remaining = Dir.exist?(XCTEST_DEVICES_DIR) ? Dir.children(XCTEST_DEVICES_DIR) : []
+      UI.message("XCTestDevices after cleanup: #{remaining.count}")
+    end
+
+    screenshots_directory = File.expand_path("screenshots", __dir__)
+    background = File.join(screenshots_directory, "background.png")
+    unless File.exist?(background)
+      sh("magick", "-size", "1320x2868", "xc:#1a1a2e", background)
+    end
+
+    font_source = "/System/Library/Fonts/SFNS.ttf"
+    font_link = File.join(screenshots_directory, "SFNS.ttf")
+    UI.user_error!("Required frameit font is missing: #{font_source}") unless File.exist?(font_source)
+    created_font_link = false
+    unless File.exist?(font_link)
+      File.symlink(font_source, font_link)
+      created_font_link = true
+    end
+
+    begin
+      frameit(path: screenshots_directory)
+    ensure
+      File.delete(font_link) if created_font_link && File.symlink?(font_link)
+    end
+
+    framed = Dir.glob(File.join(screenshots_directory, "en-GB", "*_framed.png"))
+    UI.user_error!("Expected 3 framed screenshots, found #{framed.count}") unless framed.count == 3
+    UI.success("Generated 3 framed en-GB screenshots")
+  end
+end
