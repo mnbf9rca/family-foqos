@@ -1,7 +1,7 @@
-# App Store Connect Credentials: 1Password, direnv, and Key Rotation
+# App Store Connect Credentials: 1Password, Scoped `op run`, and Key Rotation
 
 **Date:** 2026-08-09
-**Status:** Approved design; two operator decisions remain open; implementation plan is separate
+**Status:** Approved design; operator decisions ratified and provisioned; implementation/cutover pending
 **Scope:** Local Fastlane credentials for V2 / `main`; resolves storage issue
 [#365](https://github.com/mnbf9rca/family-foqos/issues/365) and makes the rotation from
 [#364](https://github.com/mnbf9rca/family-foqos/issues/364) part of the migration cutover.
@@ -20,26 +20,29 @@ session transcript. The transcript was not committed, pushed, or messaged elsewh
 contains the private half of the credential. Separately, this public repository contains the old
 key ID, issuer ID, and local key path in the existing Fastlane plan and spec. Those identifiers do
 not authenticate on their own, but together with the transcript they are all the inputs needed to
-use the old private key. Rotation, rather than document deletion, is the security boundary because
+use the old private key. Rotation, rather than repository-document deletion, is the security
+boundary because
 git history and forks retain already-published identifiers.
 
 The target state has one durable source of truth for ASC credentials: 1Password. The repository
-contains only 1Password secret references. Fastlane resolves the references when a lane starts,
-keeps the private key in process memory, and materializes it only in narrowly scoped temporary
-files when a downstream Apple tool requires a path.
+contains only non-secret 1Password references in `fastlane/asc.env`. A committed wrapper invokes
+credential-using lanes through `op run`, which resolves those references only into that child
+process. Fastlane keeps the private key in process memory and materializes it only in narrowly
+scoped temporary files when a downstream Apple tool requires a path. The maintainer's ambient shell
+never holds ASC key material.
 
 ## Constraints
 
 - The repository is public. No private key, service-account token, resolved environment value, new
   key ID, new issuer ID, or machine-specific key path may be committed.
-- The replacement ASC key is created during this migration. There is no period where the new key is
-  durably stored as a plaintext home-directory credential.
+- The replacement ASC key already exists and is stored in 1Password. It is not durably stored as a
+  plaintext home-directory credential. The old key `U2UZLVHKA5` remains active until the new wiring,
+  `check_asc_key`, and Xcode path verification pass.
 - ASC key creation normally produces a one-time browser download. This design therefore does not
   claim a diskless cutover. It minimizes that initial file's lifetime and treats revocation, not
   best-effort file erasure on APFS/SSD storage, as the security boundary.
-- Truly unattended lanes must not wait indefinitely for a biometric prompt. The design must also
-  retain a usable personal/biometric mode for maintainers who do not accept a new service-account
-  token.
+- A release session may spend one biometric interaction bootstrapping the service-account token,
+  but credential-using lane child processes must not stop later for additional biometric prompts.
 - The credential setup consumes the **Session Credential Warm-up** interface defined by #363. That
   specification owns credential inputs, token-injection custody, per-stage outcomes, and
   failure/expiry policy; this design does not duplicate them.
@@ -54,7 +57,7 @@ files when a downstream Apple tool requires a path.
 
 ## Options
 
-### Option A — read-only 1Password service account (recommended)
+### Option A — read-only 1Password service account (ratified)
 
 Create a dedicated non-built-in automation vault containing only the Family Foqos ASC item. Give a
 service account `read_items` access to that vault. 1Password CLI uses this mode when
@@ -64,27 +67,28 @@ rotated, and revoked. These constraints follow 1Password's
 [service-account model](https://www.1password.dev/service-accounts/get-started) and
 [CLI authentication contract](https://www.1password.dev/service-accounts/use-with-1password-cli).
 
-This is the reliable unattended mode: `op read` does not require a biometric interaction once the
+This is the reliable unattended mode: `op run` does not require a biometric interaction once the
 token is present. The trade-off is real: `OP_SERVICE_ACCOUNT_TOKEN` is itself a long-lived secret in
-the worker's environment. It must never live in `.envrc`, an env file, shell history, or the repo.
-Limiting the account to a one-item vault makes compromise narrower than today's raw, effectively
-immortal `.p8`, and the token is revocable and its use report is inspectable.
+the worker's ambient environment for the release session. It must never live in a committed file,
+shell history, or the repository. Limiting the account to a one-item vault makes compromise narrower
+than today's raw, effectively immortal `.p8`, and the token is revocable and its use report is
+inspectable.
 
-**Status: RECOMMENDED, OPEN-FOR-MAINTAINER.** The maintainer chooses whether the unattended benefit
-justifies custody of this new token.
+**Status: RATIFIED AND PROVISIONED.** The read-only token is stored at
+`op://family-foqos/service_auth_token/OP_SERVICE_ACCOUNT_TOKEN`. Personal 1Password authentication
+retrieves it once per session; the reference, never the resolved token, is safe to document.
 
-### Option B — personal 1Password app integration with biometrics
+### Option B — personal 1Password app integration as bootstrap
 
-If `OP_SERVICE_ACCOUNT_TOKEN` is absent, `op` uses the maintainer's personal 1Password CLI/app
-integration. Run **Session Credential Warm-up** before unattended work. This avoids a service token,
-attributes access to the maintainer, and uses the existing 1Password unlock boundary described by the
-[1Password app integration](https://www.1password.dev/cli/app-integration).
+The maintainer's personal 1Password CLI/app integration performs the single biometric bootstrap
+that reads `OP_SERVICE_ACCOUNT_TOKEN` into the release-session environment. Run **Session Credential
+Warm-up** before credential-using work. This keeps personal authorization at the session boundary;
+subsequent `op run` children resolve ASC references with the scoped service account instead of
+re-prompting for personal access. The app integration follows 1Password's
+[documented authentication contract](https://www.1password.dev/cli/app-integration).
 
-The limitation is that a later app relock can reintroduce a prompt during a lane. A warm-up reduces
-that risk but cannot make long-running work as deterministic as service-account authentication.
-
-**Status: SUPPORTED FALLBACK, OPEN-FOR-MAINTAINER.** Use this when interactive authorization is an
-acceptable condition of a release session.
+**Status: DECIDED BOOTSTRAP LAYER.** Direct personal resolution of ASC values during a Fastlane lane
+is no longer the normal delivery path.
 
 ### Option C — retain a standing `.p8` for Xcode
 
@@ -96,52 +100,65 @@ migration's purpose.
 
 ## Recommendation
 
-### One committed `.envrc`, two authentication modes
+### Two-layer credential injection
 
-Use one `.envrc` for Options A and B. It exports literal 1Password references, not resolved values:
+The ratified architecture separates operator bootstrap from ASC credential delivery.
 
-```bash
-export ASC_KEY_ID_REF='op://<automation-vault>/<asc-item>/key-id'
-export ASC_ISSUER_ID_REF='op://<automation-vault>/<asc-item>/issuer-id'
-export ASC_KEY_CONTENT_BASE64_REF='op://<automation-vault>/<asc-item>/private-key-base64'
+**Layer 1 — operator-local bootstrap.** Personal 1Password app integration and direnv use an
+operator-owned `.env.tpl` to export only `OP_SERVICE_ACCOUNT_TOKEN`, resolved from
+`op://family-foqos/service_auth_token/OP_SERVICE_ACCOUNT_TOKEN`. This costs one biometric touch per
+release session. The repository documents this setup but does not ship `.env.tpl`, `.envrc`, or the
+resolved token. No ASC key ID, issuer ID, or key content enters the ambient shell.
+
+**Layer 2 — per-invocation ASC injection.** Commit `fastlane/asc.env` with exactly three non-secret
+reference mappings:
+
+```dotenv
+ASC_KEY_ID=op://family-foqos/app_store_connect_key/ASC_KEY_ID_REF
+ASC_ISSUER_ID=op://family-foqos/app_store_connect_key/ASC_ISSUER_ID_REF
+ASC_KEY_CONTENT_BASE64=op://family-foqos/app_store_connect_key/ASC_KEY_CONTENT_BASE64_REF
 ```
 
-The file needs no authentication branch. When `OP_SERVICE_ACCOUNT_TOKEN` is present, 1Password CLI
-uses the service account; otherwise it uses personal app integration. Fastlane resolves the three
-references at lane start. This keeps the actual ASC key out of the interactive shell environment
-and makes the maintainer's authentication choice runtime configuration rather than a second config
-file.
+The 1Password item and fields are decided and provisioned: vault `family-foqos`, item
+`app_store_connect_key`, non-secret fields `ASC_KEY_ID_REF` and `ASC_ISSUER_ID_REF`, and concealed
+field `ASC_KEY_CONTENT_BASE64_REF`. A credential-using invocation is:
 
-The vault and item names are **OPEN-FOR-MAINTAINER**. The item name must describe the application,
-not embed the ASC key ID. Implementation replaces the placeholders once those names are selected.
+```bash
+op run --env-file fastlane/asc.env -- bundle exec fastlane <lane>
+```
 
-The committed setup flow is:
+`op run` uses the bootstrapped service token, resolves references only for that child process, and
+masks concealed values in output. Fastlane reads the resolved `ASC_KEY_ID`, `ASC_ISSUER_ID`, and
+`ASC_KEY_CONTENT_BASE64` values with `ENV.fetch`; a bare credential-using Fastlane invocation fails
+closed instead of falling back to a disk credential.
 
-1. Install the 1Password CLI and direnv; configure personal app integration if Option B is used.
-2. Add the direnv hook to the shell once.
-3. Review `.envrc`, then run `direnv allow .`. A changed `.envrc` requires a fresh allow.
-4. Run **Session Credential Warm-up** before any credential-using lane.
+Commit a thin `scripts/fastlane.sh` wrapper so operators do not forget the prefix. It runs
+`screenshots` directly because that lane needs no ASC credential, and runs `beta`, `release`,
+`pull_metadata`, and `check_asc_key` through `op run --env-file fastlane/asc.env`. Any later
+credential-using lane joins the wrapped set explicitly.
 
-Add `.direnv/` to `.gitignore`. Do not ignore `.envrc`: it is the reviewed, committed replacement for
-the env template. Retain `fastlane/.env` in `.gitignore` as defense in depth even after deleting the
-file and removing all runtime use.
+The setup flow is:
 
-At base `bf97c18`, the current `.gitignore` ignores neither `.envrc` nor `.direnv/`; Fastlane setup
-commit `2404139` adds `fastlane/.env` at `.gitignore:63`. Integration adds only `.direnv/` to that
-credential-related set and preserves the `fastlane/.env` denylist entry. A scan of both feature
-branches finds credential-path references only in Fastlane setup commit `2404139`;
-`85593e0:fastlane/Fastfile` adds screenshot behavior and no credential dependency.
+1. Install the 1Password CLI and direnv; enable personal app integration.
+2. Configure the operator-local direnv/`.env.tpl` bootstrap for only `OP_SERVICE_ACCOUNT_TOKEN`.
+3. Run **Session Credential Warm-up** once at the start of the release session.
+4. Invoke Fastlane through `scripts/fastlane.sh`; do not call an ASC lane bare.
+
+Retain `fastlane/.env` in `.gitignore` as defense in depth after deleting the file and removing all
+runtime use. Commit `fastlane/asc.env`; it contains references, not resolved values. Delete
+`fastlane/.env.template` because the operator no longer copies or edits a Fastlane env template.
 
 A leaked `op://` reference reveals vault/item/field naming metadata. It does **not** reveal or grant
 access to the referenced value; an attacker still needs an authorized 1Password user session or
-service-account token. This is why the public `.envrc` must contain references only and why the
-service token remains outside it.
+service-account token. This is why the public refs file contains references only and why the service
+token remains confined to the operator's release-session environment.
 
 ### Base64 at the storage boundary, raw PEM at the Fastlane boundary
 
 Store the private key as base64 in 1Password. This removes PEM-newline and command-substitution
-ambiguity. Fastlane resolves `ASC_KEY_CONTENT_BASE64_REF`, decodes it with strict base64 decoding in
-Ruby, and passes the resulting raw multiline PEM as `key_content:`.
+ambiguity. `op run` resolves the `fastlane/asc.env` reference into the child-only
+`ASC_KEY_CONTENT_BASE64` value. Fastlane decodes it with strict base64 decoding in Ruby and passes
+the resulting raw multiline PEM as `key_content:`.
 
 Fastlane 2.237.0 accepts raw `key_content`; it preserves real newlines and converts literal `\\n`
 sequences to newlines
@@ -151,16 +168,21 @@ It also supports `is_key_content_base64:` and forwards that flag with the key
 (`/opt/homebrew/lib/ruby/gems/4.0.0/gems/fastlane-2.237.0/spaceship/lib/spaceship/connect_api/token.rb:52-71`).
 
 The design deliberately decodes before calling the action instead of setting
-`is_key_content_base64: true`. The action returns the original key hash, while Fastlane's Transporter
-later writes `api_key[:key]` directly to an `AuthKey_*.p8` file without consulting the base64 flag
+`is_key_content_base64: true`. Mainline consumers do handle the flag: Spaceship's token loader
+decodes it, `deliver/runner.rb:300` decodes before Transporter, and
+`pilot/build_manager.rb:416` does the same. The responsibility is distributed, however, while
+Fastlane's Transporter `prepare` writer itself is flag-blind and writes `api_key[:key]` directly to
+an `AuthKey_*.p8` file
 (`/opt/homebrew/lib/ruby/gems/4.0.0/gems/fastlane-2.237.0/fastlane_core/lib/fastlane_core/itunes_transporter.rb:68-90`).
-Passing raw PEM keeps `pilot`, `deliver`, and the existing temporary JSON handoff compatible while
-base64 still protects the 1Password-to-Ruby transport.
+Direct Transporter use or a hand-built API-key hash such as the `pull_metadata` JSON path therefore
+depends on its builder remembering which upstream decode has occurred. Strictly decoding once in
+Ruby establishes one raw-PEM invariant for every consumer and removes that distributed assumption;
+base64 still protects the 1Password-to-child-process transport. No known upstream defect is claimed.
 
-The private `asc_api_key` lane therefore replaces `ASC_KEY_PATH` with the three references, resolves
-them without logging stdout, strictly decodes the private key, and calls `app_store_connect_api_key`
-with raw `key_content`. Resolution failures, missing fields, invalid base64, or invalid PEM fail the
-lane before any build or network mutation.
+The private `asc_api_key` lane therefore replaces `ASC_KEY_PATH` with the three child-process values,
+fetches them without logging, strictly decodes the private key, and calls
+`app_store_connect_api_key` with raw `key_content`. `op run` resolution failures, missing environment
+values, invalid base64, or invalid PEM fail the lane before any build or network mutation.
 
 ### Path-only consumers get scoped temporary files
 
@@ -181,9 +203,11 @@ implementation must explicitly assert mode `0600` for both tempfiles, cover clea
 and an injected failure for both, and add `log: false` to the nested `sh` call so the live JSON path
 is not advertised in lane output.
 
-Temporary materialization is not equivalent to durable storage. The key exists briefly in process
-memory and in mode-`0600` temporary files required by Xcode or Fastlane. Fastlane's Transporter
-cleanup is not uniform. `upload` and `provider_ids` remove the generated key directory in `ensure`
+Temporary materialization is not equivalent to durable storage. The lifecycle is: at rest in
+1Password → resolved values in a credential-using `op run` child environment for that invocation →
+Fastlane memory and sensitive lane context → a gym-only or metadata-only mode-`0600` tempfile →
+ensure-driven deletion. ASC material never enters the ambient shell. Fastlane's Transporter cleanup
+is not uniform. `upload` and `provider_ids` remove the generated key directory in `ensure`
 blocks (`fastlane_core/lib/fastlane_core/itunes_transporter.rb:864-882,959-982`), but `verify` calls
 the same `prepare` writer without cleanup (`itunes_transporter.rb:903-953`). For a
 `ShellScriptTransporterExecutor`, that writer creates
@@ -197,58 +221,60 @@ known Transporter path, then fail if any `.p8` remains below `~/.appstoreconnect
 standing key is reported for operator remediation, not silently deleted. The scoped invariant is:
 **no standing plaintext private-key file survives a credential-using Family Foqos lane or the
 cutover**. It is not the untrue claim that the key never exists outside 1Password or that the gem
-always cleans up after itself.
+always cleans up after itself. Child-only `op run` injection strengthens this postcondition: the
+cleanup proof no longer has to account for ASC values lingering in the parent shell after a lane.
 
 ### What dies and what replaces it
 
 | Current dependency | Current references | Replacement |
 | --- | --- | --- |
-| `fastlane/.env` | Fastlane auto-load; `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_PATH` | Delete the file and all runtime dependence. Keep its ignore rule as a tripwire. `.envrc` supplies only `*_REF` values. |
-| `fastlane/.env.template` | `2404139:fastlane/.env.template:1-4` | Delete it. Committed `.envrc` plus setup documentation is the single template. |
-| `ASC_KEY_PATH` in `asc_api_key` | `2404139:fastlane/Fastfile:21-26` | Resolve base64 content, decode in Ruby, and pass raw `key_content:`. |
-| `ASC_KEY_PATH` in `gym` `xcargs` | `2404139:fastlane/Fastfile:128-143` | A helper-owned mode-`0600` temporary `.p8` path scoped to `gym`. Key and issuer IDs are resolved values, never committed literals. |
+| `fastlane/.env` | Fastlane auto-load; `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_PATH` | Delete the file and all runtime dependence at cutover. Keep its ignore rule as a tripwire. `scripts/fastlane.sh` injects child-only values through committed, non-secret `fastlane/asc.env`. |
+| `fastlane/.env.template` | `2404139:fastlane/.env.template:1-4` | Delete it. Its copy-and-edit job no longer exists; committed `fastlane/asc.env` plus bootstrap documentation replaces it. |
+| `ASC_KEY_PATH` in `asc_api_key` | `2404139:fastlane/Fastfile:21-26` | Fetch the child-only base64 value injected by `op run`, decode in Ruby, and pass raw `key_content:`. |
+| `ASC_KEY_PATH` in `release` and `beta` `gym` `xcargs` | `4e6b28b:fastlane/Fastfile` | A helper-owned mode-`0600` temporary `.p8` path scoped to each `gym` call. Key and issuer IDs come from the same child-only environment, never committed literals. |
 | `pull_metadata` API-key JSON | `2404139:fastlane/Fastfile:106-125` | Retain the `Tempfile.create` handoff, require mode `0600` and symmetric cleanup tests, and suppress logging of its live path. Its hash now contains raw PEM produced from 1Password rather than a home-directory path. |
 | `~/.appstoreconnect/` | Existing plan/spec, the old plaintext key, and Fastlane Transporter's cleanup-deficient `verify` path | Remove the old `.p8` and empty directory after successful cutover. After each project lane that can invoke Transporter, surgically remove the expected project-key path and fail if any `.p8` remains. |
 | Old IDs and absolute path in docs | `docs/superpowers/plans/2026-07-30-fastlane-screenshots-submission.md` and `docs/superpowers/specs/2026-07-30-fastlane-screenshots-submission-design.md` | After revocation, replace them with a neutral 1Password item reference and scrub the obsolete path. History remains, but the revoked identifiers no longer compose with a live key. |
 
 ## Migration/cutover plan
 
-The cutover keeps the old key valid until the selected authentication mode and both the Fastlane
-API and Xcode path consumers are proven. It does not upload a build or submit a release as a
-credential test.
+The cutover keeps the old key valid until the ratified service-account path and both the Fastlane API
+and Xcode path consumers are proven. It does not upload a build or submit a release merely to test
+credentials. Current operator state is explicit: the replacement key already exists in 1Password,
+while old key `U2UZLVHKA5` is not yet revoked.
 
-1. **Choose operator-owned settings.** Select Option A or B and choose the dedicated vault/item
-   names. If Option A is chosen, create a service account with read-only access to only the dedicated
-   automation vault and register the required inputs with **Session Credential Warm-up**. Never
-   paste the token into a command recorded by an agent.
-2. **Prepare the code migration before creating the key.** Implement the committed `.envrc`, secret
-   resolver, base64 decode, raw `key_content` handoff, gym-scoped tempfile helper, deletion of the old
-   env files, `.gitignore` change, Transporter postcondition, and non-submitting verification
-   lanes/tests. The references may point to an empty placeholder item until the next step. Treat
-   steps 2-9 as a maintenance window: do not run a lane that invokes `pilot` or `deliver`, and
-   activate the no-standing-key postcondition when step 9 removes the legacy key.
-3. **Create the replacement App Manager key in App Store Connect.** Use the browser's one-time
-   download. Configure an explicit private download location, keep the window between download and
-   import as short as practical, and do not expose the values in a terminal transcript.
-4. **Import immediately into 1Password.** In one local operator-controlled session, encode the
-   downloaded PEM to base64 and create the item with the new key ID, issuer ID, and base64 private
-   key. Sensitive item data must enter `op item create` via stdin/JSON, not command arguments or a
-   reusable template file. Confirm the item fields can be resolved, then best-effort overwrite/remove
-   the browser artifact and its empty staging directory. APFS snapshots and SSD wear leveling mean
-   physical erasure cannot be guaranteed.
-5. **Activate the new references.** Replace `.envrc` placeholders with the chosen vault/item/field
-   references, review them, run `direnv allow .`, and run **Session Credential Warm-up**.
-6. **Verify Fastlane authentication safely.** Run `bundle exec fastlane check_asc_key`. That lane
-   may report only non-sensitive facts such as key/issuer presence; it must never print the returned
-   key hash or any resolved value.
+1. **Record the completed provisioning.** The maintainer has provisioned the read-only service
+   account, vault `family-foqos`, item `app_store_connect_key`, and the three decided fields. The
+   replacement key is present in the concealed base64 field.
+2. **Implement the two layers before activating them.** Document the operator-local
+   `OP_SERVICE_ACCOUNT_TOKEN` bootstrap, commit `fastlane/asc.env` and `scripts/fastlane.sh`, fetch
+   child-only values in Fastlane, strictly decode raw `key_content`, add the gym-scoped tempfile
+   helper, retire the old env files, and implement the Transporter postcondition and non-submitting
+   tests. From this step through old-key revocation, treat the work as a maintenance window: do not
+   invoke `pilot` or `deliver` merely for credential testing.
+3. **Verify the 1Password field round trip.** Through an operator-controlled `op run` child, confirm
+   all three mappings resolve, the base64 field strictly decodes, and the decoded value parses as the
+   expected PEM without printing any value.
+4. **Retain the 1Password document backup deliberately.** The maintainer initially stored the PEM as
+   document item `3jey32ebbf3d4s2ktuyb64i4rq` before converting it to the concealed field. Keep that
+   document alongside the field as an accepted backup copy: both are in the same vault under the
+   same access control.
+5. **Activate the bootstrap and wrapper.** Run **Session Credential Warm-up** to place only
+   `OP_SERVICE_ACCOUNT_TOKEN` in the release-session environment, then use `scripts/fastlane.sh` for
+   every credential-using lane.
+6. **Verify Fastlane authentication safely.** Run `scripts/fastlane.sh check_asc_key`. That lane may
+   report only non-sensitive facts such as key/issuer presence; it must never print the returned key
+   hash or any resolved value.
 7. **Verify Xcode's path consumer without publishing.** Run an archive-only provisioning smoke test
-   that uses the same gym tempfile helper as `beta`/`release` but calls neither `pilot` nor `deliver`.
-   Confirm both successful authentication and removal of the temporary `.p8` after the archive.
-8. **Revoke the old ASC key.** Only after steps 6-7 pass, revoke the previously active key tracked by
-   #364 in App Store Connect. Immediately rerun `check_asc_key` to prove the configured replacement
-   still works. From this point, residual copies of the old private key cannot authenticate.
-9. **Remove old local material and references.** Best-effort secure-delete the old `.p8`, remove the
-   now-empty standing `~/.appstoreconnect/` directory, delete `fastlane/.env` and
+   through `op run` that uses the same gym tempfile helper as `beta`/`release` but calls neither
+   `pilot` nor `deliver`. Confirm successful authentication and removal of the temporary `.p8` after
+   both success and an injected failure.
+8. **Revoke the old ASC key.** Only after steps 6-7 pass, revoke `U2UZLVHKA5`, the previously active
+   key tracked by #364, in App Store Connect. Immediately rerun the wrapped `check_asc_key` to prove
+   the configured replacement still works. From this point, residual copies of the old private key
+   cannot authenticate.
+9. **Remove old local material and references.** Best-effort remove the old `.p8` and now-empty
+   standing `~/.appstoreconnect/` directory, delete `fastlane/.env` and
    `fastlane/.env.template`, and scrub the old identifiers and absolute path from the Fastlane plan
    and spec. Do not rewrite git history.
 10. **Close the exposure loop.** Search the working tree for the old key ID, issuer ID,
@@ -265,11 +291,16 @@ restore the revoked credential.
 
 ### Required automated checks
 
-- `.envrc` contains only `op://` references and non-secret shell logic; no resolved values.
-- `.direnv/` is ignored, `.envrc` is tracked, and `fastlane/.env` remains ignored.
+- `fastlane/asc.env` is tracked and contains exactly the three decided `op://` mappings; it contains
+  no resolved value.
+- The repository ships neither the operator's `.env.tpl`/`.envrc` bootstrap nor a service-account
+  token, while `fastlane/.env` remains ignored as a tripwire.
+- `scripts/fastlane.sh` routes `beta`, `release`, `pull_metadata`, and `check_asc_key` through
+  `op run --env-file fastlane/asc.env`; `screenshots` remains credential-free.
+- A bare credential-using Fastlane invocation fails at `ENV.fetch` before build or network mutation.
 - No active Fastfile or script reads `ASC_KEY_PATH` or auto-loads `fastlane/.env`.
-- Secret resolution suppresses stdout/stderr that could contain values and fails closed on every
-  missing/invalid field.
+- `op run` resolution is child-scoped, masks the concealed key value, and fails closed on every
+  missing/invalid reference; Fastlane does not print the injected values.
 - Base64 decode rejects malformed input; the decoded value loads through the real
   `app_store_connect_api_key` path.
 - The gym helper and `pull_metadata` JSON handoff both create mode-`0600` files, expose them only
@@ -285,11 +316,12 @@ restore the revoked credential.
 
 ### Authentication matrix
 
-| Mode | Setup via **Session Credential Warm-up** | Expected behavior |
+| Invocation | Setup via **Session Credential Warm-up** | Expected behavior |
 | --- | --- | --- |
-| Service account | Service-account mode ready | `.envrc` stays non-secret; Fastlane resolves the same refs with no biometric prompt. |
-| Personal/biometric | Personal mode ready | The same `.envrc` and Fastfile work. A relocked app may prompt and is an acknowledged fallback limitation. |
-| Neither available | Not ready | Lane fails before build with a redacted authentication error; it does not use a disk fallback. |
+| Wrapped ASC lane | Personal bootstrap resolves the service token once | `op run` injects ASC values only into the lane child; the lane proceeds without another biometric prompt. |
+| Bare ASC lane | Irrelevant | `ENV.fetch` fails before build; there is no ambient ASC value or disk fallback. |
+| `screenshots` | No credential input required | The wrapper runs Fastlane directly without `op run`. |
+| Missing/expired bootstrap | Not ready | `op run` fails with a redacted authentication error before Fastlane can build or mutate network state. |
 
 ### Manual acceptance
 
@@ -299,8 +331,10 @@ Before revocation, the maintainer confirms:
 2. the archive-only gym probe authenticates without upload/submission;
 3. no gym `.p8`, `pull_metadata` JSON tempfile, or Transporter `.p8` remains after success or forced
    failure;
-4. the selected authentication mode meets the maintainer's unattended-run policy; and
-5. the 1Password item and, if selected, service-account usage are visible to the maintainer.
+4. the ambient shell contains the service token but no ASC value before, during, or after the lane;
+   and
+5. the provisioned 1Password item, retained document backup, and service-account usage are visible
+   to the maintainer.
 
 After revocation, rerun the non-secret key check and repository scans. Then close #364 as remediated
 by rotation and #365 as remediated by the 1Password migration.
@@ -309,15 +343,22 @@ by rotation and #365 as remediated by the 1Password migration.
 
 - **DECIDED:** Rotation of the transcript-exposed ASC key is part of this migration's cutover.
 - **DECIDED:** 1Password is the only durable source of truth for the replacement ASC key.
-- **DECIDED:** The repository commits one `.envrc` containing references only and ignores
-  `.direnv/`.
+- **DECIDED:** Personal 1Password plus direnv bootstraps only `OP_SERVICE_ACCOUNT_TOKEN` once per
+  session; the operator-owned `.env.tpl`/`.envrc` is documented but not committed.
+- **DECIDED:** The repository commits non-secret `fastlane/asc.env`; `scripts/fastlane.sh` uses
+  child-scoped `op run` injection for every ASC lane, while `screenshots` is exempt.
+- **DECIDED:** Use the provisioned read-only service account in vault `family-foqos`; its token is
+  stored at `op://family-foqos/service_auth_token/OP_SERVICE_ACCOUNT_TOKEN`.
+- **DECIDED:** Use item `app_store_connect_key` with fields `ASC_KEY_ID_REF`, `ASC_ISSUER_ID_REF`,
+  and concealed `ASC_KEY_CONTENT_BASE64_REF`.
 - **DECIDED:** Store/transport private-key content as base64, decode in Ruby, and pass raw PEM to
   Fastlane.
 - **DECIDED:** Xcode receives a mode-`0600`, gym-scoped temporary `.p8` with ensure cleanup.
 - **DECIDED:** Family Foqos lanes enforce the no-standing-key postcondition instead of trusting
   Fastlane Transporter's non-uniform cleanup.
-- **RECOMMENDED / OPEN-FOR-MAINTAINER:** Use a read-only service account for reliable unattended
-  runs; personal biometric authentication remains a supported runtime fallback.
-- **OPEN-FOR-MAINTAINER:** Final dedicated vault and ASC item names.
+- **DECIDED:** Retain document item `3jey32ebbf3d4s2ktuyb64i4rq` as the maintainer's backup copy
+  alongside the concealed field under the same vault access control.
+- **PENDING CUTOVER:** Old key `U2UZLVHKA5` remains active until wrapped `check_asc_key` and the
+  archive-only Xcode path probe both pass.
 - **REJECTED:** A standing home-directory `.p8`, a second auth-specific `.envrc`, a history rewrite,
   or an unverifiable claim that browser-issued key creation is diskless.
