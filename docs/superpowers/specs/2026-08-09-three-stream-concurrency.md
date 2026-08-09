@@ -159,12 +159,14 @@ The kernel lock is the source of truth. Lock files are stable inodes and are nev
 Diagnostic JSON lives in separate sidecars: the wrapper writes a same-directory temporary file,
 sets mode `0600`, then atomically renames it over the `.json` sidecar. Readers can therefore inspect
 complete metadata without touching the lock or observing a torn write. On normal release the
-wrapper atomically publishes an inactive record and unlocks. If the wrapper dies while its child
-runs, the inherited child descriptors keep every lock held; the metadata still identifies both
-PIDs. Once the final holder exits, the kernel releases the locks but the last JSON remains. The
-next successful holder reports that stale metadata and overwrites it. It never kills or reclaims
-based only on age or a recorded PID. If a live holder is hung, a human inspects the metadata and
-explicitly terminates the recorded process group.
+wrapper publishes an inactive record only after a clean child exit. If the child exits nonzero or
+by signal, it preserves the start/baseline as `needs_reconciliation` with the child status before
+unlocking; a killed screenshots child can therefore still enter the clone-reporting path. If the
+wrapper dies while its child runs, the inherited child descriptors keep every lock held; the
+metadata still identifies both PIDs. Once the final holder exits, the kernel releases the locks but
+the last JSON remains. The next successful holder reports stale or reconciliation metadata before
+overwriting it. It never kills or reclaims based only on age or a recorded PID. If a live holder is
+hung, a human inspects the metadata and explicitly terminates the recorded process group.
 
 The implementation shape is:
 
@@ -275,12 +277,13 @@ clone window.
 
 An `ensure` cleanup cannot run after `SIGKILL`. Before snapshot, the wrapper atomically records the
 lane start, expected snapshot model, and baseline UUID set in the singleton's metadata sidecar.
-When a later holder acquires an otherwise-free singleton and finds prior active metadata, it
-reconstructs exact candidates that were absent from the baseline, created after the prior start,
-and match the expected snapshot-clone pattern. It reports candidates immediately. Candidates with
-no live singleton holder enter a 24-hour quarantine; after that threshold the helper may offer an
-operator-confirmed deletion listing every exact UUID, but it never auto-deletes. Age and a dead PID
-are filters for the confirmation list, not authority to reclaim by themselves.
+When a later holder acquires an otherwise-free singleton and finds prior active or
+`needs_reconciliation` metadata, it reconstructs exact candidates that were absent from the
+baseline, created after the prior start, and match the expected snapshot-clone pattern. It reports
+candidates immediately. Candidates with no live singleton holder enter a 24-hour quarantine; after
+that threshold the helper may offer an operator-confirmed deletion listing every exact UUID, but it
+never auto-deletes. Age and a dead PID are filters for the confirmation list, not authority to
+reclaim by themselves.
 
 ### File ownership and integration
 
@@ -338,7 +341,8 @@ design decisions; every real task message substitutes concrete values.
    fixed acquisition order, signal forwarding to the child process group, child exit propagation,
    normal cleanup, atomic metadata reads, and stale metadata recovery. Kill a wrapper around a
    long-running child and prove the inherited child descriptors prevent a duplicate claim until
-   that child exits.
+   that child exits. Separately kill the child and prove the wrapper retains
+   `needs_reconciliation` metadata rather than publishing an inactive record.
 2. Replace `scripts/clean-build.sh` wildcard deletion with one validated absolute-path argument.
    Refuse an empty path, `/`, a home directory, the DerivedData root itself, or any path outside
    the expected FamilyFoqos DerivedData prefix.

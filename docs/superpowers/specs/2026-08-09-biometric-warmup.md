@@ -136,6 +136,9 @@ Inputs are planner-owned and declared at dispatch:
 - for service-account mode, an operator-approved secret-store injection source or launcher—not the
   token value in a task message, command argument, repository file, or log.
 
+**OPEN-FOR-MAINTAINER:** select the operator-approved injection source or launcher if #365's
+service-account mode is adopted.
+
 The interface warms and reports these stages independently:
 
 1. `git-signing`: create and verify the signed disposable commit.
