@@ -3,6 +3,12 @@ import XCTest
 @testable import FamilyFoqos
 
 final class ScreenshotDemoModeTests: XCTestCase {
+  override func setUp() {
+    ScreenshotDemoMode.overrideForTesting = nil
+    ScreenshotDemoMode.scenarioOverrideForTesting = nil
+    super.setUp()
+  }
+
   override func tearDown() {
     ScreenshotDemoMode.overrideForTesting = nil
     super.tearDown()
