@@ -93,6 +93,7 @@ class HeartbeatManager: ObservableObject {
 
   /// Write heartbeat to CloudKit. Fire-and-forget — must not block profile activation.
   func writeHeartbeat() {
+    guard !ScreenshotDemoMode.isActive else { return }
     let authStatus = AuthorizationCenter.shared.authorizationStatus
     let statusString: String
     switch authStatus {
