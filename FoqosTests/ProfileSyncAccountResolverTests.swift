@@ -234,10 +234,12 @@ final class ProfileSyncAccountResolverTests: XCTestCase {
     var removedStartSchedules: Set<UUID> = []
     var removedStopSchedules: Set<UUID> = []
     var canceledPreActivationReminders: Set<UUID> = []
+    var canceledSessionAndBreakReminders: Set<UUID> = []
     let cleanup = BlockedProfiles.DeleteCleanup(
       removeStartSchedule: { removedStartSchedules.insert($0.id) },
       removeStopSchedule: { removedStopSchedules.insert($0.id) },
       cancelPreActivationReminders: { canceledPreActivationReminders.insert($0) },
+      cancelSessionAndBreakReminders: { canceledSessionAndBreakReminders.insert($0) },
       removeBreakBackstop: { _ in },
       removeOneMoreMinuteBackstop: { _ in }
     )
@@ -248,6 +250,7 @@ final class ProfileSyncAccountResolverTests: XCTestCase {
     XCTAssertTrue(removedStartSchedules.contains(profile.id))
     XCTAssertTrue(removedStopSchedules.contains(profile.id))
     XCTAssertTrue(canceledPreActivationReminders.contains(profile.id))
+    XCTAssertTrue(canceledSessionAndBreakReminders.contains(profile.id))
     XCTAssertEqual(try container.mainContext.fetch(FetchDescriptor<BlockedProfiles>()).count, 0)
   }
 
@@ -431,6 +434,7 @@ final class ProfileSyncAccountResolverTests: XCTestCase {
       removeStartSchedule: { _ in events.append("delete") },
       removeStopSchedule: { _ in },
       cancelPreActivationReminders: { _ in },
+      cancelSessionAndBreakReminders: { _ in },
       removeBreakBackstop: { _ in },
       removeOneMoreMinuteBackstop: { _ in })
 

@@ -100,6 +100,41 @@ final class TimersUtilTargetedCancelTests: XCTestCase {
       timers.isOwnedReminderScheduleCurrentForTesting(identifier, generation: generation))
   }
 
+  func testGivenProfileOwnedReminders_WhenTargetedCancel_ThenOnlyProfileOwnershipInvalidated() {
+    let timers = TimersUtil()
+    let profileId = UUID()
+    let otherProfileId = UUID()
+    let sessionId = TimersUtil.sessionReminderIdentifier(for: profileId)
+    let breakId = TimersUtil.breakReminderIdentifier(for: profileId)
+    let otherId = TimersUtil.sessionReminderIdentifier(for: otherProfileId)
+    for identifier in [sessionId, breakId, otherId] {
+      _ = timers.scheduleNotification(
+        title: "Reminder",
+        message: "Message",
+        seconds: 60,
+        identifier: identifier)
+    }
+    let sessionGeneration = try! XCTUnwrap(
+      timers.ownedReminderScheduleGenerationForTesting(sessionId))
+    let breakGeneration = try! XCTUnwrap(
+      timers.ownedReminderScheduleGenerationForTesting(breakId))
+    let otherGeneration = try! XCTUnwrap(
+      timers.ownedReminderScheduleGenerationForTesting(otherId))
+
+    TimersUtil.cancelOwnedReminders(for: profileId)
+
+    XCTAssertEqual(timers.ownedReminderIdentifiersForTesting, [otherId])
+    XCTAssertFalse(
+      timers.isOwnedReminderScheduleCurrentForTesting(
+        sessionId, generation: sessionGeneration))
+    XCTAssertFalse(
+      timers.isOwnedReminderScheduleCurrentForTesting(breakId, generation: breakGeneration))
+    XCTAssertTrue(
+      timers.isOwnedReminderScheduleCurrentForTesting(otherId, generation: otherGeneration))
+
+    timers.cancelAllNotifications()
+  }
+
   func testGivenOwnedReminderAddCompletesAfterCancel_WhenCheckingStaleGeneration_ThenRequestsRemoval() {
     let timers = TimersUtil()
     let identifier = TimersUtil.sessionReminderIdentifier(for: UUID())
