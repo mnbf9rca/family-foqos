@@ -17,8 +17,8 @@ only).
 
 | ID | Verdict | Why |
 |----|---------|-----|
-| A-1 | IBC | No absence inference exists (I1, I5); empty/partial fetches mutate nothing (S-2). The wipe signal is the zone-deletion event and/or the command record, neither of which deletes local data (T5, §8.3, S-3/S-8). |
-| A-2 | IBC | The "wiped but unsignalled" state cannot exist server-side: the wipe *is* the zone deletion. Delivery of the *signal* to a given device is not assumed (§1.1 assumption boundary): the command record is the guaranteed carrier (§8.3), and even a device that misses both signals loses nothing (I1) — its worst case is dormancy (N7), not deletion. A reset failing before the delete confirms is a no-op (§8.1). |
+| A-1 | IBC | No absence inference exists (I1, I5); empty/partial fetches mutate nothing (S-2). Reset variants 1-2 use the zone-deletion event and/or command record, neither of which deletes local data (T5, §8.3, S-3/S-8). The §8.6 wipe deletes only on explicit user consent and a higher `SyncEstablishment.generation`, not absence. |
+| A-2 | IBC | For reset variants 1-2, the "wiped but unsignalled" state cannot exist server-side: the reset signal is the zone deletion plus command carrier. For §8.6, the durable signal is the fixed-name establishment record; a peer that misses the zone event adopts only after fetching `generation > local`. A reset/wipe failing before the relevant confirmation is a no-op or resumes from `resetIntent` (§8.1/§8.6). |
 | A-3 | IBC | No pass structure, no reconciliation; fetched deletions name records explicitly (§5.2). |
 | A-4 | IBC | Same — manual sync is `fetchChanges()`, which can only deliver explicit events. |
 | A-5 | IBC | Push acks update `systemFields` only (§5.3); no safety decision reads them. Records die with zones (database-level), not as inferable record absences. |
@@ -60,7 +60,7 @@ only).
 
 | ID | Verdict | Why |
 |----|---------|-----|
-| D-1 | SAFE | Ordering-sensitive persisted writes, each stated: apply-before-mark (I4, S-6); intent-before-consume for every seed entry point (I11, S-28); tombstone-with-delete (I12, S-29); funnel bump-inside-the-save (I2, S-15); AB-2 for fetch tokens only (S-26 — seed/tombstone intents never key off serialization capture). Kill windows fail toward idempotent re-apply or intent-driven recovery — never toward unprotected skips, orphaned seeds, or orphaned deletes. |
+| D-1 | SAFE | Ordering-sensitive persisted writes, each stated: apply-before-mark (I4, S-6); intent-before-consume for every seed entry point (I11, S-28); tombstone-with-delete (I12, S-29); funnel bump-inside-the-save (I2, S-15); §8.6 wipe/adoption deletes local synced entities before bumping `establishmentGeneration`; AB-2 for fetch tokens only (S-26 — seed/tombstone intents never key off serialization capture). Kill windows fail toward idempotent re-apply, intent-driven recovery, or an empty local world that re-adopts the higher establishment generation — never toward unprotected skips, orphaned seeds, or orphaned deletes. |
 | D-2 | IBC | No pass exists whose early step gates a later destructive step; events are self-contained; a failed fetch delivers no events and therefore no mutations. |
 | D-3 | SAFE | All *sync state* per-`userRecordID`, nothing purged on switch (T7, §7, S-12); UUID ids cross-account-collision-proof; the round-1 switch-back resurrection is closed by pair consistency. The *data store* is account-agnostic — cross-account data union is N11 (honest residual, pre-existing class), not claimed harmless. |
 | D-4 | SAFE | Toggle-off discards engine state; toggle-on is an explicit fresh bootstrap with rejoin semantics (T11/T1, N5 — stated, not hidden). Ordinary relaunch resumes the queue with zero re-derivation (S-19). |
@@ -74,8 +74,23 @@ only).
 |----|---------|-----|
 | E-1 | SAFE | `needsAppSelection` semantics unchanged (§5.1); the husk mass-producers are IBC above. |
 | E-2 | SAFE | Deliberate decision §8.5: origin no longer clears its own selections; matches shipped copy. |
-| E-3 | SAFE | Keep-by-default is structural (I1); no ambiguity-resolving heuristics remain. |
-| E-4 | SAFE | Propagation is event-carried with app-managed re-adds on failure (§5.3, S-1, S-16, S-17, I8); version-bump ownership by I2/S-15/S-16; equal-version divergence by branch 0 + branch E + the §5.1 fetch-path rule (S-10, S-27); killed delete-enqueues by I12 tombstones (S-29 — recorded intent, never absence inference); own-origin echoes apply correctly (S-31, restore-from-backup heals); pending-delete-wins prevents self-resurrection (S-32). Deletion propagation to token-expired dormant devices is N10; session stops post-reset propagate via §6 stop-on-absent (S-24). |
+| E-3 | SAFE | Keep-by-default is structural (I1); no ambiguity-resolving heuristics remain. §8.6 is the single deliberate inversion: a user-confirmed "totally delete" wipe discards older generations only when an explicit higher establishment marker is fetched. |
+| E-4 | SAFE | Propagation is event-carried with app-managed re-adds on failure (§5.3, S-1, S-16, S-17, I8); version-bump ownership by I2/S-15/S-16; equal-version divergence by branch 0 + branch E + the §5.1 fetch-path rule (S-10, S-27); killed delete-enqueues by I12 tombstones (S-29 — recorded intent, never absence inference); own-origin echoes apply correctly (S-31, restore-from-backup heals); pending-delete-wins prevents self-resurrection (S-32). §8.6 additionally prevents wipe resurrection by stamping restorable records and skipping dead-world generations (S-W1...S-W8). Deletion propagation to token-expired dormant devices is N10; session stops post-reset propagate via §6 stop-on-absent (S-24). |
+
+## #310/#328 wipe amendment
+
+The totally-delete variant is SAFE under §8.6:
+
+| Scenario | Verdict | Why |
+|---|---|---|
+| Offline peer with pending pre-wipe saves | SAFE | Pending records are stamped with the peer's old `establishmentGeneration`; after adoption they are skipped as `.skippedDeadWorld` (S-W1). |
+| Concurrent wipe/reset tap while a reset intent exists | SAFE | `beginReset(wipe:)` is ignored while `resetIntent != nil`; the original stage/id remain authoritative (S-W2). |
+| Mid-fetch record from a newer generation arrives before the establishment marker | SAFE | The record is skipped as `.skippedNewerGeneration`; adoption clears `engineState` so the next attach is a token-less full refetch and the record redelivers at `==` (S-W3). |
+| Tombstone/failed apply from an older generation shadows a recreated id | SAFE | Adoption clears generation-scoped tombstones, watermarks, system fields, and failed applies; `processedResetCommandIds` survives (S-W4). |
+| Live V1 peer re-pushes generationless data after a wipe | RESIDUAL | V2 devices at generation >= 1 skip generation-0 records as dead-world, but the server record can persist while V1 keeps writing. Settings copy tells users old app versions must update (S-W5). |
+| V1-upgraded device with local profiles first sees a higher establishment generation | SAFE | Maintainer decision MD2: adopt-and-discard. Local synced profiles/locations are deleted and the device joins the higher generation without seeding (S-W6). |
+| Emergency unblock epoch resurrection | SAFE | `SyncedEmergencyEpoch` and `SyncedEmergencyUnblockEvent` are stamped/gated; adoption clears the ledger but preserves settings lock/period, so a lagging gen-0 epoch cannot max-merge back (S-W7). |
+| Origin crash at `.wiping` | SAFE | Resume re-enqueues only `SyncEstablishment`, never command/seed; confirmation clears `resetIntent` (S-W8). |
 
 ## Residual table (R1–R8, from the A1 rev-4 design)
 

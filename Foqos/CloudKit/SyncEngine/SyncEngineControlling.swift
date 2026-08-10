@@ -15,6 +15,8 @@ protocol SyncEngineControlling: AnyObject {
   func endAccountResolution()
   func prepareForAccountSwitch()
   func beginReset(clearRemoteAppSelections: Bool)
+  func beginReset(wipe: Bool, clearRemoteAppSelections: Bool)
+  func cancelDeletingWipeForEstablishmentAdoption()
   func enqueueProfileSave(_ id: UUID) throws
   func enqueueProfileDelete(_ id: UUID) throws
   func enqueueProfileDelete(_ id: UUID, requestSyncAfterPendingDelete: Bool) throws
@@ -23,6 +25,7 @@ protocol SyncEngineControlling: AnyObject {
   func enqueueEmergencySettingsSave() throws
   func enqueueEmergencyUnblockEvent(_ event: SyncedEmergencyUnblockEvent) throws
   func enqueueEmergencyEpochSave() throws
+  func enqueueEstablishmentSave() throws
   func enqueueEmergencyUnblockEventDelete(_ recordName: String) throws
   func enqueueDeferredDelete(recordName: String)
   /// Durable delete-intent tombstone written on a local delete made while sync is disabled.

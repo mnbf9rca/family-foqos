@@ -94,6 +94,13 @@ final class SyncEngineFacadeTests: XCTestCase {
     XCTAssertEqual(mock.enqueuedEmergencyUnblockEventDeletes, [event.recordName])
   }
 
+  func testGivenWipeReset_WhenForwarded_ThenControllerReceivesWipeFlag() throws {
+    try manager.resetSync(wipe: true, clearRemoteAppSelections: false)
+
+    XCTAssertEqual(mock.beginResetWipeFlags, [true])
+    XCTAssertEqual(mock.beginResetCalls, [false])
+  }
+
   func testGivenController_WhenRecordDisabledTombstone_ThenForwardedToController() {
     manager.isEnabled = false
 

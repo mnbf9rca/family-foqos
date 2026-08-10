@@ -44,6 +44,19 @@ final class StrategyManagerBreakOMMTests: XCTestCase {
     return session
   }
 
+  func testGivenActiveSession_WhenForceClearingForSyncedDataWipe_ThenEnforcementIsRemoved() throws {
+    _ = try seedActiveSession()
+
+    XCTAssertTrue(manager.isBlocking)
+
+    manager.forceClearEnforcementForSyncedDataWipe(context: context)
+
+    XCTAssertEqual(applier.calls, [.deactivate])
+    XCTAssertNil(manager.activeSession)
+    XCTAssertFalse(manager.isBlocking)
+    XCTAssertNil(manager.timerTask)
+  }
+
   func testGivenBlockingSession_WhenToggleBreakStart_ThenRegistersBeforeLiftAndOpensGrant() {
     let session = try! seedActiveSession()
     let pid = session.blockedProfile.id

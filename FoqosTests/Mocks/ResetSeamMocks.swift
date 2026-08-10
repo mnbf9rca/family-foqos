@@ -9,7 +9,9 @@ final class MockResetOutbox: ResetOutbox {
   var zoneSaveCount = 0
   var removeZoneCount = 0
   var commandSaveCount = 0
+  var establishmentSaveCount = 0
   var removeCommandCount = 0
+  var removeEstablishmentCount = 0
   var sendCount = 0
   var clearPendingCount = 0
 
@@ -17,7 +19,9 @@ final class MockResetOutbox: ResetOutbox {
   func enqueueZoneSave() { zoneSaveCount += 1 }
   func removeResetZoneChanges() { removeZoneCount += 1 }
   func enqueueCommandSave() { commandSaveCount += 1 }
+  func enqueueEstablishmentSave() { establishmentSaveCount += 1 }
   func removeCommandSave() { removeCommandCount += 1 }
+  func removeEstablishmentSave() { removeEstablishmentCount += 1 }
   func requestSend() { sendCount += 1 }
   func clearPendingChangesForReset() { clearPendingCount += 1 }
 }
@@ -26,6 +30,7 @@ final class MockResetOutbox: ResetOutbox {
 final class MockResetSeeder: ResetSeeder {
   var purgeCount = 0
   var seedCount = 0
+  var wipeLocalCount = 0
   var clearSelectionsCount = 0
   var clearSelectionsError: Error?
   /// Invoked inside seedAll() so tests can assert intent→apply→mark ordering.
@@ -36,6 +41,7 @@ final class MockResetSeeder: ResetSeeder {
     seedCount += 1
     onSeed?()
   }
+  func wipeLocalSyncedEntitiesForGeneration() throws { wipeLocalCount += 1 }
   func clearAllProfileSelections() throws {
     clearSelectionsCount += 1
     if let error = clearSelectionsError { throw error }
@@ -47,10 +53,12 @@ final class MockRecordFetcher: RecordFetching {
   var result: Result<CKRecord?, Error> = .success(nil)
   var fetchCount = 0
   var lastRecordID: CKRecord.ID?
+  var onFetch: (() -> Void)?
 
   func fetchRecord(_ recordID: CKRecord.ID) async throws -> CKRecord? {
     fetchCount += 1
     lastRecordID = recordID
+    onFetch?()
     switch result {
     case .success(let record): return record
     case .failure(let error): throw error

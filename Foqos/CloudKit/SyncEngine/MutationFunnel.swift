@@ -112,6 +112,13 @@ final class MutationFunnel {
     SyncDiagnostics.localEmergencyEpochSaveEnqueued(recordName: SyncedEmergencyEpoch.recordName)
   }
 
+  /// Enqueue the fixed-name establishment record. The generation value itself is merged by
+  /// monotonic max on save conflict/fetch.
+  func enqueueEstablishmentSave() {
+    let recordID = CKRecord.ID(recordName: SyncedEstablishment.recordName, zoneID: zoneID)
+    driver.add(pendingRecordZoneChanges: [.saveRecord(recordID)])
+  }
+
   // MARK: - Delete paths
 
   /// Persist a delete-intent tombstone (recordName -> last-known server change tag, nil if never

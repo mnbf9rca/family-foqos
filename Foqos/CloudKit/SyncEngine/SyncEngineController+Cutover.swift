@@ -21,11 +21,19 @@ extension SyncEngineController: SyncEngineControlling {
   /// Forwards to the `ResetController` composed in `start()` (CRA-4, Task 134b). A no-op
   /// (with a warning) if called before the engine has been started.
   func beginReset(clearRemoteAppSelections: Bool) {
+    beginReset(wipe: false, clearRemoteAppSelections: clearRemoteAppSelections)
+  }
+
+  func beginReset(wipe: Bool, clearRemoteAppSelections: Bool) {
     guard let reset else {
       Log.warning("beginReset called before start() — no ResetController — no-op", category: .sync)
       return
     }
-    reset.beginReset(clearRemoteAppSelections: clearRemoteAppSelections, now: Date())
+    reset.beginReset(wipe: wipe, clearRemoteAppSelections: clearRemoteAppSelections, now: Date())
+  }
+
+  func cancelDeletingWipeForEstablishmentAdoption() {
+    reset?.cancelDeletingWipeForEstablishmentAdoption()
   }
 
   // The engine's `MutationFunnel` is created in `start()`, so it can briefly be nil even
@@ -68,6 +76,10 @@ extension SyncEngineController: SyncEngineControlling {
   func enqueueEmergencyEpochSave() throws {
     guard let funnel else { throw SyncEngineControllingError.notAttached }
     funnel.enqueueEmergencyEpochSave()
+  }
+  func enqueueEstablishmentSave() throws {
+    guard let funnel else { throw SyncEngineControllingError.notAttached }
+    funnel.enqueueEstablishmentSave()
   }
   func enqueueEmergencyUnblockEventDelete(_ recordName: String) throws {
     guard let funnel else { throw SyncEngineControllingError.notAttached }

@@ -9,7 +9,9 @@ protocol ResetOutbox: AnyObject {
   func enqueueZoneSave()
   func removeResetZoneChanges()
   func enqueueCommandSave()
+  func enqueueEstablishmentSave()
   func removeCommandSave()
+  func removeEstablishmentSave()
   /// Request a best-effort send; the production driver crosses a detached task boundary (§1.1).
   func requestSend()
   /// #286: purge pending CKSyncEngine work before deleting the zone. This is defensive
@@ -26,6 +28,7 @@ protocol ResetSeeder: AnyObject {
   func performI6Purge() async
   /// I11: enqueue saveZone + save-all-restorable (pendingSeedIntent already persisted).
   func seedAll()
+  func wipeLocalSyncedEntitiesForGeneration() throws
   /// §8.3 step 2 (clear flag): clear selections on all local profiles and save.
   func clearAllProfileSelections() throws
 }
@@ -48,17 +51,20 @@ final class DefaultResetSeeder: ResetSeeder {
   private let store: SyncEngineStore
   private let flush: () async -> Void
   private let seed: () -> Void
+  private let wipeLocalSyncedEntities: () throws -> Void
   private let clearSelections: () throws -> Void
 
   init(
     store: SyncEngineStore,
     flush: @escaping () async -> Void,
     seed: @escaping () -> Void,
+    wipeLocalSyncedEntities: @escaping () throws -> Void = {},
     clearSelections: @escaping () throws -> Void
   ) {
     self.store = store
     self.flush = flush
     self.seed = seed
+    self.wipeLocalSyncedEntities = wipeLocalSyncedEntities
     self.clearSelections = clearSelections
   }
 
@@ -68,6 +74,8 @@ final class DefaultResetSeeder: ResetSeeder {
   }
 
   func seedAll() { seed() }
+
+  func wipeLocalSyncedEntitiesForGeneration() throws { try wipeLocalSyncedEntities() }
 
   func clearAllProfileSelections() throws { try clearSelections() }
 }
@@ -105,12 +113,15 @@ final class ResetController {
   private var commandRecordID: CKRecord.ID {
     CKRecord.ID(recordName: Self.commandRecordName, zoneID: zoneID)
   }
+  private var establishmentRecordID: CKRecord.ID {
+    CKRecord.ID(recordName: SyncedEstablishment.recordName, zoneID: zoneID)
+  }
 
   // MARK: - Origin sequence (§8.1)
 
   /// T8 / §8.1 steps 1-2. Not called from within handleEvent (user tap), so requestSend()
   /// scheduling a Task is safe.
-  func beginReset(clearRemoteAppSelections clear: Bool, now: Date) {
+  func beginReset(wipe: Bool = false, clearRemoteAppSelections clear: Bool, now: Date) {
     guard store.resetIntent == nil else {
       Log.warning("beginReset called while a reset is already in progress — ignoring", category: .sync)
       return
@@ -118,7 +129,8 @@ final class ResetController {
     let id = UUID()
     store.transaction { s in
       s.resetIntent = ResetIntent(
-        id: id, clear: clear, stage: .deleting, priorCommandId: s.lastAppliedResetCommandId)
+        id: id, clear: clear, wipe: wipe, stage: .deleting,
+        priorCommandId: s.lastAppliedResetCommandId)
       s.markProcessed(id)  // I4 pre-mark carve-out (safe via §8.3 own-origin check)
       s.lastAppliedResetCommandId = id
     }
@@ -132,7 +144,8 @@ final class ResetController {
     guard let intent = store.resetIntent, intent.stage == .deleting else { return }
     await seeder.performI6Purge()
     store.resetIntent = ResetIntent(
-      id: intent.id, clear: intent.clear, stage: .recreating, priorCommandId: intent.priorCommandId)
+      id: intent.id, clear: intent.clear, wipe: intent.wipe, stage: .recreating,
+      priorCommandId: intent.priorCommandId)
     outbox.enqueueZoneSave()
     outbox.requestSend()
   }
@@ -140,6 +153,24 @@ final class ResetController {
   /// §8.1 step 4. Driven from §5.5 (savedZones).
   func handleZoneSaveConfirmed() {
     guard let intent = store.resetIntent, intent.stage == .recreating else { return }
+    if intent.wipe {
+      do {
+        try seeder.wipeLocalSyncedEntitiesForGeneration()
+      } catch {
+        Log.error("Reset wipe local entity deletion failed: \(error.localizedDescription)", category: .sync)
+        return
+      }
+      store.transaction { s in
+        s.establishmentGeneration += 1
+        s.clearGenerationScopedBookkeeping()
+        s.resetIntent = ResetIntent(
+          id: intent.id, clear: intent.clear, wipe: true, stage: .wiping,
+          priorCommandId: intent.priorCommandId)
+      }
+      outbox.enqueueEstablishmentSave()
+      outbox.requestSend()
+      return
+    }
     store.transaction { s in
       s.resetIntent = ResetIntent(
         id: intent.id, clear: intent.clear, stage: .seeding, priorCommandId: intent.priorCommandId)
@@ -204,6 +235,11 @@ final class ResetController {
     case serverRecordChanged(CKRecord)
   }
 
+  enum EstablishmentSaveOutcome {
+    case saved
+    case serverRecordChanged(CKRecord)
+  }
+
   func handleCommandSaveResult(_ outcome: CommandSaveOutcome) {
     guard let intent = store.resetIntent, intent.stage == .seeding else { return }
     switch outcome {
@@ -215,6 +251,22 @@ final class ResetController {
       } else {
         abandon(intent)  // foreign OR undecodable ⇒ superseded, surface
       }
+    }
+  }
+
+  @discardableResult
+  func handleEstablishmentSaveResult(_ outcome: EstablishmentSaveOutcome) -> CKRecord? {
+    guard let intent = store.resetIntent, intent.stage == .wiping else { return nil }
+    switch outcome {
+    case .saved:
+      store.resetIntent = nil
+      return nil
+    case .serverRecordChanged(let serverRecord):
+      let serverGeneration =
+        serverRecord[SyncedEstablishment.FieldKey.generation.rawValue] as? Int ?? 0
+      store.resetIntent = nil
+      guard serverGeneration > store.establishmentGeneration else { return nil }
+      return serverRecord
     }
   }
 
@@ -236,6 +288,15 @@ final class ResetController {
   func abandonForStop() {
     guard store.resetIntent != nil else { return }
     outbox.removeCommandSave()
+    outbox.removeEstablishmentSave()
+    outbox.removeResetZoneChanges()
+    store.resetIntent = nil
+  }
+
+  /// A fetched higher establishment generation won the zone race. Cancel only a wipe that
+  /// is still trying to delete that zone; the normal adoption path owns the local discard.
+  func cancelDeletingWipeForEstablishmentAdoption() {
+    guard let intent = store.resetIntent, intent.wipe, intent.stage == .deleting else { return }
     outbox.removeResetZoneChanges()
     store.resetIntent = nil
   }
@@ -255,14 +316,22 @@ final class ResetController {
       outbox.enqueueCommandSave()
       seeder.seedAll()
       outbox.requestSend()
+    case .wiping:
+      outbox.enqueueEstablishmentSave()
+      outbox.requestSend()
     }
   }
 
   /// §8.1 .deleting resume gate: observe the command by a DIRECT record fetch (I5-compatible,
   /// independent of §8.3's processed guard so every outcome is observable). Total case-split.
   private func runDeletingGate(_ intent: ResetIntent) async {
+    if intent.wipe {
+      await runWipeDeletingGate(intent)
+      return
+    }
     do {
       let record = try await fetcher.fetchRecord(commandRecordID)
+      guard isCurrentDeletingIntent(intent) else { return }
       guard let record else {
         reenqueueDeleting()  // no command (any snapshot) ⇒ resume
         return
@@ -279,10 +348,44 @@ final class ResetController {
         abandon(intent)  // foreign, different from both ⇒ superseded ⇒ abandon + surface
       }
     } catch let error as CKError where error.code == .zoneNotFound {
+      guard isCurrentDeletingIntent(intent) else { return }
       reenqueueDeleting()  // zone died / was T5-reseeded ⇒ resume (zone-CAS + N1)
     } catch {
       // Transient fetch error ⇒ keep the intent; retry at next start / §5.6 cadence.
     }
+  }
+
+  private func runWipeDeletingGate(_ intent: ResetIntent) async {
+    do {
+      let record = try await fetcher.fetchRecord(establishmentRecordID)
+      guard isCurrentDeletingIntent(intent) else { return }
+      guard let record else {
+        reenqueueDeleting()
+        return
+      }
+      guard let establishment = SyncedEstablishment(from: record) else {
+        reenqueueDeleting()
+        return
+      }
+      if establishment.generation > store.establishmentGeneration {
+        outbox.removeResetZoneChanges()
+        store.resetIntent = nil
+      } else {
+        reenqueueDeleting()
+      }
+    } catch let error as CKError where error.code == .zoneNotFound {
+      guard isCurrentDeletingIntent(intent) else { return }
+      reenqueueDeleting()
+    } catch {
+      // Transient fetch error ⇒ keep the intent; retry later.
+      Log.warning(
+        "Wipe deleting gate fetch failed; intent retained for retry: \(error.localizedDescription)",
+        category: .sync)
+    }
+  }
+
+  private func isCurrentDeletingIntent(_ intent: ResetIntent) -> Bool {
+    store.resetIntent?.id == intent.id && store.resetIntent?.stage == .deleting
   }
 
   private func reenqueueDeleting() {

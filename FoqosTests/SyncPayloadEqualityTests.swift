@@ -30,6 +30,16 @@ final class SyncPayloadEqualityTests: XCTestCase {
     XCTAssertTrue(SyncPayloadEquality.profilesPayloadEqual(a, b))
   }
 
+  func testGivenSameFieldsDifferentGeneration_WhenComparedProfiles_ThenPayloadEqual() {
+    let now = Date()
+    var a = makeProfile(name: "Focus", now: now, originDeviceId: "device-A", version: 5)
+    var b = makeProfile(name: "Focus", now: now, originDeviceId: "device-A", version: 5)
+    a.generation = 1
+    b.generation = 2
+
+    XCTAssertTrue(SyncPayloadEquality.profilesPayloadEqual(a, b))
+  }
+
   func testGivenDifferentName_WhenComparedProfiles_ThenNotPayloadEqual() {
     let now = Date()
     let a = makeProfile(name: "Focus", now: now, originDeviceId: "device-A", version: 5)

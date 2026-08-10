@@ -300,6 +300,16 @@ final class SyncEngineControllerTests: XCTestCase {
     XCTAssertTrue(names.contains(event.recordName))
   }
 
+  func testRestorableRecordNames_IncludesEstablishmentOnlyAfterGenerationBump() {
+    let controller = makeController()
+
+    XCTAssertFalse(Set(controller.restorableRecordNames()).contains(SyncedEstablishment.recordName))
+
+    store.establishmentGeneration = 1
+
+    XCTAssertTrue(Set(controller.restorableRecordNames()).contains(SyncedEstablishment.recordName))
+  }
+
   func testGivenNewerSchemaProfile_WhenSeed_ThenNotIncludedInRestorableSet() throws {
     let p = BlockedProfiles(name: "A")
     p.profileSchemaVersion = BlockedProfiles.currentSchemaVersion + 1
@@ -952,6 +962,28 @@ final class SyncEngineControllerTests: XCTestCase {
     XCTAssertTrue(
       store.failedApplies.isEmpty,
       "no failedApplies bookkeeping created by a generic apply of the reset command")
+  }
+
+  func testGivenFetchedEstablishment_WhenFetchedModification_ThenRoutedToHookNotGenericApply() {
+    let record = SyncedEstablishment(generation: 2, establishedAt: Date()).toCKRecord(in: zoneID)
+
+    let controller = makeController()
+    controller.start()
+    controller.startupTask?.cancel()
+
+    var capturedRecord: CKRecord?
+    var captureCount = 0
+    controller.onFetchedEstablishment = { record in
+      capturedRecord = record
+      captureCount += 1
+    }
+
+    controller.handle(
+      .fetchedRecordZoneChanges(modifications: [record], deletions: []))
+
+    XCTAssertEqual(captureCount, 1)
+    XCTAssertEqual(capturedRecord?.recordID.recordName, SyncedEstablishment.recordName)
+    XCTAssertTrue(store.failedApplies.isEmpty)
   }
 
   func testGivenEqualVersionDivergence_WhenFetchedModification_ThenReenqueueDrainedToDriverAndConflictAdded() {

@@ -7,7 +7,10 @@ import SwiftData
 /// own-origin apply skip. Not wired into any engine in Phase B.
 @MainActor
 final class SyncApplyService {
-  enum ApplyOutcome { case applied, skippedPendingDelete, skippedStaleDelete, ignored, failed }
+  enum ApplyOutcome {
+    case applied, skippedPendingDelete, skippedStaleDelete, skippedDeadWorld,
+      skippedNewerGeneration, ignored, failed
+  }
   enum DeletionOutcome { case deleted, notPresent, ignored }
 
   private let modelContext: ModelContext
@@ -62,6 +65,12 @@ final class SyncApplyService {
     _ record: CKRecord, isPendingDeleteOrTombstoned: (String) -> Bool
   ) -> ApplyOutcome {
     let recordName = record.recordID.recordName
+    if let gated = generationGate(record) {
+      Log.debug(
+        "Generation-gated fetched modification \(recordName): \(gated)",
+        category: .sync)
+      return gated
+    }
     // Pending-delete-wins (§5.1): a modification shadowed by a pending delete, a live
     // tombstone, or the in-memory confirmed-delete echo guard is skipped.
     if isPendingDeleteOrTombstoned(recordName) || recentlyConfirmedDeletes.contains(recordName) {
@@ -86,6 +95,31 @@ final class SyncApplyService {
       Log.info(
         "Ignoring fetched modification of type \(record.recordType)", category: .sync)
       return .ignored
+    }
+  }
+
+  private func generationGate(_ record: CKRecord) -> ApplyOutcome? {
+    guard let generationKey = generationFieldKey(for: record.recordType) else { return nil }
+
+    let recordGeneration = record[generationKey] as? Int ?? 0
+    let localGeneration = store.establishmentGeneration
+    if recordGeneration < localGeneration { return .skippedDeadWorld }
+    if recordGeneration > localGeneration { return .skippedNewerGeneration }
+    return nil
+  }
+
+  private func generationFieldKey(for recordType: CKRecord.RecordType) -> String? {
+    switch recordType {
+    case SyncedProfile.recordType:
+      return SyncedProfile.FieldKey.generation.rawValue
+    case SyncedLocation.recordType:
+      return SyncedLocation.FieldKey.generation.rawValue
+    case SyncedEmergencyEpoch.recordType:
+      return SyncedEmergencyEpoch.FieldKey.generation.rawValue
+    case SyncedEmergencyUnblockEvent.recordType:
+      return SyncedEmergencyUnblockEvent.FieldKey.generation.rawValue
+    default:
+      return nil
     }
   }
 

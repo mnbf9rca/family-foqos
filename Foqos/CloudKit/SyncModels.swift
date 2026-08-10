@@ -67,6 +67,7 @@ struct SyncedProfile: Codable, Equatable {
   var managedByChildId: String?
 
   // Sync metadata
+  var generation: Int
   var lastModified: Date
   var originDeviceId: String
   var version: Int
@@ -117,6 +118,7 @@ struct SyncedProfile: Codable, Equatable {
     case disableBackgroundStops
     case isManaged
     case managedByChildId
+    case generation
     case lastModified
     case originDeviceId
     case version
@@ -168,6 +170,7 @@ struct SyncedProfile: Codable, Equatable {
     record[FieldKey.disableBackgroundStops.rawValue] = disableBackgroundStops
     record[FieldKey.isManaged.rawValue] = isManaged
     record[FieldKey.managedByChildId.rawValue] = managedByChildId
+    record[FieldKey.generation.rawValue] = generation
     record[FieldKey.lastModified.rawValue] = lastModified
     record[FieldKey.originDeviceId.rawValue] = originDeviceId
     record[FieldKey.version.rawValue] = version
@@ -248,6 +251,7 @@ struct SyncedProfile: Codable, Equatable {
     disableBackgroundStops = record[FieldKey.disableBackgroundStops.rawValue] as? Bool ?? false
     isManaged = record[FieldKey.isManaged.rawValue] as? Bool ?? false
     managedByChildId = record[FieldKey.managedByChildId.rawValue] as? String
+    generation = record[FieldKey.generation.rawValue] as? Int ?? 0
     self.lastModified = lastModified
     self.originDeviceId = originDeviceId
     self.version = version
@@ -260,7 +264,8 @@ struct SyncedProfile: Codable, Equatable {
 
   init(
     from profile: BlockedProfiles,
-    originDeviceId: String
+    originDeviceId: String,
+    generation: Int = 0
   ) {
     profileId = profile.id
     name = profile.name
@@ -285,6 +290,7 @@ struct SyncedProfile: Codable, Equatable {
     disableBackgroundStops = profile.disableBackgroundStops
     isManaged = profile.isManaged
     managedByChildId = profile.managedByChildId
+    self.generation = generation
     lastModified = Date()
     self.originDeviceId = originDeviceId
     version = profile.syncVersion
@@ -374,6 +380,7 @@ struct SyncedLocation: Codable, Equatable {
   var longitude: Double
   var defaultRadiusMeters: Double
   var isLocked: Bool
+  var generation: Int
   var lastModified: Date
 
   // MARK: - CloudKit Record Type
@@ -389,6 +396,7 @@ struct SyncedLocation: Codable, Equatable {
     case longitude
     case defaultRadiusMeters
     case isLocked
+    case generation
     case lastModified
   }
 
@@ -409,6 +417,7 @@ struct SyncedLocation: Codable, Equatable {
     record[FieldKey.longitude.rawValue] = longitude
     record[FieldKey.defaultRadiusMeters.rawValue] = defaultRadiusMeters
     record[FieldKey.isLocked.rawValue] = isLocked
+    record[FieldKey.generation.rawValue] = generation
     record[FieldKey.lastModified.rawValue] = lastModified
   }
 
@@ -431,6 +440,7 @@ struct SyncedLocation: Codable, Equatable {
     self.longitude = longitude
     self.defaultRadiusMeters = defaultRadiusMeters
     isLocked = record[FieldKey.isLocked.rawValue] as? Bool ?? false
+    generation = record[FieldKey.generation.rawValue] as? Int ?? 0
     self.lastModified = lastModified
   }
 
@@ -441,7 +451,8 @@ struct SyncedLocation: Codable, Equatable {
     longitude: Double,
     defaultRadiusMeters: Double,
     isLocked: Bool,
-    lastModified: Date
+    lastModified: Date,
+    generation: Int = 0
   ) {
     self.locationId = locationId
     self.name = name
@@ -449,18 +460,20 @@ struct SyncedLocation: Codable, Equatable {
     self.longitude = longitude
     self.defaultRadiusMeters = defaultRadiusMeters
     self.isLocked = isLocked
+    self.generation = generation
     self.lastModified = lastModified
   }
 
   // MARK: - Initialization from SavedLocation
 
-  init(from location: SavedLocation) {
+  init(from location: SavedLocation, generation: Int = 0) {
     locationId = location.id
     name = location.name
     latitude = location.latitude
     longitude = location.longitude
     defaultRadiusMeters = location.defaultRadiusMeters
     isLocked = location.isLocked
+    self.generation = generation
     lastModified = location.updatedAt
   }
 }
@@ -574,12 +587,14 @@ struct SyncedEmergencySettings: Codable, Equatable {
 /// ride the versioned emergency-settings config record.
 struct SyncedEmergencyEpoch: Codable, Equatable {
   var epoch: Int
+  var generation: Int
 
   static let recordType = "EmergencyResetEpoch"
   static let recordName = "emergency-reset-epoch"
 
   enum FieldKey: String {
     case epoch
+    case generation
   }
 
   func toCKRecord(in zoneID: CKRecordZone.ID) -> CKRecord {
@@ -592,10 +607,12 @@ struct SyncedEmergencyEpoch: Codable, Equatable {
 
   func updateCKRecord(_ record: CKRecord) {
     record[FieldKey.epoch.rawValue] = epoch
+    record[FieldKey.generation.rawValue] = generation
   }
 
-  init(epoch: Int) {
+  init(epoch: Int, generation: Int = 0) {
     self.epoch = epoch
+    self.generation = generation
   }
 
   init?(from record: CKRecord) {
@@ -605,6 +622,53 @@ struct SyncedEmergencyEpoch: Codable, Equatable {
       return nil
     }
     self.epoch = epoch
+    generation = record[FieldKey.generation.rawValue] as? Int ?? 0
+  }
+}
+
+// MARK: - Synced Establishment
+
+/// The zone's establishment generation, synced as a single fixed-name record and merged by max()
+/// so every device converges on one agreed generation boundary.
+struct SyncedEstablishment: Codable, Equatable {
+  var generation: Int
+  var establishedAt: Date
+
+  static let recordType = "SyncEstablishment"
+  static let recordName = "sync-establishment"
+
+  enum FieldKey: String {
+    case generation
+    case establishedAt
+  }
+
+  func toCKRecord(in zoneID: CKRecordZone.ID) -> CKRecord {
+    let record = CKRecord(
+      recordType: Self.recordType,
+      recordID: CKRecord.ID(recordName: Self.recordName, zoneID: zoneID))
+    updateCKRecord(record)
+    return record
+  }
+
+  func updateCKRecord(_ record: CKRecord) {
+    record[FieldKey.generation.rawValue] = generation
+    record[FieldKey.establishedAt.rawValue] = establishedAt
+  }
+
+  init(generation: Int, establishedAt: Date) {
+    self.generation = generation
+    self.establishedAt = establishedAt
+  }
+
+  init?(from record: CKRecord) {
+    guard record.recordType == Self.recordType,
+      let generation = record[FieldKey.generation.rawValue] as? Int
+    else {
+      return nil
+    }
+    self.generation = generation
+    self.establishedAt =
+      (record[FieldKey.establishedAt.rawValue] as? Date) ?? Date(timeIntervalSinceReferenceDate: 0)
   }
 }
 
@@ -617,6 +681,11 @@ struct SyncedEmergencyUnblockEvent: Codable, Equatable {
   var deviceId: String
   var consumedAt: Date
   var resetEpoch: Int
+  var generation: Int
+
+  private enum CodingKeys: String, CodingKey {
+    case id, deviceId, consumedAt, resetEpoch, generation
+  }
 
   static let recordType = "EmergencyUnblockEvent"
   static let recordNamePrefix = "EmergencyUnblock_"
@@ -627,6 +696,7 @@ struct SyncedEmergencyUnblockEvent: Codable, Equatable {
     case deviceId
     case consumedAt
     case resetEpoch
+    case generation
   }
 
   func toCKRecord(in zoneID: CKRecordZone.ID) -> CKRecord {
@@ -642,13 +712,24 @@ struct SyncedEmergencyUnblockEvent: Codable, Equatable {
     record[FieldKey.deviceId.rawValue] = deviceId
     record[FieldKey.consumedAt.rawValue] = consumedAt
     record[FieldKey.resetEpoch.rawValue] = resetEpoch
+    record[FieldKey.generation.rawValue] = generation
   }
 
-  init(id: UUID, deviceId: String, consumedAt: Date, resetEpoch: Int) {
+  init(id: UUID, deviceId: String, consumedAt: Date, resetEpoch: Int, generation: Int = 0) {
     self.id = id
     self.deviceId = deviceId
     self.consumedAt = consumedAt
     self.resetEpoch = resetEpoch
+    self.generation = generation
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    id = try container.decode(UUID.self, forKey: .id)
+    deviceId = try container.decode(String.self, forKey: .deviceId)
+    consumedAt = try container.decode(Date.self, forKey: .consumedAt)
+    resetEpoch = try container.decode(Int.self, forKey: .resetEpoch)
+    generation = try container.decodeIfPresent(Int.self, forKey: .generation) ?? 0
   }
 
   init?(from record: CKRecord) {
@@ -664,6 +745,7 @@ struct SyncedEmergencyUnblockEvent: Codable, Equatable {
     self.deviceId = record[FieldKey.deviceId.rawValue] as? String ?? ""
     self.consumedAt = consumedAt
     self.resetEpoch = resetEpoch
+    generation = record[FieldKey.generation.rawValue] as? Int ?? 0
   }
 }
 
