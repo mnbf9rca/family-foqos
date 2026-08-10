@@ -5,6 +5,7 @@ require 'json'
 require 'shellwords'
 require File.expand_path('archive_storage', __dir__)
 require File.expand_path('asc_credentials', __dir__)
+require File.expand_path('simulator_gate', __dir__)
 
 # Runs under Homebrew Ruby via Bundler: export PATH="$(brew --prefix ruby)/bin:$PATH" && bundle exec fastlane <lane>
 default_platform(:ios)
@@ -14,8 +15,6 @@ SCHEME = 'FamilyFoqos'
 ARCHIVE_DIR = File.expand_path('~/Archives/family-foqos')
 REPO_ROOT = File.expand_path('..', __dir__)
 RELEASE_BLOCKING_LABEL = 'release-blocking'
-XCTEST_DEVICES_DIR = File.expand_path('~/Library/Developer/XCTestDevices')
-SNAPSHOT_DEVICE_NAME = 'iPhone 17 Pro Max'
 
 platform :ios do
   private_lane :preflight do
@@ -135,6 +134,13 @@ platform :ios do
     UI.success('Validated 3 framed en-GB screenshots')
   end
 
+  private_lane :assert_snapshot_gate do
+    SimulatorGate.assert_registered_device!(FastlaneCore::DeviceManager.simulators)
+    UI.message("Verified gate-owned screenshot simulator: #{ENV.fetch('IOS_SIM_GATE_UDID')}")
+  rescue SimulatorGate::GateError => e
+    UI.user_error!(e.message)
+  end
+
   def derived_build_number
     sh('git rev-list --count HEAD', log: false).strip
   end
@@ -214,49 +220,8 @@ platform :ios do
 
   desc 'Regenerate all App Store screenshots (demo mode + snapshot + frameit)'
   lane :screenshots do
-    before = Dir.exist?(XCTEST_DEVICES_DIR) ? Dir.children(XCTEST_DEVICES_DIR) : []
-    UI.message("XCTestDevices before snapshot: #{before.count}")
-
-    begin
-      snapshot
-    ensure
-      after = Dir.exist?(XCTEST_DEVICES_DIR) ? Dir.children(XCTEST_DEVICES_DIR) : []
-      created = after - before
-      UI.message("XCTestDevices after snapshot: #{after.count}; created this run: #{created.count}")
-
-      created.each do |udid|
-        unless udid.match?(/\A[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\z/)
-          UI.important("Refusing to delete unexpected XCTestDevices entry: #{udid}")
-          next
-        end
-
-        device_plist = File.join(XCTEST_DEVICES_DIR, udid, 'device.plist')
-        begin
-          device_name = sh(
-            'plutil', '-extract', 'name', 'raw', '-o', '-', device_plist, log: false
-          ).strip
-        rescue StandardError => e
-          UI.important("Preserving XCTestDevices entry #{udid}; name unavailable: #{e.message}")
-          next
-        end
-        expected_name = /\A(?:Clone \d+ of )?#{Regexp.escape(SNAPSHOT_DEVICE_NAME)}\z/
-        unless device_name.match?(expected_name)
-          UI.message("Preserving concurrent test simulator #{udid} named '#{device_name}'")
-          next
-        end
-
-        begin
-          sh('xcrun', 'simctl', '--set', XCTEST_DEVICES_DIR, 'shutdown', udid, log: false)
-        rescue StandardError => e
-          UI.message("Test simulator #{udid} was already stopped: #{e.message}")
-        end
-        sh('xcrun', 'simctl', '--set', XCTEST_DEVICES_DIR, 'delete', udid, log: false)
-        UI.message("Removed run-created test simulator #{udid}")
-      end
-
-      remaining = Dir.exist?(XCTEST_DEVICES_DIR) ? Dir.children(XCTEST_DEVICES_DIR) : []
-      UI.message("XCTestDevices after cleanup: #{remaining.count}")
-    end
+    assert_snapshot_gate
+    snapshot
 
     screenshots_directory = File.expand_path('screenshots', __dir__)
     background = File.join(screenshots_directory, 'background.png')
