@@ -9,6 +9,8 @@ struct DebugView: View {
 
   @EnvironmentObject var strategyManager: StrategyManager
 
+  @ObservedObject private var appModeManager = AppModeManager.shared
+
   @State private var activeProfile: BlockedProfiles?
   @State private var showCopyConfirmation = false
   @State private var showingLogExport = false
@@ -22,134 +24,142 @@ struct DebugView: View {
   }
 
   var body: some View {
-    NavigationStack {
-      ScrollView {
-        VStack(alignment: .leading, spacing: 20) {
-          if let session = strategyManager.activeSession,
-            let profile = activeProfile
-          {
-            // Active Profile Section
-            DebugSection(title: "Active Profile") {
-              ProfileDebugCard(profile: profile)
-            }
+    if DiagnosticsAccess.isRestricted(mode: appModeManager.currentMode) {
+      ContentUnavailableView(
+        "Debug Mode Unavailable",
+        systemImage: "lock.fill",
+        description: Text("Diagnostics are unavailable in Child mode.")
+      )
+    } else {
+      NavigationStack {
+        ScrollView {
+          VStack(alignment: .leading, spacing: 20) {
+            if let session = strategyManager.activeSession,
+              let profile = activeProfile
+            {
+              // Active Profile Section
+              DebugSection(title: "Active Profile") {
+                ProfileDebugCard(profile: profile)
+              }
 
-            // Active Session Section
-            DebugSection(title: "Active Session") {
-              SessionDebugCard(session: session)
-            }
+              // Active Session Section
+              DebugSection(title: "Active Session") {
+                SessionDebugCard(session: session)
+              }
 
-            // Schedule Section
-            DebugSection(title: "Schedule") {
-              ScheduleDebugCard(
-                schedule: profile.schedule,
-                startSchedule: profile.startSchedule,
-                stopSchedule: profile.stopSchedule,
-                startTriggersSchedule: profile.startTriggers.schedule,
-                stopConditionsSchedule: profile.stopConditions.schedule
-              )
-            }
+              // Schedule Section
+              DebugSection(title: "Schedule") {
+                ScheduleDebugCard(
+                  schedule: profile.schedule,
+                  startSchedule: profile.startSchedule,
+                  stopSchedule: profile.stopSchedule,
+                  startTriggersSchedule: profile.startTriggers.schedule,
+                  stopConditionsSchedule: profile.stopConditions.schedule
+                )
+              }
 
-            // Strategy Manager Section
-            DebugSection(title: "Strategy Manager") {
-              StrategyManagerDebugCard(strategyManager: strategyManager)
-            }
+              // Strategy Manager Section
+              DebugSection(title: "Strategy Manager") {
+                StrategyManagerDebugCard(strategyManager: strategyManager)
+              }
 
-            // Device Activities Section
-            DebugSection(title: "Device Activities (\(deviceActivities.count))") {
-              DeviceActivitiesDebugCard(
-                activities: deviceActivities,
-                profileId: profile.id
-              )
-            }
+              // Device Activities Section
+              DebugSection(title: "Device Activities (\(deviceActivities.count))") {
+                DeviceActivitiesDebugCard(
+                  activities: deviceActivities,
+                  profileId: profile.id
+                )
+              }
 
-            // Selected Apps & Categories
-            DebugSection(title: "Selected Activity") {
-              SelectedActivityDebugCard(selection: profile.selectedActivity)
-            }
+              // Selected Apps & Categories
+              DebugSection(title: "Selected Activity") {
+                SelectedActivityDebugCard(selection: profile.selectedActivity)
+              }
 
-            // Domains Section
-            if let domains = profile.domains, !domains.isEmpty {
-              DebugSection(title: "Domains (\(domains.count))") {
-                DomainsDebugCard(domains: domains)
+              // Domains Section
+              if let domains = profile.domains, !domains.isEmpty {
+                DebugSection(title: "Domains (\(domains.count))") {
+                  DomainsDebugCard(domains: domains)
+                }
+              }
+
+            } else {
+              DebugEmptyState()
+
+              // Still show Device Activities even without active profile
+              DebugSection(title: "Device Activities (\(deviceActivities.count))") {
+                DeviceActivitiesDebugCard(
+                  activities: deviceActivities,
+                  profileId: nil
+                )
               }
             }
 
-          } else {
-            DebugEmptyState()
-
-            // Still show Device Activities even without active profile
-            DebugSection(title: "Device Activities (\(deviceActivities.count))") {
-              DeviceActivitiesDebugCard(
-                activities: deviceActivities,
-                profileId: nil
-              )
+            // Diagnostics section - always visible
+            DebugSection(title: "App Build") {
+              DebugRow(label: "Version", value: buildInfo.version)
+              DebugRow(label: "Build", value: buildInfo.build)
+              DebugRow(label: "Commit", value: buildInfo.commitDisplay)
             }
-          }
 
-          // Diagnostics section - always visible
-          DebugSection(title: "App Build") {
-            DebugRow(label: "Version", value: buildInfo.version)
-            DebugRow(label: "Build", value: buildInfo.build)
-            DebugRow(label: "Commit", value: buildInfo.commitDisplay)
-          }
-
-          DebugSection(title: "Diagnostics") {
-            Button {
-              showingLogExport = true
-            } label: {
-              HStack {
-                Image(systemName: "square.and.arrow.up")
-                Text("Export Logs")
-                Spacer()
-                Image(systemName: "chevron.right")
-                  .foregroundColor(.secondary)
+            DebugSection(title: "Diagnostics") {
+              Button {
+                showingLogExport = true
+              } label: {
+                HStack {
+                  Image(systemName: "square.and.arrow.up")
+                  Text("Export Logs")
+                  Spacer()
+                  Image(systemName: "chevron.right")
+                    .foregroundColor(.secondary)
+                }
+                .padding()
+                .background(Color(.secondarySystemBackground))
+                .cornerRadius(10)
               }
-              .padding()
-              .background(Color(.secondarySystemBackground))
-              .cornerRadius(10)
-            }
-            .buttonStyle(.plain)
+              .buttonStyle(.plain)
 
-            #if DEBUG
-              Button("DEBUG reset emergency") {
-                EmergencyUnblockManager.shared.resetEmergencyUnblocks()
+              #if DEBUG
+                Button("DEBUG reset emergency") {
+                  EmergencyUnblockManager.shared.resetEmergencyUnblocks()
+                }
+              #endif
+            }
+          }
+          .padding()
+        }
+        .sheet(isPresented: $showingLogExport) {
+          LogExportView()
+        }
+        .navigationTitle("Debug Mode")
+        .toolbar {
+          ToolbarItem(placement: .topBarLeading) {
+            Button(action: { dismiss() }) {
+              Image(systemName: "xmark")
+            }
+            .accessibilityLabel("Cancel")
+          }
+
+          if activeProfile != nil {
+            ToolbarItem(placement: .topBarTrailing) {
+              Button(action: { copyToMarkdown() }) {
+                Image(systemName: "doc.on.doc")
               }
-            #endif
-          }
-        }
-        .padding()
-      }
-      .sheet(isPresented: $showingLogExport) {
-        LogExportView()
-      }
-      .navigationTitle("Debug Mode")
-      .toolbar {
-        ToolbarItem(placement: .topBarLeading) {
-          Button(action: { dismiss() }) {
-            Image(systemName: "xmark")
-          }
-          .accessibilityLabel("Cancel")
-        }
-
-        if activeProfile != nil {
-          ToolbarItem(placement: .topBarTrailing) {
-            Button(action: { copyToMarkdown() }) {
-              Image(systemName: "doc.on.doc")
+              .accessibilityLabel("Copy as Markdown")
             }
-            .accessibilityLabel("Copy as Markdown")
           }
         }
-      }
-      .onAppear {
-        loadActiveProfile()
-      }
-      .refreshable {
-        loadActiveProfile()
-      }
-      .alert("Copied to Clipboard", isPresented: $showCopyConfirmation) {
-        Button("OK", role: .cancel) {}
-      } message: {
-        Text("Debug information has been copied as Markdown.")
+        .onAppear {
+          loadActiveProfile()
+        }
+        .refreshable {
+          loadActiveProfile()
+        }
+        .alert("Copied to Clipboard", isPresented: $showCopyConfirmation) {
+          Button("OK", role: .cancel) {}
+        } message: {
+          Text("Debug information has been copied as Markdown.")
+        }
       }
     }
   }

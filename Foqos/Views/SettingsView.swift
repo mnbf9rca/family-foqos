@@ -404,29 +404,31 @@ struct SettingsView: View {
           }
         }
 
-        Section("Diagnostics") {
-          Button {
-            showDebugView = true
-          } label: {
-            HStack {
-              Image(systemName: "ladybug.fill")
-                .foregroundColor(themeManager.themeColor)
-                .font(.title3)
+        if !DiagnosticsAccess.isRestricted(mode: appModeManager.currentMode) {
+          Section("Diagnostics") {
+            Button {
+              showDebugView = true
+            } label: {
+              HStack {
+                Image(systemName: "ladybug.fill")
+                  .foregroundColor(themeManager.themeColor)
+                  .font(.title3)
 
-              VStack(alignment: .leading, spacing: 2) {
-                Text("Debug Mode")
-                  .font(.headline)
-                  .foregroundColor(.primary)
-                Text("View logs and export diagnostics")
-                  .font(.caption)
+                VStack(alignment: .leading, spacing: 2) {
+                  Text("Debug Mode")
+                    .font(.headline)
+                    .foregroundColor(.primary)
+                  Text("View logs and export diagnostics")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
                   .foregroundColor(.secondary)
+                  .font(.caption)
               }
-
-              Spacer()
-
-              Image(systemName: "chevron.right")
-                .foregroundColor(.secondary)
-                .font(.caption)
             }
           }
         }
@@ -523,7 +525,9 @@ struct SettingsView: View {
         ChildDashboardView()
       }
       .sheet(isPresented: $showDebugView) {
-        DebugView()
+        if !DiagnosticsAccess.isRestricted(mode: appModeManager.currentMode) {
+          DebugView()
+        }
       }
       .fullScreenCover(isPresented: $showWipeSyncConfirmation) {
         WipeSyncConfirmationView(

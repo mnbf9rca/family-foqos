@@ -2,6 +2,7 @@ import SwiftUI
 
 struct LogExportView: View {
   @Environment(\.dismiss) private var dismiss
+  @ObservedObject private var appModeManager = AppModeManager.shared
   @State private var isExporting = false
   @State private var showingShareSheet = false
   @State private var shareURL: URL?
@@ -17,113 +18,121 @@ struct LogExportView: View {
   }
 
   var body: some View {
-    NavigationStack {
-      List {
-        Section {
-          VStack(alignment: .leading, spacing: 12) {
-            Text(
-              "Share diagnostic logs with the developer to help troubleshoot issues."
-            )
-            .font(.subheadline)
-            .foregroundColor(.secondary)
+    if DiagnosticsAccess.isRestricted(mode: appModeManager.currentMode) {
+      ContentUnavailableView(
+        "Log Export Unavailable",
+        systemImage: "lock.fill",
+        description: Text("Diagnostic log export is unavailable in Child mode.")
+      )
+    } else {
+      NavigationStack {
+        List {
+          Section {
+            VStack(alignment: .leading, spacing: 12) {
+              Text(
+                "Share diagnostic logs with the developer to help troubleshoot issues."
+              )
+              .font(.subheadline)
+              .foregroundColor(.secondary)
 
-            Text(
-              "Logs may contain profile names and timestamps but no personal data like passwords or device identifiers."
-            )
-            .font(.caption)
-            .foregroundColor(.secondary)
-          }
-          .padding(.vertical, 8)
-        }
-
-        Section("Log Statistics") {
-          LabeledContent("Log Files", value: "\(logStats.fileCount)")
-          LabeledContent("Total Size", value: logStats.totalSize)
-        }
-
-        Section {
-          Button {
-            showingPreview = true
-          } label: {
-            HStack {
-              Image(systemName: "doc.text.magnifyingglass")
-              Text("Preview Logs")
-              Spacer()
-              Image(systemName: "chevron.right")
-                .foregroundColor(.secondary)
+              Text(
+                "Logs may contain profile names and timestamps but no personal data like passwords or device identifiers."
+              )
+              .font(.caption)
+              .foregroundColor(.secondary)
             }
+            .padding(.vertical, 8)
           }
-          .disabled(logStats.fileCount == 0)
 
-          Button {
-            exportLogs()
-          } label: {
-            HStack {
-              Image(systemName: "square.and.arrow.up")
-              Text("Share Logs")
-              Spacer()
-              if isExporting {
-                ProgressView()
+          Section("Log Statistics") {
+            LabeledContent("Log Files", value: "\(logStats.fileCount)")
+            LabeledContent("Total Size", value: logStats.totalSize)
+          }
+
+          Section {
+            Button {
+              showingPreview = true
+            } label: {
+              HStack {
+                Image(systemName: "doc.text.magnifyingglass")
+                Text("Preview Logs")
+                Spacer()
+                Image(systemName: "chevron.right")
+                  .foregroundColor(.secondary)
               }
             }
-          }
-          .disabled(isExporting || logStats.fileCount == 0)
+            .disabled(logStats.fileCount == 0)
 
-          Button(role: .destructive) {
-            clearLogs()
-          } label: {
-            HStack {
-              Image(systemName: "trash")
-              Text("Clear All Logs")
+            Button {
+              exportLogs()
+            } label: {
+              HStack {
+                Image(systemName: "square.and.arrow.up")
+                Text("Share Logs")
+                Spacer()
+                if isExporting {
+                  ProgressView()
+                }
+              }
+            }
+            .disabled(isExporting || logStats.fileCount == 0)
+
+            Button(role: .destructive) {
+              clearLogs()
+            } label: {
+              HStack {
+                Image(systemName: "trash")
+                Text("Clear All Logs")
+              }
+            }
+            .disabled(logStats.fileCount == 0)
+          }
+
+          Section("What's Included") {
+            Label("App events and errors", systemImage: "doc.text")
+            Label("CloudKit sync operations", systemImage: "cloud")
+            Label("Session start/stop events", systemImage: "clock")
+            Label("Device info (model, iOS version)", systemImage: "iphone")
+          }
+
+          Section("Not Included") {
+            Label("Passwords or lock codes", systemImage: "lock.slash")
+            Label("Personal identifiers", systemImage: "person.slash")
+            Label("Location coordinates", systemImage: "location.slash")
+            Label("Blocked app names", systemImage: "app.badge.checkmark")
+          }
+        }
+        .navigationTitle("Export Logs")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+          ToolbarItem(placement: .cancellationAction) {
+            Button("Done") {
+              dismiss()
             }
           }
-          .disabled(logStats.fileCount == 0)
         }
-
-        Section("What's Included") {
-          Label("App events and errors", systemImage: "doc.text")
-          Label("CloudKit sync operations", systemImage: "cloud")
-          Label("Session start/stop events", systemImage: "clock")
-          Label("Device info (model, iOS version)", systemImage: "iphone")
+        .alert(
+          "Error",
+          isPresented: .init(
+            get: { errorMessage != nil },
+            set: { if !$0 { errorMessage = nil } }
+          )
+        ) {
+          Button("OK") { errorMessage = nil }
+        } message: {
+          Text(errorMessage ?? "")
         }
-
-        Section("Not Included") {
-          Label("Passwords or lock codes", systemImage: "lock.slash")
-          Label("Personal identifiers", systemImage: "person.slash")
-          Label("Location coordinates", systemImage: "location.slash")
-          Label("Blocked app names", systemImage: "app.badge.checkmark")
-        }
-      }
-      .navigationTitle("Export Logs")
-      .navigationBarTitleDisplayMode(.inline)
-      .toolbar {
-        ToolbarItem(placement: .cancellationAction) {
-          Button("Done") {
-            dismiss()
+        .sheet(isPresented: $showingShareSheet) {
+          if let url = shareURL {
+            ShareSheet(activityItems: [url])
           }
         }
-      }
-      .alert(
-        "Error",
-        isPresented: .init(
-          get: { errorMessage != nil },
-          set: { if !$0 { errorMessage = nil } }
-        )
-      ) {
-        Button("OK") { errorMessage = nil }
-      } message: {
-        Text(errorMessage ?? "")
-      }
-      .sheet(isPresented: $showingShareSheet) {
-        if let url = shareURL {
-          ShareSheet(activityItems: [url])
+        .sheet(isPresented: $showingPreview) {
+          LogPreviewView()
         }
-      }
-      .sheet(isPresented: $showingPreview) {
-        LogPreviewView()
-      }
-      .onAppear {
-        refreshStats()
+        .onAppear {
+          refreshStats()
+        }
       }
     }
   }

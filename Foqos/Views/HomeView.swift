@@ -239,6 +239,7 @@ struct HomeView: View {
 
         VersionFooter(
           profileIsActive: isBlocking,
+          mode: appModeManager.currentMode,
           tapProfileDebugHandler: {
             showingDebugMode = true
           }
@@ -361,7 +362,9 @@ struct HomeView: View {
         .presentationDetents([.height(350)])
     }
     .sheet(isPresented: $showingDebugMode) {
-      DebugView()
+      if !DiagnosticsAccess.isRestricted(mode: appModeManager.currentMode) {
+        DebugView()
+      }
     }
     .sheet(isPresented: $showParentDashboard) {
       ParentDashboardView()
