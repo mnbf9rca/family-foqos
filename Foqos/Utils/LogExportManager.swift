@@ -15,10 +15,6 @@ final class LogExportManager {
   /// Create a zip archive of all log files
   /// Offloads heavy file I/O to a background thread to avoid blocking the UI
   func createLogArchive() async throws -> URL {
-    guard !DiagnosticsAccess.isRestricted(mode: AppModeManager.shared.currentMode) else {
-      throw LogExportError.notAvailableInChildMode
-    }
-
     // Capture values that need main actor access
     let deviceInfo = generateDeviceInfo()
     let timestamp = formattedTimestamp()
@@ -198,10 +194,6 @@ final class LogExportManager {
 
   /// Get a shareable log file for email attachment
   func getShareableLogFile() throws -> URL {
-    guard !DiagnosticsAccess.isRestricted(mode: AppModeManager.shared.currentMode) else {
-      throw LogExportError.notAvailableInChildMode
-    }
-
     let tempDir = fileManager.temporaryDirectory
     let fileName = "FamilyFoqos-Logs-\(formattedTimestamp()).txt"
     let fileURL = tempDir.appendingPathComponent(fileName)
@@ -220,7 +212,6 @@ final class LogExportManager {
 enum LogExportError: LocalizedError {
   case noLogsAvailable
   case archiveCreationFailed
-  case notAvailableInChildMode
 
   var errorDescription: String? {
     switch self {
@@ -228,8 +219,6 @@ enum LogExportError: LocalizedError {
       return "No log files available for export"
     case .archiveCreationFailed:
       return "Failed to create log archive"
-    case .notAvailableInChildMode:
-      return "Diagnostic log export is unavailable in Child mode"
     }
   }
 }

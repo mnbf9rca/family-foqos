@@ -404,31 +404,29 @@ struct SettingsView: View {
           }
         }
 
-        if !DiagnosticsAccess.isRestricted(mode: appModeManager.currentMode) {
-          Section("Diagnostics") {
-            Button {
-              showDebugView = true
-            } label: {
-              HStack {
-                Image(systemName: "ladybug.fill")
-                  .foregroundColor(themeManager.themeColor)
-                  .font(.title3)
+        Section("Diagnostics") {
+          Button {
+            showDebugView = true
+          } label: {
+            HStack {
+              Image(systemName: "ladybug.fill")
+                .foregroundColor(themeManager.themeColor)
+                .font(.title3)
 
-                VStack(alignment: .leading, spacing: 2) {
-                  Text("Debug Mode")
-                    .font(.headline)
-                    .foregroundColor(.primary)
-                  Text("View logs and export diagnostics")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                }
-
-                Spacer()
-
-                Image(systemName: "chevron.right")
-                  .foregroundColor(.secondary)
+              VStack(alignment: .leading, spacing: 2) {
+                Text("Debug Mode")
+                  .font(.headline)
+                  .foregroundColor(.primary)
+                Text("View logs and export diagnostics")
                   .font(.caption)
+                  .foregroundColor(.secondary)
               }
+
+              Spacer()
+
+              Image(systemName: "chevron.right")
+                .foregroundColor(.secondary)
+                .font(.caption)
             }
           }
         }

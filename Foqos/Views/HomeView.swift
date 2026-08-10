@@ -239,7 +239,6 @@ struct HomeView: View {
 
         VersionFooter(
           profileIsActive: isBlocking,
-          mode: appModeManager.currentMode,
           tapProfileDebugHandler: {
             showingDebugMode = true
           }
