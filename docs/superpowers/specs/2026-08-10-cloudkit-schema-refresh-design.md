@@ -8,7 +8,8 @@ and add a small zero-Xcode drift check.
 
 ## Sources of Truth
 
-- `fastlane/required-prod-schema.txt` defines the record types the release gate requires.
+- `fastlane/required-prod-schema.txt` defines the record types and active fields the release gate
+  requires, reconciled by hand against code.
 - The `CKRecord` encoders in `Foqos/CloudKit/SyncModels.swift`,
   `Foqos/Models/DeviceHeartbeat.swift`, and `Foqos/Models/FamilyCommand.swift` define current fields
   and data types.
@@ -34,36 +35,28 @@ CloudKit dashboard to promote schema changes to Production:
 
 ## Drift Check
 
-`scripts/check-cloudkit-schema-export.sh` reads the manifest and the checked-in `.ckdb`, then fails
-if either input is empty/unreadable or any required `RECORD TYPE` declaration is absent. It allows
-extra declarations such as deprecated `FamilyPolicy`.
+`fastlane/required-prod-schema.txt` stores both required record declarations (`RECORD TYPE X`) and
+required active fields (`RECORD TYPE X.field`). Its header documents the hand-reconciliation ritual
+for the two key idioms used by the app: `FieldKey: String` enums and resolved `RecordKey` string
+constants. This deliberately keeps the zero-Xcode gate simple and makes the manifest reviewable;
+automatic code-to-schema drift detection belongs in a separate Swift test.
 
-The same checker also derives the active application field inventory from the two CloudKit key
-idioms used by the app:
-
-- `FieldKey: String` enums paired with their preceding `static let recordType` declaration in
-  `SyncModels.swift` and `ProfileSessionRecord.swift`.
-- `RecordKey` constants whose string values are resolved in `DeviceHeartbeat.swift`,
-  `FamilyCommand.swift`, `FamilyLockCode.swift`, and `FamilyMember.swift`.
-
-Pairing stops when another record-type declaration appears before a `FieldKey` enum, so the
-deprecated keyless `SyncedSession` declaration cannot accidentally claim `SyncedLocation` fields.
-The checker compares declared code fields as a subset of each matching `.ckdb` record block. It
-does not require the reverse subset because CloudKit schemas are additive-only and retain system
-and deprecated fields. The two legacy V1 string-subscript fallbacks on `SyncedProfile` are
-deliberately outside the inventory: they are Production compatibility reads, not declared current
-field keys.
+`scripts/check-cloudkit-schema-export.sh` normalizes the checked-in `.ckdb` into the same exact
+record and record-field entries, then fails when any non-comment manifest line is absent. Required
+fields are scoped to their record blocks, so a same-named field on another type cannot satisfy the
+check. The comparison remains one-way: extra schema declarations are allowed because Production
+is additive-only and retains CloudKit system fields and deprecated compatibility data.
 
 The known-good baseline is 100 fields across 12 active types: `SyncedProfile` (39),
 `ProfileSession` (10), `SyncedLocation` (8), `EmergencySettings` (7),
 `EmergencyUnblockEvent` (5), `SyncResetRequest` (4), `EmergencyResetEpoch` (2),
 `SyncEstablishment` (2), `DeviceHeartbeat` (5), `FamilyCommand` (5), `FamilyLockCode` (7), and
 `FamilyMember` (6). `FamilyRoot`, deprecated `SyncedSession`, and built-in `cloudkit.share` remain
-type-checked but are not part of the declared-key field inventory.
+type-checked but are not part of the manually reconciled active-field inventory.
 
 `scripts/test-check-cloudkit-schema-export.sh` exercises the real script against disposable
-fixtures and proves matching-with-extras passes while missing, prefix-only, removed enum field,
-removed resolved-constant field, cross-record field, and empty-manifest cases fail closed.
+fixtures and proves matching-with-extras passes while missing type, prefix-only type, missing field,
+and empty-manifest cases fail closed.
 
 ## Maintainer Runbook
 

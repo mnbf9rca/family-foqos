@@ -189,49 +189,49 @@ Expected: all exit 0 with their PASS/success markers.
 ### Task 2A: Guard declared application fields
 
 **Files:**
+- Modify: `fastlane/required-prod-schema.txt`
 - Modify: `scripts/check-cloudkit-schema-export.sh`
 - Modify: `scripts/test-check-cloudkit-schema-export.sh`
+- Modify: `docs/cloudkit-production-schema.md`
 
 **Interfaces:**
-- Consumes: `FieldKey: String` declarations in `Foqos/CloudKit/SyncModels.swift` and
-  `Foqos/CloudKit/ProfileSessionRecord.swift`; resolved `RecordKey` string constants in the four
-  current family model files; matching record blocks in `cloudkit-schema.ckdb`
-- Produces: exit 1 with `MISSING from checked-in CloudKit schema: <RecordType>.<field>` when any
-  declared current code field is absent; success identifying exactly 100 fields across 12 types
+- Consumes: hand-reconciled `RECORD TYPE X` and `RECORD TYPE X.field` manifest entries plus matching
+  record blocks in `cloudkit-schema.ckdb`
+- Produces: exit 1 with `MISSING from checked-in CloudKit schema: RECORD TYPE X.field` when any
+  manifest field is absent; success identifying exactly 100 fields across 12 active types
 
-- [ ] **Step 1: Extend the disposable fixtures first**
+- [ ] **Step 1: Add the failing field fixture first**
 
-Add minimal Swift fixtures for both declaration idioms. The enum fixture includes an explicit raw
-value and a keyless record type before a later keyed type, proving the parser resolves the wire
-name and does not mispair the later enum. The constant fixture uses an identifier whose string
-value differs from the field name. Add failure cases that remove one enum field, remove one
-constant field, and put a required field only in a different record block.
+Add `RECORD TYPE Required.requiredField` to the disposable manifest and `requiredField STRING` to
+the matching schema. Add a second schema fixture that retains `Required` but removes
+`requiredField`, and require exit 1 with the exact missing manifest entry.
 
 - [ ] **Step 2: Run the fixture test and observe RED**
 
 Run: `bash scripts/test-check-cloudkit-schema-export.sh`
 
-Expected: exit 1 with `FAIL: missing declared enum field must exit 1`; the existing type-only
-checker incorrectly accepts the schema.
+Expected: exit 1 because the existing type-only checker treats `Required.requiredField` as a record
+type and rejects the otherwise matching schema.
 
-- [ ] **Step 3: Extract declared code fields**
+- [ ] **Step 3: Normalize schema records and fields**
 
-Extend the existing Bash checker with two small `awk` extractors:
+Use one small `awk` pass over the `.ckdb` to emit exact normalized entries:
 
-1. Pair `static let recordType = "..."` with a following `enum FieldKey: String` only when no
-   intervening record-type declaration occurs, then emit each case's raw string or identifier.
-2. Resolve `static let <identifier> = "<wireName>"` declarations inside `RecordKey` enums in
-   `DeviceHeartbeat.swift`, `FamilyCommand.swift`, `FamilyLockCode.swift`, and
-   `FamilyMember.swift`.
+```text
+RECORD TYPE Required
+RECORD TYPE Required.requiredField
+```
 
-Sort the emitted `<recordType><TAB><field>` pairs uniquely. Require the known-good per-type counts
-of 39, 10, 8, 7, 5, 4, 2, 2, 5, 5, 7, and 6 so a vacuous or one-idiom extractor fails closed.
+Keep the existing fixed-string manifest loop, changing it to exact-line matching against the
+normalized entries. This scopes every field to its record block and still permits extra schema
+fields and record types.
 
-- [ ] **Step 4: Compare each code field to its record block**
+- [ ] **Step 4: Add the hand-reconciled field inventory**
 
-For each emitted pair, inspect only the matching active `RECORD TYPE ... (` block and require an
-exact first-token field match before that block's `);`. Do not compare schema fields in the reverse
-direction, and do not scan arbitrary `record["..."]` string subscripts.
+Extend `fastlane/required-prod-schema.txt` with the reviewer-verified 100 fields across 12 active
+types and update its reconciliation date and commands. Update the runbook to state precisely that
+the checker proves `.ckdb` coverage of the manifest, while manifest-to-code alignment remains a
+documented hand review.
 
 - [ ] **Step 5: Run the fixture and production checks GREEN**
 
@@ -246,13 +246,14 @@ Expected:
 
 ```text
 PASS: checked-in CloudKit schema gate cases
-Checked-in CloudKit schema covers every required record type and 100 declared fields across 12 active record types.
+Checked-in CloudKit schema covers every required record type and field.
 ```
 
 - [ ] **Step 6: Commit without amend**
 
 ```bash
-git add scripts/check-cloudkit-schema-export.sh scripts/test-check-cloudkit-schema-export.sh \
+git add fastlane/required-prod-schema.txt scripts/check-cloudkit-schema-export.sh \
+  scripts/test-check-cloudkit-schema-export.sh docs/cloudkit-production-schema.md \
   docs/superpowers/specs/2026-08-10-cloudkit-schema-refresh-design.md \
   docs/superpowers/plans/2026-08-10-cloudkit-schema-refresh.md
 git commit -m "Guard CloudKit schema fields"

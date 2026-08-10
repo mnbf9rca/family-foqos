@@ -30,11 +30,13 @@ run_check() {
 printf '%s\n' \
   '# Required record types' \
   'RECORD TYPE Required' \
+  'RECORD TYPE Required.requiredField' \
   'RECORD TYPE "cloudkit.share"' \
   >"$TEST_ROOT/fastlane/required-prod-schema.txt"
 printf '%s\n' \
   'DEFINE SCHEMA' \
   'RECORD TYPE Required (' \
+  '  requiredField STRING' \
   ');' \
   'RECORD TYPE "cloudkit.share" (' \
   ');' \
@@ -44,6 +46,20 @@ printf '%s\n' \
 run_check
 if [[ "$CHECK_STATUS" -ne 0 || "$CHECK_OUTPUT" != *"covers every required record type"* ]]; then
   echo "FAIL: matching schema with compatibility extras must pass"
+  echo "$CHECK_OUTPUT"
+  exit 1
+fi
+
+printf '%s\n' \
+  'DEFINE SCHEMA' \
+  'RECORD TYPE Required (' \
+  ');' \
+  'RECORD TYPE "cloudkit.share" (' \
+  ');' \
+  >"$TEST_ROOT/Foqos/CloudKit/cloudkit-schema.ckdb"
+run_check
+if [[ "$CHECK_STATUS" -ne 1 || "$CHECK_OUTPUT" != *"MISSING from checked-in CloudKit schema: RECORD TYPE Required.requiredField"* ]]; then
+  echo "FAIL: missing required field must exit 1"
   echo "$CHECK_OUTPUT"
   exit 1
 fi

@@ -14,6 +14,36 @@ if [[ ! -r "$SCHEMA_FILE" || ! -s "$SCHEMA_FILE" ]]; then
   exit 2
 fi
 
+SCHEMA_REQUIREMENTS=$(mktemp)
+cleanup() {
+  rm -f -- "$SCHEMA_REQUIREMENTS"
+}
+trap cleanup EXIT
+
+awk '
+  /^[[:space:]]*RECORD TYPE[[:space:]]+/ {
+    record_type = $0
+    sub(/^[[:space:]]*RECORD TYPE[[:space:]]+/, "", record_type)
+    sub(/[[:space:]]*\(.*/, "", record_type)
+    print "RECORD TYPE " record_type
+    in_record = 1
+    next
+  }
+  in_record && /^[[:space:]]*\);/ {
+    in_record = 0
+    next
+  }
+  in_record {
+    field = $0
+    sub(/^[[:space:]]*/, "", field)
+    if (field == "" || field ~ /^\/\// || field ~ /^GRANT[[:space:]]/) {
+      next
+    }
+    split(field, parts, /[[:space:]]+/)
+    print "RECORD TYPE " record_type "." parts[1]
+  }
+' "$SCHEMA_FILE" >"$SCHEMA_REQUIREMENTS"
+
 checked=0
 while IFS= read -r requirement; do
   [[ -z "$requirement" || "$requirement" == \#* ]] && continue
@@ -28,7 +58,7 @@ fi
 missing=0
 while IFS= read -r requirement; do
   [[ -z "$requirement" || "$requirement" == \#* ]] && continue
-  if ! grep -qF "$requirement (" "$SCHEMA_FILE"; then
+  if ! grep -qFx "$requirement" "$SCHEMA_REQUIREMENTS"; then
     echo "MISSING from checked-in CloudKit schema: $requirement"
     missing=1
   fi
@@ -38,4 +68,4 @@ if [[ "$missing" -ne 0 ]]; then
   exit 1
 fi
 
-echo "Checked-in CloudKit schema covers every required record type."
+echo "Checked-in CloudKit schema covers every required record type and field."

@@ -17,8 +17,10 @@ bash scripts/test-check-prod-schema.sh
 ```
 
 Review `Foqos/CloudKit/cloudkit-schema.ckdb` against the pending Development schema in CloudKit
-Console. The local checker proves record-type coverage against `fastlane/required-prod-schema.txt`;
-field review remains part of the Console promotion review.
+Console. The local checker proves that the `.ckdb` covers every record type and field listed in
+`fastlane/required-prod-schema.txt`. Keep that manifest aligned with the app's declared `FieldKey`
+and `RecordKey` values through the hand-reconciliation commands in its header. Field review remains
+part of the Console promotion review because the checker does not derive the manifest from code.
 
 ## Promote to Production — Maintainer Only
 
