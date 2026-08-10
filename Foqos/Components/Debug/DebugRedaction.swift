@@ -12,6 +12,11 @@ enum DebugRedaction {
     return maskCredential(raw)
   }
 
+  /// Log files can be exported later, so replayable NFC credentials are always masked.
+  static func physicalUnblockNFCTagIdForLog(_ raw: String) -> String {
+    maskCredential(raw)
+  }
+
   /// #247 deliberate asymmetry: QR values have three forms. A 64-lowercase-hex value is the
   /// SHA-256 digest and stays visible; legacy plaintext is replayable and gets the same mask as NFC.
   static func physicalUnblockQRCodeIdForDisplay(_ raw: String?, mode: AppMode) -> String? {

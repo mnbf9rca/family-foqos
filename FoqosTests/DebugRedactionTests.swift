@@ -69,6 +69,14 @@ final class DebugRedactionTests: XCTestCase {
     )
   }
 
+  func testGivenNFCId_WhenPreparingForLog_ThenMasksMiddle() {
+    XCTAssertEqual(DebugRedaction.physicalUnblockNFCTagIdForLog("ABCDEF12"), "AB…12")
+  }
+
+  func testGivenShortNFCId_WhenPreparingForLog_ThenUsesConstantMask() {
+    XCTAssertEqual(DebugRedaction.physicalUnblockNFCTagIdForLog("ABC"), "••••••")
+  }
+
   func testGivenQRValue_WhenParentMode_ThenRaw() {
     XCTAssertEqual(
       DebugRedaction.physicalUnblockQRCodeIdForDisplay("legacy-plaintext", mode: .parent),
