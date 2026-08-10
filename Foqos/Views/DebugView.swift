@@ -201,8 +201,6 @@ struct DebugView: View {
       markdown += "- **Physical Unlock NFC Tag ID:** \(nfcTagId)\n"
     }
 
-    // #247 deliberate asymmetry: QR exports the visible digest form, but legacy plaintext QR values
-    // are replayable credentials and get the same child-mode mask as the NFC UID.
     if let qrCodeId = DebugRedaction.physicalUnblockQRCodeIdForDisplay(
       profile.physicalUnblockQRCodeId,
       mode: AppModeManager.shared.currentMode
