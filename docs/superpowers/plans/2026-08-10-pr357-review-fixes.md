@@ -116,7 +116,7 @@
 - Modify: `FoqosTests/Mocks/MockSyncEngineControlling.swift`
 
 **Interfaces:**
-- Adds DEBUG-only reattach counters sufficient to assert maximum concurrent reattachments is `1`.
+- Adds DEBUG-only counters that assert the maximum number of concurrent reattachments is `1`.
 - Adds `ResetOutbox.removeEstablishmentSave()` for stop-time cleanup.
 - Records both `wipe` and `clearRemoteAppSelections` in `MockSyncEngineControlling` reset calls.
 

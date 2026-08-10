@@ -368,6 +368,7 @@ final class ResetController {
         return
       }
       if establishment.generation > store.establishmentGeneration {
+        outbox.removeResetZoneChanges()
         store.resetIntent = nil
       } else {
         reenqueueDeleting()
@@ -377,7 +378,9 @@ final class ResetController {
       reenqueueDeleting()
     } catch {
       // Transient fetch error ⇒ keep the intent; retry later.
-      _ = intent
+      Log.warning(
+        "Wipe deleting gate fetch failed; intent retained for retry: \(error.localizedDescription)",
+        category: .sync)
     }
   }
 

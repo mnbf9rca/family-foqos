@@ -597,15 +597,17 @@ final class SyncEngineResetTests: XCTestCase {
       "#286: a resumed .deleting stage must not re-add a deleteZone alongside pending saves")
   }
 
-  func testGivenDeletingWipe_WhenGateFindsHigherGeneration_ThenClearsIntentWithoutAdvancingGeneration()
+  func testGivenDeletingWipe_WhenGateFindsHigherGeneration_ThenDequeuesDeleteWithoutAdvancingGeneration()
     async
   {
     let now = Date()
-    let outbox = MockResetOutbox()
     let fetcher = MockRecordFetcher()
     fetcher.result = .success(establishmentRecord(generation: 2, now: now))
-    let controller = makeController(
-      outbox: outbox, seeder: MockResetSeeder(), fetcher: fetcher)
+    let mockDriver = MockSyncEngineDriver(pendingDatabaseChanges: [.deleteZone(zoneID)])
+    let controller = ResetController(
+      store: store, outbox: DriverResetOutbox(driver: mockDriver, zoneID: zoneID),
+      seeder: MockResetSeeder(), fetcher: fetcher,
+      surfacer: MockResetConflictSurfacer(), deviceId: "device-A")
     store.establishmentGeneration = 1
     store.resetIntent = ResetIntent(
       id: UUID(), clear: false, wipe: true, stage: .deleting, priorCommandId: nil)
@@ -616,7 +618,9 @@ final class SyncEngineResetTests: XCTestCase {
     XCTAssertEqual(
       store.establishmentGeneration, 1,
       "normal fetched-record adoption must perform the discard before advancing generation")
-    XCTAssertEqual(outbox.zoneDeleteCount, 0, "the losing wipe must not delete the peer's new zone")
+    XCTAssertFalse(
+      mockDriver.pendingDatabaseChanges.contains(.deleteZone(zoneID)),
+      "the losing wipe must dequeue its stale deletion before the peer's new zone is adopted")
   }
 
   func testGivenDeletingWipeCancelledDuringGateFetch_WhenFetchReturns_ThenZoneDeleteIsNotReenqueued()
