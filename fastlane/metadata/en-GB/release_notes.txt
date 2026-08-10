@@ -1,4 +1,6 @@
 - Multi-parent support - A second parent can now join and manage the family. Just send them the share invite and they'll automatically get parent access.
 - Bug fix - Kids can now stop their own focus sessions without needing a lock code. Lock codes are still required to edit or delete locked profiles.
 - Stability - Fixed a crash that could happen when profiles were synced across devices.
+- Rollout note - During this rollout, emergency unblock limits are per-device until all your devices update. Usage from devices on the old app version isn't shown on updated devices, and each device's allowance starts fresh when it updates.
+- Sync compatibility - Devices still on the old app version won't be affected when you totally delete synced data and can't interoperate with the new sync. Update Family Foqos on every device first.
 - Under the hood changes to prepare for more granular profile settings.
