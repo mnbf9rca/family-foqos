@@ -47,12 +47,13 @@ fields are scoped to their record blocks, so a same-named field on another type 
 check. The comparison remains one-way: extra schema declarations are allowed because Production
 is additive-only and retains CloudKit system fields and deprecated compatibility data.
 
-The known-good baseline is 100 fields across 12 active types: `SyncedProfile` (39),
+The known-good baseline is 101 fields across 13 active types: `SyncedProfile` (39),
 `ProfileSession` (10), `SyncedLocation` (8), `EmergencySettings` (7),
 `EmergencyUnblockEvent` (5), `SyncResetRequest` (4), `EmergencyResetEpoch` (2),
 `SyncEstablishment` (2), `DeviceHeartbeat` (5), `FamilyCommand` (5), `FamilyLockCode` (7), and
-`FamilyMember` (6). `FamilyRoot`, deprecated `SyncedSession`, and built-in `cloudkit.share` remain
-type-checked but are not part of the manually reconciled active-field inventory.
+`FamilyMember` (6), plus the literal `FamilyRoot.createdAt` write (1). Deprecated `SyncedSession`
+and built-in `cloudkit.share` remain type-checked but are not part of the manually reconciled
+active-field inventory.
 
 `scripts/test-check-cloudkit-schema-export.sh` exercises the real script against disposable
 fixtures and proves matching-with-extras passes while missing type, prefix-only type, missing field,

@@ -198,7 +198,7 @@ Expected: all exit 0 with their PASS/success markers.
 - Consumes: hand-reconciled `RECORD TYPE X` and `RECORD TYPE X.field` manifest entries plus matching
   record blocks in `cloudkit-schema.ckdb`
 - Produces: exit 1 with `MISSING from checked-in CloudKit schema: RECORD TYPE X.field` when any
-  manifest field is absent; success identifying exactly 100 fields across 12 active types
+  manifest field is absent; success identifying exactly 101 fields across 13 active types
 
 - [ ] **Step 1: Add the failing field fixture first**
 
@@ -228,7 +228,7 @@ fields and record types.
 
 - [ ] **Step 4: Add the hand-reconciled field inventory**
 
-Extend `fastlane/required-prod-schema.txt` with the reviewer-verified 100 fields across 12 active
+Extend `fastlane/required-prod-schema.txt` with the reviewer-verified 101 fields across 13 active
 types and update its reconciliation date and commands. Update the runbook to state precisely that
 the checker proves `.ckdb` coverage of the manifest, while manifest-to-code alignment remains a
 documented hand review.

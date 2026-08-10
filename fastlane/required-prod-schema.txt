@@ -3,9 +3,10 @@
 # Repeat the type searches, review the results, and preserve built-ins and deprecated types:
 #   rg -n 'static let recordType\s*=\s*"[^"]+"' Foqos FoqosDeviceMonitor FoqosShieldConfig FoqosWidget
 #   rg -n 'CKRecord\(recordType:\s*"[^"]+"' Foqos FoqosDeviceMonitor FoqosShieldConfig FoqosWidget
-# Repeat both field searches and reconcile the 12 active types / 100 fields below:
+# Repeat the field searches and reconcile the 13 active types / 101 fields below:
 #   rg -n 'static let recordType|enum FieldKey: String|^[[:space:]]+case [[:alnum:]_]+( = "[^"]+")?$' Foqos/CloudKit/SyncModels.swift Foqos/CloudKit/ProfileSessionRecord.swift
 #   rg -n 'static let recordType|enum RecordKey|^[[:space:]]+static let [[:alnum:]_]+ = "[^"]+"' Foqos/Models/DeviceHeartbeat.swift Foqos/Models/FamilyCommand.swift Foqos/Models/FamilyLockCode.swift Foqos/Models/FamilyMember.swift
+#   rg -n 'rootRecord\["[^"]+"\]' Foqos/CloudKit/CloudKitNetworkService.swift Foqos/CloudKit/CloudKitNetworkService+Sharing.swift
 RECORD TYPE DeviceHeartbeat
 RECORD TYPE DeviceHeartbeat.childUserRecordName
 RECORD TYPE DeviceHeartbeat.deviceIdentifier
@@ -51,6 +52,7 @@ RECORD TYPE FamilyMember.role
 RECORD TYPE FamilyMember.enrolledAt
 RECORD TYPE FamilyMember.isActive
 RECORD TYPE FamilyRoot
+RECORD TYPE FamilyRoot.createdAt
 RECORD TYPE ProfileSession
 RECORD TYPE ProfileSession.profileId
 RECORD TYPE ProfileSession.isActive
