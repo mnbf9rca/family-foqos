@@ -13,13 +13,10 @@ enum ProfileStartArbiter {
     existingStartTime: Date?,
     existingProfileId: UUID?
   ) -> Decision {
-    guard
-      let existingStartTime,
-      let existingProfileId,
-      existingProfileId != incomingProfileId
-    else {
+    guard let existingStartTime, let existingProfileId else {
       return .start
     }
+    guard existingProfileId != incomingProfileId else { return .reject }
     if incomingStartTime > existingStartTime { return .adopt }
     if incomingStartTime < existingStartTime { return .reject }
     return incomingProfileId.uuidString > existingProfileId.uuidString ? .adopt : .reject

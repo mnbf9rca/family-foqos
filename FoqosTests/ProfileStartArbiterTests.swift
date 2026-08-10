@@ -18,7 +18,7 @@ final class ProfileStartArbiterTests: XCTestCase {
       .start)
   }
 
-  func testGivenSameProfileActive_WhenDeciding_ThenStart() {
+  func testGivenSameProfileActive_WhenDeciding_ThenRejectDuplicate() {
     let now = Date(timeIntervalSinceReferenceDate: 1_000)
 
     XCTAssertEqual(
@@ -27,7 +27,7 @@ final class ProfileStartArbiterTests: XCTestCase {
         incomingProfileId: idB,
         existingStartTime: now.addingTimeInterval(-1),
         existingProfileId: idB),
-      .start)
+      .reject)
   }
 
   func testGivenIncomingNewer_WhenDeciding_ThenAdopt() {

@@ -878,6 +878,10 @@ class StrategyManager: ObservableObject {
     _ session: BlockedProfileSession,
     context: ModelContext? = nil
   ) {
+    // A new start supersedes any persisted stop intent for this profile. Otherwise a later
+    // foreground drain could stop the newly-started remote record instead of the old session.
+    sessionStopOutbox.remove(profileId: session.blockedProfile.id)
+
     // Cancel stale reminders/notifications from previous sessions
     timersUtil.cancelAll()
 
@@ -1590,7 +1594,7 @@ class StrategyManager: ObservableObject {
       ) {
       case .reject:
         Log.info(
-          "Remote start for '\(profile.name)' is older than the active session; keeping local",
+          "Remote start for '\(profile.name)' does not supersede the active session; keeping existing",
           category: .strategy)
         return
       case .adopt:

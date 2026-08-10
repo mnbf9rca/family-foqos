@@ -132,6 +132,41 @@ final class StrategyManagerRemoteSessionTests: XCTestCase {
     XCTAssertEqual(appBlocker.calls, [.activate(profileId: profileB.id)])
   }
 
+  func testGivenPendingStopForProfile_WhenRemoteSessionStarts_ThenPendingStopCleared() throws {
+    let profile = BlockedProfiles(name: "Restarted")
+    context.insert(profile)
+    try context.save()
+    manager.sessionStopOutbox.enqueue(profileId: profile.id)
+
+    manager.startRemoteSession(
+      context: context,
+      profileId: profile.id,
+      sessionId: UUID(),
+      startTime: Date(timeIntervalSinceReferenceDate: 1_000))
+
+    XCTAssertFalse(manager.sessionStopOutbox.pending.contains(profile.id))
+  }
+
+  func testGivenSameProfileActiveInStoreOnly_WhenRemoteStart_ThenNoDuplicateSessionCreated() throws {
+    let now = Date(timeIntervalSinceReferenceDate: 1_000)
+    let profile = BlockedProfiles(name: "Stored")
+    context.insert(profile)
+    let existing = BlockedProfileSession(
+      tag: "local", blockedProfile: profile, startTime: now.addingTimeInterval(-60))
+    context.insert(existing)
+    try context.save()
+    manager.activeSession = nil
+
+    manager.startRemoteSession(
+      context: context,
+      profileId: profile.id,
+      sessionId: UUID(),
+      startTime: now)
+
+    XCTAssertEqual(try activeSessions().map(\.id), [existing.id])
+    XCTAssertTrue(appBlocker.calls.isEmpty)
+  }
+
   private func activeSessions() throws -> [BlockedProfileSession] {
     try context.fetch(FetchDescriptor<BlockedProfileSession>()).filter { $0.endTime == nil }
   }
