@@ -1,5 +1,7 @@
-require "fileutils"
-require "securerandom"
+# frozen_string_literal: true
+
+require 'fileutils'
+require 'securerandom'
 
 module ArchiveStorage
   def self.replace_directory(source:, destination:, logger: ->(message) { warn(message) })
@@ -24,7 +26,7 @@ module ArchiveStorage
       end
       File.rename(temporary, destination)
       FileUtils.rm_rf(backup)
-    rescue Exception
+    rescue Exception # rubocop:disable Lint/RescueException -- Archive recovery must also run for Interrupt.
       if File.exist?(backup) && !File.exist?(destination)
         File.rename(backup, destination)
         logger.call("Archive backup restored: #{backup}")
@@ -36,14 +38,14 @@ module ArchiveStorage
   end
 
   def self.upload_dsyms(tag:, prerelease:, title:, notes:, asset:)
-    create_args = ["gh", "release", "create", tag]
-    create_args << "--prerelease" if prerelease
-    create_args += ["--title", title, "--notes", notes, asset]
+    create_args = ['gh', 'release', 'create', tag]
+    create_args << '--prerelease' if prerelease
+    create_args += ['--title', title, '--notes', notes, asset]
 
     begin
       yield(create_args)
-    rescue
-      yield(["gh", "release", "upload", tag, asset, "--clobber"])
+    rescue StandardError
+      yield(['gh', 'release', 'upload', tag, asset, '--clobber'])
     end
   end
 end
