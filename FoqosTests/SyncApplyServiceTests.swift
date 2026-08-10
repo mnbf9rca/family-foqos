@@ -615,6 +615,31 @@ final class SyncApplyServiceTests: XCTestCase {
     XCTAssertFalse(sessionController.stopRemoteSessionCalled)
   }
 
+  func testGivenDifferentLocalProfileActive_WhenRemoteStartApplied_ThenDelegatesArbitration() throws {
+    let now = Date(timeIntervalSinceReferenceDate: 1_000)
+    let profileA = BlockedProfiles(name: "Local")
+    let profileB = BlockedProfiles(name: "Remote")
+    context.insert(profileA)
+    context.insert(profileB)
+    try context.save()
+    sessionController.activeSession = BlockedProfileSession(
+      tag: "local", blockedProfile: profileA, startTime: now.addingTimeInterval(-60))
+    var remote = ProfileSessionRecord(profileId: profileB.id)
+    _ = remote.applyUpdate(
+      isActive: true,
+      sequenceNumber: 1,
+      deviceId: "device-B",
+      startTime: now)
+
+    XCTAssertEqual(
+      makeService().applyFetchedModification(
+        remote.toCKRecord(in: zoneID), isPendingDeleteOrTombstoned: noPendingDelete),
+      .applied)
+
+    XCTAssertTrue(sessionController.startRemoteSessionCalled)
+    XCTAssertEqual(sessionController.startRemoteSessionProfileId, profileB.id)
+  }
+
   func testGivenOwnSessionModification_WhenApplied_ThenSelfEchoFiltered() throws {
     let now = Date()
     let id = UUID()

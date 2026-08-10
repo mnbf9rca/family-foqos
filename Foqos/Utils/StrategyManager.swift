@@ -1579,6 +1579,28 @@ class StrategyManager: ObservableObject {
         return
       }
 
+      // Arbitrate before activating this profile: ending an older local session deactivates
+      // restrictions globally, so doing this later would leave the incoming winner unblocked.
+      let existing = try BlockedProfileSession.mostRecentActiveSession(in: context)
+      switch ProfileStartArbiter.decide(
+        incomingStartTime: startTime,
+        incomingProfileId: profileId,
+        existingStartTime: existing?.startTime,
+        existingProfileId: existing?.blockedProfile.id
+      ) {
+      case .reject:
+        Log.info(
+          "Remote start for '\(profile.name)' is older than the active session; keeping local",
+          category: .strategy)
+        return
+      case .adopt:
+        if let existing {
+          endLocalSessionAndSyncStop(existing, context: context)
+        }
+      case .start:
+        break
+      }
+
       // Activate restrictions
       appBlocker.activateRestrictions(for: BlockedProfiles.getSnapshot(for: profile))
 
@@ -1602,6 +1624,20 @@ class StrategyManager: ObservableObject {
     } catch {
       Log.info("Error starting remote session - \(error)", category: .strategy)
     }
+  }
+
+  private func endLocalSessionAndSyncStop(
+    _ session: BlockedProfileSession,
+    context: ModelContext
+  ) {
+    let profileId = session.blockedProfile.id
+    let wasProcessingRemoteChange = processingRemoteChange
+    processingRemoteChange = false
+    _ = getStrategy(id: ManualBlockingStrategy.id).stopBlocking(
+      context: context,
+      session: session)
+    processingRemoteChange = wasProcessingRemoteChange
+    sessionStopOutbox.enqueue(profileId: profileId)
   }
 
   /// Stop a session triggered by remote device

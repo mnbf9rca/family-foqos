@@ -8,6 +8,7 @@ final class StrategyManagerRemoteSessionTests: XCTestCase {
   private var container: ModelContainer!
   private var context: ModelContext!
   private var manager: StrategyManager!
+  private var appBlocker: RecordingRestrictionApplier!
   private var suiteName: String!
 
   override func setUp() async throws {
@@ -16,11 +17,14 @@ final class StrategyManagerRemoteSessionTests: XCTestCase {
     SharedData.configure(suite: UserDefaults(suiteName: suiteName)!)
     container = try TestModelContainer.create()
     context = container.mainContext
-    manager = StrategyManager()
+    appBlocker = RecordingRestrictionApplier()
+    manager = StrategyManager(appBlocker: appBlocker)
+    manager.sessionStopOutbox.clear()
   }
 
   override func tearDown() async throws {
     manager.stopTimer()
+    manager.sessionStopOutbox.clear()
     UserDefaults().removePersistentDomain(forName: suiteName)
     try await super.tearDown()
   }
@@ -79,5 +83,56 @@ final class StrategyManagerRemoteSessionTests: XCTestCase {
     XCTAssertNil(manager.activeSession, "real stopRemoteSession clears the active session (#203)")
     XCTAssertNil(manager.timerTask, "real stopRemoteSession stops the timer (#203)")
     XCTAssertNotNil(session.endTime, "the session is ended")
+  }
+
+  func testGivenLocalNewerSession_WhenRemoteOlderStart_ThenRemoteRejected() throws {
+    let now = Date(timeIntervalSinceReferenceDate: 1_000)
+    let profileA = BlockedProfiles(name: "Local Newer")
+    let profileB = BlockedProfiles(name: "Remote Older")
+    context.insert(profileA)
+    context.insert(profileB)
+    let sessionA = BlockedProfileSession(tag: "local", blockedProfile: profileA, startTime: now)
+    context.insert(sessionA)
+    try context.save()
+    manager.activeSession = sessionA
+
+    manager.startRemoteSession(
+      context: context,
+      profileId: profileB.id,
+      sessionId: UUID(),
+      startTime: now.addingTimeInterval(-60))
+
+    XCTAssertEqual(manager.activeSession?.blockedProfile.id, profileA.id)
+    XCTAssertEqual(try activeSessions().map(\.blockedProfile.id), [profileA.id])
+    XCTAssertTrue(appBlocker.calls.isEmpty)
+  }
+
+  func testGivenLocalOlderSession_WhenRemoteNewerStart_ThenLocalEndedAndRemoteAdopted() throws {
+    let now = Date(timeIntervalSinceReferenceDate: 1_000)
+    let profileA = BlockedProfiles(name: "Local Older")
+    let profileB = BlockedProfiles(name: "Remote Newer")
+    context.insert(profileA)
+    context.insert(profileB)
+    let sessionA = BlockedProfileSession(
+      tag: "local", blockedProfile: profileA, startTime: now.addingTimeInterval(-60))
+    context.insert(sessionA)
+    try context.save()
+    manager.activeSession = sessionA
+
+    manager.startRemoteSession(
+      context: context,
+      profileId: profileB.id,
+      sessionId: UUID(),
+      startTime: now)
+
+    XCTAssertEqual(manager.activeSession?.blockedProfile.id, profileB.id)
+    XCTAssertEqual(try activeSessions().map(\.blockedProfile.id), [profileB.id])
+    XCTAssertNotNil(sessionA.endTime)
+    XCTAssertEqual(manager.sessionStopOutbox.pending, [profileA.id])
+    XCTAssertEqual(appBlocker.calls, [.activate(profileId: profileB.id)])
+  }
+
+  private func activeSessions() throws -> [BlockedProfileSession] {
+    try context.fetch(FetchDescriptor<BlockedProfileSession>()).filter { $0.endTime == nil }
   }
 }
