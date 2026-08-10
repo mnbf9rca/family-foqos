@@ -74,3 +74,9 @@ vendor/bundle/
 .worktrees/
 docs/plans/
 docs/codebase-analysis/
+
+/.direnv/
+
+# Agent Message Queue
+.agent-mail/
+.amqrc

@@ -1,0 +1,20 @@
+AllCops:
+  TargetRubyVersion: 4.0
+  NewCops: enable
+  Include:
+    - scripts/**/*.rb
+    - fastlane/*.rb
+    - fastlane/Fastfile
+  Exclude:
+    - vendor/**/*
+
+Metrics:
+  Enabled: false
+
+Style/Documentation:
+  Enabled: false
+
+# Executable Ruby harnesses follow the repository's existing test-script naming convention.
+Naming/FileName:
+  Exclude:
+    - scripts/test-*.rb
