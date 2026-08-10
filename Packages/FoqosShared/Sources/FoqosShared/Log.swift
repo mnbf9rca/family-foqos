@@ -263,7 +263,7 @@ public final class Log: @unchecked Sendable {  // SAFETY: entries/file I/O prote
     }
 
     // OSLog integration
-    os_log("%{public}@", log: osLog, type: entry.level.osLogType, entry.formattedString)
+    os_log("%{private}@", log: osLog, type: entry.level.osLogType, entry.formattedString)
 
     // File persistence
     if fileLoggingEnabled {

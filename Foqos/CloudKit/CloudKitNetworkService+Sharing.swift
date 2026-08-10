@@ -117,11 +117,8 @@ extension CloudKitNetworkService {
 
       let participants = share.participants.filter { $0.role != .owner }
       for participant in participants {
-        let name = participant.userIdentity.nameComponents?.formatted() ?? ""
-        let email = participant.userIdentity.lookupInfo?.emailAddress ?? ""
-        let displayInfo = !name.isEmpty ? name : (!email.isEmpty ? email : "Unknown")
         Log.debug(
-          "Participant '\(displayInfo)' status: \(participant.acceptanceStatus.rawValue)",
+          "Participant status: \(participant.acceptanceStatus.rawValue)",
           category: .cloudKit)
       }
 
@@ -258,7 +255,7 @@ extension CloudKitNetworkService {
         try await privateDatabase.deleteRecord(withID: recordID)
         familyMembers.removeAll { $0.id == member.id }
         Log.info(
-          "Removed FamilyMember who left share: \(member.displayName)", category: .cloudKit)
+          "Removed FamilyMember who left share: \(member.redactedLogLabel)", category: .cloudKit)
       } catch {
         Log.error("Failed to remove stale FamilyMember: \(error)", category: .cloudKit)
       }
