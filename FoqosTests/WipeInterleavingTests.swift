@@ -17,6 +17,7 @@ final class WipeInterleavingTests: XCTestCase {
   private var savedEnabled = false
   private var savedIsSyncReady = false
   private var savedController: (any SyncEngineControlling)?
+  private var restoreAttachedEngineState: (() -> Void)?
 
   private let deviceId = "device-A"
   private let zoneID = CKRecordZone.ID(
@@ -36,6 +37,7 @@ final class WipeInterleavingTests: XCTestCase {
     savedEnabled = manager.isEnabled
     savedIsSyncReady = manager.isSyncReady
     savedController = manager.engineController
+    restoreAttachedEngineState = manager.makeAttachedEngineStateRestorerForTest()
     manager.engineController = nil
     manager.isSyncReady = false
     manager.isEnabled = false
@@ -49,10 +51,11 @@ final class WipeInterleavingTests: XCTestCase {
   }
 
   override func tearDown() async throws {
+    manager.clearAccountChangeStateForTest()
+    restoreAttachedEngineState?()
     manager.engineController = savedController
     manager.isSyncReady = savedIsSyncReady
     manager.isEnabled = savedEnabled
-    manager.clearAccountChangeStateForTest()
     UserDefaults().removePersistentDomain(forName: suiteName)
     try await super.tearDown()
   }

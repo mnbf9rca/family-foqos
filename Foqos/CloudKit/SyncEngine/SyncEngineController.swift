@@ -251,7 +251,9 @@ final class SyncEngineController: SyncEngineDriverDelegate {
     resetEstablishmentSaveDidFail = { [weak self] _, error in
       guard let self, let reset = self.reset else { return }
       if error.code == .serverRecordChanged, let server = error.serverRecord {
-        reset.handleEstablishmentSaveResult(.serverRecordChanged(server))
+        if let winningRecord = reset.handleEstablishmentSaveResult(.serverRecordChanged(server)) {
+          self.onFetchedEstablishment?(winningRecord)
+        }
       }
     }
     onResumeReset = { [weak self] _ in Task { await self?.reset?.resume() } }
@@ -1553,4 +1555,8 @@ extension Notification.Name {
   /// Posted once when T6 discovers the DeviceSync zone was permanently purged (Phase F
   /// wires the one-time user-facing notice).
   static let syncEnginePurged = Notification.Name("family_foqos_sync_engine_purged")
+
+  /// Posted after a higher establishment generation has been fully adopted and reattached.
+  static let syncEstablishmentGenerationAdopted = Notification.Name(
+    "family_foqos_sync_establishment_generation_adopted")
 }

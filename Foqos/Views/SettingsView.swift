@@ -5,6 +5,12 @@ import SwiftUI
 let amznStoreLink = "https://amzn.to/4fbMuTM"
 
 struct SettingsView: View {
+  enum WipeConfirmationAction: Equatable {
+    case blocked
+    case requestLockVerification
+    case confirm
+  }
+
   @Environment(\.dismiss) private var dismiss
   @Environment(\.modelContext) private var context
   @EnvironmentObject var themeManager: ThemeManager
@@ -36,6 +42,14 @@ struct SettingsView: View {
 
   nonisolated static func wipeIsAllowed(mode: AppMode, canVerifyCode: Bool) -> Bool {
     mode == .child ? canVerifyCode : true
+  }
+
+  nonisolated static func wipeConfirmationAction(
+    isAllowed: Bool,
+    requiresLockVerification: Bool
+  ) -> WipeConfirmationAction {
+    guard isAllowed else { return .blocked }
+    return requiresLockVerification ? .requestLockVerification : .confirm
   }
 
   private var isWipeAllowed: Bool {
@@ -513,6 +527,7 @@ struct SettingsView: View {
       }
       .fullScreenCover(isPresented: $showWipeSyncConfirmation) {
         WipeSyncConfirmationView(
+          isAllowed: isWipeAllowed,
           requiresLockVerification: Self.wipeRequiresLockVerification(
             mode: appModeManager.currentMode,
             canVerifyCode: lockCodeManager.canVerifyCode
@@ -545,6 +560,7 @@ struct SettingsView: View {
 }
 
 private struct WipeSyncConfirmationView: View {
+  let isAllowed: Bool
   let requiresLockVerification: Bool
   let onCancel: () -> Void
   let onConfirm: () -> Void
@@ -578,9 +594,15 @@ private struct WipeSyncConfirmationView: View {
 
         VStack(spacing: 12) {
           Button(role: .destructive) {
-            if requiresLockVerification {
+            switch SettingsView.wipeConfirmationAction(
+              isAllowed: isAllowed,
+              requiresLockVerification: requiresLockVerification)
+            {
+            case .blocked:
+              break
+            case .requestLockVerification:
               showLockCodeEntry = true
-            } else {
+            case .confirm:
               onConfirm()
             }
           } label: {
@@ -591,6 +613,7 @@ private struct WipeSyncConfirmationView: View {
           }
           .buttonStyle(.borderedProminent)
           .tint(.red)
+          .disabled(!isAllowed)
 
           Button("Cancel", role: .cancel) {
             onCancel()
@@ -614,12 +637,15 @@ private struct WipeSyncConfirmationView: View {
         LockCodeEntrySheet(
           onSuccess: {
             showLockCodeEntry = false
-            onConfirm()
+            if isAllowed { onConfirm() }
           },
           onCancel: {
             showLockCodeEntry = false
           }
         )
+      }
+      .onChange(of: isAllowed) { _, allowed in
+        if !allowed { showLockCodeEntry = false }
       }
     }
   }

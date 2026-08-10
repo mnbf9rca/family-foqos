@@ -273,6 +273,50 @@ final class ProfileSyncAccountResolverTests: XCTestCase {
       "adoption must dequeue the losing wipe's pending zone delete before reattachment")
   }
 
+  func testEstablishmentSaveConflictAdoptsThroughReattachAndRejectsStaleStateUpdates() async throws {
+    try await makeAttachedManager(namespace: "userA", isEnabled: true, engineState: .steady)
+    let store = SyncEngineStore(userRecordName: "userA")
+    store.establishmentGeneration = 2
+    store.engineState = Data([0x01])
+    store.resetIntent = ResetIntent(
+      id: UUID(), clear: false, wipe: true, stage: .wiping, priorCommandId: nil)
+    seedLocalProfiles(count: 1)
+    let oldController = try XCTUnwrap(manager.engineController as? SyncEngineController)
+    let zoneID = CKRecordZone.ID(
+      zoneName: CloudKitConstants.syncZoneName, ownerName: CKCurrentUserDefaultName)
+    let now = Date()
+    let sent = SyncedEstablishment(generation: 2, establishedAt: now).toCKRecord(in: zoneID)
+    let server = SyncedEstablishment(generation: 3, establishedAt: now).toCKRecord(in: zoneID)
+    let error = CKError(
+      _nsError: NSError(
+        domain: CKErrorDomain,
+        code: CKError.serverRecordChanged.rawValue,
+        userInfo: [CKRecordChangedErrorServerRecordKey: server]))
+    let adoptionFinished = expectation(description: "establishment conflict adoption finished")
+    let observer = NotificationCenter.default.addObserver(
+      forName: .syncEstablishmentGenerationAdopted,
+      object: nil,
+      queue: nil
+    ) { _ in
+      adoptionFinished.fulfill()
+    }
+    defer { NotificationCenter.default.removeObserver(observer) }
+
+    oldController.handle(
+      .sentRecordZoneChanges(
+        savedRecords: [], failedRecordSaves: [(record: sent, error: error)],
+        deletedRecordIDs: [], failedRecordDeletes: []))
+    oldController.handle(.stateUpdate(serialization: Data([0x09])))
+    await fulfillment(of: [adoptionFinished], timeout: 1)
+    oldController.handle(.stateUpdate(serialization: Data([0x0A])))
+
+    XCTAssertEqual(store.establishmentGeneration, 3)
+    XCTAssertNil(store.engineState)
+    XCTAssertNil(store.resetIntent)
+    XCTAssertFalse(manager.engineController === oldController)
+    XCTAssertEqual(try container.mainContext.fetch(FetchDescriptor<BlockedProfiles>()).count, 0)
+  }
+
   func testSW6GenerationZeroDeviceAdoptsAndDiscardsLocalProfiles() async throws {
     try await makeAttachedManager(namespace: "userA", isEnabled: true, engineState: .steady)
     let store = SyncEngineStore(userRecordName: "userA")
@@ -326,7 +370,7 @@ final class ProfileSyncAccountResolverTests: XCTestCase {
     let noticePosted = expectation(description: "one coalesced establishment adoption notice")
     noticePosted.assertForOverFulfill = true
     let observer = NotificationCenter.default.addObserver(
-      forName: .syncEnginePurged,
+      forName: .syncEstablishmentGenerationAdopted,
       object: nil,
       queue: nil
     ) { _ in

@@ -1506,6 +1506,29 @@ class StrategyManager: ObservableObject {
 
     Log.info("Resetting blocking state...", category: .strategy)
 
+    clearBlockingArtifacts(context: context)
+
+    Log.info("Blocking state reset complete", category: .strategy)
+  }
+
+  func forceClearEnforcementForSyncedDataWipe(context: ModelContext) {
+    Log.info("Force-clearing blocking state for synced-data wipe...", category: .strategy)
+
+    stopTimer()
+    activeSession = nil
+    elapsedTime = 0
+    showCustomStrategyView = false
+    customStrategyView = nil
+    remotelyActiveProfileIds.removeAll()
+    RemotelyActiveStore.save(remotelyActiveProfileIds, defaults: remoteActiveDefaults)
+    timersUtil.cancelAll()
+
+    clearBlockingArtifacts(context: context)
+
+    Log.info("Blocking state force-cleared for synced-data wipe", category: .strategy)
+  }
+
+  private func clearBlockingArtifacts(context: ModelContext) {
     // Clean up ghost schedules
     cleanUpGhostSchedules(context: context)
 
@@ -1520,8 +1543,6 @@ class StrategyManager: ObservableObject {
 
     // Remove all strategy timer activities
     DeviceActivityCenterUtil.removeAllStrategyTimerActivities()
-
-    Log.info("Blocking state reset complete", category: .strategy)
   }
 
   // MARK: - Remote Session Sync

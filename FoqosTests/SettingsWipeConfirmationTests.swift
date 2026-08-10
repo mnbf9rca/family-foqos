@@ -17,6 +17,18 @@ final class SettingsWipeConfirmationTests: XCTestCase {
     XCTAssertTrue(SettingsView.wipeIsAllowed(mode: .individual, canVerifyCode: false))
   }
 
+  func testWipeConfirmationRechecksAvailabilityBeforeChoosingItsAction() {
+    XCTAssertEqual(
+      SettingsView.wipeConfirmationAction(isAllowed: false, requiresLockVerification: false),
+      .blocked)
+    XCTAssertEqual(
+      SettingsView.wipeConfirmationAction(isAllowed: true, requiresLockVerification: true),
+      .requestLockVerification)
+    XCTAssertEqual(
+      SettingsView.wipeConfirmationAction(isAllowed: true, requiresLockVerification: false),
+      .confirm)
+  }
+
   func testWipeConfirmationAlwaysStatesV1Caveat() {
     XCTAssertTrue(SettingsView.wipeConfirmationMessage.contains("old app version"))
     XCTAssertTrue(SettingsView.wipeConfirmationMessage.contains("can't interoperate with the new sync"))

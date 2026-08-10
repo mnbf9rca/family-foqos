@@ -251,7 +251,7 @@ final class SyncEngineResetTests: XCTestCase {
     XCTAssertNil(store.resetIntent)
   }
 
-  func testGivenWipeSaveLosesToHigherGeneration_WhenHandlingConflict_ThenForcesTokenlessRefetch() {
+  func testGivenWipeSaveLosesToHigherGeneration_WhenHandlingConflict_ThenReturnsWinnerForAdoption() {
     let now = Date()
     let outbox = MockResetOutbox()
     let controller = makeController(outbox: outbox, seeder: MockResetSeeder())
@@ -260,12 +260,16 @@ final class SyncEngineResetTests: XCTestCase {
     store.resetIntent = ResetIntent(
       id: UUID(), clear: false, wipe: true, stage: .wiping, priorCommandId: nil)
 
-    controller.handleEstablishmentSaveResult(
+    let winningRecord = controller.handleEstablishmentSaveResult(
       .serverRecordChanged(establishmentRecord(generation: 3, now: now)))
 
-    XCTAssertEqual(store.establishmentGeneration, 3)
-    XCTAssertNil(store.engineState, "the winning generation must be fetched again from no token")
+    XCTAssertEqual(store.establishmentGeneration, 2, "the adoption path owns generation advancement")
+    XCTAssertEqual(store.engineState, Data([0x01]), "the live reset machine must not fake a restart")
     XCTAssertNil(store.resetIntent)
+    XCTAssertEqual(
+      winningRecord?[SyncedEstablishment.FieldKey.generation.rawValue] as? Int,
+      3,
+      "the controller must route the winning record through full generation adoption")
   }
 
   func testGivenNonDeletingStage_WhenZoneDeleteConfirmedWithNilIntent_ThenNoOp() async {
@@ -613,6 +617,55 @@ final class SyncEngineResetTests: XCTestCase {
       store.establishmentGeneration, 1,
       "normal fetched-record adoption must perform the discard before advancing generation")
     XCTAssertEqual(outbox.zoneDeleteCount, 0, "the losing wipe must not delete the peer's new zone")
+  }
+
+  func testGivenDeletingWipeCancelledDuringGateFetch_WhenFetchReturns_ThenZoneDeleteIsNotReenqueued()
+    async
+  {
+    let now = Date()
+    let outbox = MockResetOutbox()
+    let fetcher = MockRecordFetcher()
+    fetcher.result = .success(establishmentRecord(generation: 1, now: now))
+    let controller = makeController(
+      outbox: outbox, seeder: MockResetSeeder(), fetcher: fetcher)
+    let intent = ResetIntent(
+      id: UUID(), clear: false, wipe: true, stage: .deleting, priorCommandId: nil)
+    store.establishmentGeneration = 1
+    store.resetIntent = intent
+    fetcher.onFetch = {
+      controller.cancelDeletingWipeForEstablishmentAdoption()
+    }
+
+    await controller.resume()
+
+    XCTAssertNil(store.resetIntent)
+    XCTAssertEqual(outbox.clearPendingCount, 0)
+    XCTAssertEqual(outbox.zoneDeleteCount, 0)
+    XCTAssertEqual(outbox.sendCount, 0)
+  }
+
+  func testGivenDeletingResetClearedDuringGateFetch_WhenFetchReturns_ThenZoneDeleteIsNotReenqueued()
+    async
+  {
+    let now = Date()
+    let outbox = MockResetOutbox()
+    let fetcher = MockRecordFetcher()
+    let priorCommandId = UUID()
+    fetcher.result = .success(
+      commandRecord(id: priorCommandId, clear: false, origin: "device-B", now: now))
+    let controller = makeController(
+      outbox: outbox, seeder: MockResetSeeder(), fetcher: fetcher)
+    store.resetIntent = ResetIntent(
+      id: UUID(), clear: false, stage: .deleting, priorCommandId: priorCommandId)
+    fetcher.onFetch = {
+      self.store.resetIntent = nil
+    }
+
+    await controller.resume()
+
+    XCTAssertEqual(outbox.clearPendingCount, 0)
+    XCTAssertEqual(outbox.zoneDeleteCount, 0)
+    XCTAssertEqual(outbox.sendCount, 0)
   }
 
   func testGivenDeletingWipeResume_WhenGateDoesNotFindHigherGeneration_ThenAllRetryArmsAreCovered()

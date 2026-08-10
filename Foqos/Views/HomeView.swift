@@ -5,6 +5,8 @@ import SwiftUI
 struct HomeView: View {
   nonisolated static let syncedDataResetNoticeMessage =
     "Synced data was reset from another device."
+  nonisolated static let syncEnginePurgedNoticeMessage =
+    "Device Sync was disabled because its iCloud data is no longer available."
 
   @Environment(\.modelContext) private var context
   @Environment(\.openURL) var openURL
@@ -308,8 +310,11 @@ struct HomeView: View {
         geofenceEvaluator.errorMessage = nil
       }
     }
-    .onReceive(NotificationCenter.default.publisher(for: .syncEnginePurged)) { _ in
+    .onReceive(NotificationCenter.default.publisher(for: .syncEstablishmentGenerationAdopted)) { _ in
       showNoticeAlert(title: "Sync Reset", message: Self.syncedDataResetNoticeMessage)
+    }
+    .onReceive(NotificationCenter.default.publisher(for: .syncEnginePurged)) { _ in
+      showNoticeAlert(title: "Device Sync Disabled", message: Self.syncEnginePurgedNoticeMessage)
     }
     .onAppear {
       onAppearApp()

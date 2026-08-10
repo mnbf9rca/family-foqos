@@ -254,17 +254,19 @@ final class ResetController {
     }
   }
 
-  func handleEstablishmentSaveResult(_ outcome: EstablishmentSaveOutcome) {
-    guard let intent = store.resetIntent, intent.stage == .wiping else { return }
+  @discardableResult
+  func handleEstablishmentSaveResult(_ outcome: EstablishmentSaveOutcome) -> CKRecord? {
+    guard let intent = store.resetIntent, intent.stage == .wiping else { return nil }
     switch outcome {
     case .saved:
       store.resetIntent = nil
+      return nil
     case .serverRecordChanged(let serverRecord):
       let serverGeneration =
         serverRecord[SyncedEstablishment.FieldKey.generation.rawValue] as? Int ?? 0
-      store.establishmentGeneration = max(store.establishmentGeneration, serverGeneration)
-      store.engineState = nil
       store.resetIntent = nil
+      guard serverGeneration > store.establishmentGeneration else { return nil }
+      return serverRecord
     }
   }
 
@@ -329,6 +331,7 @@ final class ResetController {
     }
     do {
       let record = try await fetcher.fetchRecord(commandRecordID)
+      guard isCurrentDeletingIntent(intent) else { return }
       guard let record else {
         reenqueueDeleting()  // no command (any snapshot) ⇒ resume
         return
@@ -345,6 +348,7 @@ final class ResetController {
         abandon(intent)  // foreign, different from both ⇒ superseded ⇒ abandon + surface
       }
     } catch let error as CKError where error.code == .zoneNotFound {
+      guard isCurrentDeletingIntent(intent) else { return }
       reenqueueDeleting()  // zone died / was T5-reseeded ⇒ resume (zone-CAS + N1)
     } catch {
       // Transient fetch error ⇒ keep the intent; retry at next start / §5.6 cadence.
@@ -354,6 +358,7 @@ final class ResetController {
   private func runWipeDeletingGate(_ intent: ResetIntent) async {
     do {
       let record = try await fetcher.fetchRecord(establishmentRecordID)
+      guard isCurrentDeletingIntent(intent) else { return }
       guard let record else {
         reenqueueDeleting()
         return
@@ -368,11 +373,16 @@ final class ResetController {
         reenqueueDeleting()
       }
     } catch let error as CKError where error.code == .zoneNotFound {
+      guard isCurrentDeletingIntent(intent) else { return }
       reenqueueDeleting()
     } catch {
       // Transient fetch error ⇒ keep the intent; retry later.
       _ = intent
     }
+  }
+
+  private func isCurrentDeletingIntent(_ intent: ResetIntent) -> Bool {
+    store.resetIntent?.id == intent.id && store.resetIntent?.stage == .deleting
   }
 
   private func reenqueueDeleting() {

@@ -521,7 +521,7 @@ class ProfileSyncManager: ObservableObject {
       StrategyManager.shared.stopRemoteSession(context: context, profileId: profileId)
     },
     clearResidualEnforcement: (ModelContext) -> Void = { context in
-      StrategyManager.shared.resetBlockingState(context: context)
+      StrategyManager.shared.forceClearEnforcementForSyncedDataWipe(context: context)
     },
     endLiveActivity: () -> Void = {
       LiveActivityManager.shared.endSessionActivity()
@@ -606,7 +606,7 @@ class ProfileSyncManager: ObservableObject {
       #if DEBUG
         establishmentAdoptionNoticeCountForTest += 1
       #endif
-      NotificationCenter.default.post(name: .syncEnginePurged, object: nil)
+      NotificationCenter.default.post(name: .syncEstablishmentGenerationAdopted, object: nil)
     }
   }
 
@@ -724,6 +724,21 @@ class ProfileSyncManager: ObservableObject {
       accountResolutionRetryDelayNanosecondsForTest = nil
       failNextSwitchWipeFinalSaveForTest = false
       failNextGenerationWipeFinalSaveForTest = false
+    }
+
+    func makeAttachedEngineStateRestorerForTest() -> () -> Void {
+      let userRecordName = attachedUserRecordName
+      let modelContext = attachedModelContext
+      let emergencyManager = attachedEmergencyManager
+      let driverFactory = attachedDriverFactory
+      let storeDefaults = attachedStoreDefaults
+      return { [weak self] in
+        self?.attachedUserRecordName = userRecordName
+        self?.attachedModelContext = modelContext
+        self?.attachedEmergencyManager = emergencyManager
+        self?.attachedDriverFactory = driverFactory
+        self?.attachedStoreDefaults = storeDefaults
+      }
     }
 
     func wipeAndReattachForTest(cleanup: BlockedProfiles.DeleteCleanup, newName: String) async throws {

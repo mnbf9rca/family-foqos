@@ -53,10 +53,12 @@ final class MockRecordFetcher: RecordFetching {
   var result: Result<CKRecord?, Error> = .success(nil)
   var fetchCount = 0
   var lastRecordID: CKRecord.ID?
+  var onFetch: (() -> Void)?
 
   func fetchRecord(_ recordID: CKRecord.ID) async throws -> CKRecord? {
     fetchCount += 1
     lastRecordID = recordID
+    onFetch?()
     switch result {
     case .success(let record): return record
     case .failure(let error): throw error
