@@ -73,6 +73,7 @@ final class SyncEngineController: SyncEngineDriverDelegate {
 
   #if DEBUG
     private var queueDrainDelayOverrideNanos: UInt64?
+    var beforeDeleteIntentRecoveryForTest: (() async -> Void)?
     func setQueueDrainDelayForTest(_ nanos: UInt64) {
       queueDrainDelayOverrideNanos = nanos
     }
@@ -456,6 +457,8 @@ final class SyncEngineController: SyncEngineDriverDelegate {
         seedZoneAndRecords()  // intent-first (I11)
         flushTask = Task { [weak self] in await self?.sessionSync.flushSessionCache() }
       case .purged:  // T6
+        namespaceGeneration += 1
+        startupTask?.cancel()
         store.purgeAllSystemFields()
         store.transaction { s in
           s.engineState = nil
@@ -1078,6 +1081,10 @@ final class SyncEngineController: SyncEngineDriverDelegate {
   /// `changeTag` (not `record.recordChangeTag`) so the matching-tag ⇒ delete arm is
   /// deterministically testable.
   private func recoverDeleteIntents(generation: Int) async {
+    #if DEBUG
+      await beforeDeleteIntentRecoveryForTest?()
+    #endif
+    guard generation == namespaceGeneration, driver != nil else { return }
     let pending = pendingDeleteNames()
     for (name, tag) in store.deleteTombstones where !pending.contains(name) {
       guard generation == namespaceGeneration else { return }
