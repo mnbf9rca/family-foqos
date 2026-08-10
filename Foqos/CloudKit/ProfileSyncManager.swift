@@ -477,6 +477,7 @@ class ProfileSyncManager: ObservableObject {
   func resolveConflictCombine() async {
     guard let conflict = accountChangeConflict else { return }
     cancelAccountResolutionRetry()
+    StrategyManager.shared.clearAllRemoteSessionActive()
     await reattachEngine(userRecordName: conflict.newUserRecordName, forceSeed: true)
     clearPause()
   }
@@ -495,6 +496,7 @@ class ProfileSyncManager: ObservableObject {
     guard let context = attachedModelContext else { throw SyncError.syncDisabled }
 
     let profiles = try context.fetch(FetchDescriptor<BlockedProfiles>())
+    StrategyManager.shared.forceClearEnforcementForSyncedDataWipe(context: context)
     for profile in profiles {
       try BlockedProfiles.deleteProfile(profile, in: context, cleanup: cleanup)
     }

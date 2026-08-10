@@ -83,6 +83,13 @@ class StrategyManager: ObservableObject {
     RemotelyActiveStore.save(remotelyActiveProfileIds, defaults: remoteActiveDefaults)
   }
 
+  func clearAllRemoteSessionActive() {
+    // Event-scoped to account transitions and synced-data wipes. Do not clear on relaunch:
+    // remote-active locks must survive until sync provides a newer session state.
+    remotelyActiveProfileIds = []
+    RemotelyActiveStore.clear(defaults: remoteActiveDefaults)
+  }
+
   var isBreakActive: Bool {
     return activeSession?.isBreakActive == true
   }
@@ -1519,8 +1526,7 @@ class StrategyManager: ObservableObject {
     elapsedTime = 0
     showCustomStrategyView = false
     customStrategyView = nil
-    remotelyActiveProfileIds.removeAll()
-    RemotelyActiveStore.save(remotelyActiveProfileIds, defaults: remoteActiveDefaults)
+    clearAllRemoteSessionActive()
     timersUtil.cancelAll()
 
     clearBlockingArtifacts(context: context)

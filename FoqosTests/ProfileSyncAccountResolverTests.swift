@@ -16,6 +16,7 @@ final class ProfileSyncAccountResolverTests: XCTestCase {
   var savedIsSyncReady = false
   var savedController: (any SyncEngineControlling)?
   var savedBufferDefaults: UserDefaults!
+  var savedRemoteActiveProfileIds: Set<UUID>!
   var emergencyManager: EmergencyUnblockManager!
   let recA = CKRecord.ID(recordName: "userA")
   let recB = CKRecord.ID(recordName: "userB")
@@ -33,6 +34,10 @@ final class ProfileSyncAccountResolverTests: XCTestCase {
     savedIsSyncReady = manager.isSyncReady
     savedController = manager.engineController
     savedBufferDefaults = manager.bufferDefaults
+    savedRemoteActiveProfileIds = StrategyManager.shared.remotelyActiveProfileIds
+    for profileId in savedRemoteActiveProfileIds {
+      StrategyManager.shared.setRemoteSessionActive(false, profileId: profileId)
+    }
     manager.bufferDefaults = bufferDefaults
     emergencyManager = EmergencyUnblockManager(defaults: defaults)
     manager.engineController = nil
@@ -47,6 +52,12 @@ final class ProfileSyncAccountResolverTests: XCTestCase {
     manager.isEnabled = savedEnabled
     manager.bufferDefaults = savedBufferDefaults
     manager.clearAccountChangeStateForTest()
+    for profileId in StrategyManager.shared.remotelyActiveProfileIds {
+      StrategyManager.shared.setRemoteSessionActive(false, profileId: profileId)
+    }
+    for profileId in savedRemoteActiveProfileIds {
+      StrategyManager.shared.setRemoteSessionActive(true, profileId: profileId)
+    }
     UserDefaults().removePersistentDomain(forName: bufferSuiteName)
     UserDefaults().removePersistentDomain(forName: suiteName)
     try await super.tearDown()
@@ -150,6 +161,17 @@ final class ProfileSyncAccountResolverTests: XCTestCase {
     XCTAssertNil(manager.accountChangeConflict)
   }
 
+  func testGivenRemoteActiveId_WhenCombine_ThenRemoteActiveSetCleared() async throws {
+    try await makeAttachedManager(namespace: "userA", isEnabled: true, engineState: .steady)
+    manager.resolveAccountChange(availability: .available(recB), newName: "userB")
+    let keptProfile = seedLocalProfiles(count: 1).first!
+    StrategyManager.shared.setRemoteSessionActive(true, profileId: keptProfile.id)
+
+    await manager.resolveConflictCombine()
+
+    XCTAssertTrue(StrategyManager.shared.remotelyActiveProfileIds.isEmpty)
+  }
+
   func testSwitchWipesLocalAndEmergencyThenReattaches() async throws {
     try await makeAttachedManager(namespace: "userA", isEnabled: true, engineState: .steady)
     manager.resolveAccountChange(availability: .available(recB), newName: "userB")
@@ -168,6 +190,17 @@ final class ProfileSyncAccountResolverTests: XCTestCase {
     XCTAssertEqual(try container.mainContext.fetch(FetchDescriptor<SavedLocation>()).count, 0)
     XCTAssertEqual(emergencyManager.getRemainingEmergencyUnblocks(), 3)
     XCTAssertNil(manager.accountChangeConflict)
+  }
+
+  func testGivenRemoteActiveId_WhenSwitch_ThenRemoteActiveSetCleared() async throws {
+    try await makeAttachedManager(namespace: "userA", isEnabled: true, engineState: .steady)
+    manager.resolveAccountChange(availability: .available(recB), newName: "userB")
+    let wipedProfile = seedLocalProfiles(count: 1).first!
+    StrategyManager.shared.setRemoteSessionActive(true, profileId: wipedProfile.id)
+
+    await manager.resolveConflictSwitchToCloud()
+
+    XCTAssertTrue(StrategyManager.shared.remotelyActiveProfileIds.isEmpty)
   }
 
   func testSwitchWipeFailureKeepsConflictWithoutReattachOrEmergencyReset() async throws {
@@ -412,6 +445,16 @@ final class ProfileSyncAccountResolverTests: XCTestCase {
 
     XCTAssertEqual(events, ["stop", "restrictions", "live-activity", "delete"])
     XCTAssertEqual(try container.mainContext.fetch(FetchDescriptor<BlockedProfiles>()).count, 0)
+  }
+
+  func testGivenRemoteActiveId_WhenGenerationWipe_ThenRemoteActiveSetCleared() async throws {
+    try await makeAttachedManager(namespace: "userA", isEnabled: true, engineState: .steady)
+    let wipedProfile = seedLocalProfiles(count: 1).first!
+    StrategyManager.shared.setRemoteSessionActive(true, profileId: wipedProfile.id)
+
+    try manager.wipeLocalSyncedEntitiesForGeneration()
+
+    XCTAssertTrue(StrategyManager.shared.remotelyActiveProfileIds.isEmpty)
   }
 
   func testOriginWipeFailureAfterEntityDeleteDoesNotAdvanceGeneration() async throws {

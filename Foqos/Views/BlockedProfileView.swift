@@ -826,6 +826,7 @@ struct BlockedProfileView: View {
                       // delete would never propagate to other devices.
                       do {
                         try profileSyncManager.enqueueProfileDelete(profileId)
+                        strategyManager.setRemoteSessionActive(false, profileId: profileId)
                       } catch SyncEngineControllingError.notAttached {
                         // Engine isn't attached yet — the funnel can't own this delete, so
                         // delete locally now instead of silently leaving the profile behind
@@ -834,6 +835,7 @@ struct BlockedProfileView: View {
                         BlockedProfiles.scheduleProfileDeleteCommit {
                           do {
                             try modelContext.save()
+                            strategyManager.setRemoteSessionActive(false, profileId: profileId)
                           } catch {
                             showError(message: error.localizedDescription)
                           }
@@ -849,6 +851,7 @@ struct BlockedProfileView: View {
                           try modelContext.save()
                           profileSyncManager.recordDisabledDeleteTombstone(
                             recordName: deletedRecordName)
+                          strategyManager.setRemoteSessionActive(false, profileId: profileId)
                         } catch {
                           showError(message: error.localizedDescription)
                         }

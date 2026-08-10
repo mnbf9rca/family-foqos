@@ -199,6 +199,7 @@ struct BlockedProfileListView: View {
     // Delete the profiles and reorder
     do {
       var disabledDeletedRecordNames: [String] = []
+      var deletedProfileIds: [UUID] = []
       for index in offsets {
         let profile = profilesToDelete[index]
         let profileId = profile.id
@@ -227,6 +228,7 @@ struct BlockedProfileListView: View {
           try BlockedProfiles.deleteProfile(profile, in: context)
           disabledDeletedRecordNames.append(profileId.uuidString)
         }
+        deletedProfileIds.append(profileId)
       }
 
       BlockedProfiles.scheduleProfileDeleteCommit {
@@ -238,6 +240,9 @@ struct BlockedProfileListView: View {
           // delete cannot leave a tombstone that could later kill a live record.
           for recordName in disabledDeletedRecordNames {
             profileSyncManager.recordDisabledDeleteTombstone(recordName: recordName)
+          }
+          for profileId in deletedProfileIds {
+            strategyManager.setRemoteSessionActive(false, profileId: profileId)
           }
           // The `order` field is synced state — bump syncVersion + enqueue a save for each
           // surviving profile so the gap-fix reaches other devices (I2).

@@ -12,4 +12,8 @@ enum RemotelyActiveStore {
   static func save(_ ids: Set<UUID>, defaults: UserDefaults = .standard) {
     defaults.set(ids.map(\.uuidString), forKey: defaultsKey)
   }
+
+  static func clear(defaults: UserDefaults = .standard) {
+    save([], defaults: defaults)
+  }
 }
