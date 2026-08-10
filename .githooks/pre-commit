@@ -19,6 +19,40 @@ if ! scripts/check-c2-guards.sh; then
   exit 1
 fi
 
+# --- Lint staged shell files ---
+STAGED_SHELL=$(git diff --cached --name-only --diff-filter=ACMR -- '*.sh')
+if [ -n "$STAGED_SHELL" ]; then
+  if ! command -v shellcheck >/dev/null 2>&1; then
+    echo "WARNING: shellcheck is unavailable; run: brew install shellcheck. Skipping staged shell lint."
+  else
+    while IFS= read -r file; do
+      if ! shellcheck "$file"; then
+        echo "ERROR: shellcheck failed on $file"
+        exit 1
+      fi
+    done <<EOF
+$STAGED_SHELL
+EOF
+  fi
+fi
+
+# --- Lint staged Ruby files ---
+STAGED_RUBY=$(git diff --cached --name-only --diff-filter=ACMR -- '*.rb' 'fastlane/Fastfile')
+if [ -n "$STAGED_RUBY" ]; then
+  if ! command -v bundle >/dev/null 2>&1 || ! bundle exec rubocop --version >/dev/null 2>&1; then
+    echo "WARNING: RuboCop is unavailable; run: bundle install. Skipping staged Ruby lint."
+  else
+    while IFS= read -r file; do
+      if ! bundle exec rubocop "$file"; then
+        echo "ERROR: RuboCop failed on $file"
+        exit 1
+      fi
+    done <<EOF
+$STAGED_RUBY
+EOF
+  fi
+fi
+
 # --- Auto-format staged Swift files ---
 STAGED_SWIFT=$(git diff --cached --name-only --diff-filter=ACMR -- '*.swift')
 if [ -n "$STAGED_SWIFT" ]; then

@@ -18,7 +18,14 @@ struct FamilyActivityUtil {
     // This count shows categories + apps + domains as displayed
     // IMPORTANT: In Allow mode, Apple enforces the 50 limit AFTER expanding categories to individual apps
     // In Block mode, categories count as 1 regardless of how many apps they contain
-    return selection.categories.count + selection.applications.count + selection.webDomains.count
+    let realCount =
+      selection.categories.count + selection.applications.count + selection.webDomains.count
+    #if DEBUG
+      // Screenshot demo: tokens can't exist on a simulator, so empty selections
+      // present a plausible count. Real selections keep their true count.
+      if ScreenshotDemoMode.isActive && realCount == 0 { return 6 }
+    #endif
+    return realCount
   }
 
   /// Gets display text for the count with appropriate warnings for allow mode

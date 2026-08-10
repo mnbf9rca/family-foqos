@@ -221,6 +221,9 @@ class BlockedProfiles {
   }
 
   var scheduleIsOutOfSync: Bool {
+    #if DEBUG
+      if ScreenshotDemoMode.isActive { return false }
+    #endif
     let hasStartSchedule =
       (schedule?.isActive == true)
       || (startTriggers.schedule && startSchedule?.isActive == true)

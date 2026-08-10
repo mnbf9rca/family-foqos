@@ -1,0 +1,282 @@
+# frozen_string_literal: true
+
+require 'fileutils'
+require 'json'
+require 'shellwords'
+require File.expand_path('archive_storage', __dir__)
+require File.expand_path('asc_credentials', __dir__)
+
+# Runs under Homebrew Ruby via Bundler: export PATH="$(brew --prefix ruby)/bin:$PATH" && bundle exec fastlane <lane>
+default_platform(:ios)
+
+XCODEPROJ = 'FamilyFoqos.xcodeproj'
+SCHEME = 'FamilyFoqos'
+ARCHIVE_DIR = File.expand_path('~/Archives/family-foqos')
+REPO_ROOT = File.expand_path('..', __dir__)
+RELEASE_BLOCKING_LABEL = 'release-blocking'
+XCTEST_DEVICES_DIR = File.expand_path('~/Library/Developer/XCTestDevices')
+SNAPSHOT_DEVICE_NAME = 'iPhone 17 Pro Max'
+
+platform :ios do
+  private_lane :preflight do
+    ensure_git_status_clean
+    ensure_git_branch(branch: 'main')
+  end
+
+  private_lane :asc_api_key do
+    app_store_connect_api_key(
+      key_id: ENV.fetch('ASC_KEY_ID'),
+      issuer_id: ENV.fetch('ASC_ISSUER_ID'),
+      key_content: ASCCredentials.decode_private_key(ENV.fetch('ASC_KEY_CONTENT_BASE64'))
+    )
+  end
+
+  private_lane :build_app_store_archive do |options|
+    api_key = options.fetch(:api_key)
+    build = options.fetch(:build)
+    ASCCredentials.with_private_key_tempfile(api_key.fetch(:key)) do |key_path|
+      gym(
+        project: XCODEPROJ,
+        scheme: SCHEME,
+        configuration: 'Release',
+        export_method: 'app-store',
+        xcargs: "CURRENT_PROJECT_VERSION=#{build} -allowProvisioningUpdates " \
+                "-authenticationKeyPath #{Shellwords.escape(key_path)} " \
+                "-authenticationKeyID #{api_key.fetch(:key_id)} " \
+                "-authenticationKeyIssuerID #{api_key.fetch(:issuer_id)}"
+      )
+    end
+  end
+
+  private_lane :assert_no_release_blockers do
+    # Fail closed: if gh errors (network, auth), sh raises and the lane aborts.
+    labels_out = sh('gh label list --json name --limit 1000', log: false)
+    labels = JSON.parse(labels_out)
+    unless labels.any? { |label| label['name'] == RELEASE_BLOCKING_LABEL }
+      UI.user_error!("Required GitHub label is missing: #{RELEASE_BLOCKING_LABEL}")
+    end
+
+    out = sh(
+      "gh issue list --state open --label #{RELEASE_BLOCKING_LABEL} --json number,title",
+      log: false
+    )
+    issues = JSON.parse(out)
+    unless issues.empty?
+      list = issues.map { |i| "##{i['number']} #{i['title']}" }.join("\n  ")
+      UI.user_error!("Release blocked by open release-blocking issues:\n  #{list}")
+    end
+    sh('bash', File.join(REPO_ROOT, 'scripts/check-prod-schema.sh'))
+  end
+
+  # Preserves the archive and dSYMs before anything is uploaded to Apple.
+  private_lane :preserve_archive_locally do
+    archive = lane_context[SharedValues::XCODEBUILD_ARCHIVE]
+    UI.user_error!('No xcarchive in lane context') if archive.nil? || !File.exist?(archive)
+
+    version = get_version_number(xcodeproj: XCODEPROJ, target: 'FamilyFoqos')
+    build = derived_build_number
+    sha = sh('git rev-parse --short=7 HEAD', log: false).strip
+    stem = "FamilyFoqos-#{version}-#{build}-#{sha}"
+
+    FileUtils.mkdir_p(ARCHIVE_DIR)
+    local_copy = File.join(ARCHIVE_DIR, "#{stem}.xcarchive")
+    ArchiveStorage.replace_directory(source: archive, destination: local_copy)
+    UI.success("Archive stored: #{local_copy}")
+
+    dsym_zip = File.join(ARCHIVE_DIR, "#{stem}-dSYMs.zip")
+    FileUtils.rm_f(dsym_zip)
+    Dir.chdir(File.join(archive, 'dSYMs')) do
+      sh('zip', '-qr', dsym_zip, '.')
+    end
+
+    {
+      version: version,
+      build: build,
+      stem: stem,
+      dsym_zip: dsym_zip
+    }
+  end
+
+  # Publishes dSYMs only after Apple accepts the upload. GitHub failure is warn-only.
+  private_lane :publish_archive_dsyms do |options|
+    artifacts = options.fetch(:artifacts)
+    prerelease = options.fetch(:prerelease)
+    tag = prerelease ? "build/#{artifacts[:build]}" : "v#{artifacts[:version]}"
+    begin
+      ArchiveStorage.upload_dsyms(
+        tag: tag,
+        prerelease: prerelease,
+        title: artifacts[:stem],
+        notes: "Automated archive upload (dSYMs) for #{artifacts[:stem]}.",
+        asset: artifacts[:dsym_zip]
+      ) { |args| sh(*args) }
+      UI.success("dSYMs attached to GitHub release #{tag}")
+    rescue StandardError => e
+      UI.important("GitHub release upload FAILED (local archive is safe): #{e.message}")
+    end
+  end
+
+  private_lane :assert_framed_screenshots do
+    screenshots_directory = File.expand_path('screenshots', __dir__)
+    expected_names = %w[
+      01-home-active
+      02-profile-editor
+      03-parent-dashboard
+    ]
+    framed = Dir.glob(File.join(screenshots_directory, 'en-GB', '*_framed.png'))
+    missing = expected_names.reject do |name|
+      framed.any? { |path| File.basename(path).include?(name) }
+    end
+    unless framed.count == expected_names.count && missing.empty?
+      UI.user_error!(
+        "Expected 3 framed en-GB screenshots; found #{framed.count}, missing: #{missing.join(', ')}"
+      )
+    end
+    UI.success('Validated 3 framed en-GB screenshots')
+  end
+
+  def derived_build_number
+    sh('git rev-list --count HEAD', log: false).strip
+  end
+
+  desc 'Prints the derived build number (sanity check)'
+  lane :build_number do
+    UI.message("Derived build number: #{derived_build_number}")
+  end
+
+  desc 'Validate the ASC API key loads (prints no secret material)'
+  lane :check_asc_key do
+    key = asc_api_key
+    # The non-secret key ID confirms rotation; keep the issuer and key material presence-only.
+    UI.success(
+      "ASC key loaded: key_id=#{key[:key_id]}, " \
+      "issuer_present=#{!key[:issuer_id].to_s.empty?}, key_present=#{!key[:key].to_s.empty?}"
+    )
+  end
+
+  desc 'Run release-blocker gates only'
+  lane :gates do
+    assert_no_release_blockers
+  end
+
+  desc 'Build, upload metadata+screenshots+binary, and (after confirmation) submit for review'
+  lane :release do
+    preflight
+    assert_no_release_blockers
+    api_key = asc_api_key
+    build = derived_build_number
+    build_app_store_archive(api_key: api_key, build: build)
+    archive_artifacts = preserve_archive_locally
+    UI.user_error!('Submission cancelled by user') unless UI.confirm('Submit this build for App Store review?')
+    assert_framed_screenshots
+    deliver(
+      api_key: api_key,
+      submit_for_review: true,
+      automatic_release: false,
+      screenshots_path: './fastlane/screenshots',
+      metadata_path: './fastlane/metadata'
+    )
+    publish_archive_dsyms(artifacts: archive_artifacts, prerelease: false)
+  end
+
+  desc 'Preserve the archive, upload to TestFlight, then publish dSYMs'
+  lane :beta do
+    preflight
+    assert_no_release_blockers
+    api_key = asc_api_key
+    build = derived_build_number
+    build_app_store_archive(api_key: api_key, build: build)
+    archive_artifacts = preserve_archive_locally
+    pilot(api_key: api_key, skip_waiting_for_build_processing: true)
+    publish_archive_dsyms(artifacts: archive_artifacts, prerelease: true)
+  end
+
+  desc 'Pull current App Store metadata into fastlane/metadata'
+  lane :pull_metadata do
+    api_key = asc_api_key
+    ASCCredentials.with_api_key_json_tempfile(api_key) do |key_path|
+      sh(
+        'bundle',
+        'exec',
+        'fastlane',
+        'deliver',
+        'download_metadata',
+        '--api_key_path',
+        key_path,
+        '--metadata_path',
+        File.join(REPO_ROOT, 'fastlane', 'metadata'),
+        '--force',
+        'true',
+        log: false
+      )
+    end
+  end
+
+  desc 'Regenerate all App Store screenshots (demo mode + snapshot + frameit)'
+  lane :screenshots do
+    before = Dir.exist?(XCTEST_DEVICES_DIR) ? Dir.children(XCTEST_DEVICES_DIR) : []
+    UI.message("XCTestDevices before snapshot: #{before.count}")
+
+    begin
+      snapshot
+    ensure
+      after = Dir.exist?(XCTEST_DEVICES_DIR) ? Dir.children(XCTEST_DEVICES_DIR) : []
+      created = after - before
+      UI.message("XCTestDevices after snapshot: #{after.count}; created this run: #{created.count}")
+
+      created.each do |udid|
+        unless udid.match?(/\A[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\z/)
+          UI.important("Refusing to delete unexpected XCTestDevices entry: #{udid}")
+          next
+        end
+
+        device_plist = File.join(XCTEST_DEVICES_DIR, udid, 'device.plist')
+        begin
+          device_name = sh(
+            'plutil', '-extract', 'name', 'raw', '-o', '-', device_plist, log: false
+          ).strip
+        rescue StandardError => e
+          UI.important("Preserving XCTestDevices entry #{udid}; name unavailable: #{e.message}")
+          next
+        end
+        expected_name = /\A(?:Clone \d+ of )?#{Regexp.escape(SNAPSHOT_DEVICE_NAME)}\z/
+        unless device_name.match?(expected_name)
+          UI.message("Preserving concurrent test simulator #{udid} named '#{device_name}'")
+          next
+        end
+
+        begin
+          sh('xcrun', 'simctl', '--set', XCTEST_DEVICES_DIR, 'shutdown', udid, log: false)
+        rescue StandardError => e
+          UI.message("Test simulator #{udid} was already stopped: #{e.message}")
+        end
+        sh('xcrun', 'simctl', '--set', XCTEST_DEVICES_DIR, 'delete', udid, log: false)
+        UI.message("Removed run-created test simulator #{udid}")
+      end
+
+      remaining = Dir.exist?(XCTEST_DEVICES_DIR) ? Dir.children(XCTEST_DEVICES_DIR) : []
+      UI.message("XCTestDevices after cleanup: #{remaining.count}")
+    end
+
+    screenshots_directory = File.expand_path('screenshots', __dir__)
+    background = File.join(screenshots_directory, 'background.png')
+    sh('magick', '-size', '1320x2868', 'xc:#1a1a2e', background) unless File.exist?(background)
+
+    font_source = '/System/Library/Fonts/SFNS.ttf'
+    font_link = File.join(screenshots_directory, 'SFNS.ttf')
+    UI.user_error!("Required frameit font is missing: #{font_source}") unless File.exist?(font_source)
+    created_font_link = false
+    unless File.exist?(font_link)
+      File.symlink(font_source, font_link)
+      created_font_link = true
+    end
+
+    begin
+      frameit(path: screenshots_directory)
+    ensure
+      File.delete(font_link) if created_font_link && File.symlink?(font_link)
+    end
+
+    assert_framed_screenshots
+  end
+end

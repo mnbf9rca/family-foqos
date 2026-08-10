@@ -615,12 +615,28 @@ struct HomeView: View {
   }
 
   private func loadApp() {
+    #if DEBUG
+      if ScreenshotDemoMode.isActive {
+        try? strategyManager.loadScreenshotDemoSession(context: context)
+        return
+      }
+    #endif
     try? strategyManager.loadActiveSession(context: context)
   }
 
   private func onAppearApp() {
-    try? strategyManager.loadActiveSession(context: context)
-    strategyManager.cleanUpGhostSchedules(context: context)
+    loadApp()
+    #if DEBUG
+      if ScreenshotDemoMode.scenario == .profileEditor {
+        profileToEdit = profiles.valid.first
+      }
+      if ScreenshotDemoMode.scenario == .parentDashboard {
+        showParentDashboard = true
+      }
+    #endif
+    if !ScreenshotDemoMode.isActive {
+      strategyManager.cleanUpGhostSchedules(context: context)
+    }
 
     // Migration: existing users upgrading from a version without hasCompletedOnboarding.
     // showIntroScreen defaults to true, so if it's false the user must have completed

@@ -132,6 +132,7 @@ class LockCodeManager: ObservableObject {
 
   /// Fetch all lock codes created by this user (parent or individual mode)
   func fetchLockCodes() async {
+    guard !ScreenshotDemoMode.isActive else { return }
     guard appModeManager.currentMode != .child else { return }
 
     isLoading = true
@@ -179,11 +180,19 @@ class LockCodeManager: ObservableObject {
     !lockCodes.isEmpty
   }
 
+  #if DEBUG
+    /// Screenshot/demo + test seeding only — `lockCodes` is private(set).
+    func seedForScreenshots(_ codes: [FamilyLockCode]) {
+      lockCodes = codes
+    }
+  #endif
+
   // MARK: - Child Operations
 
   /// Fetch shared lock codes for verification (child operation)
   /// Verifies child authorization before fetching to ensure security
   func refreshSharedLockCodesForVerification() async {
+    guard !ScreenshotDemoMode.isActive else { return }
     guard appModeManager.currentMode == .child else { return }
 
     isLoading = true
@@ -311,6 +320,7 @@ class LockCodeManager: ObservableObject {
   /// Check for and process any pending commands from parent.
   /// Called from child lock-code refresh, the PIN-dialog poll, and child foreground.
   func processPendingCommands(cleanupStale: Bool = true) async {
+    guard !ScreenshotDemoMode.isActive else { return }
     guard appModeManager.currentMode == .child else {
       return
     }
