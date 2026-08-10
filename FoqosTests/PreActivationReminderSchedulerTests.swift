@@ -8,11 +8,44 @@ import XCTest
 final class PreActivationReminderSchedulerTests: XCTestCase {
   private var container: ModelContainer!
   private var context: ModelContext!
+  private var suiteName: String!
+  private var defaults: UserDefaults!
 
   override func setUp() async throws {
     try await super.setUp()
+    suiteName = "PreActivationReminderSchedulerTests-\(UUID().uuidString)"
+    defaults = UserDefaults(suiteName: suiteName)!
+    SharedData.configure(suite: defaults)
     container = try TestModelContainer.create()
     context = container.mainContext
+  }
+
+  override func tearDown() async throws {
+    defaults.removePersistentDomain(forName: suiteName)
+    try await super.tearDown()
+  }
+
+  func testGivenProfileWithMissingSnapshot_WhenReconciling_ThenSnapshotRewritten() throws {
+    let profile = BlockedProfiles(name: "Focus")
+    context.insert(profile)
+    try context.save()
+    SharedData.removeSnapshot(for: profile.id.uuidString)
+
+    PreActivationReminderScheduler.reconcileMissingSnapshots(context: context)
+
+    XCTAssertNotNil(SharedData.snapshot(for: profile.id.uuidString))
+  }
+
+  func testGivenPendingDelete_WhenReconciling_ThenSnapshotNotResurrected() throws {
+    let profile = BlockedProfiles(name: "Focus")
+    context.insert(profile)
+    try context.save()
+    SharedData.removeSnapshot(for: profile.id.uuidString)
+    context.delete(profile)
+
+    PreActivationReminderScheduler.reconcileMissingSnapshots(context: context)
+
+    XCTAssertNil(SharedData.snapshot(for: profile.id.uuidString))
   }
 
   func testGivenScheduledAppSelectedProfileNoReminders_WhenEligibility_ThenTrue() throws {

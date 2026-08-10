@@ -200,6 +200,26 @@ final class TimersUtil: TimersUtilScheduling, @unchecked Sendable {  // SAFETY: 
     allReminderCleanupRange.map { preActivationReminderIdentifier(for: profileId, minutes: $0) }
   }
 
+  static func cancelOwnedReminders(for profileId: UUID) {
+    let identifiers = [
+      sessionReminderIdentifier(for: profileId),
+      breakReminderIdentifier(for: profileId),
+    ]
+    ownedReminderState.lock.lock()
+    var ownedIdentifiers = ownedReminderIdentifiers
+    for identifier in identifiers {
+      ownedIdentifiers.remove(identifier)
+      ownedReminderState.scheduleGenerations[identifier] =
+        (ownedReminderState.scheduleGenerations[identifier] ?? 0) &+ 1
+    }
+    ownedReminderIdentifiers = ownedIdentifiers
+    ownedReminderState.lock.unlock()
+
+    let center = UNUserNotificationCenter.current()
+    center.removePendingNotificationRequests(withIdentifiers: identifiers)
+    center.removeDeliveredNotifications(withIdentifiers: identifiers)
+  }
+
   static func cancelAllPreActivationReminders(for profileId: UUID) {
     let identifiers = allPreActivationReminderIdentifiers(for: profileId)
     UNUserNotificationCenter.current().removePendingNotificationRequests(

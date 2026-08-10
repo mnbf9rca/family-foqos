@@ -172,6 +172,9 @@ final class MutationFunnel {
           store.clearTombstone(recordName: recordName)
           store.clearDeleteWatermark(recordName: recordName)
           modelContext.rollback()
+          if let restored = try? BlockedProfiles.findProfile(byID: profileId, in: modelContext) {
+            BlockedProfiles.updateSnapshot(for: restored)
+          }
           Log.error(
             "Deferred profile delete save failed for \(recordName): \(error.localizedDescription)",
             category: .sync

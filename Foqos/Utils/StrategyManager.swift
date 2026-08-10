@@ -83,6 +83,13 @@ class StrategyManager: ObservableObject {
     RemotelyActiveStore.save(remotelyActiveProfileIds, defaults: remoteActiveDefaults)
   }
 
+  func clearAllRemoteSessionActive() {
+    // Event-scoped to account transitions and synced-data wipes. Do not clear on relaunch:
+    // remote-active locks must survive until sync provides a newer session state.
+    remotelyActiveProfileIds = []
+    RemotelyActiveStore.clear(defaults: remoteActiveDefaults)
+  }
+
   var isBreakActive: Bool {
     return activeSession?.isBreakActive == true
   }
@@ -871,6 +878,10 @@ class StrategyManager: ObservableObject {
     _ session: BlockedProfileSession,
     context: ModelContext? = nil
   ) {
+    // A new start supersedes any persisted stop intent for this profile. Otherwise a later
+    // foreground drain could stop the newly-started remote record instead of the old session.
+    sessionStopOutbox.remove(profileId: session.blockedProfile.id)
+
     // Cancel stale reminders/notifications from previous sessions
     timersUtil.cancelAll()
 
@@ -1519,8 +1530,7 @@ class StrategyManager: ObservableObject {
     elapsedTime = 0
     showCustomStrategyView = false
     customStrategyView = nil
-    remotelyActiveProfileIds.removeAll()
-    RemotelyActiveStore.save(remotelyActiveProfileIds, defaults: remoteActiveDefaults)
+    clearAllRemoteSessionActive()
     timersUtil.cancelAll()
 
     clearBlockingArtifacts(context: context)
@@ -1573,6 +1583,28 @@ class StrategyManager: ObservableObject {
         return
       }
 
+      // Arbitrate before activating this profile: ending an older local session deactivates
+      // restrictions globally, so doing this later would leave the incoming winner unblocked.
+      let existing = try BlockedProfileSession.mostRecentActiveSession(in: context)
+      switch ProfileStartArbiter.decide(
+        incomingStartTime: startTime,
+        incomingProfileId: profileId,
+        existingStartTime: existing?.startTime,
+        existingProfileId: existing?.blockedProfile.id
+      ) {
+      case .reject:
+        Log.info(
+          "Remote start for '\(profile.name)' does not supersede the active session; keeping existing",
+          category: .strategy)
+        return
+      case .adopt:
+        if let existing {
+          endLocalSessionAndSyncStop(existing, context: context)
+        }
+      case .start:
+        break
+      }
+
       // Activate restrictions
       appBlocker.activateRestrictions(for: BlockedProfiles.getSnapshot(for: profile))
 
@@ -1596,6 +1628,20 @@ class StrategyManager: ObservableObject {
     } catch {
       Log.info("Error starting remote session - \(error)", category: .strategy)
     }
+  }
+
+  private func endLocalSessionAndSyncStop(
+    _ session: BlockedProfileSession,
+    context: ModelContext
+  ) {
+    let profileId = session.blockedProfile.id
+    let wasProcessingRemoteChange = processingRemoteChange
+    processingRemoteChange = false
+    _ = getStrategy(id: ManualBlockingStrategy.id).stopBlocking(
+      context: context,
+      session: session)
+    processingRemoteChange = wasProcessingRemoteChange
+    sessionStopOutbox.enqueue(profileId: profileId)
   }
 
   /// Stop a session triggered by remote device
