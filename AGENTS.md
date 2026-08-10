@@ -23,6 +23,8 @@ Agents must not invoke raw `xcodebuild` for simulator work. Give every stream a 
 and optional session name, then use the wrapper. It allocates or reuses the registry-owned iPhone
 17 on the newest compatible installed iOS runtime. Set `IOS_SIM_GATE_DEVICE_TYPE` or
 `IOS_SIM_GATE_RUNTIME` only when the task requires an override.
+Always place `xcodebuild` directly after the wrapper's `--`; never mediate it through `xcrun`,
+`env`, `bundle`, or a shell command.
 
 ```bash
 # Preserve xcodebuild's status when formatting output.

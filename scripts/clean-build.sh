@@ -11,7 +11,8 @@ target="${IOS_SIM_GATE_DERIVED_DATA_PATH:-}"
   exit 1
 }
 
-project_root="$HOME/Library/Caches/ios-sim-gate/DerivedData/family-foqos"
+cache_root="${IOS_SIM_GATE_CACHE_HOME:-$HOME/Library/Caches/ios-sim-gate}"
+project_root="$cache_root/DerivedData/family-foqos"
 case "$target" in
   "$project_root"/*) ;;
   *)

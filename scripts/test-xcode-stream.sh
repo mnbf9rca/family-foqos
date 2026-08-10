@@ -358,6 +358,19 @@ run_wrapper --agent build2 -- xcodebuild test
 assert_contains "$GATE_LOG" "$REUSE_UUID"
 assert_not_contains "$GATE_LOG" "$SESSION_UUID"
 
+reset_case crash-window-orphan
+add_device "$OTHER_UUID" "Family Foqos - build2 - orphan" \
+  com.apple.CoreSimulator.SimRuntime.iOS-26-0
+set +e
+orphan_output=$(run_wrapper --agent build2 --session orphan -- xcodebuild test 2>&1)
+orphan_status=$?
+set -e
+if [[ "$orphan_status" -eq 0 || "$orphan_output" != *"display name already exists"* ]]; then
+  fail "an unregistered same-name simulator must block allocation: $orphan_output"
+fi
+assert_not_contains "$SIMCTL_LOG" "create "
+assert_not_contains "$SIMCTL_LOG" "delete $OTHER_UUID"
+
 reset_case default-allocation
 run_wrapper --agent build2 --session new -- xcodebuild test
 assert_contains "$SIMCTL_LOG" \
@@ -410,7 +423,8 @@ reset_case rejected-flags
 add_device "$REUSE_UUID" "Family Foqos build2" com.apple.CoreSimulator.SimRuntime.iOS-26-0
 set_owner "$REUSE_UUID" build2 collab
 for forbidden in -destination -derivedDataPath -parallel-testing-enabled \
-  -disable-concurrent-destination-testing; do
+  -disable-concurrent-destination-testing OBJROOT=/tmp/objects SYMROOT=/tmp/symbols \
+  BUILD_DIR=/tmp/build -xcconfig; do
   set +e
   output=$(run_wrapper --agent build2 --session collab -- xcodebuild test "$forbidden" bad 2>&1)
   status=$?
@@ -419,6 +433,18 @@ for forbidden in -destination -derivedDataPath -parallel-testing-enabled \
     fail "caller-supplied $forbidden must be rejected"
   fi
 done
+
+reset_case rejected-indirect-xcodebuild
+add_device "$REUSE_UUID" "Family Foqos build2" com.apple.CoreSimulator.SimRuntime.iOS-26-0
+set_owner "$REUSE_UUID" build2 collab
+set +e
+output=$(run_wrapper --agent build2 --session collab -- /usr/bin/true xcodebuild test 2>&1)
+status=$?
+set -e
+if [[ "$status" -eq 0 || "$output" != *"xcodebuild must be the command immediately after --"* ]]; then
+  fail "a later bare xcodebuild token must be rejected"
+fi
+run_wrapper --agent build2 --session collab -- /usr/bin/true xcodebuild-wrapper
 
 reset_case exit-status
 add_device "$REUSE_UUID" "Family Foqos build2" com.apple.CoreSimulator.SimRuntime.iOS-26-0
@@ -480,6 +506,14 @@ FASTLANE_CHILD_PATH_LOG="$CASE_ROOT/fastlane-child-path.log"
 FASTLANE_ARGS_LOG="$CASE_ROOT/fastlane-args.log"
 FAKE_RUBY_PREFIX="$TEST_ROOT/ruby"
 export FASTLANE_ENTRY_PATH_LOG FASTLANE_CHILD_PATH_LOG FASTLANE_ARGS_LOG FAKE_RUBY_PREFIX
+set +e
+output=$(run_wrapper --agent build2 --session screenshots -- \
+  "$REPO_ROOT/scripts/fastlane.sh" screenshots xcodebuild 2>&1)
+status=$?
+set -e
+if [[ "$status" -eq 0 || "$output" != *"xcodebuild must be the command immediately after --"* ]]; then
+  fail "the screenshot branch must not bypass later-token xcodebuild rejection"
+fi
 caller_path=$PATH
 run_wrapper --agent build2 --session screenshots -- "$REPO_ROOT/scripts/fastlane.sh" screenshots
 [[ "$PATH" == "$caller_path" ]] || fail "screenshot wrapper changed the caller PATH"
@@ -487,6 +521,19 @@ entry_path=$(<"$FASTLANE_ENTRY_PATH_LOG")
 [[ "$entry_path" == "$REPO_ROOT/scripts/ios-sim-gate-bin:"* ]] ||
   fail "adapter PATH was not scoped to the screenshot lane process"
 assert_contains "$FASTLANE_ARGS_LOG" "screenshots"
+
+reset_case non-screenshot-adapter-scope
+add_device "$REUSE_UUID" "Family Foqos build2" com.apple.CoreSimulator.SimRuntime.iOS-26-0
+set_owner "$REUSE_UUID" build2 bundle-exec
+FASTLANE_CHILD_PATH_LOG="$CASE_ROOT/bundle-child-path.log"
+FASTLANE_ARGS_LOG="$CASE_ROOT/bundle-args.log"
+export FASTLANE_CHILD_PATH_LOG FASTLANE_ARGS_LOG
+run_wrapper --agent build2 --session bundle-exec -- \
+  "$TEST_ROOT/ruby/bin/bundle" exec ruby -v
+bundle_child_path=$(<"$FASTLANE_CHILD_PATH_LOG")
+[[ "$bundle_child_path" == "$REPO_ROOT/scripts/ios-sim-gate-bin:"* ]] ||
+  fail "adapter PATH was not installed for a non-screenshot bundle exec child"
+assert_contains "$FASTLANE_ARGS_LOG" "exec"
 
 POLICY_FILE="$REPO_ROOT/AGENTS.md"
 policy_requirements=(

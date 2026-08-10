@@ -43,12 +43,14 @@ module SimulatorGate
 
   def self.assert_registered_device!(simulators, env: ENV)
     config = snapshot_configuration(env)
-    exact_device = simulators.find do |simulator|
+    matching_devices = simulators.select do |simulator|
       simulator.name.strip == config.fetch(:device_name).strip &&
-        simulator.os_version == config.fetch(:runtime_version) &&
-        simulator.udid == config.fetch(:uuid)
+        simulator.os_version == config.fetch(:runtime_version)
     end
-    return true if exact_device
+    unless matching_devices.one?
+      raise GateError, 'Fastlane simulator lookup must resolve exactly one name/runtime match'
+    end
+    return true if matching_devices.first.udid == config.fetch(:uuid)
 
     raise GateError, 'Fastlane simulator lookup does not resolve to the gate-owned UUID'
   end

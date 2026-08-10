@@ -69,17 +69,25 @@ execute_internal() {
   (($#)) || die "internal execution requires a command"
   require_internal_gate_contract
 
+  export PATH="$REPO_ROOT/scripts/ios-sim-gate-bin:$PATH"
+
   local command_name=${1##*/}
   local command_path=""
+  local arguments=("$@")
+  local index
   if [[ "$1" == */* && -e "$1" ]]; then
     command_path="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
   fi
+  for ((index = 1; index < ${#arguments[@]}; index++)); do
+    [[ "${arguments[index]}" != "xcodebuild" ]] ||
+      die "xcodebuild must be the command immediately after --"
+  done
   if [[ "$command_path" == "$REPO_ROOT/scripts/fastlane.sh" && "${2:-}" == "screenshots" ]]; then
     [[ -n "${IOS_SIM_GATE_DEVICE_NAME:-}" ]] ||
       die "screenshot execution requires IOS_SIM_GATE_DEVICE_NAME"
     [[ -n "${IOS_SIM_GATE_RUNTIME_VERSION:-}" ]] ||
       die "screenshot execution requires IOS_SIM_GATE_RUNTIME_VERSION"
-    PATH="$REPO_ROOT/scripts/ios-sim-gate-bin:$PATH" exec "$@"
+    exec "$@"
   fi
   if [[ "$command_name" != "xcodebuild" ]]; then
     exec "$@"
@@ -90,7 +98,8 @@ execute_internal() {
     case "$argument" in
       -destination|-destination=*|-derivedDataPath|-derivedDataPath=*|\
       -parallel-testing-enabled|-parallel-testing-enabled=*|\
-      -disable-concurrent-destination-testing|-disable-concurrent-destination-testing=*)
+      -disable-concurrent-destination-testing|-disable-concurrent-destination-testing=*|\
+      OBJROOT=*|SYMROOT=*|BUILD_DIR=*|-xcconfig|-xcconfig=*)
         die "callers must not supply $argument; xcode-stream injects simulator isolation flags"
         ;;
     esac
@@ -273,6 +282,14 @@ if [[ -z "$owned_uuid" ]]; then
   [[ -n "$device_type" ]] || die "no available simulator device type matches: $device_selector"
 
   display_name="Family Foqos - $agent${session:+ - $session}"
+  all_devices_inventory=$(simctl list devices --json)
+  # shellcheck disable=SC2016 # jq expression intentionally uses a jq variable.
+  conflicting_uuid=$("$JQ_BIN" -r --arg display_name "$display_name" '
+    first(.devices[]?[]? | select(.name == $display_name) | .udid) // ""
+  ' <<<"$all_devices_inventory")
+  [[ -z "$conflicting_uuid" ]] ||
+    die "simulator display name already exists outside exact gate ownership: $display_name ($conflicting_uuid)"
+
   created_uuid=""
   created_runtime_version=""
   candidate_count=0

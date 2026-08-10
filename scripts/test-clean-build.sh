@@ -25,6 +25,20 @@ HOME="$FAKE_HOME" IOS_SIM_GATE_DERIVED_DATA_PATH="$GATE_ROOT/build2/session-a" \
 [[ ! -e "$GATE_ROOT/build2/session-a" ]] || fail "exact owner DerivedData was not removed"
 [[ -f "$GATE_ROOT/build2/session-b/sibling" ]] || fail "sibling DerivedData was removed"
 
+CUSTOM_CACHE_ROOT="$TEST_ROOT/custom-gate-cache"
+CUSTOM_PROJECT_ROOT="$CUSTOM_CACHE_ROOT/DerivedData/family-foqos"
+mkdir -p "$CUSTOM_PROJECT_ROOT/build3/session-custom" \
+  "$CUSTOM_PROJECT_ROOT/build3/session-sibling"
+touch "$CUSTOM_PROJECT_ROOT/build3/session-custom/owned" \
+  "$CUSTOM_PROJECT_ROOT/build3/session-sibling/sibling"
+HOME="$FAKE_HOME" IOS_SIM_GATE_CACHE_HOME="$CUSTOM_CACHE_ROOT" \
+  IOS_SIM_GATE_DERIVED_DATA_PATH="$CUSTOM_PROJECT_ROOT/build3/session-custom" \
+  "$CLEAN_SCRIPT"
+[[ ! -e "$CUSTOM_PROJECT_ROOT/build3/session-custom" ]] ||
+  fail "custom-cache owner DerivedData was not removed"
+[[ -f "$CUSTOM_PROJECT_ROOT/build3/session-sibling/sibling" ]] ||
+  fail "custom-cache sibling DerivedData was removed"
+
 assert_refused() {
   local description=$1
   local target=${2-__unset__}

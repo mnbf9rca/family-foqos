@@ -211,3 +211,40 @@ Xcodebuild.
   `Closes #362`, smoke evidence, and an explicit note that #363 is not included.
 - [ ] Request code review through AMQ thread `adopt/ios-sim-gate-review` before merge.
 - [ ] Reply to planner thread `adopt/ios-sim-gate` with PR number and exact smoke evidence.
+
+### Task 11: Close PR #378 simulator-isolation review findings
+
+**Files:**
+- Modify: `scripts/test-xcode-stream.sh`
+- Modify: `scripts/xcode-stream.sh`
+- Modify: `scripts/test-fastlane-sim-gate.sh`
+- Modify: `fastlane/simulator_gate.rb`
+- Modify: `scripts/test-clean-build.sh`
+- Modify: `scripts/clean-build.sh`
+- Modify: `AGENTS.md`
+
+- [ ] Add behavioral tests proving every internal child receives the scoped xcrun adapter PATH,
+  including a `bundle exec`-style command, while screenshot-only environment assertions remain
+  scoped to `scripts/fastlane.sh screenshots`. Run the test and observe the current conditional
+  adapter installation fail.
+- [ ] Install the adapter PATH unconditionally immediately after validating the internal gate
+  contract. Keep the exact three-argument adapter rewrite unchanged, then rerun the focused test.
+- [ ] Add a Fastlane test with two simulators sharing the configured name/runtime and observe that
+  the current first-match lookup accepts ambiguity. Require exactly one name/runtime match and
+  require its UUID to equal the gate UUID, then rerun the focused test.
+- [ ] Add a wrapper test with an unregistered simulator whose display name equals the exact planned
+  owner name and observe a second simulator being created. Refuse allocation before `simctl create`
+  when any simulator already has that display name, without deleting the orphan, then rerun the
+  focused test.
+- [ ] Add direct-mode tests for a later exact `xcodebuild` token, `OBJROOT=`, `SYMROOT=`,
+  `BUILD_DIR=`, and `-xcconfig`; observe acceptance, extend the existing rejection loop, and rerun
+  the focused test. Document that xcodebuild must be argv[0] after `--`, never mediated by
+  `xcrun`, `env`, or a shell.
+- [ ] Add a clean-build test whose cache root is supplied through `IOS_SIM_GATE_CACHE_HOME` and
+  differs from `$HOME/Library/Caches/ios-sim-gate`; observe refusal, derive the trusted project root
+  from that variable with the gate's existing default, and rerun the focused test.
+- [ ] Run all shell and Ruby verification, then sequentially rerun the full FoqosTests gate smoke
+  and screenshots gate smoke. Confirm exact exit status, released slots, unchanged XCTestDevices
+  clone inventory, and caller PATH equality.
+- [ ] Create a new signed commit, push without amend or force, request delta review on
+  `adopt/ios-sim-gate-review`, and reply on `adopt/ios-sim-gate` with the new head SHA and evidence.

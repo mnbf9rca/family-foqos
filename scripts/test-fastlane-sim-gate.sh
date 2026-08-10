@@ -38,6 +38,13 @@ SimulatorGate.assert_registered_device!([matching])
 wrong = device.new(ENV.fetch('IOS_SIM_GATE_DEVICE_NAME'), '26.0',
                    '22222222-2222-2222-2222-222222222222')
 begin
+  SimulatorGate.assert_registered_device!([matching, wrong])
+  raise 'ambiguous name/runtime lookup was accepted'
+rescue SimulatorGate::GateError
+  # Expected.
+end
+
+begin
   SimulatorGate.assert_registered_device!([wrong])
   raise 'wrong UUID was accepted'
 rescue SimulatorGate::GateError
