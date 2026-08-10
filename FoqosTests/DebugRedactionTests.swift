@@ -21,12 +21,12 @@ final class DebugRedactionTests: XCTestCase {
     XCTAssertNil(DebugRedaction.physicalUnblockNFCTagIdForDisplay(nil, mode: .child))
   }
 
-  func testGivenQRDigest_WhenChildMode_ThenVisible() {
+  func testGivenQRDigest_WhenChildMode_ThenMasksMiddle() {
     let digest = String(repeating: "a", count: 64)
 
     XCTAssertEqual(
       DebugRedaction.physicalUnblockQRCodeIdForDisplay(digest, mode: .child),
-      digest
+      "aa…aa"
     )
   }
 
@@ -67,6 +67,14 @@ final class DebugRedactionTests: XCTestCase {
       DebugRedaction.physicalUnblockNFCTagIdForDisplay("ABCDEF12", mode: .individual),
       "ABCDEF12"
     )
+  }
+
+  func testGivenNFCId_WhenPreparingForLog_ThenMasksMiddle() {
+    XCTAssertEqual(DebugRedaction.physicalUnblockNFCTagIdForLog("ABCDEF12"), "AB…12")
+  }
+
+  func testGivenShortNFCId_WhenPreparingForLog_ThenUsesConstantMask() {
+    XCTAssertEqual(DebugRedaction.physicalUnblockNFCTagIdForLog("ABC"), "••••••")
   }
 
   func testGivenQRValue_WhenParentMode_ThenRaw() {

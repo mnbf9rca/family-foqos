@@ -188,10 +188,11 @@ extension NFCScannerUtil: NFCTagReaderSessionDelegate {
 
   nonisolated private func readMiFareTag(_ tagBox: ScannerMiFareTagBox, sessionBox: ScannerSessionBox) {
     let tagIdentifier = tagBox.identifier.hexEncodedString()
+    let redactedTagIdentifier = DebugRedaction.physicalUnblockNFCTagIdForLog(tagIdentifier)
     tagBox.readNDEF { (message: NFCNDEFMessage?, error: Error?) in
       if error != nil || message == nil {
         if let error = error {
-          Log.info("⚠️ NDEF read failed (non-critical): \(error.localizedDescription). using tag id: \(tagIdentifier)", category: .nfc)
+          Log.info("⚠️ NDEF read failed (non-critical): \(error.localizedDescription). using tag id: \(redactedTagIdentifier)", category: .nfc)
         }
 
         // Still use the identifier - works for all tag types
@@ -205,10 +206,11 @@ extension NFCScannerUtil: NFCTagReaderSessionDelegate {
 
   nonisolated private func readISO15693Tag(_ tagBox: ScannerISO15693TagBox, sessionBox: ScannerSessionBox) {
     let tagIdentifier = tagBox.identifier.hexEncodedString()
+    let redactedTagIdentifier = DebugRedaction.physicalUnblockNFCTagIdForLog(tagIdentifier)
     tagBox.readNDEF { (message: NFCNDEFMessage?, error: Error?) in
       if error != nil || message == nil {
         if let error = error {
-          Log.info("⚠️ ISO15693 NDEF read failed (non-critical): \(error.localizedDescription). using tag id: \(tagIdentifier)", category: .nfc)
+          Log.info("⚠️ ISO15693 NDEF read failed (non-critical): \(error.localizedDescription). using tag id: \(redactedTagIdentifier)", category: .nfc)
         }
 
         self.completeTagScan(id: tagIdentifier, sessionBox: sessionBox)
