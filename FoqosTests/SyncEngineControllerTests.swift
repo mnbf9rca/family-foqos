@@ -1108,25 +1108,6 @@ final class SyncEngineControllerTests: XCTestCase {
         server: equalServer))
   }
 
-  func testGivenHigherLocalEstablishment_WhenServerRecordLower_ThenLocalIsStrictlyNewer() {
-    let now = Date()
-    store.establishmentGeneration = 5
-    let controller = makeController()
-    let lowerServer = SyncedEstablishment(generation: 3, establishedAt: now).toCKRecord(in: zoneID)
-    let higherServer = SyncedEstablishment(generation: 6, establishedAt: now).toCKRecord(in: zoneID)
-
-    XCTAssertTrue(
-      controller.localIsStrictlyNewer(
-        SyncedEstablishment.recordType,
-        name: SyncedEstablishment.recordName,
-        server: lowerServer))
-    XCTAssertFalse(
-      controller.localIsStrictlyNewer(
-        SyncedEstablishment.recordType,
-        name: SyncedEstablishment.recordName,
-        server: higherServer))
-  }
-
   func testGivenEpochSaveServerRecordChanged_WhenLocalHigher_ThenStoresTagAndReaddsEpoch() {
     store.engineState = Data([0x01])
     emergencyManager.seedForTesting(epoch: 5)

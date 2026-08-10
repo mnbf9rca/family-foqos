@@ -32,6 +32,10 @@ extension SyncEngineController: SyncEngineControlling {
     reset.beginReset(wipe: wipe, clearRemoteAppSelections: clearRemoteAppSelections, now: Date())
   }
 
+  func cancelDeletingWipeForEstablishmentAdoption() {
+    reset?.cancelDeletingWipeForEstablishmentAdoption()
+  }
+
   // The engine's `MutationFunnel` is created in `start()`, so it can briefly be nil even
   // once `SyncEngineController` itself exists (I10 attach window). Every verb below throws
   // `SyncEngineControllingError.notAttached` in that case instead of silently no-op'ing

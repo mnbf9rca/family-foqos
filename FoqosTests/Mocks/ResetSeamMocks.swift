@@ -11,6 +11,7 @@ final class MockResetOutbox: ResetOutbox {
   var commandSaveCount = 0
   var establishmentSaveCount = 0
   var removeCommandCount = 0
+  var removeEstablishmentCount = 0
   var sendCount = 0
   var clearPendingCount = 0
 
@@ -20,6 +21,7 @@ final class MockResetOutbox: ResetOutbox {
   func enqueueCommandSave() { commandSaveCount += 1 }
   func enqueueEstablishmentSave() { establishmentSaveCount += 1 }
   func removeCommandSave() { removeCommandCount += 1 }
+  func removeEstablishmentSave() { removeEstablishmentCount += 1 }
   func requestSend() { sendCount += 1 }
   func clearPendingChangesForReset() { clearPendingCount += 1 }
 }

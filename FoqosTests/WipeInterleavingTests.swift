@@ -13,6 +13,10 @@ final class WipeInterleavingTests: XCTestCase {
   private var store: SyncEngineStore!
   private var sessionController: MockSessionController!
   private var emergencyManager: EmergencyUnblockManager!
+  private var manager: ProfileSyncManager!
+  private var savedEnabled = false
+  private var savedIsSyncReady = false
+  private var savedController: (any SyncEngineControlling)?
 
   private let deviceId = "device-A"
   private let zoneID = CKRecordZone.ID(
@@ -28,21 +32,37 @@ final class WipeInterleavingTests: XCTestCase {
     store = SyncEngineStore(userRecordName: "apply-user", defaults: defaults)
     sessionController = MockSessionController()
     emergencyManager = EmergencyUnblockManager(defaults: defaults)
+    manager = ProfileSyncManager.shared
+    savedEnabled = manager.isEnabled
+    savedIsSyncReady = manager.isSyncReady
+    savedController = manager.engineController
+    manager.engineController = nil
+    manager.isSyncReady = false
+    manager.isEnabled = false
+    manager.clearAccountChangeStateForTest()
+    await manager.attachEngine(
+      modelContext: context,
+      emergencyManager: emergencyManager,
+      userRecordNameProvider: { "apply-user" },
+      driverFactory: { _ in MockSyncEngineDriver() },
+      storeDefaults: defaults)
   }
 
   override func tearDown() async throws {
+    manager.engineController = savedController
+    manager.isSyncReady = savedIsSyncReady
+    manager.isEnabled = savedEnabled
+    manager.clearAccountChangeStateForTest()
     UserDefaults().removePersistentDomain(forName: suiteName)
     try await super.tearDown()
   }
 
-  func testSW1OfflinePendingSaveStampedAtOldGenerationIsDeadWorldAfterAdoption() throws {
+  func testSW1OfflinePendingSaveStampedAtOldGenerationIsDeadWorldAfterAdoption() async throws {
     let id = UUID()
     let oldGenerationRecord = makeProfileRecord(id: id, name: "Queued Offline Edit", generation: 1)
     store.engineState = Data([0x01])
 
-    store.clearGenerationScopedBookkeeping()
-    store.establishmentGeneration = 2
-    store.engineState = nil
+    await manager.adoptEstablishmentGeneration(2)
 
     let outcome = makeApplyService().applyFetchedModification(
       oldGenerationRecord, isPendingDeleteOrTombstoned: noPendingDelete)
@@ -66,7 +86,7 @@ final class WipeInterleavingTests: XCTestCase {
     XCTAssertEqual(outbox.zoneDeleteCount, 1)
   }
 
-  func testSW3NewerGenerationRecordRedeliveredAfterForcedRefetchMaterializes() throws {
+  func testSW3NewerGenerationRecordRedeliveredAfterForcedRefetchMaterializes() async throws {
     let id = UUID()
     let currentGenerationRecord = makeProfileRecord(id: id, name: "After Wipe", generation: 2)
     store.establishmentGeneration = 1
@@ -79,9 +99,7 @@ final class WipeInterleavingTests: XCTestCase {
     XCTAssertEqual(firstOutcome, .skippedNewerGeneration)
     XCTAssertNil(try BlockedProfiles.findProfile(byID: id, in: context))
 
-    store.clearGenerationScopedBookkeeping()
-    store.establishmentGeneration = 2
-    store.engineState = nil
+    await manager.adoptEstablishmentGeneration(2)
 
     let redeliveredOutcome = service.applyFetchedModification(
       currentGenerationRecord, isPendingDeleteOrTombstoned: noPendingDelete)
@@ -91,7 +109,7 @@ final class WipeInterleavingTests: XCTestCase {
     XCTAssertEqual(try BlockedProfiles.findProfile(byID: id, in: context)?.name, "After Wipe")
   }
 
-  func testSW4GenerationAdoptionClearsTombstoneAndFailedApplyForRecreatedRecord() throws {
+  func testSW4GenerationAdoptionClearsTombstoneAndFailedApplyForRecreatedRecord() async throws {
     let id = UUID()
     let recordName = id.uuidString
     store.establishmentGeneration = 1
@@ -99,8 +117,7 @@ final class WipeInterleavingTests: XCTestCase {
     store.setDeleteWatermark(recordName: recordName, value: 4)
     store.addFailedApply(FailedApply(recordName: recordName, recordType: SyncedProfile.recordType, op: .upsert))
 
-    store.clearGenerationScopedBookkeeping()
-    store.establishmentGeneration = 2
+    await manager.adoptEstablishmentGeneration(2)
     let recreated = makeProfileRecord(id: id, name: "Recreated", version: 5, generation: 2)
 
     let outcome = makeApplyService().applyFetchedModification(

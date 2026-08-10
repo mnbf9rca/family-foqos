@@ -831,10 +831,6 @@ final class SyncEngineController: SyncEngineDriverDelegate {
       let localEpoch = localRecord[SyncedEmergencyEpoch.FieldKey.epoch.rawValue] as? Int ?? 0
       let serverEpoch = server[SyncedEmergencyEpoch.FieldKey.epoch.rawValue] as? Int ?? 0
       return localEpoch > serverEpoch
-    case SyncedEstablishment.recordType:
-      let localGeneration = store.establishmentGeneration
-      let serverGeneration = server[SyncedEstablishment.FieldKey.generation.rawValue] as? Int ?? 0
-      return localGeneration > serverGeneration
     default:
       return false
     }

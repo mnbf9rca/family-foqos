@@ -251,6 +251,28 @@ final class ProfileSyncAccountResolverTests: XCTestCase {
     XCTAssertFalse(manager.lastReattachForceSeedForTest)
   }
 
+  func testAdoptionFirstCancelsLiveDeletingWipeAndDequeuesItsZoneDelete() async throws {
+    try await makeAttachedManager(namespace: "userA", isEnabled: true, engineState: .steady)
+    let store = SyncEngineStore(userRecordName: "userA")
+    let resetId = UUID()
+    store.establishmentGeneration = 1
+    store.resetIntent = ResetIntent(
+      id: resetId, clear: false, wipe: true, stage: .deleting, priorCommandId: nil)
+    let zoneID = CKRecordZone.ID(
+      zoneName: CloudKitConstants.syncZoneName, ownerName: CKCurrentUserDefaultName)
+    let driver = try XCTUnwrap((manager.engineController as? SyncEngineController)?.driver as? MockSyncEngineDriver)
+    driver.add(pendingDatabaseChanges: [.deleteZone(zoneID)])
+    seedLocalProfiles(count: 1)
+
+    await manager.adoptEstablishmentGeneration(2)
+
+    XCTAssertEqual(store.establishmentGeneration, 2)
+    XCTAssertNil(store.resetIntent, "adoption must disarm the losing deleting wipe")
+    XCTAssertFalse(
+      driver.pendingDatabaseChanges.contains(.deleteZone(zoneID)),
+      "adoption must dequeue the losing wipe's pending zone delete before reattachment")
+  }
+
   func testSW6GenerationZeroDeviceAdoptsAndDiscardsLocalProfiles() async throws {
     try await makeAttachedManager(namespace: "userA", isEnabled: true, engineState: .steady)
     let store = SyncEngineStore(userRecordName: "userA")
@@ -293,6 +315,82 @@ final class ProfileSyncAccountResolverTests: XCTestCase {
     XCTAssertEqual(emergencyManager.getRemainingEmergencyUnblocks(), 3)
     XCTAssertTrue(emergencyManager.currentEmergencySettings(deviceId: "device").settingsLocked)
     XCTAssertEqual(emergencyManager.currentEmergencySettings(deviceId: "device").resetPeriodInDays, 14)
+  }
+
+  func testConcurrentAdoptionsCoalesceToMaxAndPostOneNotice() async throws {
+    try await makeAttachedManager(namespace: "userA", isEnabled: true, engineState: .steady)
+    let syncManager = try XCTUnwrap(manager)
+    let store = SyncEngineStore(userRecordName: "userA")
+    store.establishmentGeneration = 1
+    seedLocalProfiles(count: 1)
+    let noticePosted = expectation(description: "one coalesced establishment adoption notice")
+    noticePosted.assertForOverFulfill = true
+    let observer = NotificationCenter.default.addObserver(
+      forName: .syncEnginePurged,
+      object: nil,
+      queue: nil
+    ) { _ in
+      noticePosted.fulfill()
+    }
+    defer { NotificationCenter.default.removeObserver(observer) }
+
+    async let generationTwo: Void = syncManager.adoptEstablishmentGeneration(2)
+    async let generationThree: Void = syncManager.adoptEstablishmentGeneration(3)
+    _ = await (generationTwo, generationThree)
+    await fulfillment(of: [noticePosted], timeout: 0.1)
+
+    XCTAssertEqual(store.establishmentGeneration, 3)
+    XCTAssertEqual(syncManager.establishmentAdoptionNoticeCountForTest, 1)
+    XCTAssertEqual(syncManager.maxConcurrentReattachCountForTest, 1)
+  }
+
+  func testGenerationWipeStopsEnforcementBeforeDeletingActiveProfile() async throws {
+    try await makeAttachedManager(namespace: "userA", isEnabled: true, engineState: .steady)
+    let now = Date()
+    let profile = seedLocalProfiles(count: 1, now: now).first!
+    _ = startActiveSession(for: profile, now: now)
+    var events: [String] = []
+    let cleanup = BlockedProfiles.DeleteCleanup(
+      removeStartSchedule: { _ in events.append("delete") },
+      removeStopSchedule: { _ in },
+      cancelPreActivationReminders: { _ in },
+      removeBreakBackstop: { _ in },
+      removeOneMoreMinuteBackstop: { _ in })
+
+    try manager.wipeLocalSyncedEntitiesForGeneration(
+      cleanup: cleanup,
+      stopRemoteSession: { context, profileId in
+        XCTAssertNotNil(try? BlockedProfiles.findProfile(byID: profileId, in: context))
+        events.append("stop")
+      },
+      clearResidualEnforcement: { _ in events.append("restrictions") },
+      endLiveActivity: { events.append("live-activity") })
+
+    XCTAssertEqual(events, ["stop", "restrictions", "live-activity", "delete"])
+    XCTAssertEqual(try container.mainContext.fetch(FetchDescriptor<BlockedProfiles>()).count, 0)
+  }
+
+  func testOriginWipeFailureAfterEntityDeleteDoesNotAdvanceGeneration() async throws {
+    try await makeAttachedManager(namespace: "userA", isEnabled: true, engineState: .steady)
+    let store = SyncEngineStore(userRecordName: "userA")
+    store.establishmentGeneration = 1
+    seedLocalProfiles(count: 1)
+    let controller = try XCTUnwrap(manager.engineController as? SyncEngineController)
+    let reset = try XCTUnwrap(controller.reset)
+
+    try manager.resetSync(wipe: true, clearRemoteAppSelections: false)
+    await reset.handleZoneDeleteConfirmed()
+    manager.failNextGenerationWipeFinalSaveForTest = true
+
+    reset.handleZoneSaveConfirmed()
+
+    XCTAssertEqual(store.establishmentGeneration, 1, "a failed local delete commit must not bump")
+    XCTAssertEqual(store.resetIntent?.stage, .recreating, "the wipe remains retryable")
+    let recordDeletes = controller.driver.pendingRecordZoneChanges.filter {
+      if case .deleteRecord = $0 { return true }
+      return false
+    }
+    XCTAssertTrue(recordDeletes.isEmpty, "origin wipe deletion must stay local-only")
   }
 
   func testNotNowLeavesEngineOffButRePromptable() async throws {

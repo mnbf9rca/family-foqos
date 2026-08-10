@@ -12,6 +12,7 @@ RECORD TYPE FamilyLockCode
 RECORD TYPE FamilyMember
 RECORD TYPE FamilyRoot
 RECORD TYPE ProfileSession
+RECORD TYPE SyncEstablishment
 RECORD TYPE SyncResetRequest
 RECORD TYPE SyncedLocation
 RECORD TYPE SyncedProfile

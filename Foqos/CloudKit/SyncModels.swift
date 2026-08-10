@@ -683,6 +683,10 @@ struct SyncedEmergencyUnblockEvent: Codable, Equatable {
   var resetEpoch: Int
   var generation: Int
 
+  private enum CodingKeys: String, CodingKey {
+    case id, deviceId, consumedAt, resetEpoch, generation
+  }
+
   static let recordType = "EmergencyUnblockEvent"
   static let recordNamePrefix = "EmergencyUnblock_"
   var recordName: String { Self.recordNamePrefix + id.uuidString }
@@ -717,6 +721,15 @@ struct SyncedEmergencyUnblockEvent: Codable, Equatable {
     self.consumedAt = consumedAt
     self.resetEpoch = resetEpoch
     self.generation = generation
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    id = try container.decode(UUID.self, forKey: .id)
+    deviceId = try container.decode(String.self, forKey: .deviceId)
+    consumedAt = try container.decode(Date.self, forKey: .consumedAt)
+    resetEpoch = try container.decode(Int.self, forKey: .resetEpoch)
+    generation = try container.decodeIfPresent(Int.self, forKey: .generation) ?? 0
   }
 
   init?(from record: CKRecord) {

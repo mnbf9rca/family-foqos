@@ -80,4 +80,22 @@ final class EmergencyUnblockEventLedgerTests: XCTestCase {
 
     XCTAssertEqual(manager.getRemainingEmergencyUnblocks(), 0, "never negative")
   }
+
+  func testGivenPreUpgradeLedgerJSON_WhenDecoded_ThenEventSurvivesWithGenerationZero() throws {
+    let id = UUID()
+    let data = try JSONSerialization.data(withJSONObject: [
+      [
+        "id": id.uuidString,
+        "deviceId": "legacy-device",
+        "consumedAt": 1_234.0,
+        "resetEpoch": 2,
+      ]
+    ])
+
+    let events = try JSONDecoder().decode([SyncedEmergencyUnblockEvent].self, from: data)
+
+    XCTAssertEqual(events.count, 1)
+    XCTAssertEqual(events.first?.id, id)
+    XCTAssertEqual(events.first?.generation, 0)
+  }
 }

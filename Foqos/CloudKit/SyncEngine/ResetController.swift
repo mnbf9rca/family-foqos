@@ -11,6 +11,7 @@ protocol ResetOutbox: AnyObject {
   func enqueueCommandSave()
   func enqueueEstablishmentSave()
   func removeCommandSave()
+  func removeEstablishmentSave()
   /// Request a best-effort send; the production driver crosses a detached task boundary (§1.1).
   func requestSend()
   /// #286: purge pending CKSyncEngine work before deleting the zone. This is defensive
@@ -262,6 +263,7 @@ final class ResetController {
       let serverGeneration =
         serverRecord[SyncedEstablishment.FieldKey.generation.rawValue] as? Int ?? 0
       store.establishmentGeneration = max(store.establishmentGeneration, serverGeneration)
+      store.engineState = nil
       store.resetIntent = nil
     }
   }
@@ -284,6 +286,15 @@ final class ResetController {
   func abandonForStop() {
     guard store.resetIntent != nil else { return }
     outbox.removeCommandSave()
+    outbox.removeEstablishmentSave()
+    outbox.removeResetZoneChanges()
+    store.resetIntent = nil
+  }
+
+  /// A fetched higher establishment generation won the zone race. Cancel only a wipe that
+  /// is still trying to delete that zone; the normal adoption path owns the local discard.
+  func cancelDeletingWipeForEstablishmentAdoption() {
+    guard let intent = store.resetIntent, intent.wipe, intent.stage == .deleting else { return }
     outbox.removeResetZoneChanges()
     store.resetIntent = nil
   }
@@ -352,7 +363,6 @@ final class ResetController {
         return
       }
       if establishment.generation > store.establishmentGeneration {
-        store.establishmentGeneration = establishment.generation
         store.resetIntent = nil
       } else {
         reenqueueDeleting()

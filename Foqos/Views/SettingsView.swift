@@ -34,6 +34,16 @@ struct SettingsView: View {
     mode == .child && canVerifyCode
   }
 
+  nonisolated static func wipeIsAllowed(mode: AppMode, canVerifyCode: Bool) -> Bool {
+    mode == .child ? canVerifyCode : true
+  }
+
+  private var isWipeAllowed: Bool {
+    Self.wipeIsAllowed(
+      mode: appModeManager.currentMode,
+      canVerifyCode: lockCodeManager.canVerifyCode)
+  }
+
   private var appVersion: String {
     Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
       ?? "1.0"
@@ -428,6 +438,13 @@ struct SettingsView: View {
                 showWipeSyncConfirmation = true
               } label: {
                 Text("Wipe Synced Data Everywhere")
+              }
+              .disabled(!isWipeAllowed)
+
+              if appModeManager.currentMode == .child && !lockCodeManager.canVerifyCode {
+                Text("Ask a parent - lock code not available.")
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
               }
             }
           }

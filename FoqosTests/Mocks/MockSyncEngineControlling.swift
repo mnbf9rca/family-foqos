@@ -11,6 +11,8 @@ final class MockSyncEngineControlling: SyncEngineControlling {
   private(set) var endAccountResolutionCount = 0
   private(set) var prepareForAccountSwitchCount = 0
   private(set) var beginResetCalls: [Bool] = []
+  private(set) var beginResetWipeFlags: [Bool] = []
+  private(set) var cancelDeletingWipeCount = 0
   private(set) var enqueuedProfileSaves: [UUID] = []
   private(set) var enqueuedProfileDeletes: [UUID] = []
   private(set) var enqueuedLocationSaves: [UUID] = []
@@ -40,10 +42,15 @@ final class MockSyncEngineControlling: SyncEngineControlling {
   func beginAccountResolution() { beginAccountResolutionCount += 1 }
   func endAccountResolution() { endAccountResolutionCount += 1 }
   func prepareForAccountSwitch() { prepareForAccountSwitchCount += 1 }
-  func beginReset(clearRemoteAppSelections: Bool) { beginResetCalls.append(clearRemoteAppSelections) }
-  func beginReset(wipe: Bool, clearRemoteAppSelections: Bool) {
+  func beginReset(clearRemoteAppSelections: Bool) {
+    beginResetWipeFlags.append(false)
     beginResetCalls.append(clearRemoteAppSelections)
   }
+  func beginReset(wipe: Bool, clearRemoteAppSelections: Bool) {
+    beginResetWipeFlags.append(wipe)
+    beginResetCalls.append(clearRemoteAppSelections)
+  }
+  func cancelDeletingWipeForEstablishmentAdoption() { cancelDeletingWipeCount += 1 }
   func enqueueProfileSave(_ id: UUID) throws {
     if let errorToThrow { throw errorToThrow }
     enqueuedProfileSaves.append(id)

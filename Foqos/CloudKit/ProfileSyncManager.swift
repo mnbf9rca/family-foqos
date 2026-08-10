@@ -64,6 +64,7 @@ class ProfileSyncManager: ObservableObject {
   private var attachedModelContext: ModelContext?
   private var attachedEmergencyManager: EmergencyUnblockManager?
   private var attachedDriverFactory: ((Data?) -> SyncEngineDriver)?
+  private var attachedStoreDefaults: UserDefaults = .standard
   private var didRetryAccountResolution = false
   private var accountResolutionRetryTask: Task<Void, Never>?
   // ProfileSyncManager is @MainActor; adoption coalescing state is serialized by actor isolation.
@@ -76,9 +77,14 @@ class ProfileSyncManager: ObservableObject {
     private(set) var didCallStartForTest = false
     private(set) var didTearDownForTest = false
     private(set) var lastReattachForceSeedForTest = false
+    private(set) var establishmentAdoptionNoticeCountForTest = 0
+    private(set) var reattachCountForTest = 0
+    private(set) var maxConcurrentReattachCountForTest = 0
+    private var concurrentReattachCountForTest = 0
     var disableAccountResolutionRetryForTest = false
     var accountResolutionRetryDelayNanosecondsForTest: UInt64?
     var failNextSwitchWipeFinalSaveForTest = false
+    var failNextGenerationWipeFinalSaveForTest = false
 
     var isReachabilityMonitoringForTest: Bool {
       reachabilityMonitor.isMonitoringForTest
@@ -240,11 +246,14 @@ class ProfileSyncManager: ObservableObject {
   #if DEBUG
     private enum ProfileSyncManagerTestError: LocalizedError {
       case injectedSwitchWipeFinalSaveFailure
+      case injectedGenerationWipeFinalSaveFailure
 
       var errorDescription: String? {
         switch self {
         case .injectedSwitchWipeFinalSaveFailure:
           return "Injected switch wipe final save failure"
+        case .injectedGenerationWipeFinalSaveFailure:
+          return "Injected generation wipe final save failure"
         }
       }
     }
@@ -262,7 +271,8 @@ class ProfileSyncManager: ObservableObject {
     modelContext: ModelContext,
     emergencyManager: EmergencyUnblockManager,
     userRecordNameProvider: @Sendable () async -> String = ProfileSyncManager.fetchUserRecordName,
-    driverFactory: ((Data?) -> SyncEngineDriver)? = nil
+    driverFactory: ((Data?) -> SyncEngineDriver)? = nil,
+    storeDefaults: UserDefaults = .standard
   ) async {
     // Idempotency is keyed on the public `engineController` facade (not the private strong
     // owner) so a test that resets `engineController` between runs (as `SyncEngineFacadeTests`
@@ -273,9 +283,10 @@ class ProfileSyncManager: ObservableObject {
     attachedModelContext = modelContext
     attachedEmergencyManager = emergencyManager
     attachedDriverFactory = driverFactory
+    attachedStoreDefaults = storeDefaults
     await buildEngine(
       userRecordName: userRecordName, modelContext: modelContext, emergencyManager: emergencyManager,
-      driverFactory: driverFactory, forceSeed: false)
+      driverFactory: driverFactory, storeDefaults: storeDefaults, forceSeed: false)
   }
 
   private func buildEngine(
@@ -283,11 +294,12 @@ class ProfileSyncManager: ObservableObject {
     modelContext: ModelContext,
     emergencyManager: EmergencyUnblockManager,
     driverFactory: ((Data?) -> SyncEngineDriver)?,
+    storeDefaults: UserDefaults,
     forceSeed: Bool
   ) async {
     attachedUserRecordName = userRecordName
     let deviceId = SharedData.deviceSyncId.uuidString
-    let store = SyncEngineStore(userRecordName: userRecordName)
+    let store = SyncEngineStore(userRecordName: userRecordName, defaults: storeDefaults)
     if forceSeed { store.pendingSeedIntent = true }
     let apply = SyncApplyService(
       modelContext: modelContext, store: store, sessionController: StrategyManager.shared,
@@ -425,6 +437,11 @@ class ProfileSyncManager: ObservableObject {
 
     #if DEBUG
       lastReattachForceSeedForTest = forceSeed
+      reattachCountForTest += 1
+      concurrentReattachCountForTest += 1
+      maxConcurrentReattachCountForTest = max(
+        maxConcurrentReattachCountForTest, concurrentReattachCountForTest)
+      defer { concurrentReattachCountForTest -= 1 }
     #endif
     engineController?.prepareForAccountSwitch()
     #if DEBUG
@@ -438,6 +455,7 @@ class ProfileSyncManager: ObservableObject {
       modelContext: modelContext,
       emergencyManager: emergencyManager,
       driverFactory: attachedDriverFactory,
+      storeDefaults: attachedStoreDefaults,
       forceSeed: forceSeed)
   }
 
@@ -498,11 +516,26 @@ class ProfileSyncManager: ObservableObject {
   }
 
   func wipeLocalSyncedEntitiesForGeneration(
-    cleanup: BlockedProfiles.DeleteCleanup? = nil
+    cleanup: BlockedProfiles.DeleteCleanup? = nil,
+    stopRemoteSession: (ModelContext, UUID) -> Void = { context, profileId in
+      StrategyManager.shared.stopRemoteSession(context: context, profileId: profileId)
+    },
+    clearResidualEnforcement: (ModelContext) -> Void = { context in
+      StrategyManager.shared.resetBlockingState(context: context)
+    },
+    endLiveActivity: () -> Void = {
+      LiveActivityManager.shared.endSessionActivity()
+    }
   ) throws {
     guard let context = attachedModelContext else { throw SyncError.syncDisabled }
 
     let profiles = try context.fetch(FetchDescriptor<BlockedProfiles>())
+    for profile in profiles {
+      stopRemoteSession(context, profile.id)
+    }
+    clearResidualEnforcement(context)
+    endLiveActivity()
+
     for profile in profiles {
       try BlockedProfiles.deleteProfile(profile, in: context, cleanup: cleanup)
     }
@@ -512,13 +545,22 @@ class ProfileSyncManager: ObservableObject {
       try SavedLocation.delete(location, in: context)
     }
 
+    #if DEBUG
+      if failNextGenerationWipeFinalSaveForTest {
+        failNextGenerationWipeFinalSaveForTest = false
+        throw SyncError.deleteFailed(ProfileSyncManagerTestError.injectedGenerationWipeFinalSaveFailure)
+      }
+    #endif
+
     try context.save()
   }
 
   func adoptEstablishmentGeneration(_ newGeneration: Int) async {
     guard let userRecordName = attachedUserRecordName else { return }
-    let store = SyncEngineStore(userRecordName: userRecordName)
+    let store = SyncEngineStore(userRecordName: userRecordName, defaults: attachedStoreDefaults)
     guard newGeneration > store.establishmentGeneration else { return }
+
+    engineController?.cancelDeletingWipeForEstablishmentAdoption()
 
     if isAdoptingEstablishmentGeneration {
       pendingAdoptionGeneration = max(pendingAdoptionGeneration ?? newGeneration, newGeneration)
@@ -526,7 +568,9 @@ class ProfileSyncManager: ObservableObject {
     }
 
     isAdoptingEstablishmentGeneration = true
+    defer { isAdoptingEstablishmentGeneration = false }
     var targetGeneration = newGeneration
+    var didAdoptGeneration = false
 
     while targetGeneration > store.establishmentGeneration {
       do {
@@ -544,10 +588,10 @@ class ProfileSyncManager: ObservableObject {
         s.establishmentGeneration = targetGeneration
         s.engineState = nil
       }
+      didAdoptGeneration = true
       attachedEmergencyManager?.clearLedgerForGenerationAdoption()
 
       await reattachEngine(userRecordName: userRecordName, forceSeed: false)
-      NotificationCenter.default.post(name: .syncEnginePurged, object: nil)
 
       if let pending = pendingAdoptionGeneration, pending > store.establishmentGeneration {
         pendingAdoptionGeneration = nil
@@ -558,7 +602,12 @@ class ProfileSyncManager: ObservableObject {
       }
     }
 
-    isAdoptingEstablishmentGeneration = false
+    if didAdoptGeneration {
+      #if DEBUG
+        establishmentAdoptionNoticeCountForTest += 1
+      #endif
+      NotificationCenter.default.post(name: .syncEnginePurged, object: nil)
+    }
   }
 
   private func pauseSync(reason: SyncPausedReason) {
@@ -643,10 +692,15 @@ class ProfileSyncManager: ObservableObject {
       didCallStartForTest = false
       didTearDownForTest = false
       lastReattachForceSeedForTest = false
+      establishmentAdoptionNoticeCountForTest = 0
+      reattachCountForTest = 0
+      maxConcurrentReattachCountForTest = 0
+      concurrentReattachCountForTest = 0
       cancelAccountResolutionRetry()
       disableAccountResolutionRetryForTest = true
       accountResolutionRetryDelayNanosecondsForTest = nil
       failNextSwitchWipeFinalSaveForTest = false
+      failNextGenerationWipeFinalSaveForTest = false
     }
 
     func clearAccountChangeStateForTest() {
@@ -658,12 +712,18 @@ class ProfileSyncManager: ObservableObject {
       attachedModelContext = nil
       attachedEmergencyManager = nil
       attachedDriverFactory = nil
+      attachedStoreDefaults = .standard
       didCallStartForTest = false
       didTearDownForTest = false
       lastReattachForceSeedForTest = false
+      establishmentAdoptionNoticeCountForTest = 0
+      reattachCountForTest = 0
+      maxConcurrentReattachCountForTest = 0
+      concurrentReattachCountForTest = 0
       disableAccountResolutionRetryForTest = false
       accountResolutionRetryDelayNanosecondsForTest = nil
       failNextSwitchWipeFinalSaveForTest = false
+      failNextGenerationWipeFinalSaveForTest = false
     }
 
     func wipeAndReattachForTest(cleanup: BlockedProfiles.DeleteCleanup, newName: String) async throws {
