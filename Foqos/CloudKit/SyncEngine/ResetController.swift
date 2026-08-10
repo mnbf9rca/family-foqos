@@ -90,6 +90,7 @@ final class ResetController {
   private let fetcher: RecordFetching
   private let surfacer: ResetConflictSurfacing
   private let deviceId: String
+  private let isActive: () -> Bool
 
   init(
     store: SyncEngineStore,
@@ -97,7 +98,8 @@ final class ResetController {
     seeder: ResetSeeder,
     fetcher: RecordFetching,
     surfacer: ResetConflictSurfacing,
-    deviceId: String
+    deviceId: String,
+    isActive: @escaping () -> Bool = { true }
   ) {
     self.store = store
     self.outbox = outbox
@@ -105,6 +107,7 @@ final class ResetController {
     self.fetcher = fetcher
     self.surfacer = surfacer
     self.deviceId = deviceId
+    self.isActive = isActive
   }
 
   private var zoneID: CKRecordZone.ID {
@@ -141,8 +144,9 @@ final class ResetController {
 
   /// §8.1 step 3. Driven from §5.5 (deletedZoneIDs / failedZoneDeletes .zoneNotFound).
   func handleZoneDeleteConfirmed() async {
-    guard let intent = store.resetIntent, intent.stage == .deleting else { return }
+    guard isActive(), let intent = store.resetIntent, intent.stage == .deleting else { return }
     await seeder.performI6Purge()
+    guard isActive() else { return }
     store.resetIntent = ResetIntent(
       id: intent.id, clear: intent.clear, wipe: intent.wipe, stage: .recreating,
       priorCommandId: intent.priorCommandId)
@@ -185,7 +189,7 @@ final class ResetController {
 
   /// Applied on a fetched modification of the fixed-name command record.
   func applyCommand(_ record: CKRecord) async {
-    guard let command = SyncResetRequest(from: record) else {
+    guard isActive(), let command = SyncResetRequest(from: record) else {
       // Undecodable command (incl. no readable requestId): inert, dies with its zone (§5.1).
       return
     }
@@ -208,6 +212,7 @@ final class ResetController {
       try? seeder.clearAllProfileSelections()
     }
     await seeder.performI6Purge()
+    guard isActive() else { return }
     seeder.seedAll()
     // 3. mark processed + provenance (I4: after apply)
     store.transaction { s in
@@ -305,7 +310,7 @@ final class ResetController {
 
   /// Resume a persisted resetIntent from its stage. .deleting runs the gate first (Task 106).
   func resume() async {
-    guard let intent = store.resetIntent else { return }
+    guard isActive(), let intent = store.resetIntent else { return }
     switch intent.stage {
     case .deleting:
       await runDeletingGate(intent)
@@ -331,7 +336,7 @@ final class ResetController {
     }
     do {
       let record = try await fetcher.fetchRecord(commandRecordID)
-      guard isCurrentDeletingIntent(intent) else { return }
+      guard isActive(), isCurrentDeletingIntent(intent) else { return }
       guard let record else {
         reenqueueDeleting()  // no command (any snapshot) ⇒ resume
         return
@@ -348,7 +353,7 @@ final class ResetController {
         abandon(intent)  // foreign, different from both ⇒ superseded ⇒ abandon + surface
       }
     } catch let error as CKError where error.code == .zoneNotFound {
-      guard isCurrentDeletingIntent(intent) else { return }
+      guard isActive(), isCurrentDeletingIntent(intent) else { return }
       reenqueueDeleting()  // zone died / was T5-reseeded ⇒ resume (zone-CAS + N1)
     } catch {
       // Transient fetch error ⇒ keep the intent; retry at next start / §5.6 cadence.
@@ -358,7 +363,7 @@ final class ResetController {
   private func runWipeDeletingGate(_ intent: ResetIntent) async {
     do {
       let record = try await fetcher.fetchRecord(establishmentRecordID)
-      guard isCurrentDeletingIntent(intent) else { return }
+      guard isActive(), isCurrentDeletingIntent(intent) else { return }
       guard let record else {
         reenqueueDeleting()
         return
@@ -374,7 +379,7 @@ final class ResetController {
         reenqueueDeleting()
       }
     } catch let error as CKError where error.code == .zoneNotFound {
-      guard isCurrentDeletingIntent(intent) else { return }
+      guard isActive(), isCurrentDeletingIntent(intent) else { return }
       reenqueueDeleting()
     } catch {
       // Transient fetch error ⇒ keep the intent; retry later.

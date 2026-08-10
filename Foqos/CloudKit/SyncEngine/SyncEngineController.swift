@@ -64,6 +64,7 @@ final class SyncEngineController: SyncEngineDriverDelegate {
   private(set) var startupTask: Task<Void, Never>?
   private(set) var flushTask: Task<Void, Never>?
   private(set) var fetchCycleSweepTask: Task<Void, Never>?
+  private(set) var resetTask: Task<Void, Never>?
   private var queueDrainTask: Task<Void, Never>?
   private var queueDrainAttempt = 0
   private var queueDrainNeedsSend = false
@@ -74,6 +75,8 @@ final class SyncEngineController: SyncEngineDriverDelegate {
   #if DEBUG
     private var queueDrainDelayOverrideNanos: UInt64?
     var beforeDeleteIntentRecoveryForTest: (() async -> Void)?
+    var beforeFailedApplyRetryForTest: (() async -> Void)?
+    var beforeSeedDecisionForTest: (() async -> Void)?
     func setQueueDrainDelayForTest(_ nanos: UInt64) {
       queueDrainDelayOverrideNanos = nanos
     }
@@ -123,6 +126,8 @@ final class SyncEngineController: SyncEngineDriverDelegate {
     startupTask?.cancel()
     flushTask?.cancel()
     fetchCycleSweepTask?.cancel()
+    resetTask?.cancel()
+    resetTask = nil
     queueDrainTask?.cancel()
     queueDrainTask = nil
     isSending = false
@@ -130,6 +135,9 @@ final class SyncEngineController: SyncEngineDriverDelegate {
     lastSuccessfulSyncDate = nil
     driver?.shutdown()
     driver = nil
+    funnel = nil
+    reset = nil
+    legacyCleanup = nil
     endAccountResolution()
     state = .disabled
   }
@@ -190,12 +198,14 @@ final class SyncEngineController: SyncEngineDriverDelegate {
       store.engineState = nil
       driver = driverFactory(nil)
     }
+    let generation = namespaceGeneration
+    let isActive = { [weak self] in self?.isGenerationActive(generation) == true }
     funnel = MutationFunnel(
       modelContext: modelContext, store: store, driver: driver, deviceId: deviceId,
       scheduleProfileDeleteCommit: scheduleProfileDeleteCommit)
     reset = ResetController(
       store: store,
-      outbox: DriverResetOutbox(driver: driver, zoneID: zoneID),
+      outbox: DriverResetOutbox(driver: driver, zoneID: zoneID, isActive: isActive),
       seeder: DefaultResetSeeder(
         store: store,
         flush: { [weak self] in await self?.sessionSync.flushSessionCache() },
@@ -206,13 +216,17 @@ final class SyncEngineController: SyncEngineDriverDelegate {
         clearSelections: { [weak self] in try self?.clearAllLocalProfileSelections() }),
       fetcher: DriverRecordFetcher(driver: driver),
       surfacer: ConflictManagerResetSurfacer(),
-      deviceId: deviceId)
+      deviceId: deviceId,
+      isActive: isActive)
     legacyCleanup = LegacyCleanupCoordinator(store: store, driver: driver)
     wireResetHooks()
     performStrip()
     state = .bootstrapping
-    let generation = namespaceGeneration
     startupTask = Task { [weak self] in await self?.runStartupSequence(generation: generation) }
+  }
+
+  private func isGenerationActive(_ generation: Int) -> Bool {
+    generation == namespaceGeneration && driver != nil
   }
 
   /// Phase F composition (CRA-4): connects the controller's reset hooks to the
@@ -222,12 +236,19 @@ final class SyncEngineController: SyncEngineDriverDelegate {
   /// `ResetController` methods are scheduled via `Task`; the synchronous ones
   /// (`handleZoneSaveConfirmed`, `handleCommandSaveResult`) run inline.
   private func wireResetHooks() {
+    let generation = namespaceGeneration
     onFetchedResetCommand = { [weak self] record in
-      Task { await self?.reset?.applyCommand(record) }
+      self?.resetTask = Task { [weak self] in
+        guard let self, self.isGenerationActive(generation), let reset = self.reset else { return }
+        await reset.applyCommand(record)
+      }
     }
     onZoneChangeConfirmed = { [weak self] saved, deleted in
       if !deleted.isEmpty {
-        Task { await self?.reset?.handleZoneDeleteConfirmed() }
+        self?.resetTask = Task { [weak self] in
+          guard let self, self.isGenerationActive(generation), let reset = self.reset else { return }
+          await reset.handleZoneDeleteConfirmed()
+        }
       }
       if !saved.isEmpty { self?.reset?.handleZoneSaveConfirmed() }
     }
@@ -257,7 +278,12 @@ final class SyncEngineController: SyncEngineDriverDelegate {
         }
       }
     }
-    onResumeReset = { [weak self] _ in Task { await self?.reset?.resume() } }
+    onResumeReset = { [weak self] _ in
+      self?.resetTask = Task { [weak self] in
+        guard let self, self.isGenerationActive(generation), let reset = self.reset else { return }
+        await reset.resume()
+      }
+    }
     // T11 (Fix 7): dequeue a live resetIntent's pending zone/command changes BEFORE
     // stop()'s best-effort final sendChanges() — user-initiated disable, never surfaced
     // as a superseded-reset conflict (see ResetController.abandonForStop).
@@ -291,6 +317,8 @@ final class SyncEngineController: SyncEngineDriverDelegate {
     startupTask?.cancel()
     flushTask?.cancel()
     fetchCycleSweepTask?.cancel()
+    resetTask?.cancel()
+    resetTask = nil
     queueDrainTask?.cancel()
     queueDrainTask = nil
     isSending = false
@@ -299,6 +327,9 @@ final class SyncEngineController: SyncEngineDriverDelegate {
     store.engineState = nil  // pending unsent saves lost (N5); tombstones survive
     driver?.shutdown()
     driver = nil
+    funnel = nil
+    reset = nil
+    legacyCleanup = nil
     state = .disabled
   }
 
@@ -459,6 +490,8 @@ final class SyncEngineController: SyncEngineDriverDelegate {
       case .purged:  // T6
         namespaceGeneration += 1
         startupTask?.cancel()
+        resetTask?.cancel()
+        resetTask = nil
         store.purgeAllSystemFields()
         store.transaction { s in
           s.engineState = nil
@@ -476,6 +509,9 @@ final class SyncEngineController: SyncEngineDriverDelegate {
         lastSuccessfulSyncDate = nil
         driver?.shutdown()
         driver = nil
+        funnel = nil
+        reset = nil
+        legacyCleanup = nil
         state = .purged
       }
     }
@@ -946,16 +982,16 @@ final class SyncEngineController: SyncEngineDriverDelegate {
   // MARK: - Startup
 
   private func runStartupSequence(generation: Int) async {
-    guard generation == namespaceGeneration else { return }
+    guard isGenerationActive(generation) else { return }
     await recoverDeleteIntents(generation: generation)
-    guard generation == namespaceGeneration else { return }
+    guard isGenerationActive(generation) else { return }
     await retryFailedApplies(generation: generation)
-    guard generation == namespaceGeneration else { return }
+    guard isGenerationActive(generation) else { return }
     reEnqueueLegacyCleanup()
     if store.resetIntent == nil {
-      await applySeedDecision()
+      await applySeedDecision(generation: generation)
     }
-    guard generation == namespaceGeneration else { return }
+    guard isGenerationActive(generation) else { return }
     if let intent = store.resetIntent { onResumeReset?(intent) }  // §8.1 (Phase E)
     driver.fetchChanges()
   }
@@ -972,11 +1008,15 @@ final class SyncEngineController: SyncEngineDriverDelegate {
   /// the entry regardless of which op originally failed (already handled inside
   /// `SyncApplyService`, which clears by name on every successful path).
   private func retryFailedApplies(generation: Int) async {
+    #if DEBUG
+      await beforeFailedApplyRetryForTest?()
+    #endif
+    guard isGenerationActive(generation) else { return }
     for entry in store.failedApplies {
-      guard generation == namespaceGeneration else { return }
+      guard isGenerationActive(generation) else { return }
       let id = recordID(entry.recordName)
       let result = await driver.fetchRecord(id)
-      guard generation == namespaceGeneration else { return }
+      guard isGenerationActive(generation) else { return }
       switch entry.op {
       case .upsert:
         switch result {
@@ -1015,6 +1055,7 @@ final class SyncEngineController: SyncEngineDriverDelegate {
         }
       }
     }
+    guard isGenerationActive(generation) else { return }
     for recordID in apply.drainReenqueues() {
       markQueueDrainNeeded()
       driver.add(pendingRecordZoneChanges: [.saveRecord(recordID)])
@@ -1087,7 +1128,7 @@ final class SyncEngineController: SyncEngineDriverDelegate {
     guard generation == namespaceGeneration, driver != nil else { return }
     let pending = pendingDeleteNames()
     for (name, tag) in store.deleteTombstones where !pending.contains(name) {
-      guard generation == namespaceGeneration else { return }
+      guard isGenerationActive(generation) else { return }
       if entityExists(recordName: name) {
         // Local delete never completed — fail-toward-keep (E-3).
         store.clearTombstone(recordName: name)
@@ -1096,7 +1137,7 @@ final class SyncEngineController: SyncEngineDriverDelegate {
       }
       // Recovered intent ⇒ verify-before-delete.
       let result = await driver.fetchRecord(recordID(name))
-      guard generation == namespaceGeneration else { return }
+      guard isGenerationActive(generation) else { return }
       switch result {
       case .found(let record, let serverTag):
         if let tag, let serverTag, serverTag == tag {
@@ -1145,11 +1186,16 @@ final class SyncEngineController: SyncEngineDriverDelegate {
   /// Exactly one of: first-bootstrap seed, crash-recovery purge+re-seed, or (ordinary
   /// relaunch) nothing — the restored `engineState` is authoritative for the queue, so an
   /// ordinary relaunch enqueues zero changes (S-19/I7).
-  private func applySeedDecision() async {  // at most one seed (T1)
+  private func applySeedDecision(generation: Int) async {  // at most one seed (T1)
+    #if DEBUG
+      await beforeSeedDecisionForTest?()
+    #endif
+    guard isGenerationActive(generation) else { return }
     if store.engineState == nil {
       seedZoneAndRecords()
     } else if store.pendingSeedIntent {
       await purgeBookkeeping()
+      guard isGenerationActive(generation) else { return }
       seedZoneAndRecords()
     }
     // else ordinary relaunch (I7): enqueue nothing.

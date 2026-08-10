@@ -460,6 +460,41 @@ final class SyncEngineControllerTests: XCTestCase {
     XCTAssertTrue(pendingSaveNames().contains(p.id.uuidString))
   }
 
+  func testGivenStartupPastInitialGuard_WhenTeardownBeforeSeedDecision_ThenStartupExitsCleanly()
+    async
+  {
+    store.engineState = nil
+    let gate = StartupRecoveryGate()
+    let controller = makeController()
+    controller.beforeSeedDecisionForTest = { await gate.suspend() }
+    controller.start()
+    await gate.waitUntilEntered()
+
+    controller.prepareForAccountSwitch()
+    gate.release()
+    await controller.startupTask?.value
+
+    XCTAssertEqual(controller.state, .disabled)
+    XCTAssertFalse(controller.hasLiveDriver)
+  }
+
+  func testGivenPendingSeedFlushSuspended_WhenTeardownOccurs_ThenStartupDoesNotSeed() async {
+    store.engineState = Data([0x01])
+    store.pendingSeedIntent = true
+    let gate = StartupRecoveryGate()
+    sessionSync.beforeFlush = { await gate.suspend() }
+    let controller = makeController()
+    controller.start()
+    await gate.waitUntilEntered()
+
+    controller.prepareForAccountSwitch()
+    gate.release()
+    await controller.startupTask?.value
+
+    XCTAssertEqual(controller.state, .disabled)
+    XCTAssertFalse(controller.hasLiveDriver)
+  }
+
   func testGivenResetIntentDeletingAndNilEngineState_WhenStart_ThenStartupDoesNotOwnSeedZone() async {
     store.engineState = nil
     store.resetIntent = ResetIntent(id: UUID(), clear: false, stage: .deleting, priorCommandId: nil)
@@ -900,6 +935,33 @@ final class SyncEngineControllerTests: XCTestCase {
     XCTAssertNotNil(try? fetchProfile(id), "recovered record applied by the post-cycle sweep")
   }
 
+  func testGivenPendingReenqueueAtRetryEntry_WhenTeardownOccurs_ThenTailDoesNotUseDriver() async {
+    store.engineState = Data([0x01])
+    let controller = makeController()
+    controller.start()
+    await controller.startupTask?.value
+
+    let id = UUID()
+    let local = BlockedProfiles(id: id, name: "Local", syncVersion: 5)
+    context.insert(local)
+    try? context.save()
+    let remote = makeProfileRecord(id: id, version: 5, name: "Remote")
+    remote[SyncedProfile.FieldKey.updatedAt.rawValue] = local.updatedAt.addingTimeInterval(-10)
+    _ = apply.applyFetchedModification(remote, isPendingDeleteOrTombstoned: { _ in false })
+
+    let gate = StartupRecoveryGate()
+    controller.beforeFailedApplyRetryForTest = { await gate.suspend() }
+    controller.handle(.didFetchChanges)
+    await gate.waitUntilEntered()
+
+    controller.prepareForAccountSwitch()
+    gate.release()
+    await controller.fetchCycleSweepTask?.value
+
+    XCTAssertEqual(controller.state, .disabled)
+    XCTAssertFalse(controller.hasLiveDriver)
+  }
+
   // MARK: - T3 fetchedRecordZoneChanges routing (§5.1/§5.2, S-1, S-32, CRA-1, CRA-2)
 
   func testGivenNoTombstone_WhenFetchedModification_ThenApplied() {
@@ -986,6 +1048,55 @@ final class SyncEngineControllerTests: XCTestCase {
     XCTAssertTrue(
       store.failedApplies.isEmpty,
       "no failedApplies bookkeeping created by a generic apply of the reset command")
+  }
+
+  func testGivenResetCommandSuspendedInPurge_WhenAccountSwitchTearsDown_ThenTaskExitsCleanly()
+    async
+  {
+    store.engineState = Data([0x01])
+    let controller = makeController()
+    controller.start()
+    await controller.startupTask?.value
+
+    let gate = StartupRecoveryGate()
+    sessionSync.beforeFlush = { await gate.suspend() }
+    let request = SyncResetRequest(clearRemoteAppSelections: false, originDeviceId: "device-B")
+    controller.handle(
+      .fetchedRecordZoneChanges(modifications: [request.toCKRecord(in: zoneID)], deletions: []))
+    await gate.waitUntilEntered()
+    let task = controller.resetTask
+
+    controller.prepareForAccountSwitch()
+    gate.release()
+    await task?.value
+
+    XCTAssertFalse(store.processedResetCommandIds.contains(request.requestId))
+    XCTAssertEqual(controller.state, .disabled)
+    XCTAssertFalse(controller.hasLiveDriver)
+  }
+
+  func testGivenResetResumeFetchSuspended_WhenAccountSwitchTearsDown_ThenOutboxStaysIdle()
+    async
+  {
+    store.engineState = Data([0x01])
+    store.resetIntent = ResetIntent(
+      id: UUID(), clear: false, stage: .deleting, priorCommandId: nil)
+    let gate = StartupRecoveryGate()
+    driver.beforeFetchRecord = { await gate.suspend() }
+    let controller = makeController()
+    controller.start()
+    await gate.waitUntilEntered()
+    let task = controller.resetTask
+
+    let operationCount = driver.operations.count
+    controller.prepareForAccountSwitch()
+    gate.release()
+    await task?.value
+
+    XCTAssertEqual(driver.operations.count, operationCount)
+    XCTAssertNil(controller.reset)
+    XCTAssertNil(controller.legacyCleanup)
+    XCTAssertNil(controller.funnel)
   }
 
   func testGivenFetchedEstablishment_WhenFetchedModification_ThenRoutedToHookNotGenericApply() {
@@ -1690,6 +1801,9 @@ final class SyncEngineControllerTests: XCTestCase {
     XCTAssertNotNil(store.deleteTombstones["keep"], "tombstones survive (not consent-scoped)")
     XCTAssertFalse(SharedData.deviceSyncEnabled, "sync disabled")
     XCTAssertTrue(pendingSaveNames().isEmpty, "nothing enqueued")
+    XCTAssertNil(controller.reset)
+    XCTAssertNil(controller.legacyCleanup)
+    XCTAssertNil(controller.funnel)
   }
 
   func testGivenStartupPastInitialGuard_WhenZonePurgedDuringRecovery_ThenStartupExitsCleanly()
@@ -1722,6 +1836,9 @@ final class SyncEngineControllerTests: XCTestCase {
     XCTAssertEqual(controller.state, .disabled)
     XCTAssertNotNil(store.systemFields(for: "keep"), "account change purges nothing (§7)")
     XCTAssertTrue(controller.startupTask?.isCancelled ?? true, "in-flight continuations invalidated")
+    XCTAssertNil(controller.reset)
+    XCTAssertNil(controller.legacyCleanup)
+    XCTAssertNil(controller.funnel)
   }
 
   // MARK: - T11 stop (N5)
@@ -1749,6 +1866,9 @@ final class SyncEngineControllerTests: XCTestCase {
     XCTAssertNotNil(store.deleteTombstones["keep"], "tombstones survive T11 (re-propagate via I12)")
     XCTAssertEqual(driver.sendChangesCount, 1, "best-effort final send")
     XCTAssertEqual(controller.state, .disabled)
+    XCTAssertNil(controller.reset)
+    XCTAssertNil(controller.legacyCleanup)
+    XCTAssertNil(controller.funnel)
   }
 
   /// Fix 7 (T11 contract violation): a `deleteZone` enqueued by a live `.deleting` reset

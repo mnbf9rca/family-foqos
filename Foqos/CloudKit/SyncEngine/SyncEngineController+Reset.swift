@@ -7,10 +7,12 @@ import Foundation
 final class DriverResetOutbox: ResetOutbox {
   private let driver: SyncEngineDriver
   private let zoneID: CKRecordZone.ID
+  private let isActive: () -> Bool
 
-  init(driver: SyncEngineDriver, zoneID: CKRecordZone.ID) {
+  init(driver: SyncEngineDriver, zoneID: CKRecordZone.ID, isActive: @escaping () -> Bool = { true }) {
     self.driver = driver
     self.zoneID = zoneID
+    self.isActive = isActive
   }
 
   private var commandRecordID: CKRecord.ID {
@@ -21,38 +23,50 @@ final class DriverResetOutbox: ResetOutbox {
   }
 
   func enqueueZoneDelete() {
+    guard isActive() else { return }
     Log.info("Reset sync: enqueue zone delete", category: .sync)
     driver.add(pendingDatabaseChanges: [.deleteZone(zoneID)])
   }
   func enqueueZoneSave() {
+    guard isActive() else { return }
     Log.info("Reset sync: enqueue zone save", category: .sync)
     driver.add(pendingDatabaseChanges: [.saveZone(CKRecordZone(zoneID: zoneID))])
   }
   func removeResetZoneChanges() {
+    guard isActive() else { return }
     driver.remove(
       pendingDatabaseChanges: [.deleteZone(zoneID), .saveZone(CKRecordZone(zoneID: zoneID))])
   }
   func enqueueCommandSave() {
+    guard isActive() else { return }
     Log.info("Reset sync: enqueue reset command", category: .sync)
     driver.add(pendingRecordZoneChanges: [.saveRecord(commandRecordID)])
   }
   func enqueueEstablishmentSave() {
+    guard isActive() else { return }
     Log.info("Reset sync: enqueue establishment record", category: .sync)
     driver.add(pendingRecordZoneChanges: [.saveRecord(establishmentRecordID)])
   }
   func removeCommandSave() {
+    guard isActive() else { return }
     driver.remove(pendingRecordZoneChanges: [.saveRecord(commandRecordID)])
   }
   func removeEstablishmentSave() {
+    guard isActive() else { return }
     driver.remove(pendingRecordZoneChanges: [.saveRecord(establishmentRecordID)])
   }
   func requestSend() {
+    guard isActive() else { return }
     // The outer Task only defers to a later main-actor turn; the §1.1/task-local CKSyncEngine
     // boundary is inside the driver, where sendChanges() crosses Task.detached before awaiting.
     Log.debug("Reset sync: request send", category: .sync)
-    Task { @MainActor in self.driver.sendChanges() }
+    Task { @MainActor [weak self] in
+      guard let self, self.isActive() else { return }
+      self.driver.sendChanges()
+    }
   }
   func clearPendingChangesForReset() {
+    guard isActive() else { return }
     Log.info("Reset sync: clearing pending engine changes before zone reset", category: .sync)
     driver.remove(pendingRecordZoneChanges: driver.pendingRecordZoneChanges)
     driver.remove(pendingDatabaseChanges: driver.pendingDatabaseChanges)

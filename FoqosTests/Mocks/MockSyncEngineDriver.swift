@@ -30,6 +30,7 @@ final class MockSyncEngineDriver: SyncEngineDriver {
 
   var fetchRecordResults: [String: FetchRecordResult] = [:]
   var defaultFetchRecordResult: FetchRecordResult = .notFound
+  var beforeFetchRecord: (() async -> Void)?
   private(set) var fetchedRecordIDs: [CKRecord.ID] = []
 
   init(
@@ -94,6 +95,7 @@ final class MockSyncEngineDriver: SyncEngineDriver {
 
   func fetchRecord(_ id: CKRecord.ID) async -> FetchRecordResult {
     fetchedRecordIDs.append(id)
+    await beforeFetchRecord?()
     return fetchRecordResults[id.recordName] ?? defaultFetchRecordResult
   }
 
