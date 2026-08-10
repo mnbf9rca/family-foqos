@@ -1,0 +1,22 @@
+#!/bin/bash
+set -euo pipefail
+
+REAL_XCRUN="${IOS_SIM_GATE_REAL_XCRUN:-/usr/bin/xcrun}"
+[[ -x "$REAL_XCRUN" ]] || {
+  echo "ios-sim-gate xcrun adapter: real xcrun is not executable: $REAL_XCRUN" >&2
+  exit 127
+}
+
+if [[ "$#" -eq 3 && "$1" == "simctl" && "$2" == "shutdown" && "$3" == "booted" ]]; then
+  [[ -n "${IOS_SIM_GATE_UDID:-}" ]] || {
+    echo "ios-sim-gate xcrun adapter: IOS_SIM_GATE_UDID is required" >&2
+    exit 1
+  }
+  [[ "$IOS_SIM_GATE_UDID" =~ ^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$ ]] || {
+    echo "ios-sim-gate xcrun adapter: IOS_SIM_GATE_UDID is invalid" >&2
+    exit 1
+  }
+  exec "$REAL_XCRUN" simctl shutdown "$IOS_SIM_GATE_UDID"
+fi
+
+exec "$REAL_XCRUN" "$@"

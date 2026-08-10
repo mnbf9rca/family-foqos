@@ -1,11 +1,20 @@
+unless defined?(SimulatorGate)
+  raise 'Run screenshots through scripts/xcode-stream.sh and scripts/fastlane.sh screenshots'
+end
+
+simulator_gate = SimulatorGate.snapshot_configuration
+
 devices([
-  "iPhone 17 Pro Max"
+  simulator_gate.fetch(:device_name)
 ])
 
 languages(["en-GB"])
 
 scheme("FoqosScreenshots")
 project("FamilyFoqos.xcodeproj")
+ios_version(simulator_gate.fetch(:runtime_version))
+derived_data_path(simulator_gate.fetch(:derived_data_path))
+xcargs(simulator_gate.fetch(:xcargs))
 app_identifier("com.cynexia.family-foqos")
 output_directory("./fastlane/screenshots")
 # Keep this true so the Fastfile's exactly-three framed check cannot pass on stale output.

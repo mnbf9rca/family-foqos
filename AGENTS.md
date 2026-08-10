@@ -6,51 +6,68 @@ This file provides guidelines for agentic coding assistants working on the Famil
 
   - **NEVER** force commit or amend commits. Ever. Always create new commits for fixes, and use Git's revert feature to undo changes if needed. This preserves the integrity of the commit history and allows for proper code review.
   - **ALWAYS request code review before merging any changes.** This ensures that all changes are vetted for quality, correctness, and adherence to project standards.
-  - **NO parallel development on the same machine.** Xcode and the iOS Simulator cannot handle
-    concurrent builds or test runs: only ONE implementation stream (anything that builds or
-    tests) may be active at a time per machine. Git-level isolation does NOT lift this —
-    worktrees and extra clones still share the same build/test toolchain, so the contention is
-    Xcode, not git. Always work on feature branches, one bundle/PR at a time, branching from
-    `main` after the previous PR merges. Read-only sessions (planning, investigation, code
-    review) MAY run in parallel from their own working copy — a git worktree or a separate
-    clone — never in the checkout an implementer is actively using, and never running builds
-    or tests while an implementation stream is active.
+  - **All simulator builds and tests use the machine-wide gate.** The host supports up to three
+    Xcode/simulator streams when every stream enters through `scripts/xcode-stream.sh`. The gate
+    assigns a distinct simulator UUID, DerivedData directory, and capacity slot to each exact
+    `(project, agent, session)` owner. UUID destinations only; device-name destinations are
+    forbidden. The wrapper injects `-parallel-testing-enabled NO` and
+    `-disable-concurrent-destination-testing` to prevent XCTestDevices clones. Writing streams
+    still use separate feature branches/worktrees and disjoint file sets.
+    Read-only work does not consume a gate slot and may run concurrently from its own working copy.
 
 ## Build & Test Commands
 
 ### Building
 
-Use `./scripts/clean-build.sh` to clean build output.
-
-Use `xcpretty` to simplify output.
+Agents must not invoke raw `xcodebuild` for simulator work. Give every stream a stable agent name
+and optional session name, then use the wrapper. It allocates or reuses the registry-owned iPhone
+17 on the newest compatible installed iOS runtime. Set `IOS_SIM_GATE_DEVICE_TYPE` or
+`IOS_SIM_GATE_RUNTIME` only when the task requires an override.
 
 ```bash
-# Open in Xcode
-open FamilyFoqos.xcodeproj
+# Preserve xcodebuild's status when formatting output.
+set -o pipefail
 
 # Build from command line
-xcodebuild -project FamilyFoqos.xcodeproj -scheme FamilyFoqos -configuration Debug build | xcpretty
+scripts/xcode-stream.sh --agent <agent> --session <session> -- \
+  xcodebuild -project FamilyFoqos.xcodeproj -scheme FamilyFoqos \
+  -configuration Debug build 2>&1 | bundle exec xcpretty
+
+# Clean only this owner's gate-assigned DerivedData.
+scripts/xcode-stream.sh --agent <agent> --session <session> -- scripts/clean-build.sh
 ```
+
+The screenshots lane also boots a simulator, so gate its entire process tree:
+
+```bash
+scripts/xcode-stream.sh --agent <agent> --session <session> -- \
+  scripts/fastlane.sh screenshots
+```
+
+Archive and upload lanes do not boot simulators and remain unchanged; run them through
+`scripts/fastlane.sh` without the simulator gate.
 
 ### Running Tests
 The project has unit tests in the `FoqosTests` target.
 
-**Never use device names in test destinations.** Using `-destination 'platform=iOS Simulator,name=iPhone 17'` clones a new simulator into `~/Library/Developer/XCTestDevices/` on every invocation, consuming
-  ~16GB each. Use the UUID instead - run tests using:
+**Never pass a destination or DerivedData path yourself.** The wrapper injects the exact registered
+UUID and owner-scoped DerivedData. A device-name destination can create a new simulator under
+`~/Library/Developer/XCTestDevices/` on every invocation, consuming about 16 GB each.
+
 ```bash
-# 1. Find and boot the simulator (do this ONCE per session)
-xcrun simctl list devices available | grep "iPhone 17"
-# Pick the iPhone 17 UUID from the output, e.g. B9E4A679-BDF3-4541-A59F-DA4BE21F80ED
-xcrun simctl boot <UUID>
+# Run all tests. The wrapper injects UUID destination, DerivedData, and no-clone flags.
+scripts/xcode-stream.sh --agent <agent> --session <session> -- \
+  xcodebuild test -project FamilyFoqos.xcodeproj -scheme FamilyFoqos
 
-# 2. Run all tests using the UUID (NOT the device name — using the name clones a new simulator every time)
-xcodebuild test -project FamilyFoqos.xcodeproj -scheme FamilyFoqos -destination 'platform=iOS Simulator,id=<UUID>' | xcpretty
-
-# 3. Run a single test class
-xcodebuild test -project FamilyFoqos.xcodeproj -scheme FamilyFoqos -destination 'platform=iOS Simulator,id=<UUID>' -only-testing:FoqosTests/ClassName | xcpretty
+# Run a single test class.
+scripts/xcode-stream.sh --agent <agent> --session <session> -- \
+  xcodebuild test -project FamilyFoqos.xcodeproj -scheme FamilyFoqos \
+  -only-testing:FoqosTests/ClassName
 ```
 
-**IMPORTANT:** Tests take 2-3 seconds, but starting a simulator takes 3-4 minutes. Always use the simulator UUID (not name) in the `-destination` flag to reuse the already-booted simulator. Using the device name causes xcodebuild to clone a new simulator instance each time. Boot the simulator once, then run tests as many times as needed.
+The first run may spend several minutes booting the simulator. Later runs with the same exact
+agent/session owner reuse its registered UUID. Do not boot, clone, erase, or delete that simulator
+outside the wrapper.
 
 ### Code Formatting
 The project uses swift-format to maintain consistent code style. Configuration is in `.swift-format` at the repo root. A pre-commit hook auto-formats staged Swift files.
@@ -345,7 +362,11 @@ The wrong pattern blocks both Individual AND Child modes. Only Child mode should
 
 ## Build Output
 
-When running xcodebuild commands, pipe output through xcpretty for cleaner build status:
+When formatting a gated xcodebuild, enable `pipefail` so the command retains xcodebuild's status:
+
 ```bash
-xcodebuild -project FamilyFoqos.xcodeproj -scheme FamilyFoqos -configuration Debug build 2>&1 | xcpretty
+set -o pipefail
+scripts/xcode-stream.sh --agent <agent> --session <session> -- \
+  xcodebuild -project FamilyFoqos.xcodeproj -scheme FamilyFoqos \
+  -configuration Debug build 2>&1 | bundle exec xcpretty
 ```
