@@ -1,20 +1,125 @@
-# Source of truth: record types referenced by app/extension code, reconciled by hand.
-# Last reconciled: 2026-08-09.
-# Repeat both searches, review the results, and preserve required CloudKit built-ins:
+# Source of truth: record types and current declared fields, reconciled by hand.
+# Last reconciled: 2026-08-11.
+# Repeat the type searches, review the results, and preserve built-ins and deprecated types:
 #   rg -n 'static let recordType\s*=\s*"[^"]+"' Foqos FoqosDeviceMonitor FoqosShieldConfig FoqosWidget
 #   rg -n 'CKRecord\(recordType:\s*"[^"]+"' Foqos FoqosDeviceMonitor FoqosShieldConfig FoqosWidget
+# Repeat the field searches and reconcile the 13 active types / 101 fields below:
+#   rg -n 'static let recordType|enum FieldKey: String|^[[:space:]]+case [[:alnum:]_]+( = "[^"]+")?$' Foqos/CloudKit/SyncModels.swift Foqos/CloudKit/ProfileSessionRecord.swift
+#   rg -n 'static let recordType|enum RecordKey|^[[:space:]]+static let [[:alnum:]_]+ = "[^"]+"' Foqos/Models/DeviceHeartbeat.swift Foqos/Models/FamilyCommand.swift Foqos/Models/FamilyLockCode.swift Foqos/Models/FamilyMember.swift
+#   rg -n 'rootRecord\["[^"]+"\]' Foqos/CloudKit/CloudKitNetworkService.swift Foqos/CloudKit/CloudKitNetworkService+Sharing.swift
 RECORD TYPE DeviceHeartbeat
+RECORD TYPE DeviceHeartbeat.childUserRecordName
+RECORD TYPE DeviceHeartbeat.deviceIdentifier
+RECORD TYPE DeviceHeartbeat.deviceName
+RECORD TYPE DeviceHeartbeat.lastHeartbeatAt
+RECORD TYPE DeviceHeartbeat.authorizationStatus
 RECORD TYPE EmergencyResetEpoch
+RECORD TYPE EmergencyResetEpoch.epoch
+RECORD TYPE EmergencyResetEpoch.generation
 RECORD TYPE EmergencySettings
+RECORD TYPE EmergencySettings.unblocksRemaining
+RECORD TYPE EmergencySettings.resetPeriodInDays
+RECORD TYPE EmergencySettings.lastResetDate
+RECORD TYPE EmergencySettings.settingsLocked
+RECORD TYPE EmergencySettings.version
+RECORD TYPE EmergencySettings.lastModified
+RECORD TYPE EmergencySettings.originDeviceId
 RECORD TYPE EmergencyUnblockEvent
+RECORD TYPE EmergencyUnblockEvent.id
+RECORD TYPE EmergencyUnblockEvent.deviceId
+RECORD TYPE EmergencyUnblockEvent.consumedAt
+RECORD TYPE EmergencyUnblockEvent.resetEpoch
+RECORD TYPE EmergencyUnblockEvent.generation
 RECORD TYPE FamilyCommand
+RECORD TYPE FamilyCommand.id
+RECORD TYPE FamilyCommand.commandType
+RECORD TYPE FamilyCommand.targetChildId
+RECORD TYPE FamilyCommand.createdAt
+RECORD TYPE FamilyCommand.createdBy
 RECORD TYPE FamilyLockCode
+RECORD TYPE FamilyLockCode.id
+RECORD TYPE FamilyLockCode.codeHash
+RECORD TYPE FamilyLockCode.codeSalt
+RECORD TYPE FamilyLockCode.scopeType
+RECORD TYPE FamilyLockCode.scopeChildId
+RECORD TYPE FamilyLockCode.createdAt
+RECORD TYPE FamilyLockCode.updatedAt
 RECORD TYPE FamilyMember
+RECORD TYPE FamilyMember.id
+RECORD TYPE FamilyMember.userRecordName
+RECORD TYPE FamilyMember.displayName
+RECORD TYPE FamilyMember.role
+RECORD TYPE FamilyMember.enrolledAt
+RECORD TYPE FamilyMember.isActive
 RECORD TYPE FamilyRoot
+RECORD TYPE FamilyRoot.createdAt
 RECORD TYPE ProfileSession
+RECORD TYPE ProfileSession.profileId
+RECORD TYPE ProfileSession.isActive
+RECORD TYPE ProfileSession.sequenceNumber
+RECORD TYPE ProfileSession.startTime
+RECORD TYPE ProfileSession.endTime
+RECORD TYPE ProfileSession.breakStartTime
+RECORD TYPE ProfileSession.breakEndTime
+RECORD TYPE ProfileSession.lastModifiedBy
+RECORD TYPE ProfileSession.sessionOriginDevice
+RECORD TYPE ProfileSession.lastModified
 RECORD TYPE SyncEstablishment
+RECORD TYPE SyncEstablishment.generation
+RECORD TYPE SyncEstablishment.establishedAt
 RECORD TYPE SyncResetRequest
+RECORD TYPE SyncResetRequest.requestId
+RECORD TYPE SyncResetRequest.clearRemoteAppSelections
+RECORD TYPE SyncResetRequest.requestedAt
+RECORD TYPE SyncResetRequest.originDeviceId
 RECORD TYPE SyncedLocation
+RECORD TYPE SyncedLocation.locationId
+RECORD TYPE SyncedLocation.name
+RECORD TYPE SyncedLocation.latitude
+RECORD TYPE SyncedLocation.longitude
+RECORD TYPE SyncedLocation.defaultRadiusMeters
+RECORD TYPE SyncedLocation.isLocked
+RECORD TYPE SyncedLocation.generation
+RECORD TYPE SyncedLocation.lastModified
 RECORD TYPE SyncedProfile
+RECORD TYPE SyncedProfile.profileId
+RECORD TYPE SyncedProfile.name
+RECORD TYPE SyncedProfile.createdAt
+RECORD TYPE SyncedProfile.updatedAt
+RECORD TYPE SyncedProfile.blockingStrategyId
+RECORD TYPE SyncedProfile.strategyData
+RECORD TYPE SyncedProfile.order
+RECORD TYPE SyncedProfile.enableLiveActivity
+RECORD TYPE SyncedProfile.reminderTimeInSeconds
+RECORD TYPE SyncedProfile.customReminderMessage
+RECORD TYPE SyncedProfile.enableBreaks
+RECORD TYPE SyncedProfile.breakTimeInMinutes
+RECORD TYPE SyncedProfile.enableStrictMode
+RECORD TYPE SyncedProfile.enableAllowMode
+RECORD TYPE SyncedProfile.enableAllowModeDomains
+RECORD TYPE SyncedProfile.enableSafariBlocking
+RECORD TYPE SyncedProfile.preActivationReminderTimesData
+RECORD TYPE SyncedProfile.physicalUnblockNFCTagId
+RECORD TYPE SyncedProfile.physicalUnblockQRCodeId
+RECORD TYPE SyncedProfile.domains
+RECORD TYPE SyncedProfile.scheduleData
+RECORD TYPE SyncedProfile.geofenceRuleData
+RECORD TYPE SyncedProfile.startTriggersData
+RECORD TYPE SyncedProfile.stopConditionsData
+RECORD TYPE SyncedProfile.startScheduleData
+RECORD TYPE SyncedProfile.stopScheduleData
+RECORD TYPE SyncedProfile.startNFCTagId
+RECORD TYPE SyncedProfile.startQRCodeId
+RECORD TYPE SyncedProfile.stopNFCTagId
+RECORD TYPE SyncedProfile.stopQRCodeId
+RECORD TYPE SyncedProfile.disableBackgroundStops
+RECORD TYPE SyncedProfile.isManaged
+RECORD TYPE SyncedProfile.managedByChildId
+RECORD TYPE SyncedProfile.generation
+RECORD TYPE SyncedProfile.lastModified
+RECORD TYPE SyncedProfile.originDeviceId
+RECORD TYPE SyncedProfile.version
+RECORD TYPE SyncedProfile.profileSchemaVersion
+RECORD TYPE SyncedProfile.scheduleLastStoppedAt
 RECORD TYPE SyncedSession
 RECORD TYPE "cloudkit.share"

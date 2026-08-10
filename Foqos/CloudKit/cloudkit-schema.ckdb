@@ -96,6 +96,23 @@ DEFINE SCHEMA
         GRANT READ TO "_world"
     );
 
+    RECORD TYPE DeviceHeartbeat (
+        "___createTime"       TIMESTAMP QUERYABLE SORTABLE,
+        "___createdBy"        REFERENCE QUERYABLE,
+        "___etag"             STRING,
+        "___modTime"          TIMESTAMP QUERYABLE SORTABLE,
+        "___modifiedBy"       REFERENCE QUERYABLE,
+        "___recordID"         REFERENCE QUERYABLE,
+        childUserRecordName    STRING,
+        deviceIdentifier       STRING,
+        deviceName             STRING,
+        lastHeartbeatAt        TIMESTAMP,
+        authorizationStatus    STRING,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_world"
+    );
+
     RECORD TYPE "cloudkit.share" (
         "___createTime"               TIMESTAMP QUERYABLE SORTABLE,
         "___createdBy"                REFERENCE QUERYABLE,
@@ -145,6 +162,7 @@ DEFINE SCHEMA
         disableBackgroundStops  INT64,
         isManaged               INT64 QUERYABLE,
         managedByChildId        STRING QUERYABLE,
+        generation              INT64,
         lastModified            TIMESTAMP QUERYABLE SORTABLE,
         originDeviceId          STRING QUERYABLE,
         version                 INT64 QUERYABLE SORTABLE,
@@ -220,7 +238,72 @@ DEFINE SCHEMA
         longitude             DOUBLE,
         defaultRadiusMeters   DOUBLE,
         isLocked              INT64 QUERYABLE,
+        generation            INT64,
         lastModified          TIMESTAMP QUERYABLE SORTABLE,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_creator"
+    );
+
+    RECORD TYPE EmergencySettings (
+        "___createTime"     TIMESTAMP QUERYABLE SORTABLE,
+        "___createdBy"      REFERENCE QUERYABLE,
+        "___etag"           STRING,
+        "___modTime"        TIMESTAMP QUERYABLE SORTABLE,
+        "___modifiedBy"      REFERENCE QUERYABLE,
+        "___recordID"        REFERENCE QUERYABLE,
+        unblocksRemaining    INT64,
+        resetPeriodInDays    INT64,
+        lastResetDate        TIMESTAMP,
+        settingsLocked       INT64,
+        version              INT64,
+        lastModified         TIMESTAMP,
+        originDeviceId       STRING,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_creator"
+    );
+
+    RECORD TYPE EmergencyResetEpoch (
+        "___createTime" TIMESTAMP QUERYABLE SORTABLE,
+        "___createdBy"  REFERENCE QUERYABLE,
+        "___etag"       STRING,
+        "___modTime"    TIMESTAMP QUERYABLE SORTABLE,
+        "___modifiedBy" REFERENCE QUERYABLE,
+        "___recordID"   REFERENCE QUERYABLE,
+        epoch            INT64,
+        generation       INT64,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_creator"
+    );
+
+    RECORD TYPE SyncEstablishment (
+        "___createTime" TIMESTAMP QUERYABLE SORTABLE,
+        "___createdBy"  REFERENCE QUERYABLE,
+        "___etag"       STRING,
+        "___modTime"    TIMESTAMP QUERYABLE SORTABLE,
+        "___modifiedBy" REFERENCE QUERYABLE,
+        "___recordID"   REFERENCE QUERYABLE,
+        generation       INT64,
+        establishedAt    TIMESTAMP,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_creator"
+    );
+
+    RECORD TYPE EmergencyUnblockEvent (
+        "___createTime" TIMESTAMP QUERYABLE SORTABLE,
+        "___createdBy"  REFERENCE QUERYABLE,
+        "___etag"       STRING,
+        "___modTime"    TIMESTAMP QUERYABLE SORTABLE,
+        "___modifiedBy" REFERENCE QUERYABLE,
+        "___recordID"   REFERENCE QUERYABLE,
+        id               STRING,
+        deviceId         STRING,
+        consumedAt       TIMESTAMP,
+        resetEpoch       INT64,
+        generation       INT64,
         GRANT WRITE TO "_creator",
         GRANT CREATE TO "_icloud",
         GRANT READ TO "_creator"
