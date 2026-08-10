@@ -59,7 +59,8 @@ extension CloudKitNetworkService {
     try await privateDatabase.save(share)
     self.activeZoneShare = share
 
-    let participantId = participant.userIdentity.userRecordID?.recordName ?? "unknown"
+    let participantId = ShareParticipantLog.label(
+      userRecordName: participant.userIdentity.userRecordID?.recordName)
     // PII-SAFE LOG (#252): log only the opaque CK record name, never nameComponents/email.
     Log.info("Removed participant \(participantId) from share", category: .cloudKit)
     // NOTE: Manager handles refreshShareParticipants() after this call

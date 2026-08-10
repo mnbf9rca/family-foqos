@@ -32,4 +32,8 @@ final class FamilyMemberLogRedactionTests: XCTestCase {
       "Participant unresolved status: 1"
     )
   }
+
+  func testGivenMissingParticipantRecordName_WhenFormattingLogLabel_ThenUsesUnresolved() {
+    XCTAssertEqual(ShareParticipantLog.label(userRecordName: nil), "unresolved")
+  }
 }
