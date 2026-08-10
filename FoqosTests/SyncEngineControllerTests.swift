@@ -5,6 +5,30 @@ import XCTest
 @testable import FamilyFoqos
 
 @MainActor
+private final class StartupRecoveryGate {
+  private var hasEntered = false
+  private var entryContinuation: CheckedContinuation<Void, Never>?
+  private var releaseContinuation: CheckedContinuation<Void, Never>?
+
+  func suspend() async {
+    hasEntered = true
+    entryContinuation?.resume()
+    entryContinuation = nil
+    await withCheckedContinuation { releaseContinuation = $0 }
+  }
+
+  func waitUntilEntered() async {
+    guard !hasEntered else { return }
+    await withCheckedContinuation { entryContinuation = $0 }
+  }
+
+  func release() {
+    releaseContinuation?.resume()
+    releaseContinuation = nil
+  }
+}
+
+@MainActor
 final class SyncEngineControllerTests: XCTestCase {
   var suiteName: String!
   var defaults: UserDefaults!
@@ -1643,7 +1667,9 @@ final class SyncEngineControllerTests: XCTestCase {
     XCTAssertTrue(hasPendingZoneSave())
   }
 
-  func testGivenZonePurged_WhenHandled_ThenDisabledDiscardStateTombstonesIntact() {
+  func testGivenCancelledStartup_WhenZonePurgedBeforeItRuns_ThenStartupExitsWithoutDriverAccess()
+    async
+  {
     store.engineState = Data([0x1])
     store.resetIntent = ResetIntent(id: UUID(), clear: false, stage: .deleting, priorCommandId: nil)
     store.pendingSeedIntent = true
@@ -1655,6 +1681,7 @@ final class SyncEngineControllerTests: XCTestCase {
     controller.handle(
       .fetchedDatabaseChanges(
         modifiedZoneIDs: [], deletedZones: [(zoneID: zoneID, reason: .purged)]))
+    await controller.startupTask?.value
 
     XCTAssertEqual(controller.state, .purged, "T6")
     XCTAssertNil(store.engineState, "engine state discarded")
@@ -1663,6 +1690,25 @@ final class SyncEngineControllerTests: XCTestCase {
     XCTAssertNotNil(store.deleteTombstones["keep"], "tombstones survive (not consent-scoped)")
     XCTAssertFalse(SharedData.deviceSyncEnabled, "sync disabled")
     XCTAssertTrue(pendingSaveNames().isEmpty, "nothing enqueued")
+  }
+
+  func testGivenStartupPastInitialGuard_WhenZonePurgedDuringRecovery_ThenStartupExitsCleanly()
+    async
+  {
+    let gate = StartupRecoveryGate()
+    let controller = makeController()
+    controller.beforeDeleteIntentRecoveryForTest = { await gate.suspend() }
+    controller.start()
+    await gate.waitUntilEntered()
+
+    controller.handle(
+      .fetchedDatabaseChanges(
+        modifiedZoneIDs: [], deletedZones: [(zoneID: zoneID, reason: .purged)]))
+    gate.release()
+    await controller.startupTask?.value
+
+    XCTAssertEqual(controller.state, .purged)
+    XCTAssertFalse(controller.hasLiveDriver)
   }
 
   // MARK: - T7 accountChange (§7)
