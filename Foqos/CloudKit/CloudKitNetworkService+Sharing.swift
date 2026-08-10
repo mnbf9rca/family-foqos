@@ -118,7 +118,10 @@ extension CloudKitNetworkService {
       let participants = share.participants.filter { $0.role != .owner }
       for participant in participants {
         Log.debug(
-          "Participant status: \(participant.acceptanceStatus.rawValue)",
+          ShareParticipantLog.statusMessage(
+            userRecordName: participant.userIdentity.userRecordID?.recordName,
+            acceptanceStatus: participant.acceptanceStatus.rawValue
+          ),
           category: .cloudKit)
       }
 
@@ -298,5 +301,11 @@ extension CloudKitNetworkService {
       throw CloudKitError.shareNotFound
     }
     return share
+  }
+}
+
+enum ShareParticipantLog {
+  static func statusMessage(userRecordName: String?, acceptanceStatus: Int) -> String {
+    "Participant \(userRecordName ?? "unknown") status: \(acceptanceStatus)"
   }
 }
