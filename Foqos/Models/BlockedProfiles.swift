@@ -501,6 +501,7 @@ class BlockedProfiles {
     let removeStartSchedule: (BlockedProfiles) -> Void
     let removeStopSchedule: (BlockedProfiles) -> Void
     let cancelPreActivationReminders: (UUID) -> Void
+    let cancelSessionAndBreakReminders: (UUID) -> Void
     let removeBreakBackstop: (UUID) -> Void
     let removeOneMoreMinuteBackstop: (UUID) -> Void
   }
@@ -510,6 +511,7 @@ class BlockedProfiles {
       removeStartSchedule: { DeviceActivityCenterUtil.removeScheduleTimerActivities(for: $0) },
       removeStopSchedule: { DeviceActivityCenterUtil.removeStopScheduleActivity(for: $0) },
       cancelPreActivationReminders: { TimersUtil.cancelAllPreActivationReminders(for: $0) },
+      cancelSessionAndBreakReminders: { TimersUtil.cancelOwnedReminders(for: $0) },
       removeBreakBackstop: { DeviceActivityCenterUtil.removeBreakBackstop(profileId: $0) },
       removeOneMoreMinuteBackstop: {
         DeviceActivityCenterUtil.removeOneMoreMinuteBackstop(profileId: $0)
@@ -543,6 +545,7 @@ class BlockedProfiles {
     cleanup.removeStartSchedule(profile)
     cleanup.removeStopSchedule(profile)
     cleanup.cancelPreActivationReminders(profile.id)
+    cleanup.cancelSessionAndBreakReminders(profile.id)
     cleanup.removeBreakBackstop(profile.id)
     cleanup.removeOneMoreMinuteBackstop(profile.id)
 

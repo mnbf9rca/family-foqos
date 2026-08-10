@@ -6,6 +6,7 @@ struct BlockedProfileListView: View {
   @Environment(\.modelContext) private var context
   @Environment(\.dismiss) private var dismiss
   @EnvironmentObject private var profileSyncManager: ProfileSyncManager
+  @EnvironmentObject private var strategyManager: StrategyManager
   @ObservedObject private var appModeManager = AppModeManager.shared
   @ObservedObject private var lockCodeManager = LockCodeManager.shared
 
@@ -23,6 +24,7 @@ struct BlockedProfileListView: View {
 
   private enum DeleteError {
     case activeProfile
+    case remotelyActiveProfile
     case lockedProfile
     case fetchFailed
     case syncFailed(String)
@@ -30,6 +32,7 @@ struct BlockedProfileListView: View {
     var title: String {
       switch self {
       case .activeProfile: "Cannot Delete Active Profile"
+      case .remotelyActiveProfile: "Active on Another Device"
       case .lockedProfile: "Profile Locked"
       case .fetchFailed: "Unable to Delete"
       case .syncFailed: "Sync Error"
@@ -40,6 +43,8 @@ struct BlockedProfileListView: View {
       switch self {
       case .activeProfile:
         "You cannot delete a profile that is currently active. Please switch to a different profile first."
+      case .remotelyActiveProfile:
+        "This profile is currently blocking on another device. Stop it there before deleting."
       case .lockedProfile:
         "This profile is locked. Open the profile, enter the lock code, "
           + "then delete it from the profile screen."
@@ -168,22 +173,33 @@ struct BlockedProfileListView: View {
     }
     let profilesToDelete = profiles
 
-    // Check if any of the profiles to delete are active or locked
+    // Check if any of the profiles to delete are active or locked.
     for index in offsets {
       let profile = profilesToDelete[index]
-      if profile.id == activeSession?.blockedProfile.id {
+      let reason = ProfileDeleteGate.blockedReason(
+        hasLocalActiveSession: profile.id == activeSession?.blockedProfile.id,
+        isRemotelyActive: strategyManager.remotelyActiveProfileIds.contains(profile.id),
+        isEditLocked: lockCodeManager.isEditLocked(profile)
+      )
+      switch reason {
+      case .active:
         deleteError = .activeProfile
         return
-      }
-      if lockCodeManager.isEditLocked(profile) {
+      case .remotelyActive:
+        deleteError = .remotelyActiveProfile
+        return
+      case .locked:
         deleteError = .lockedProfile
         return
+      case nil:
+        break
       }
     }
 
     // Delete the profiles and reorder
     do {
       var disabledDeletedRecordNames: [String] = []
+      var locallyCommittedProfileIds: [UUID] = []
       for index in offsets {
         let profile = profilesToDelete[index]
         let profileId = profile.id
@@ -198,12 +214,15 @@ struct BlockedProfileListView: View {
           // run BEFORE the reorder below, whose `context.save()` would otherwise commit
           // ahead of the funnel.
           do {
-            try profileSyncManager.enqueueProfileDelete(profileId)
+            try profileSyncManager.enqueueProfileDelete(profileId) {
+              strategyManager.setRemoteSessionActive(false, profileId: profileId)
+            }
           } catch SyncEngineControllingError.notAttached {
             // Engine isn't attached yet — the funnel can't own this delete, so delete
             // locally now instead of silently leaving the profile behind (review finding
             // #6). It will propagate once the engine attaches.
             try BlockedProfiles.deleteProfile(profile, in: context)
+            locallyCommittedProfileIds.append(profileId)
           }
         } else {
           // Sync disabled — the funnel would no-op (I2 is only reachable once the engine has
@@ -211,6 +230,7 @@ struct BlockedProfileListView: View {
           // the shared reorder save durably commits.
           try BlockedProfiles.deleteProfile(profile, in: context)
           disabledDeletedRecordNames.append(profileId.uuidString)
+          locallyCommittedProfileIds.append(profileId)
         }
       }
 
@@ -223,6 +243,9 @@ struct BlockedProfileListView: View {
           // delete cannot leave a tombstone that could later kill a live record.
           for recordName in disabledDeletedRecordNames {
             profileSyncManager.recordDisabledDeleteTombstone(recordName: recordName)
+          }
+          for profileId in locallyCommittedProfileIds {
+            strategyManager.setRemoteSessionActive(false, profileId: profileId)
           }
           // The `order` field is synced state — bump syncVersion + enqueue a save for each
           // surviving profile so the gap-fix reaches other devices (I2).
@@ -269,5 +292,6 @@ struct BlockedProfileListView: View {
 #Preview {
   BlockedProfileListView()
     .environmentObject(ProfileSyncManager.shared)
+    .environmentObject(StrategyManager.shared)
     .modelContainer(for: BlockedProfiles.self, inMemory: true)
 }

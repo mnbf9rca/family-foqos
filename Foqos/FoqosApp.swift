@@ -172,6 +172,8 @@ struct FoqosApp: App {
             if hasPerformedInitialSetup && !ScreenshotDemoMode.isActive {
               PreActivationReminderScheduler.mergeExtensionScheduleSuppression(
                 context: container.mainContext)
+              PreActivationReminderScheduler.reconcileMissingSnapshots(
+                context: container.mainContext)
               PreActivationReminderScheduler.reconcileScheduleRegistrations(
                 context: container.mainContext)
               PreActivationReminderScheduler.catchUpMissedScheduleStarts(context: container.mainContext)
@@ -299,6 +301,8 @@ struct FoqosApp: App {
           if !ScreenshotDemoMode.isActive {
             // Reschedule pre-activation reminders for today
             PreActivationReminderScheduler.mergeExtensionScheduleSuppression(
+              context: container.mainContext)
+            PreActivationReminderScheduler.reconcileMissingSnapshots(
               context: container.mainContext)
             PreActivationReminderScheduler.reconcileScheduleRegistrations(
               context: container.mainContext)

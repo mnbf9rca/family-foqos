@@ -44,6 +44,20 @@ enum PreActivationReminderScheduler {
     return hasActiveSchedule && !profile.needsAppSelection
   }
 
+  @MainActor
+  static func reconcileMissingSnapshots(context: ModelContext) {
+    do {
+      let profiles = try BlockedProfiles.fetchProfiles(in: context).valid
+      for profile in profiles where SharedData.snapshot(for: profile.id.uuidString) == nil {
+        BlockedProfiles.updateSnapshot(for: profile)
+      }
+    } catch {
+      Log.error(
+        "Failed to reconcile profile snapshots: \(error.localizedDescription)",
+        category: .timer)
+    }
+  }
+
   /// #301: register DeviceActivity schedules for eligible profiles independent of whether
   /// pre-activation reminders are enabled.
   /// Old reminder-gated name `rescheduleAllReminders` caused #301 by hiding registration.

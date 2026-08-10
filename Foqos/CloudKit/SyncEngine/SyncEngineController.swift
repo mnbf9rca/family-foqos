@@ -160,7 +160,10 @@ final class SyncEngineController: SyncEngineDriverDelegate {
     scheduleProfileDeleteCommit: @escaping (@escaping @MainActor () -> Void) -> Void =
       BlockedProfiles.scheduleProfileDeleteCommit,
     scheduleReconciler: @escaping (ModelContext) -> Void =
-      { PreActivationReminderScheduler.reconcileScheduleRegistrations(context: $0) }
+      {
+        PreActivationReminderScheduler.reconcileMissingSnapshots(context: $0)
+        PreActivationReminderScheduler.reconcileScheduleRegistrations(context: $0)
+      }
   ) {
     self.modelContext = modelContext
     self.store = store

@@ -21,6 +21,10 @@ final class DeleteProfileCleanupTests: XCTestCase {
       cancelPreActivationReminders: { _ in
         cleanupActions.append("cancelPreActivationReminders")
       },
+      cancelSessionAndBreakReminders: { profileId in
+        XCTAssertEqual(profileId, profile.id)
+        cleanupActions.append("cancelSessionAndBreakReminders")
+      },
       removeBreakBackstop: { profileId in
         XCTAssertEqual(profileId, profile.id)
         cleanupActions.append("removeBreakBackstop")
@@ -37,7 +41,7 @@ final class DeleteProfileCleanupTests: XCTestCase {
       cleanupActions,
       [
         "removeStartSchedule", "removeStopSchedule", "cancelPreActivationReminders",
-        "removeBreakBackstop", "removeOneMoreMinuteBackstop",
+        "cancelSessionAndBreakReminders", "removeBreakBackstop", "removeOneMoreMinuteBackstop",
       ]
     )
     XCTAssertNil(try BlockedProfiles.findProfile(byID: profile.id, in: context))

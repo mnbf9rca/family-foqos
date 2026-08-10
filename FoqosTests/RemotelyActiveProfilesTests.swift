@@ -36,4 +36,30 @@ final class RemotelyActiveProfilesTests: XCTestCase {
     XCTAssertFalse(
       StrategyManager(remoteActiveDefaults: defaults).remotelyActiveProfileIds.contains(profileId))
   }
+
+  func testGivenRemoteActiveIds_WhenClearAll_ThenSetEmptyAndPersistsEmpty() {
+    let idA = UUID()
+    let idB = UUID()
+    let manager = StrategyManager(remoteActiveDefaults: defaults)
+    manager.setRemoteSessionActive(true, profileId: idA)
+    manager.setRemoteSessionActive(true, profileId: idB)
+
+    manager.clearAllRemoteSessionActive()
+
+    XCTAssertTrue(manager.remotelyActiveProfileIds.isEmpty)
+    XCTAssertTrue(RemotelyActiveStore.load(defaults: defaults).isEmpty)
+  }
+
+  func testGivenTwoRemoteActiveIds_WhenClearingOne_ThenOtherRemains() {
+    let idA = UUID()
+    let idB = UUID()
+    let manager = StrategyManager(remoteActiveDefaults: defaults)
+    manager.setRemoteSessionActive(true, profileId: idA)
+    manager.setRemoteSessionActive(true, profileId: idB)
+
+    manager.setRemoteSessionActive(false, profileId: idA)
+
+    XCTAssertEqual(manager.remotelyActiveProfileIds, [idB])
+    XCTAssertEqual(RemotelyActiveStore.load(defaults: defaults), [idB])
+  }
 }
