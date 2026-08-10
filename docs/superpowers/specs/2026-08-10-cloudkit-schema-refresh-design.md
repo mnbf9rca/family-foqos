@@ -38,9 +38,32 @@ CloudKit dashboard to promote schema changes to Production:
 if either input is empty/unreadable or any required `RECORD TYPE` declaration is absent. It allows
 extra declarations such as deprecated `FamilyPolicy`.
 
+The same checker also derives the active application field inventory from the two CloudKit key
+idioms used by the app:
+
+- `FieldKey: String` enums paired with their preceding `static let recordType` declaration in
+  `SyncModels.swift` and `ProfileSessionRecord.swift`.
+- `RecordKey` constants whose string values are resolved in `DeviceHeartbeat.swift`,
+  `FamilyCommand.swift`, `FamilyLockCode.swift`, and `FamilyMember.swift`.
+
+Pairing stops when another record-type declaration appears before a `FieldKey` enum, so the
+deprecated keyless `SyncedSession` declaration cannot accidentally claim `SyncedLocation` fields.
+The checker compares declared code fields as a subset of each matching `.ckdb` record block. It
+does not require the reverse subset because CloudKit schemas are additive-only and retain system
+and deprecated fields. The two legacy V1 string-subscript fallbacks on `SyncedProfile` are
+deliberately outside the inventory: they are Production compatibility reads, not declared current
+field keys.
+
+The known-good baseline is 100 fields across 12 active types: `SyncedProfile` (39),
+`ProfileSession` (10), `SyncedLocation` (8), `EmergencySettings` (7),
+`EmergencyUnblockEvent` (5), `SyncResetRequest` (4), `EmergencyResetEpoch` (2),
+`SyncEstablishment` (2), `DeviceHeartbeat` (5), `FamilyCommand` (5), `FamilyLockCode` (7), and
+`FamilyMember` (6). `FamilyRoot`, deprecated `SyncedSession`, and built-in `cloudkit.share` remain
+type-checked but are not part of the declared-key field inventory.
+
 `scripts/test-check-cloudkit-schema-export.sh` exercises the real script against disposable
-fixtures and proves matching-with-extras passes while missing, prefix-only, and empty-manifest
-cases fail closed.
+fixtures and proves matching-with-extras passes while missing, prefix-only, removed enum field,
+removed resolved-constant field, cross-record field, and empty-manifest cases fail closed.
 
 ## Maintainer Runbook
 

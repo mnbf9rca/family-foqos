@@ -186,6 +186,78 @@ bash scripts/test-check-prod-schema.sh
 
 Expected: all exit 0 with their PASS/success markers.
 
+### Task 2A: Guard declared application fields
+
+**Files:**
+- Modify: `scripts/check-cloudkit-schema-export.sh`
+- Modify: `scripts/test-check-cloudkit-schema-export.sh`
+
+**Interfaces:**
+- Consumes: `FieldKey: String` declarations in `Foqos/CloudKit/SyncModels.swift` and
+  `Foqos/CloudKit/ProfileSessionRecord.swift`; resolved `RecordKey` string constants in the four
+  current family model files; matching record blocks in `cloudkit-schema.ckdb`
+- Produces: exit 1 with `MISSING from checked-in CloudKit schema: <RecordType>.<field>` when any
+  declared current code field is absent; success identifying exactly 100 fields across 12 types
+
+- [ ] **Step 1: Extend the disposable fixtures first**
+
+Add minimal Swift fixtures for both declaration idioms. The enum fixture includes an explicit raw
+value and a keyless record type before a later keyed type, proving the parser resolves the wire
+name and does not mispair the later enum. The constant fixture uses an identifier whose string
+value differs from the field name. Add failure cases that remove one enum field, remove one
+constant field, and put a required field only in a different record block.
+
+- [ ] **Step 2: Run the fixture test and observe RED**
+
+Run: `bash scripts/test-check-cloudkit-schema-export.sh`
+
+Expected: exit 1 with `FAIL: missing declared enum field must exit 1`; the existing type-only
+checker incorrectly accepts the schema.
+
+- [ ] **Step 3: Extract declared code fields**
+
+Extend the existing Bash checker with two small `awk` extractors:
+
+1. Pair `static let recordType = "..."` with a following `enum FieldKey: String` only when no
+   intervening record-type declaration occurs, then emit each case's raw string or identifier.
+2. Resolve `static let <identifier> = "<wireName>"` declarations inside `RecordKey` enums in
+   `DeviceHeartbeat.swift`, `FamilyCommand.swift`, `FamilyLockCode.swift`, and
+   `FamilyMember.swift`.
+
+Sort the emitted `<recordType><TAB><field>` pairs uniquely. Require the known-good per-type counts
+of 39, 10, 8, 7, 5, 4, 2, 2, 5, 5, 7, and 6 so a vacuous or one-idiom extractor fails closed.
+
+- [ ] **Step 4: Compare each code field to its record block**
+
+For each emitted pair, inspect only the matching active `RECORD TYPE ... (` block and require an
+exact first-token field match before that block's `);`. Do not compare schema fields in the reverse
+direction, and do not scan arbitrary `record["..."]` string subscripts.
+
+- [ ] **Step 5: Run the fixture and production checks GREEN**
+
+Run:
+
+```bash
+bash scripts/test-check-cloudkit-schema-export.sh
+bash scripts/check-cloudkit-schema-export.sh
+```
+
+Expected:
+
+```text
+PASS: checked-in CloudKit schema gate cases
+Checked-in CloudKit schema covers every required record type and 100 declared fields across 12 active record types.
+```
+
+- [ ] **Step 6: Commit without amend**
+
+```bash
+git add scripts/check-cloudkit-schema-export.sh scripts/test-check-cloudkit-schema-export.sh \
+  docs/superpowers/specs/2026-08-10-cloudkit-schema-refresh-design.md \
+  docs/superpowers/plans/2026-08-10-cloudkit-schema-refresh.md
+git commit -m "Guard CloudKit schema fields"
+```
+
 ### Task 3: Review-ready verification and publication
 
 **Files:**
