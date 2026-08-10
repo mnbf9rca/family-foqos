@@ -6,6 +6,7 @@ struct BlockedProfileListView: View {
   @Environment(\.modelContext) private var context
   @Environment(\.dismiss) private var dismiss
   @EnvironmentObject private var profileSyncManager: ProfileSyncManager
+  @EnvironmentObject private var strategyManager: StrategyManager
   @ObservedObject private var appModeManager = AppModeManager.shared
   @ObservedObject private var lockCodeManager = LockCodeManager.shared
 
@@ -23,6 +24,7 @@ struct BlockedProfileListView: View {
 
   private enum DeleteError {
     case activeProfile
+    case remotelyActiveProfile
     case lockedProfile
     case fetchFailed
     case syncFailed(String)
@@ -30,6 +32,7 @@ struct BlockedProfileListView: View {
     var title: String {
       switch self {
       case .activeProfile: "Cannot Delete Active Profile"
+      case .remotelyActiveProfile: "Active on Another Device"
       case .lockedProfile: "Profile Locked"
       case .fetchFailed: "Unable to Delete"
       case .syncFailed: "Sync Error"
@@ -40,6 +43,8 @@ struct BlockedProfileListView: View {
       switch self {
       case .activeProfile:
         "You cannot delete a profile that is currently active. Please switch to a different profile first."
+      case .remotelyActiveProfile:
+        "This profile is currently blocking on another device. Stop it there before deleting."
       case .lockedProfile:
         "This profile is locked. Open the profile, enter the lock code, "
           + "then delete it from the profile screen."
@@ -168,16 +173,26 @@ struct BlockedProfileListView: View {
     }
     let profilesToDelete = profiles
 
-    // Check if any of the profiles to delete are active or locked
+    // Check if any of the profiles to delete are active or locked.
     for index in offsets {
       let profile = profilesToDelete[index]
-      if profile.id == activeSession?.blockedProfile.id {
+      let reason = ProfileDeleteGate.blockedReason(
+        hasLocalActiveSession: profile.id == activeSession?.blockedProfile.id,
+        isRemotelyActive: strategyManager.remotelyActiveProfileIds.contains(profile.id),
+        isEditLocked: lockCodeManager.isEditLocked(profile)
+      )
+      switch reason {
+      case .active:
         deleteError = .activeProfile
         return
-      }
-      if lockCodeManager.isEditLocked(profile) {
+      case .remotelyActive:
+        deleteError = .remotelyActiveProfile
+        return
+      case .locked:
         deleteError = .lockedProfile
         return
+      case nil:
+        break
       }
     }
 
@@ -269,5 +284,6 @@ struct BlockedProfileListView: View {
 #Preview {
   BlockedProfileListView()
     .environmentObject(ProfileSyncManager.shared)
+    .environmentObject(StrategyManager.shared)
     .modelContainer(for: BlockedProfiles.self, inMemory: true)
 }
