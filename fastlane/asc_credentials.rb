@@ -1,7 +1,9 @@
-require "base64"
-require "json"
-require "openssl"
-require "tempfile"
+# frozen_string_literal: true
+
+require 'base64'
+require 'json'
+require 'openssl'
+require 'tempfile'
 
 module ASCCredentials
   class CredentialError < StandardError; end
@@ -11,15 +13,15 @@ module ASCCredentials
     OpenSSL::PKey.read(decoded)
     decoded
   rescue ArgumentError, OpenSSL::PKey::PKeyError
-    raise CredentialError, "ASC private key is not valid base64-encoded PEM"
+    raise CredentialError, 'ASC private key is not valid base64-encoded PEM'
   end
 
-  def self.with_private_key_tempfile(raw_pem, &block)
-    with_sensitive_tempfile("asc-auth-key", ".p8", raw_pem, &block)
+  def self.with_private_key_tempfile(raw_pem, &)
+    with_sensitive_tempfile('asc-auth-key', '.p8', raw_pem, &)
   end
 
-  def self.with_api_key_json_tempfile(api_key, &block)
-    with_sensitive_tempfile("asc-api-key", ".json", JSON.generate(api_key), &block)
+  def self.with_api_key_json_tempfile(api_key, &)
+    with_sensitive_tempfile('asc-api-key', '.json', JSON.generate(api_key), &)
   end
 
   def self.with_sensitive_tempfile(basename, extension, contents)
