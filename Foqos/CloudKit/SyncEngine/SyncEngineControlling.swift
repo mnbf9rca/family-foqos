@@ -20,6 +20,11 @@ protocol SyncEngineControlling: AnyObject {
   func enqueueProfileSave(_ id: UUID) throws
   func enqueueProfileDelete(_ id: UUID) throws
   func enqueueProfileDelete(_ id: UUID, requestSyncAfterPendingDelete: Bool) throws
+  func enqueueProfileDelete(
+    _ id: UUID,
+    requestSyncAfterPendingDelete: Bool,
+    onDeleteCommitted: @escaping @MainActor () -> Void
+  ) throws
   func enqueueLocationSave(_ id: UUID) throws
   func enqueueLocationDelete(_ id: UUID) throws
   func enqueueEmergencySettingsSave() throws

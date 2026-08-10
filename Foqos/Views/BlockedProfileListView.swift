@@ -199,7 +199,7 @@ struct BlockedProfileListView: View {
     // Delete the profiles and reorder
     do {
       var disabledDeletedRecordNames: [String] = []
-      var deletedProfileIds: [UUID] = []
+      var locallyCommittedProfileIds: [UUID] = []
       for index in offsets {
         let profile = profilesToDelete[index]
         let profileId = profile.id
@@ -214,12 +214,15 @@ struct BlockedProfileListView: View {
           // run BEFORE the reorder below, whose `context.save()` would otherwise commit
           // ahead of the funnel.
           do {
-            try profileSyncManager.enqueueProfileDelete(profileId)
+            try profileSyncManager.enqueueProfileDelete(profileId) {
+              strategyManager.setRemoteSessionActive(false, profileId: profileId)
+            }
           } catch SyncEngineControllingError.notAttached {
             // Engine isn't attached yet — the funnel can't own this delete, so delete
             // locally now instead of silently leaving the profile behind (review finding
             // #6). It will propagate once the engine attaches.
             try BlockedProfiles.deleteProfile(profile, in: context)
+            locallyCommittedProfileIds.append(profileId)
           }
         } else {
           // Sync disabled — the funnel would no-op (I2 is only reachable once the engine has
@@ -227,8 +230,8 @@ struct BlockedProfileListView: View {
           // the shared reorder save durably commits.
           try BlockedProfiles.deleteProfile(profile, in: context)
           disabledDeletedRecordNames.append(profileId.uuidString)
+          locallyCommittedProfileIds.append(profileId)
         }
-        deletedProfileIds.append(profileId)
       }
 
       BlockedProfiles.scheduleProfileDeleteCommit {
@@ -241,7 +244,7 @@ struct BlockedProfileListView: View {
           for recordName in disabledDeletedRecordNames {
             profileSyncManager.recordDisabledDeleteTombstone(recordName: recordName)
           }
-          for profileId in deletedProfileIds {
+          for profileId in locallyCommittedProfileIds {
             strategyManager.setRemoteSessionActive(false, profileId: profileId)
           }
           // The `order` field is synced state — bump syncVersion + enqueue a save for each

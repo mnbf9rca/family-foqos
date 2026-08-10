@@ -790,7 +790,10 @@ class ProfileSyncManager: ObservableObject {
     }
     if isSyncReady { engineController.requestSync() }
   }
-  func enqueueProfileDelete(_ id: UUID) throws {
+  func enqueueProfileDelete(
+    _ id: UUID,
+    onDeleteCommitted: @escaping @MainActor () -> Void = {}
+  ) throws {
     defer { recomputeSyncStatus() }
     guard let engineController else {
       deferredDeleteRecordNames.insert(id.uuidString)
@@ -799,7 +802,10 @@ class ProfileSyncManager: ObservableObject {
       throw SyncEngineControllingError.notAttached
     }
     do {
-      try engineController.enqueueProfileDelete(id, requestSyncAfterPendingDelete: isSyncReady)
+      try engineController.enqueueProfileDelete(
+        id,
+        requestSyncAfterPendingDelete: isSyncReady,
+        onDeleteCommitted: onDeleteCommitted)
     } catch SyncEngineControllingError.notAttached {
       deferredDeleteRecordNames.insert(id.uuidString)
       PreAttachDeleteBuffer.add(

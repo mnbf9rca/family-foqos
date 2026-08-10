@@ -166,6 +166,41 @@ final class SyncEngineControllerCutoverTests: XCTestCase {
     XCTAssertEqual(driver.sendChangesCount, sendBefore + 1)
   }
 
+  func testGivenProfileDelete_WhenDeferredCommitSucceeds_ThenCommitCallbackRunsAfterSave() throws {
+    let now = Date()
+    let profile = makeProfile(now: now)
+    controller.start()
+    var didCommit = false
+
+    try controller.enqueueProfileDelete(
+      profile.id,
+      requestSyncAfterPendingDelete: false,
+      onDeleteCommitted: { didCommit = true })
+
+    XCTAssertFalse(didCommit)
+    profileDeleteCommitScheduler.runNext()
+    XCTAssertTrue(didCommit)
+  }
+
+  func testGivenProfileDelete_WhenDeferredCommitFails_ThenCommitCallbackDoesNotRun() throws {
+    struct BoomError: Error {}
+
+    let now = Date()
+    let profile = makeProfile(now: now)
+    controller.start()
+    controller.funnel?.saveOverride = { throw BoomError() }
+    var didCommit = false
+
+    try controller.enqueueProfileDelete(
+      profile.id,
+      requestSyncAfterPendingDelete: false,
+      onDeleteCommitted: { didCommit = true })
+    profileDeleteCommitScheduler.runNext()
+
+    XCTAssertFalse(didCommit)
+    XCTAssertNotNil(try BlockedProfiles.findProfile(byID: profile.id, in: context))
+  }
+
   // MARK: - Task 134b (CRA-4): ResetController + LegacyCleanupCoordinator wiring
 
   func testGivenFetchedForeignResetCommand_WhenHandled_ThenRoutedToResetControllerApplyCommand()
