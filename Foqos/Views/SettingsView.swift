@@ -525,9 +525,7 @@ struct SettingsView: View {
         ChildDashboardView()
       }
       .sheet(isPresented: $showDebugView) {
-        if !DiagnosticsAccess.isRestricted(mode: appModeManager.currentMode) {
-          DebugView()
-        }
+        DebugView()
       }
       .fullScreenCover(isPresented: $showWipeSyncConfirmation) {
         WipeSyncConfirmationView(

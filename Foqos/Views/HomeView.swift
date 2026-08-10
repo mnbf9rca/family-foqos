@@ -362,9 +362,7 @@ struct HomeView: View {
         .presentationDetents([.height(350)])
     }
     .sheet(isPresented: $showingDebugMode) {
-      if !DiagnosticsAccess.isRestricted(mode: appModeManager.currentMode) {
-        DebugView()
-      }
+      DebugView()
     }
     .sheet(isPresented: $showParentDashboard) {
       ParentDashboardView()

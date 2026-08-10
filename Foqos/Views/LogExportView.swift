@@ -36,7 +36,7 @@ struct LogExportView: View {
               .foregroundColor(.secondary)
 
               Text(
-                "Logs may contain profile names and timestamps but no personal data like passwords or device identifiers."
+                "Logs may contain profile names, timestamps, and technical device identifiers. Passwords and lock codes are never logged."
               )
               .font(.caption)
               .foregroundColor(.secondary)
