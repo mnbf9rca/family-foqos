@@ -163,8 +163,8 @@ struct LabeledCodeScannerView: View {
     simulatedData: "Simulated QR Code Data for Preview"  // For preview purposes
   ) { result in
     switch result {
-    case .success(let hashedCode):
-      Log.debug("Preview scanned code: \(hashedCode)", category: .ui)
+    case .success:
+      Log.debug("Preview scanned code", category: .ui)
     case .failure(let error):
       Log.debug("Preview scanning failed: \(error.localizedDescription)", category: .ui)
     }
