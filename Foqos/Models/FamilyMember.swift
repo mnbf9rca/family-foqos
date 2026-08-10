@@ -65,8 +65,8 @@ struct FamilyMember: Codable, Identifiable, Equatable {
 
 extension FamilyMember {
   /// PII-SAFE LOG (#252): the only value permitted in log lines that reference a family member.
-  /// Returns the non-PII UUID, never `displayName` (a real person name) or any email.
-  var redactedLogLabel: String { id.uuidString }
+  /// Returns the role and stable UUID prefix, never `displayName` (a real person name) or email.
+  var redactedLogLabel: String { "\(role.rawValue)·\(id.uuidString.prefix(8))" }
 }
 
 // MARK: - CloudKit Record Conversion

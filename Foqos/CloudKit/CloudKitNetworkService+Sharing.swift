@@ -306,6 +306,6 @@ extension CloudKitNetworkService {
 
 enum ShareParticipantLog {
   static func statusMessage(userRecordName: String?, acceptanceStatus: Int) -> String {
-    "Participant \(userRecordName ?? "unknown") status: \(acceptanceStatus)"
+    "Participant \(userRecordName ?? "unresolved") status: \(acceptanceStatus)"
   }
 }
