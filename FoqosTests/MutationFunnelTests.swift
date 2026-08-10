@@ -548,6 +548,32 @@ final class MutationFunnelTests: XCTestCase {
       "rollback restored the second profile, so it must not be enqueued for remote deletion")
   }
 
+  func testGivenDeleteCommitFailure_WhenRollbackRestoresProfile_ThenSnapshotRestored() throws {
+    struct BoomError: Error {}
+
+    let profileId = UUID()
+    let container = try TestModelContainer.create()
+    let context = ModelContext(container)
+    let profile = try insertProfile(
+      in: context, id: profileId, name: "Snapshot", syncVersion: 1)
+    BlockedProfiles.updateSnapshot(for: profile)
+    let scheduler = ManualProfileDeleteCommitScheduler()
+    let funnel = MutationFunnel(
+      modelContext: context,
+      store: makeStore(),
+      driver: MockSyncEngineDriver(),
+      deviceId: "device-A",
+      scheduleProfileDeleteCommit: scheduler.schedule)
+    funnel.saveOverride = { throw BoomError() }
+
+    try funnel.enqueueDelete(profileId: profileId)
+    XCTAssertNil(SharedData.snapshot(for: profileId.uuidString))
+    scheduler.runNext()
+
+    XCTAssertNotNil(try BlockedProfiles.findProfile(byID: profileId, in: context))
+    XCTAssertNotNil(SharedData.snapshot(for: profileId.uuidString))
+  }
+
   // MARK: - S-15: failed entity delete removes the tombstone before returning and enqueues nothing
 
   func testGivenFailedProfileDelete_WhenEnqueueDelete_ThenTombstoneRemovedRollbackAndNothingEnqueued()

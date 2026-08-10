@@ -202,6 +202,9 @@ final class SyncApplyService {
           profileDeleteCommitObserver?(recordName)
         } catch {
           modelContext.rollback()
+          if let restored = try? BlockedProfiles.findProfile(byID: id, in: modelContext) {
+            BlockedProfiles.updateSnapshot(for: restored)
+          }
           store.clearDeleteWatermark(recordName: recordName)
           store.addFailedApply(
             FailedApply(

@@ -960,6 +960,7 @@ final class SyncApplyServiceTests: XCTestCase {
     let profile = BlockedProfiles(id: id, name: "RemoteDelete", syncVersion: 1)
     context.insert(profile)
     try context.save()
+    BlockedProfiles.updateSnapshot(for: profile)
     store.setSystemFields(Data("cached".utf8), for: id.uuidString)
     store.setTombstone(recordName: id.uuidString, changeTag: "tag-1")
 
@@ -974,6 +975,7 @@ final class SyncApplyServiceTests: XCTestCase {
         recordID: CKRecord.ID(recordName: id.uuidString, zoneID: zoneID),
         recordType: SyncedProfile.recordType),
       .deleted)
+    XCTAssertNil(SharedData.snapshot(for: id.uuidString))
 
     scheduler.runNext()
 
@@ -983,6 +985,7 @@ final class SyncApplyServiceTests: XCTestCase {
       "rollback must leave the remote-active lock intact for retry")
     XCTAssertNotNil(store.systemFields(for: id.uuidString), "failed commit keeps deletion bookkeeping")
     XCTAssertEqual(store.deleteTombstones[id.uuidString] ?? nil, "tag-1")
+    XCTAssertNotNil(SharedData.snapshot(for: id.uuidString))
   }
 
   func testGivenTwoRemoteProfileDeletions_WhenFirstDeferredCommitRollsBackSecond_ThenSecondBookkeepingIsRetained()
