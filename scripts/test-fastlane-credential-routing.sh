@@ -1,6 +1,15 @@
 #!/bin/bash
 set -euo pipefail
 
+# Keep this list in sync whenever the suite starts invoking another external tool.
+required_commands=(cat chmod cp dirname mkdir mktemp rm sed)
+for required_command in "${required_commands[@]}"; do
+  command -v "$required_command" >/dev/null || {
+    echo "FAIL: required command not found: $required_command" >&2
+    exit 127
+  }
+done
+
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 WRAPPER="$REPO_ROOT/scripts/fastlane.sh"
 REFS_FILE="$REPO_ROOT/fastlane/asc.env"
@@ -122,6 +131,7 @@ for lane in screenshots lanes gates build_number; do
   fi
 done
 
+rm -f "$TEST_ROOT/command.log"
 set +e
 MISSING_OP_OUTPUT=$(run_wrapper "$TEST_ROOT/no-op-ruby" check_asc_key 2>&1)
 MISSING_OP_STATUS=$?
@@ -129,6 +139,10 @@ set -e
 if [[ "$MISSING_OP_STATUS" -eq 0 || "$MISSING_OP_OUTPUT" != *"1Password CLI 'op' is required"* ]]; then
   echo "FAIL: missing op must fail with a friendly error"
   printf 'exit: %s\n%s\n' "$MISSING_OP_STATUS" "$MISSING_OP_OUTPUT"
+  exit 1
+fi
+if [[ -e "$TEST_ROOT/command.log" ]]; then
+  echo "FAIL: missing op invoked bundle"
   exit 1
 fi
 

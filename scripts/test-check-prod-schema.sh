@@ -1,6 +1,15 @@
 #!/bin/bash
 set -euo pipefail
 
+# Keep this list in sync whenever the suite starts invoking another external tool.
+required_commands=(cat chmod cp dirname grep mkdir mktemp rm)
+for required_command in "${required_commands[@]}"; do
+  command -v "$required_command" >/dev/null || {
+    echo "FAIL: required command not found: $required_command" >&2
+    exit 127
+  }
+done
+
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TEST_ROOT=$(mktemp -d)
 
@@ -16,6 +25,13 @@ cp "$REPO_ROOT/scripts/check-prod-schema.sh" "$TEST_ROOT/scripts/check-prod-sche
 
 cat >"$TEST_ROOT/bin/xcrun" <<'EOF'
 #!/bin/bash
+printf '%s\n' "$*" >>"$FAKE_XCRUN_LOG"
+if [[ "${1:-}" == "--find" && "${2:-}" == "cktool" ]]; then
+  [[ "${FAKE_CKTOOL_AVAILABLE:-1}" -eq 1 ]] || exit 1
+  printf '/fake/cktool\n'
+  exit 0
+fi
+[[ "${1:-}" == "cktool" && "${2:-}" == "export-schema" ]] || exit 64
 if [[ "${FAKE_CKTOOL_EXIT:-0}" -ne 0 ]]; then
   exit "$FAKE_CKTOOL_EXIT"
 fi
@@ -25,7 +41,8 @@ chmod +x "$TEST_ROOT/bin/xcrun"
 
 run_gate() {
   set +e
-  GATE_OUTPUT=$(PATH="$TEST_ROOT/bin:$PATH" "$TEST_ROOT/scripts/check-prod-schema.sh" 2>&1)
+  GATE_OUTPUT=$(FAKE_XCRUN_LOG="$TEST_ROOT/xcrun.log" PATH="$TEST_ROOT/bin:$PATH" \
+    "$TEST_ROOT/scripts/check-prod-schema.sh" 2>&1)
   GATE_STATUS=$?
   set -e
 }
@@ -59,6 +76,19 @@ EMPTY_OUTPUT=$GATE_OUTPUT
 EMPTY_STATUS=$GATE_STATUS
 
 printf 'RECORD TYPE Present\n' >"$TEST_ROOT/fastlane/required-prod-schema.txt"
+: >"$TEST_ROOT/xcrun.log"
+FAKE_CKTOOL_AVAILABLE=0 run_gate
+if [[ "$GATE_STATUS" -ne 1 || "$GATE_OUTPUT" != *"cktool"* ]]; then
+  echo "FAIL: unavailable cktool must exit 1 and name cktool"
+  echo "actual exit: $GATE_STATUS"
+  echo "$GATE_OUTPUT"
+  exit 1
+fi
+if grep -F 'cktool export-schema' "$TEST_ROOT/xcrun.log" >/dev/null; then
+  echo "FAIL: unavailable cktool reached schema export"
+  exit 1
+fi
+
 FAKE_SCHEMA='RECORD TYPE Present (' run_gate
 if [[ "$GATE_STATUS" -ne 0 || "$GATE_OUTPUT" != *"Production schema OK."* ]]; then
   echo "FAIL: matching production schema must pass"

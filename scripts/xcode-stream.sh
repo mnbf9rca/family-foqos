@@ -336,7 +336,12 @@ reject_shell_mediated_xcodebuild "${command[@]}"
 [[ "$use_xcpretty" != true || "${command[0]##*/}" == "xcodebuild" ]] ||
   die "--xcpretty requires xcodebuild immediately after --"
 if [[ "$use_xcpretty" == true ]]; then
-  command -v bundle >/dev/null || die "bundle not found; --xcpretty requires bundle exec xcpretty"
+  command -v bundle >/dev/null || {
+    echo "xcode-stream: bundle not found; --xcpretty requires bundle exec xcpretty" >&2
+    exit 127
+  }
+  bundle exec xcpretty --version >/dev/null 2>&1 ||
+    die "xcpretty unavailable; run bundle install before using --xcpretty"
 fi
 owner_args=(--project "$PROJECT" --agent "$agent")
 if [[ -n "$session" ]]; then
