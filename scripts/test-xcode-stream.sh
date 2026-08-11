@@ -238,7 +238,10 @@ write_fake_xcpretty() {
   cat >"$TEST_ROOT/bin/bundle" <<'EOF'
 #!/opt/homebrew/bin/bash
 set -euo pipefail
-[[ "$#" -eq 2 && "$1" == "exec" && "$2" == "xcpretty" ]] || exit 64
+if [[ "$*" == "exec xcpretty --version" ]]; then
+  exit "${XCPRETTY_PREFLIGHT_EXIT:-0}"
+fi
+[[ "$*" == "exec xcpretty" ]] || exit 64
 cat >"$XCPRETTY_INPUT_LOG"
 exit "${XCPRETTY_EXIT:-0}"
 EOF
@@ -317,7 +320,8 @@ reset_case() {
   export NEXT_UUID_FILE="$CASE_ROOT/next-uuid"
   export JQ_BIN WINNER_UUID
   unset IOS_SIM_GATE_DEVICE_TYPE IOS_SIM_GATE_RUNTIME SIMULATE_REGISTER_RACE XCODEBUILD_EXIT \
-    XCODEBUILD_STDOUT XCODEBUILD_STDERR XCPRETTY_EXIT GATE_STATUS_EXIT INCOMPATIBLE_RUNTIME
+    XCODEBUILD_STDOUT XCODEBUILD_STDERR XCPRETTY_EXIT XCPRETTY_PREFLIGHT_EXIT GATE_STATUS_EXIT \
+    INCOMPATIBLE_RUNTIME
 }
 
 add_device() {
@@ -529,6 +533,17 @@ XCODEBUILD_EXIT=23 run_wrapper --agent build2 --session collab -- xcodebuild tes
 status=$?
 set -e
 [[ "$status" -eq 23 ]] || fail "expected xcodebuild exit 23, got $status"
+
+reset_case rejected-xcpretty-unavailable
+set +e
+output=$(XCPRETTY_PREFLIGHT_EXIT=19 run_wrapper \
+  --agent build2 --session collab --xcpretty -- xcodebuild test 2>&1)
+status=$?
+set -e
+if [[ "$status" -eq 0 || "$output" != *"xcpretty"* ]]; then
+  fail "unavailable xcpretty must be named and rejected: $output"
+fi
+[[ ! -s "$GATE_LOG" ]] || fail "unavailable xcpretty reached the gate"
 
 reset_case formatted-preflight-status
 set +e
