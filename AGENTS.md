@@ -46,6 +46,19 @@ This file provides guidelines for agentic coding assistants working on the Famil
     still use separate feature branches/worktrees and disjoint file sets.
     Read-only work does not consume a gate slot and may run concurrently from its own working copy.
 
+## Script Safety
+
+Scripts should be safe and deterministic. Any new or modified script must:
+
+- Validate external dependencies during preflight with `command -v` and a named nonzero failure
+  before doing work or touching shared state.
+- Fail closed when a check cannot run, input is unreadable, or output is unparseable; never treat
+  those conditions as a pass.
+- Propagate the exact child exit status through pipelines and wrappers.
+- Verify effects, not text forms, when an invariant matters, such as the simulator clone census.
+- Keep guards in build phases or the scripts themselves, never only in Git hooks, because API
+  commits bypass hooks.
+
 ## Build & Test Commands
 
 ### Building
