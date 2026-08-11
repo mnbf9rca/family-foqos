@@ -56,6 +56,7 @@ enum DeviceActivityClassifier {
     let prefix = "\(activityId):"
     guard rawValue.hasPrefix(prefix) else { return nil }
     let rawProfileId = String(rawValue.dropFirst(prefix.count))
-    return Classification(type: type, profileId: UUID(uuidString: rawProfileId))
+    guard let profileId = UUID(uuidString: rawProfileId) else { return nil }
+    return Classification(type: type, profileId: profileId)
   }
 }
