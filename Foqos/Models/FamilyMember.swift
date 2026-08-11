@@ -26,14 +26,6 @@ enum FamilyRole: String, Codable, CaseIterable, Identifiable {
     }
   }
 
-  var description: String {
-    switch self {
-    case .parent:
-      return "Can view and manage lock codes, create managed profiles on children's devices"
-    case .child:
-      return "Subject to managed profiles, needs lock code to edit them"
-    }
-  }
 }
 
 /// Represents a family member enrolled in the Family Foqos system

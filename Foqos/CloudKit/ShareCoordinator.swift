@@ -191,25 +191,3 @@ extension View {
     modifier(LeaveShareModifier(coordinator: coordinator))
   }
 }
-
-// MARK: - Enroll Family Member Button Component
-
-struct EnrollFamilyMemberButton: View {
-  let role: FamilyRole
-  @StateObject private var coordinator = ShareCoordinator()
-
-  var body: some View {
-    Button {
-      coordinator.enrollFamilyMember(role: role)
-    } label: {
-      if coordinator.isPreparingShare {
-        ProgressView()
-          .progressViewStyle(CircularProgressViewStyle())
-      } else {
-        Label("Add \(role.displayName)", systemImage: "person.badge.plus")
-      }
-    }
-    .disabled(coordinator.isPreparingShare)
-    .enrollFamilyMemberSheet(coordinator: coordinator)
-  }
-}
