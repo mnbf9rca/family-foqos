@@ -212,8 +212,8 @@ git commit -S -m "test: define log privacy lint contract"
 
 **Interfaces:**
 
-- Consumes: `--root PATH`, the five exact production roots, site baseline integer `503`, annotation
-  baseline integer `0`, and exact facade sink path
+- Consumes: `--root PATH`, the five exact production roots, a deliberately temporary site baseline
+  integer `494` while the nine direct sinks still exist, annotation baseline integer `0`, and exact facade sink path
   `Packages/FoqosShared/Sources/FoqosShared/Log.swift`.
 - Produces: Xcode diagnostics `path:line: error: message`, exit codes `0/1/2`, and the success line
   `Log privacy lint passed: files_discovered=N files_analyzed=N sites_analyzed=N annotations=N`.
@@ -318,7 +318,7 @@ Increment `files_analyzed` only after complete lexing and classification. Requir
 analyzed file counts to match exactly. Require `sites_analyzed >= site_floor`; on a drop print:
 
 ```text
-coverage shrank from 503 to N — if you deliberately removed log calls, lower the baseline; if you
+coverage shrank from BASELINE to N — if you deliberately removed log calls, lower the baseline; if you
 did not, the analyzer is missing sites
 ```
 
@@ -333,7 +333,8 @@ ruby scripts/test-check-log-privacy.rb
 ruby scripts/check-log-privacy.rb --root "$PWD"
 ```
 
-Expected: syntax is valid; all isolated fixtures pass; production exits `1` and reports the known
+Expected: syntax is valid; all isolated fixtures pass; the temporary production floor is `494`, and
+production exits `1` and reports the known
 direct sinks, bare-error interpolations, dynamic preview interpolations, and any genuine historical
 sensitive sites. It must report all production files as analyzed before source migrations begin.
 
@@ -446,6 +447,7 @@ git commit -S -m "feat: add bounded error log redaction"
 
 - Modify: `FoqosDeviceMonitor/DeviceActivityMonitorExtension.swift`
 - Modify: `Packages/FoqosShared/Sources/FoqosShared/SharedData.swift`
+- Modify: `scripts/log-privacy-baseline.txt`
 - Modify: the 19 current bare-error files under `Foqos/` listed below
 - Modify: `Foqos/Views/ModeSelectionView.swift`
 - Modify: `Foqos/Components/Strategy/QRCodeScanner.swift`
@@ -462,6 +464,8 @@ git commit -S -m "feat: add bounded error log redaction"
 Remove the private `Logger` instances and now-unused `OSLog` imports. Change the two monitor interval
 messages to `Log.info(..., category: .timer)` and the seven SharedData lock messages to
 `Log.warning(..., category: .app)`. Preserve the original static text and safe `errno` integers.
+After those nine calls exist, change `scripts/log-privacy-baseline.txt` from the explicitly temporary
+`494` to the final maintained floor `503`; do not raise it before the sinks are migrated.
 
 - [ ] **Step 2: Mechanically migrate all analyzer-reported bare errors**
 
@@ -529,7 +533,8 @@ sites, zero annotations, and no findings; focused Swift tests pass.
 - [ ] **Step 5: Commit production migrations**
 
 ```bash
-git add Foqos FoqosDeviceMonitor Packages/FoqosShared/Sources/FoqosShared/SharedData.swift
+git add Foqos FoqosDeviceMonitor Packages/FoqosShared/Sources/FoqosShared/SharedData.swift \
+  scripts/log-privacy-baseline.txt
 git commit -S -m "fix: migrate production logs to privacy-safe sinks"
 ```
 
