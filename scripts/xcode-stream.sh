@@ -18,6 +18,7 @@ GATE_BIN="${IOS_SIM_GATE_BIN:-$HOME/.local/bin/ios-sim-gate}"
 JQ_BIN="${IOS_SIM_GATE_JQ_BIN:-/opt/homebrew/bin/jq}"
 STATE_ROOT="${IOS_SIM_GATE_HOME:-$HOME/Library/Application Support/ios-sim-gate}"
 REGISTRY="$STATE_ROOT/registry.json"
+XCTEST_DEVICES_ROOT="${IOS_SIM_GATE_XCTEST_DEVICES_ROOT:-$HOME/Library/Developer/XCTestDevices}"
 DEFAULT_DEVICE_TYPE="iPhone 17"
 
 die() {
@@ -76,6 +77,99 @@ simctl() {
   else
     /usr/bin/xcrun simctl "$@"
   fi
+}
+
+xctest_devices_census() {
+  local inventory
+  local census
+
+  if [[ ! -d "$XCTEST_DEVICES_ROOT" ]]; then
+    echo "xcode-stream: XCTestDevices census failed: root not found: $XCTEST_DEVICES_ROOT" >&2
+    return 1
+  fi
+  if ! inventory=$(simctl --set "$XCTEST_DEVICES_ROOT" list devices --json 2>/dev/null); then
+    echo "xcode-stream: XCTestDevices census failed: simctl could not list $XCTEST_DEVICES_ROOT" >&2
+    return 1
+  fi
+  if ! census=$("$JQ_BIN" -ce '
+    if (type != "object") or ((.devices | type) != "object") then
+      error("inventory must contain a devices object")
+    elif (all(
+      .devices | to_entries[];
+      if (.value | type) != "array" then
+        false
+      else
+        all(.value[]; ((.udid | type) == "string") and ((.name | type) == "string"))
+      end
+    ) | not) then
+      error("every device must contain string udid and name fields")
+    else
+      [.devices | to_entries[] | .value[] | {udid, name}] | sort_by(.udid)
+    end
+  ' <<<"$inventory"); then
+    echo "xcode-stream: XCTestDevices census failed: invalid simctl inventory" >&2
+    return 1
+  fi
+
+  printf '%s\n' "$census"
+}
+
+# shellcheck disable=SC2329 # Invoked from the EXIT-trap finalizer.
+new_xctest_devices() {
+  local before=$1
+  local after=$2
+
+  # shellcheck disable=SC2016 # jq expressions intentionally use jq variables.
+  "$JQ_BIN" -cn --argjson before "$before" --argjson after "$after" '
+    [
+      $after[] |
+      . as $device |
+      select(any($before[]; .udid == $device.udid) | not)
+    ]
+  '
+}
+
+# shellcheck disable=SC2329 # Installed as the EXIT trap below.
+finish_xctest_devices_census() {
+  local child_status=$?
+  trap - EXIT INT TERM
+  set +e
+
+  local after
+  local added
+  local owned_growth
+  local unattributed_growth
+  if ! after=$(xctest_devices_census); then
+    echo "xcode-stream: XCTestDevices census failed after gated child; refusing to pass" >&2
+    exit 1
+  fi
+  if ! added=$(new_xctest_devices "$xctest_devices_before" "$after"); then
+    echo "xcode-stream: XCTestDevices census failed while comparing inventories" >&2
+    exit 1
+  fi
+  # shellcheck disable=SC2016 # jq expressions intentionally use jq variables.
+  if ! owned_growth=$("$JQ_BIN" -c --arg owner "$IOS_SIM_GATE_DEVICE_NAME" \
+    '[.[] | select((.name == $owner) or (.name | endswith(" of " + $owner)))]' <<<"$added"); then
+    echo "xcode-stream: XCTestDevices census failed while attributing growth" >&2
+    exit 1
+  fi
+  # shellcheck disable=SC2016 # jq expressions intentionally use jq variables.
+  if ! unattributed_growth=$("$JQ_BIN" -c --arg owner "$IOS_SIM_GATE_DEVICE_NAME" \
+    '[.[] | select(((.name == $owner) or (.name | endswith(" of " + $owner))) | not)]' \
+    <<<"$added"); then
+    echo "xcode-stream: XCTestDevices census failed while classifying growth" >&2
+    exit 1
+  fi
+
+  if [[ "$unattributed_growth" != "[]" ]]; then
+    echo "xcode-stream: WARNING: XCTestDevices grew during gated run without attributable owner match: $unattributed_growth" >&2
+  fi
+  if [[ "$owned_growth" != "[]" ]]; then
+    echo "xcode-stream: XCTestDevices clone appeared for owned simulator $IOS_SIM_GATE_DEVICE_NAME: $owned_growth" >&2
+    exit 1
+  fi
+
+  exit "$child_status"
 }
 
 gate() {
@@ -417,5 +511,17 @@ internal_command=("$BASH4_BIN" "$SELF" __execute)
 [[ "$use_xcpretty" != true ]] || internal_command+=(--xcpretty)
 internal_command+=(-- "${command[@]}")
 
-exec "$BASH4_BIN" "$GATE_BIN" run "${owner_args[@]}" --udid "$owned_uuid" -- \
+if ! xctest_devices_before=$(xctest_devices_census); then
+  die "XCTestDevices census failed before gated child"
+fi
+export IOS_SIM_GATE_CENSUS_PARENT_PID=$BASHPID
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap finish_xctest_devices_census EXIT
+
+set +e
+"$BASH4_BIN" "$GATE_BIN" run "${owner_args[@]}" --udid "$owned_uuid" -- \
   "${internal_command[@]}"
+child_status=$?
+set -e
+exit "$child_status"

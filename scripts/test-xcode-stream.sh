@@ -43,6 +43,8 @@ OTHER_UUID=33333333-3333-3333-3333-333333333333
 CREATED_UUID=44444444-4444-4444-4444-444444444444
 WINNER_UUID=55555555-5555-5555-5555-555555555555
 STALE_UUID=66666666-6666-6666-6666-666666666666
+XCTEST_OWN_UUID=77777777-7777-7777-7777-777777777777
+XCTEST_OTHER_UUID=88888888-8888-8888-8888-888888888888
 
 cleanup() {
   rm -rf -- "$TEST_ROOT"
@@ -165,6 +167,28 @@ write_fake_simctl() {
 set -euo pipefail
 
 printf '%s\n' "$*" >>"$SIMCTL_LOG"
+if [[ "${1:-}" == "--set" ]]; then
+  root=$2
+  shift 2
+  [[ "$root" == "$IOS_SIM_GATE_XCTEST_DEVICES_ROOT" ]] || {
+    echo "unexpected XCTestDevices root: $root" >&2
+    exit 64
+  }
+  [[ "$*" == "list devices --json" ]] || {
+    echo "unexpected XCTestDevices simctl arguments: $*" >&2
+    exit 64
+  }
+  calls=$(<"$XCTEST_CENSUS_CALLS_FILE")
+  ((calls += 1))
+  printf '%s\n' "$calls" >"$XCTEST_CENSUS_CALLS_FILE"
+  if [[ "${XCTEST_CENSUS_FAIL_CALL:-0}" -eq "$calls" ]]; then
+    echo "simulated XCTestDevices census failure" >&2
+    exit 75
+  fi
+  cat "$XCTEST_DEVICES_JSON"
+  exit 0
+fi
+
 case "$1 $2 ${3:-}" in
   "list devices available")
     "$JQ_BIN" '
@@ -229,6 +253,24 @@ write_fake_xcodebuild() {
 printf '%s\n' "$@" >"$XCODEBUILD_LOG"
 [[ -z "${XCODEBUILD_STDOUT:-}" ]] || printf '%s\n' "$XCODEBUILD_STDOUT"
 [[ -z "${XCODEBUILD_STDERR:-}" ]] || printf '%s\n' "$XCODEBUILD_STDERR" >&2
+if [[ -n "${XCODEBUILD_XCTEST_DEVICE_NAME:-}" ]]; then
+  temporary="$XCTEST_DEVICES_JSON.tmp"
+  "$JQ_BIN" --arg uuid "$XCODEBUILD_XCTEST_DEVICE_UUID" \
+    --arg name "$XCODEBUILD_XCTEST_DEVICE_NAME" '
+      .devices["com.apple.CoreSimulator.SimRuntime.iOS-26-0"] =
+        ((.devices["com.apple.CoreSimulator.SimRuntime.iOS-26-0"] // []) + [{
+          udid: $uuid,
+          name: $name,
+          state: "Shutdown",
+          isAvailable: true
+        }])
+    ' "$XCTEST_DEVICES_JSON" >"$temporary" || exit 74
+  mv "$temporary" "$XCTEST_DEVICES_JSON" || exit 74
+fi
+if [[ "${XCODEBUILD_INTERRUPT_CENSUS_PARENT:-0}" == 1 ]]; then
+  [[ -n "${IOS_SIM_GATE_CENSUS_PARENT_PID:-}" ]] || exit 86
+  kill -INT "$IOS_SIM_GATE_CENSUS_PARENT_PID" || exit 87
+fi
 exit "${XCODEBUILD_EXIT:-0}"
 EOF
   chmod +x "$TEST_ROOT/bin/xcodebuild"
@@ -295,9 +337,11 @@ reset_case() {
   local name=$1
   CASE_ROOT="$TEST_ROOT/$name"
   rm -rf -- "$CASE_ROOT"
-  mkdir -p "$CASE_ROOT/state" "$CASE_ROOT/cache"
+  mkdir -p "$CASE_ROOT/state" "$CASE_ROOT/cache" "$CASE_ROOT/xctest-devices"
   printf '{}\n' >"$CASE_ROOT/state/registry.json"
   printf '{"devices":{}}\n' >"$CASE_ROOT/devices.json"
+  printf '{"devices":{}}\n' >"$CASE_ROOT/xctest-devices.json"
+  printf '0\n' >"$CASE_ROOT/xctest-census-calls"
   printf '%s\n' "$CREATED_UUID" >"$CASE_ROOT/next-uuid"
   : >"$CASE_ROOT/gate.log"
   : >"$CASE_ROOT/simctl.log"
@@ -310,6 +354,7 @@ reset_case() {
   export IOS_SIM_GATE_BASH_BIN=/opt/homebrew/bin/bash
   export IOS_SIM_GATE_JQ_BIN="$JQ_BIN"
   export IOS_SIM_GATE_SIMCTL_BIN="$TEST_ROOT/bin/simctl"
+  export IOS_SIM_GATE_XCTEST_DEVICES_ROOT="$CASE_ROOT/xctest-devices"
   export GATE_LOG="$CASE_ROOT/gate.log"
   export SIMCTL_LOG="$CASE_ROOT/simctl.log"
   export XCODEBUILD_LOG="$CASE_ROOT/xcodebuild.log"
@@ -318,10 +363,13 @@ reset_case() {
   export DEVICE_TYPES_JSON="$TEST_ROOT/device-types.json"
   export RUNTIMES_JSON="$TEST_ROOT/runtimes.json"
   export NEXT_UUID_FILE="$CASE_ROOT/next-uuid"
+  export XCTEST_DEVICES_JSON="$CASE_ROOT/xctest-devices.json"
+  export XCTEST_CENSUS_CALLS_FILE="$CASE_ROOT/xctest-census-calls"
   export JQ_BIN WINNER_UUID
   unset IOS_SIM_GATE_DEVICE_TYPE IOS_SIM_GATE_RUNTIME SIMULATE_REGISTER_RACE XCODEBUILD_EXIT \
-    XCODEBUILD_STDOUT XCODEBUILD_STDERR XCPRETTY_EXIT XCPRETTY_PREFLIGHT_EXIT GATE_STATUS_EXIT \
-    INCOMPATIBLE_RUNTIME
+    XCODEBUILD_STDOUT XCODEBUILD_STDERR XCODEBUILD_XCTEST_DEVICE_NAME \
+    XCODEBUILD_XCTEST_DEVICE_UUID XCODEBUILD_INTERRUPT_CENSUS_PARENT XCPRETTY_EXIT \
+    XCPRETTY_PREFLIGHT_EXIT GATE_STATUS_EXIT INCOMPATIBLE_RUNTIME XCTEST_CENSUS_FAIL_CALL
 }
 
 add_device() {
@@ -389,6 +437,8 @@ assert_contains "$XCODEBUILD_LOG" "$CASE_ROOT/cache/DerivedData/family-foqos/bui
 assert_contains "$XCODEBUILD_LOG" "-parallel-testing-enabled"
 assert_contains "$XCODEBUILD_LOG" "NO"
 assert_contains "$XCODEBUILD_LOG" "-disable-concurrent-destination-testing"
+[[ $(<"$XCTEST_CENSUS_CALLS_FILE") -eq 2 ]] ||
+  fail "successful gated run must census XCTestDevices exactly twice"
 
 reset_case session-isolation
 add_device "$REUSE_UUID" "No session" com.apple.CoreSimulator.SimRuntime.iOS-26-0
@@ -525,6 +575,96 @@ run_wrapper --agent build2 --session collab -- bash -c 'exit 0'
 assert_contains "$GATE_LOG" \
   $'run\tfamily-foqos\tbuild2\tcollab\t11111111-1111-1111-1111-111111111111'
 
+reset_case owned-xctestdevices-growth
+add_device "$REUSE_UUID" "Family Foqos build2" com.apple.CoreSimulator.SimRuntime.iOS-26-0
+set_owner "$REUSE_UUID" build2 ""
+set +e
+output=$(XCODEBUILD_XCTEST_DEVICE_UUID="$XCTEST_OWN_UUID" \
+  XCODEBUILD_XCTEST_DEVICE_NAME="Clone 1 of Family Foqos build2" \
+  run_wrapper --agent build2 -- xcodebuild test 2>&1)
+status=$?
+set -e
+if [[ "$status" -eq 0 || "$output" != *"XCTestDevices clone appeared for owned simulator"* ]]; then
+  fail "owned XCTestDevices growth must fail the run: $output"
+fi
+
+reset_case nested-owned-xctestdevices-growth
+add_device "$REUSE_UUID" "Family Foqos build2" com.apple.CoreSimulator.SimRuntime.iOS-26-0
+set_owner "$REUSE_UUID" build2 ""
+set +e
+output=$(XCODEBUILD_XCTEST_DEVICE_UUID="$XCTEST_OWN_UUID" \
+  XCODEBUILD_XCTEST_DEVICE_NAME="Clone 2 of Clone 1 of Family Foqos build2" \
+  run_wrapper --agent build2 -- xcodebuild test 2>&1)
+status=$?
+set -e
+if [[ "$status" -eq 0 || "$output" != *"XCTestDevices clone appeared for owned simulator"* ]]; then
+  fail "nested owned XCTestDevices growth must fail the run: $output"
+fi
+
+reset_case failed-child-owned-xctestdevices-growth
+add_device "$REUSE_UUID" "Family Foqos build2" com.apple.CoreSimulator.SimRuntime.iOS-26-0
+set_owner "$REUSE_UUID" build2 ""
+set +e
+output=$(XCODEBUILD_EXIT=23 XCODEBUILD_XCTEST_DEVICE_UUID="$XCTEST_OWN_UUID" \
+  XCODEBUILD_XCTEST_DEVICE_NAME="Clone 1 of Family Foqos build2" \
+  run_wrapper --agent build2 -- xcodebuild test 2>&1)
+status=$?
+set -e
+if [[ "$status" -eq 0 || "$output" != *"XCTestDevices clone appeared for owned simulator"* ]]; then
+  fail "failed child must still run the owned-clone census: $output"
+fi
+
+reset_case interrupted-child-owned-xctestdevices-growth
+add_device "$REUSE_UUID" "Family Foqos build2" com.apple.CoreSimulator.SimRuntime.iOS-26-0
+set_owner "$REUSE_UUID" build2 ""
+set +e
+output=$(XCODEBUILD_INTERRUPT_CENSUS_PARENT=1 \
+  XCODEBUILD_XCTEST_DEVICE_UUID="$XCTEST_OWN_UUID" \
+  XCODEBUILD_XCTEST_DEVICE_NAME="Clone 1 of Family Foqos build2" \
+  run_wrapper --agent build2 -- xcodebuild test 2>&1)
+status=$?
+set -e
+if [[ "$status" -eq 0 || "$output" != *"XCTestDevices clone appeared for owned simulator"* ]]; then
+  fail "interrupted child must still run the owned-clone census: $output"
+fi
+
+reset_case interrupted-child-status
+add_device "$REUSE_UUID" "Family Foqos build2" com.apple.CoreSimulator.SimRuntime.iOS-26-0
+set_owner "$REUSE_UUID" build2 ""
+set +e
+XCODEBUILD_INTERRUPT_CENSUS_PARENT=1 run_wrapper --agent build2 -- xcodebuild test
+status=$?
+set -e
+[[ "$status" -eq 130 ]] || fail "INT must preserve shell status 130, got $status"
+[[ $(<"$XCTEST_CENSUS_CALLS_FILE") -eq 2 ]] ||
+  fail "interrupted gated run must census XCTestDevices exactly twice"
+
+reset_case unattributed-xctestdevices-growth
+add_device "$REUSE_UUID" "Family Foqos build2" com.apple.CoreSimulator.SimRuntime.iOS-26-0
+set_owner "$REUSE_UUID" build2 ""
+set +e
+output=$(XCODEBUILD_XCTEST_DEVICE_UUID="$XCTEST_OTHER_UUID" \
+  XCODEBUILD_XCTEST_DEVICE_NAME="Clone 1 of Another Stream" \
+  run_wrapper --agent build2 -- xcodebuild test 2>&1)
+status=$?
+set -e
+if [[ "$status" -ne 0 || "$output" != *"WARNING: XCTestDevices grew during gated run"* ]]; then
+  fail "unattributed XCTestDevices growth must warn without failing: $output"
+fi
+
+reset_case prefixed-owner-xctestdevices-growth
+add_device "$REUSE_UUID" "Family Foqos build2" com.apple.CoreSimulator.SimRuntime.iOS-26-0
+set_owner "$REUSE_UUID" build2 ""
+set +e
+output=$(XCODEBUILD_XCTEST_DEVICE_UUID="$XCTEST_OTHER_UUID" \
+  XCODEBUILD_XCTEST_DEVICE_NAME="Clone 1 of Family Foqos build2 - collab" \
+  run_wrapper --agent build2 -- xcodebuild test 2>&1)
+status=$?
+set -e
+if [[ "$status" -ne 0 || "$output" != *"WARNING: XCTestDevices grew during gated run"* ]]; then
+  fail "prefixed owner name must not be falsely attributed: $output"
+fi
+
 reset_case exit-status
 add_device "$REUSE_UUID" "Family Foqos build2" com.apple.CoreSimulator.SimRuntime.iOS-26-0
 set_owner "$REUSE_UUID" build2 collab
@@ -561,6 +701,43 @@ if [[ "$status" -eq 0 || "$output" != *"xcpretty"* ]]; then
   fail "unavailable xcpretty must be named and rejected: $output"
 fi
 [[ ! -s "$GATE_LOG" ]] || fail "unavailable xcpretty reached the gate"
+
+reset_case missing-xctestdevices-root
+add_device "$REUSE_UUID" "Family Foqos build2" com.apple.CoreSimulator.SimRuntime.iOS-26-0
+set_owner "$REUSE_UUID" build2 ""
+rm -rf -- "$IOS_SIM_GATE_XCTEST_DEVICES_ROOT"
+set +e
+output=$(run_wrapper --agent build2 -- xcodebuild test 2>&1)
+status=$?
+set -e
+if [[ "$status" -eq 0 || "$output" != *"XCTestDevices census failed"* ]]; then
+  fail "missing XCTestDevices root must fail loudly: $output"
+fi
+[[ ! -s "$GATE_LOG" ]] || fail "missing XCTestDevices root reached the gate"
+
+reset_case malformed-xctestdevices-census
+add_device "$REUSE_UUID" "Family Foqos build2" com.apple.CoreSimulator.SimRuntime.iOS-26-0
+set_owner "$REUSE_UUID" build2 ""
+printf '{"devices":{"runtime":[{"udid":7}]}}\n' >"$XCTEST_DEVICES_JSON"
+set +e
+output=$(run_wrapper --agent build2 -- xcodebuild test 2>&1)
+status=$?
+set -e
+if [[ "$status" -eq 0 || "$output" != *"XCTestDevices census failed"* ]]; then
+  fail "malformed XCTestDevices inventory must fail loudly: $output"
+fi
+[[ ! -s "$GATE_LOG" ]] || fail "malformed XCTestDevices inventory reached the gate"
+
+reset_case failed-after-xctestdevices-census
+add_device "$REUSE_UUID" "Family Foqos build2" com.apple.CoreSimulator.SimRuntime.iOS-26-0
+set_owner "$REUSE_UUID" build2 ""
+set +e
+output=$(XCTEST_CENSUS_FAIL_CALL=2 run_wrapper --agent build2 -- xcodebuild test 2>&1)
+status=$?
+set -e
+if [[ "$status" -eq 0 || "$output" != *"XCTestDevices census failed"* ]]; then
+  fail "failed after-census must fail loudly: $output"
+fi
 
 reset_case formatted-preflight-status
 set +e
