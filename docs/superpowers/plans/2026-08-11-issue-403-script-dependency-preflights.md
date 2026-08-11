@@ -146,7 +146,7 @@ Use the established comment, array, `command -v` loop, named diagnostic, and exi
 required_commands=(dirname grep xcrun)
 
 # scripts/test-check-prod-schema.sh
-required_commands=(chmod cp dirname grep mkdir mktemp rm)
+required_commands=(cat chmod cp dirname grep mkdir mktemp rm)
 
 # scripts/test-fastlane-credential-routing.sh
 required_commands=(cat chmod cp dirname mkdir mktemp rm sed)
