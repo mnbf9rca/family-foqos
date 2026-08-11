@@ -1,6 +1,34 @@
 #!/opt/homebrew/bin/bash
 set -euo pipefail
 
+# Keep this list in sync whenever the suite starts invoking another external tool.
+required_commands=(
+  /opt/homebrew/bin/bash
+  /opt/homebrew/bin/jq
+  /usr/bin/true
+  basename
+  cat
+  chmod
+  cmp
+  dirname
+  grep
+  mkdir
+  mktemp
+  mv
+  rm
+  zsh
+)
+for required_command in "${required_commands[@]}"; do
+  command -v "$required_command" >/dev/null || {
+    echo "FAIL: required command not found: $required_command" >&2
+    exit 127
+  }
+done
+if [[ "${BASH_VERSINFO[0]}" -lt 4 ]]; then
+  echo "FAIL: Bash 4+ is required" >&2
+  exit 127
+fi
+
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 WRAPPER="$REPO_ROOT/scripts/xcode-stream.sh"
 ADAPTER="$REPO_ROOT/scripts/ios-sim-gate-bin/xcrun"
@@ -71,6 +99,7 @@ parse_owner() {
 case "$command" in
   status)
     printf 'capacity slots=3 admission=free\n'
+    exit "${GATE_STATUS_EXIT:-0}"
     ;;
   reconcile)
     printf 'reconciled\n' >>"$GATE_LOG"
@@ -197,9 +226,22 @@ write_fake_xcodebuild() {
   cat >"$TEST_ROOT/bin/xcodebuild" <<'EOF'
 #!/opt/homebrew/bin/bash
 printf '%s\n' "$@" >"$XCODEBUILD_LOG"
+[[ -z "${XCODEBUILD_STDOUT:-}" ]] || printf '%s\n' "$XCODEBUILD_STDOUT"
+[[ -z "${XCODEBUILD_STDERR:-}" ]] || printf '%s\n' "$XCODEBUILD_STDERR" >&2
 exit "${XCODEBUILD_EXIT:-0}"
 EOF
   chmod +x "$TEST_ROOT/bin/xcodebuild"
+}
+
+write_fake_xcpretty() {
+  cat >"$TEST_ROOT/bin/bundle" <<'EOF'
+#!/opt/homebrew/bin/bash
+set -euo pipefail
+[[ "$#" -eq 2 && "$1" == "exec" && "$2" == "xcpretty" ]] || exit 64
+cat >"$XCPRETTY_INPUT_LOG"
+exit "${XCPRETTY_EXIT:-0}"
+EOF
+  chmod +x "$TEST_ROOT/bin/bundle"
 }
 
 write_fake_fastlane_dependencies() {
@@ -256,6 +298,7 @@ reset_case() {
   : >"$CASE_ROOT/gate.log"
   : >"$CASE_ROOT/simctl.log"
   : >"$CASE_ROOT/xcodebuild.log"
+  : >"$CASE_ROOT/xcpretty-input.log"
 
   export IOS_SIM_GATE_HOME="$CASE_ROOT/state"
   export IOS_SIM_GATE_CACHE_HOME="$CASE_ROOT/cache"
@@ -266,13 +309,14 @@ reset_case() {
   export GATE_LOG="$CASE_ROOT/gate.log"
   export SIMCTL_LOG="$CASE_ROOT/simctl.log"
   export XCODEBUILD_LOG="$CASE_ROOT/xcodebuild.log"
+  export XCPRETTY_INPUT_LOG="$CASE_ROOT/xcpretty-input.log"
   export DEVICES_JSON="$CASE_ROOT/devices.json"
   export DEVICE_TYPES_JSON="$TEST_ROOT/device-types.json"
   export RUNTIMES_JSON="$TEST_ROOT/runtimes.json"
   export NEXT_UUID_FILE="$CASE_ROOT/next-uuid"
   export JQ_BIN WINNER_UUID
   unset IOS_SIM_GATE_DEVICE_TYPE IOS_SIM_GATE_RUNTIME SIMULATE_REGISTER_RACE XCODEBUILD_EXIT \
-    INCOMPATIBLE_RUNTIME
+    XCODEBUILD_STDOUT XCODEBUILD_STDERR XCPRETTY_EXIT GATE_STATUS_EXIT INCOMPATIBLE_RUNTIME
 }
 
 add_device() {
@@ -319,6 +363,7 @@ run_wrapper() {
 write_fake_gate
 write_fake_simctl
 write_fake_xcodebuild
+write_fake_xcpretty
 write_fake_fastlane_dependencies
 write_inventory_files
 
@@ -455,6 +500,55 @@ status=$?
 set -e
 [[ "$status" -eq 23 ]] || fail "expected xcodebuild exit 23, got $status"
 
+reset_case formatted-preflight-status
+set +e
+GATE_STATUS_EXIT=29 zsh -f -c '
+  export PATH="$1:$PATH"
+  "$2" --agent build2 --session collab --xcpretty -- xcodebuild test
+' _ "$TEST_ROOT/bin" "$WRAPPER"
+status=$?
+set -e
+[[ "$status" -eq 29 ]] || fail "expected formatted preflight exit 29, got $status"
+[[ ! -s "$XCPRETTY_INPUT_LOG" ]] || fail "formatter ran before gate preflight completed"
+
+reset_case formatted-child-status
+add_device "$REUSE_UUID" "Family Foqos build2" com.apple.CoreSimulator.SimRuntime.iOS-26-0
+set_owner "$REUSE_UUID" build2 collab
+set +e
+XCODEBUILD_EXIT=23 XCPRETTY_EXIT=0 \
+  run_wrapper --agent build2 --session collab --xcpretty -- xcodebuild test
+status=$?
+set -e
+[[ "$status" -eq 23 ]] || fail "expected formatted xcodebuild exit 23, got $status"
+
+reset_case formatted-formatter-status
+add_device "$REUSE_UUID" "Family Foqos build2" com.apple.CoreSimulator.SimRuntime.iOS-26-0
+set_owner "$REUSE_UUID" build2 collab
+set +e
+XCODEBUILD_EXIT=0 XCPRETTY_EXIT=17 \
+  run_wrapper --agent build2 --session collab --xcpretty -- xcodebuild test
+status=$?
+set -e
+[[ "$status" -eq 17 ]] || fail "expected xcpretty exit 17 after xcodebuild success, got $status"
+
+reset_case formatted-merged-output
+add_device "$REUSE_UUID" "Family Foqos build2" com.apple.CoreSimulator.SimRuntime.iOS-26-0
+set_owner "$REUSE_UUID" build2 collab
+XCODEBUILD_STDOUT="stdout marker" XCODEBUILD_STDERR="stderr marker" \
+  run_wrapper --agent build2 --session collab --xcpretty -- xcodebuild test
+assert_contains "$XCPRETTY_INPUT_LOG" "stdout marker"
+assert_contains "$XCPRETTY_INPUT_LOG" "stderr marker"
+
+reset_case rejected-xcpretty-scope
+set +e
+output=$(run_wrapper --agent build2 --session collab --xcpretty -- /usr/bin/true 2>&1)
+status=$?
+set -e
+if [[ "$status" -eq 0 || "$output" != *"--xcpretty requires xcodebuild immediately after --"* ]]; then
+  fail "--xcpretty must reject a non-xcodebuild child before gate mutation"
+fi
+[[ ! -s "$GATE_LOG" ]] || fail "invalid --xcpretty use reached the gate"
+
 if [[ ! -x "$ADAPTER" ]]; then
   fail "scripts/ios-sim-gate-bin/xcrun is missing or not executable"
 fi
@@ -545,7 +639,6 @@ policy_requirements=(
   "-disable-concurrent-destination-testing"
   "scripts/fastlane.sh screenshots"
   "scripts/clean-build.sh"
-  "bundle exec xcpretty"
   "Read-only work does not consume a gate slot"
   "Archive and upload lanes do not boot simulators"
 )
@@ -553,8 +646,11 @@ for requirement in "${policy_requirements[@]}"; do
   assert_contains "$POLICY_FILE" "$requirement"
 done
 assert_not_contains "$POLICY_FILE" "NO parallel development on the same machine"
-if rg -n '^xcodebuild ' "$POLICY_FILE" >/dev/null; then
+if grep -nE '^xcodebuild ' "$POLICY_FILE" >/dev/null; then
   fail "AGENTS.md still documents a raw xcodebuild entrypoint"
+else
+  grep_status=$?
+  [[ "$grep_status" -eq 1 ]] || fail "could not inspect AGENTS.md (grep exit $grep_status)"
 fi
 
 echo "PASS: xcode stream allocation, enforcement, adapter scoping, and exact exit propagation"

@@ -64,6 +64,8 @@ require_internal_gate_contract() {
 }
 
 execute_internal() {
+  local use_xcpretty=$1
+  shift
   [[ "${1:-}" == "--" ]] || die "internal execution requires -- before the command"
   shift
   (($#)) || die "internal execution requires a command"
@@ -105,6 +107,21 @@ execute_internal() {
     esac
   done
 
+  if [[ "$use_xcpretty" == true ]]; then
+    local -a pipeline_statuses
+    set +e
+    "$@" \
+      -destination "$IOS_SIM_GATE_DESTINATION" \
+      -derivedDataPath "$IOS_SIM_GATE_DERIVED_DATA_PATH" \
+      -parallel-testing-enabled NO \
+      -disable-concurrent-destination-testing \
+      2>&1 | bundle exec xcpretty
+    pipeline_statuses=("${PIPESTATUS[@]}")
+    set -e
+    ((pipeline_statuses[0] == 0)) || exit "${pipeline_statuses[0]}"
+    exit "${pipeline_statuses[1]}"
+  fi
+
   exec "$@" \
     -destination "$IOS_SIM_GATE_DESTINATION" \
     -derivedDataPath "$IOS_SIM_GATE_DERIVED_DATA_PATH" \
@@ -124,7 +141,12 @@ delete_internal() {
 case "${1:-}" in
   __execute)
     shift
-    execute_internal "$@"
+    use_xcpretty=false
+    if [[ "${1:-}" == "--xcpretty" ]]; then
+      use_xcpretty=true
+      shift
+    fi
+    execute_internal "$use_xcpretty" "$@"
     ;;
   __delete)
     shift
@@ -135,13 +157,14 @@ esac
 
 usage() {
   cat >&2 <<'EOF'
-Usage: scripts/xcode-stream.sh --agent NAME [--session NAME] -- COMMAND [ARG ...]
+Usage: scripts/xcode-stream.sh --agent NAME [--session NAME] [--xcpretty] -- COMMAND [ARG ...]
 EOF
   exit 2
 }
 
 agent=""
 session=""
+use_xcpretty=false
 while (($#)); do
   case "$1" in
     --agent)
@@ -153,6 +176,10 @@ while (($#)); do
       (($# >= 2)) || usage
       session=$2
       shift 2
+      ;;
+    --xcpretty)
+      use_xcpretty=true
+      shift
       ;;
     --)
       shift
@@ -178,6 +205,11 @@ else
 fi
 
 command=("$@")
+[[ "$use_xcpretty" != true || "${command[0]##*/}" == "xcodebuild" ]] ||
+  die "--xcpretty requires xcodebuild immediately after --"
+if [[ "$use_xcpretty" == true ]]; then
+  command -v bundle >/dev/null || die "bundle not found; --xcpretty requires bundle exec xcpretty"
+fi
 owner_args=(--project "$PROJECT" --agent "$agent")
 if [[ -n "$session" ]]; then
   owner_args+=(--session "$session")
@@ -342,5 +374,9 @@ IFS=$'\t' read -r IOS_SIM_GATE_DEVICE_NAME IOS_SIM_GATE_RUNTIME_VERSION <<<"$met
 [[ -n "$IOS_SIM_GATE_RUNTIME_VERSION" ]] || die "resolved simulator has no runtime version"
 export IOS_SIM_GATE_DEVICE_NAME IOS_SIM_GATE_RUNTIME_VERSION
 
+internal_command=("$BASH4_BIN" "$SELF" __execute)
+[[ "$use_xcpretty" != true ]] || internal_command+=(--xcpretty)
+internal_command+=(-- "${command[@]}")
+
 exec "$BASH4_BIN" "$GATE_BIN" run "${owner_args[@]}" --udid "$owned_uuid" -- \
-  "$BASH4_BIN" "$SELF" __execute -- "${command[@]}"
+  "${internal_command[@]}"
