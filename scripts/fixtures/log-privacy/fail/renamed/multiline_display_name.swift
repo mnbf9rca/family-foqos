@@ -4,3 +4,11 @@ func report(m: FamilyMember) {
     category: .cloudKit
   )
 }
+
+func reportMisleadingReceiver(currentMode: FamilyMember) {
+  Log.info("Member: \(currentMode.displayName)", category: .cloudKit)
+}
+
+func reportMisleadingRole(r: FamilyMember) {
+  Log.info("Member: \(r.displayName)", category: .cloudKit)
+}

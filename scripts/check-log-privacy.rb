@@ -357,7 +357,7 @@ module LogPrivacy
       /\bredactedTagIdentifier\b/,
       /\bredactedErrorForLog\s*\(/,
       /\.localizedDescription\b/,
-      /(?:^|\.)role(?:\.|$)/,
+      /\.role(?:\.|$)/,
       /\.count\b/,
       /
         \b(?:
@@ -392,6 +392,7 @@ module LogPrivacy
         TimeInterval|Date|UUID|CKRecord\.RecordType
       )\??\z
     /x
+    SAFE_DISPLAY_NAME_TYPE = /\A(?:AppMode|FamilyRole|GeofenceRuleType)\z/
 
     attr_reader :root
 
@@ -588,9 +589,15 @@ module LogPrivacy
     end
 
     def analyze_interpolations(call, lexer)
+      declarations = nil
       call.interpolations.filter_map do |interpolation|
         expression = interpolation.expression.strip
         next if safe_expression?(expression)
+
+        if sensitive_display_name?(expression)
+          declarations ||= declarations_before(call, lexer)
+          next if safe_presentation_display_name?(expression, declarations)
+        end
 
         message = violation_message(expression)
         if message
@@ -639,6 +646,11 @@ module LogPrivacy
     def sensitive_display_name?(expression)
       expression.match?(/\.displayName\b/) &&
         !expression.match?(/\.(?:role|mode|ruleType)\.displayName\b/)
+    end
+
+    def safe_presentation_display_name?(expression, declarations)
+      receiver = expression.match(/\A([A-Za-z_][A-Za-z0-9_]*)\.displayName\z/)&.[](1)
+      receiver && declarations[receiver]&.type&.match?(SAFE_DISPLAY_NAME_TYPE)
     end
 
     def participant_contact?(expression)
@@ -782,7 +794,9 @@ module LogPrivacy
       return safe_scalar_classification(declaration.type) if declaration.origin.nil?
 
       origin = declaration.origin
-      if violation_message(origin) || participant_contact?(origin) || sensitive_display_name?(origin)
+      sensitive_origin =
+        violation_message(origin) || participant_contact?(origin) || sensitive_display_name?(origin)
+      if sensitive_origin && !safe_presentation_display_name?(origin, declarations)
         return [:sensitive, "sensitive local origin for #{identifier}"]
       end
       return [:safe, nil] if safe_expression?(origin)

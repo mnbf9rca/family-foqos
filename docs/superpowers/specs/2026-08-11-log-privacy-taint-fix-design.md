@@ -39,6 +39,11 @@ classifies dependencies recursively with cycle protection. A value is sensitive 
 direct expression, or any dependency is sensitive. A value is safe only when an existing semantic
 allowlist proves it safe. All other origins are ambiguous and fail closed.
 
+Declaration tracking is deliberately conservative when a nested scope shadows an earlier binding
+with the same name. The analyzer may retain the earlier taint and reject the interpolation rather
+than trying to prove Swift scope dominance; this is intentional fail-closed behavior, not a signal
+to weaken the rule or add an annotation without an audit.
+
 Direct interpolation rules also become receiver-independent. In particular, `.displayName` is
 sensitive on every receiver except explicit non-person presentation domains such as role, mode, and
 rule type.

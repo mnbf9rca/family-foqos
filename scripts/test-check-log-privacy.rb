@@ -33,8 +33,9 @@ CASES = [
     fixture: 'fail/multiline_display_name.swift',
     status: 1,
     diagnostic: 'sensitive display name',
-    site_floor: 1,
-    annotation_count: 0
+    site_floor: 3,
+    annotation_count: 0,
+    diagnostic_count: 3
   ),
   Case.new(
     name: 'laundered participant identity',
@@ -174,6 +175,14 @@ CASES = [
     annotation_count: 0
   ),
   Case.new(
+    name: 'presentation display-name domains',
+    fixture: 'pass/presentation_display_names.swift',
+    status: 0,
+    diagnostic: 'sites_analyzed=6 annotations=0',
+    site_floor: 6,
+    annotation_count: 0
+  ),
+  Case.new(
     name: 'literal concatenated with safe expression',
     fixture: 'pass/literal_plus_safe_expression.swift',
     status: 0,
@@ -226,8 +235,9 @@ CASES = [
     fixture: 'fail/renamed/multiline_display_name.swift',
     status: 1,
     diagnostic: 'sensitive display name',
-    site_floor: 1,
-    annotation_count: 0
+    site_floor: 3,
+    annotation_count: 0,
+    diagnostic_count: 3
   ),
   Case.new(
     name: 'renamed laundered participant identity',
