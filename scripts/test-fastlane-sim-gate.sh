@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Keep this list in sync whenever the suite starts invoking another external tool.
-required_commands=(cat dirname grep mktemp rg rm ruby)
+required_commands=(cat dirname grep mktemp rm ruby)
 for required_command in "${required_commands[@]}"; do
   command -v "$required_command" >/dev/null || {
     echo "FAIL: required command not found: $required_command" >&2
@@ -111,7 +111,7 @@ else
   fi
 fi
 
-rg -n 'SimulatorGate\.assert_registered_device!' "$REPO_ROOT/fastlane/Fastfile" >/dev/null || {
+grep -nE 'SimulatorGate\.assert_registered_device!' "$REPO_ROOT/fastlane/Fastfile" >/dev/null || {
   echo "FAIL: screenshots lane does not assert exact registered simulator lookup" >&2
   exit 1
 }
