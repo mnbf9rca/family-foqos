@@ -8,6 +8,7 @@ struct LogExportView: View {
   @State private var errorMessage: String?
   @State private var showingPreview = false
   @State private var logStats: LogStats = LogStats()
+  @State private var includeFamilyMemberNames = false
 
   struct LogStats {
     var fileCount: Int = 0
@@ -28,7 +29,9 @@ struct LogExportView: View {
             .foregroundColor(.secondary)
 
             Text(
-              "Logs may contain profile names, timestamps, and technical device or account identifiers. Passwords and lock codes are never logged."
+              includeFamilyMemberNames
+                ? "This export includes family member names, full identifiers, and CloudKit record names in roster.txt. Family data refreshes in the background when this option is enabled, while Share Logs still works offline using available data. Share it only with Family Foqos support."
+                : "Logs may contain profile names, timestamps, and technical device or account identifiers. Family member names, passwords, and lock codes are not included."
             )
             .font(.caption)
             .foregroundColor(.secondary)
@@ -39,6 +42,15 @@ struct LogExportView: View {
         Section("Log Statistics") {
           LabeledContent("Log Files", value: "\(logStats.fileCount)")
           LabeledContent("Total Size", value: logStats.totalSize)
+        }
+
+        Section("Support Options") {
+          Toggle("Include family member names", isOn: $includeFamilyMemberNames)
+          Text(
+            "Turn this on only when Family Foqos support asks. Adds roster.txt and refreshes family information in the background when possible so support can match diagnostic identifiers to family members."
+          )
+          .font(.caption)
+          .foregroundColor(.secondary)
         }
 
         Section {
@@ -85,11 +97,16 @@ struct LogExportView: View {
           Label("CloudKit sync operations", systemImage: "cloud")
           Label("Session start/stop events", systemImage: "clock")
           Label("Device info (model, iOS version)", systemImage: "iphone")
+          if includeFamilyMemberNames {
+            Label("Family member roster for support", systemImage: "person.text.rectangle")
+          }
         }
 
         Section("Not Included") {
           Label("Passwords or lock codes", systemImage: "lock.slash")
-          Label("Personal identifiers", systemImage: "person.slash")
+          if !includeFamilyMemberNames {
+            Label("Family member names", systemImage: "person.slash")
+          }
           Label("Location coordinates", systemImage: "location.slash")
           Label("Blocked app names", systemImage: "app.badge.checkmark")
         }
@@ -125,6 +142,13 @@ struct LogExportView: View {
       .onAppear {
         refreshStats()
       }
+      .onChange(of: includeFamilyMemberNames) { _, isEnabled in
+        guard isEnabled else { return }
+
+        Task {
+          _ = try? await CloudKitManager.shared.fetchFamilyMembers()
+        }
+      }
     }
   }
 
@@ -145,7 +169,14 @@ struct LogExportView: View {
       do {
         // Use zip archive instead of plain text file
         // createLogArchive() is async and offloads file I/O to a background thread
-        let url = try await LogExportManager.shared.createLogArchive()
+        let familyRoster =
+          includeFamilyMemberNames
+          ? FamilyRosterExport.content(
+            for: CloudKitManager.shared.familyMembers,
+            monitoredDevices: HeartbeatManager.shared.monitoredDevices
+          )
+          : nil
+        let url = try await LogExportManager.shared.createLogArchive(familyRoster: familyRoster)
         shareURL = url
         showingShareSheet = true
       } catch {
