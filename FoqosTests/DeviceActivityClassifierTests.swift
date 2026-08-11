@@ -8,32 +8,59 @@ import XCTest
 final class DeviceActivityClassifierTests: XCTestCase {
   private let profileId = UUID(uuidString: "550e8400-e29b-41d4-a716-446655440000")!
 
-  func testGivenKnownPrefixedActivityNames_WhenClassifying_ThenReturnsTypeAndProfile() {
+  func testGivenEveryRuntimeActivityKind_WhenClassifying_ThenReturnsTypeAndProfile() {
+    // Keep this table aligned with TimerActivityUtil's exhaustive runtime dispatch switch.
     let cases = [
-      (BreakTimerActivity.id, "Break Timer"),
-      (StopScheduleTimerActivity.id, "Stop Schedule Timer"),
-      (ScheduleTimerActivity.id, "Schedule Timer"),
-      (StrategyTimerActivity.id, "Strategy Timer"),
+      (
+        BreakDeadlineBackstopActivity.id,
+        DeviceActivityName(
+          rawValue: "\(BreakDeadlineBackstopActivity.id):\(profileId.uuidString)"),
+        "Break Deadline Backstop"
+      ),
+      (
+        BreakTimerActivity.id,
+        DeviceActivityName(rawValue: "\(BreakTimerActivity.id):\(profileId.uuidString)"),
+        "Break Timer"
+      ),
+      (
+        OneMoreMinuteDeadlineBackstopActivity.id,
+        DeviceActivityName(
+          rawValue: "\(OneMoreMinuteDeadlineBackstopActivity.id):\(profileId.uuidString)"),
+        "One More Minute Deadline Backstop"
+      ),
+      (
+        OneMoreMinuteTimerActivity.id,
+        DeviceActivityName(
+          rawValue: "\(OneMoreMinuteTimerActivity.id):\(profileId.uuidString)"),
+        "One More Minute Timer"
+      ),
+      (
+        ScheduleTimerActivity.id,
+        DeviceActivityName(rawValue: profileId.uuidString),
+        "Schedule Timer"
+      ),
+      (
+        StopScheduleTimerActivity.id,
+        DeviceActivityName(
+          rawValue: "\(StopScheduleTimerActivity.id):\(profileId.uuidString)"),
+        "Stop Schedule Timer"
+      ),
+      (
+        StrategyTimerActivity.id,
+        DeviceActivityName(rawValue: "\(StrategyTimerActivity.id):\(profileId.uuidString)"),
+        "Strategy Timer"
+      ),
     ]
 
-    for (activityId, expectedType) in cases {
-      let activity = DeviceActivityName(rawValue: "\(activityId):\(profileId.uuidString)")
-
+    XCTAssertEqual(Set(cases.map(\.0)).count, 7)
+    for (_, activity, expectedType) in cases {
       let classification = DeviceActivityClassifier.classify(activity)
 
+      XCTAssertNotEqual(classification.type, "Unknown")
       XCTAssertEqual(classification.type, expectedType)
       XCTAssertEqual(classification.profileId, profileId)
       XCTAssertTrue(classification.matches(profileId: profileId))
     }
-  }
-
-  func testGivenLegacyBareUUID_WhenClassifying_ThenReturnsLegacyScheduleAndProfile() {
-    let activity = DeviceActivityName(rawValue: profileId.uuidString)
-
-    let classification = DeviceActivityClassifier.classify(activity)
-
-    XCTAssertEqual(classification.type, "Schedule Timer (Legacy)")
-    XCTAssertEqual(classification.profileId, profileId)
   }
 
   func testGivenUnknownName_WhenClassifying_ThenReturnsUnknownWithoutProfile() {
@@ -46,13 +73,14 @@ final class DeviceActivityClassifierTests: XCTestCase {
     XCTAssertFalse(classification.matches(profileId: profileId))
   }
 
-  func testGivenKnownPrefixWithInvalidUUID_WhenClassifying_ThenReturnsUnknown() {
+  func testGivenKnownPrefixWithInvalidUUID_WhenClassifying_ThenKeepsTypeWithoutProfile() {
     let activity = DeviceActivityName(rawValue: "\(BreakTimerActivity.id):not-a-uuid")
 
     let classification = DeviceActivityClassifier.classify(activity)
 
-    XCTAssertEqual(classification.type, "Unknown")
+    XCTAssertEqual(classification.type, "Break Timer")
     XCTAssertNil(classification.profileId)
+    XCTAssertFalse(classification.matches(profileId: profileId))
   }
 
   func testGivenDifferentProfile_WhenMatching_ThenReturnsFalse() {
