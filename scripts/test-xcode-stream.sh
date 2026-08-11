@@ -11,6 +11,7 @@ required_commands=(
   chmod
   cmp
   dirname
+  env
   grep
   mkdir
   mktemp
@@ -490,6 +491,35 @@ if [[ "$status" -eq 0 || "$output" != *"xcodebuild must be the command immediate
   fail "a later bare xcodebuild token must be rejected"
 fi
 run_wrapper --agent build2 --session collab -- /usr/bin/true xcodebuild-wrapper
+
+reset_case rejected-shell-mediated-xcodebuild
+add_device "$REUSE_UUID" "Family Foqos build2" com.apple.CoreSimulator.SimRuntime.iOS-26-0
+set_owner "$REUSE_UUID" build2 collab
+
+assert_shell_xcodebuild_rejected() {
+  local output
+  local status
+  : >"$GATE_LOG"
+  set +e
+  output=$(run_wrapper --agent build2 --session collab -- "$@" 2>&1)
+  status=$?
+  set -e
+  if [[ "$status" -eq 0 ||
+    "$output" != *"AGENTS.md requires xcodebuild immediately after --"* ]]; then
+    fail "shell-mediated xcodebuild must be rejected before the gate: $output"
+  fi
+  [[ ! -s "$GATE_LOG" ]] || fail "shell-mediated xcodebuild reached the gate"
+}
+
+assert_shell_xcodebuild_rejected bash -o pipefail -c \
+  'xcodebuild test -project FamilyFoqos.xcodeproj -scheme FamilyFoqos -destination "platform=iOS Simulator,id=11111111-1111-1111-1111-111111111111" 2>&1 | bundle exec xcpretty'
+assert_shell_xcodebuild_rejected sh -lc 'exec xcodebuild test'
+assert_shell_xcodebuild_rejected zsh -c 'command xcodebuild test'
+assert_shell_xcodebuild_rejected env TEST_MODE=1 bash -c 'xcodebuild test'
+
+run_wrapper --agent build2 --session collab -- bash -c 'exit 0'
+assert_contains "$GATE_LOG" \
+  $'run\tfamily-foqos\tbuild2\tcollab\t11111111-1111-1111-1111-111111111111'
 
 reset_case exit-status
 add_device "$REUSE_UUID" "Family Foqos build2" com.apple.CoreSimulator.SimRuntime.iOS-26-0

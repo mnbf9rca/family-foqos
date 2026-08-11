@@ -37,6 +37,39 @@ validate_uuid() {
     die "invalid simulator UUID: $1"
 }
 
+is_shell_command() {
+  case "${1##*/}" in
+    sh|bash|zsh) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+reject_shell_mediated_xcodebuild() {
+  local arguments=("$@")
+  local shell_index=-1
+  local index
+
+  if is_shell_command "${arguments[0]}"; then
+    shell_index=0
+  elif [[ "${arguments[0]##*/}" == env ]]; then
+    for ((index = 1; index < ${#arguments[@]}; index++)); do
+      if [[ "${arguments[index]}" != *=* ]] && is_shell_command "${arguments[index]}"; then
+        shell_index=$index
+        break
+      fi
+    done
+  fi
+  ((shell_index >= 0)) || return 0
+
+  for ((index = shell_index + 1; index + 1 < ${#arguments[@]}; index++)); do
+    [[ "${arguments[index]}" =~ ^-[[:alpha:]]*c[[:alpha:]]*$ ]] || continue
+    if [[ "${arguments[index + 1]}" =~ (^|[^[:alnum:]_])xcodebuild([^[:alnum:]_-]|$) ]]; then
+      die "AGENTS.md requires xcodebuild immediately after --; shell-mediated xcodebuild is prohibited"
+    fi
+    return 0
+  done
+}
+
 simctl() {
   if [[ -n "${IOS_SIM_GATE_SIMCTL_BIN:-}" ]]; then
     "$IOS_SIM_GATE_SIMCTL_BIN" "$@"
@@ -205,6 +238,7 @@ else
 fi
 
 command=("$@")
+reject_shell_mediated_xcodebuild "${command[@]}"
 [[ "$use_xcpretty" != true || "${command[0]##*/}" == "xcodebuild" ]] ||
   die "--xcpretty requires xcodebuild immediately after --"
 if [[ "$use_xcpretty" == true ]]; then
