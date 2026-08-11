@@ -1,7 +1,21 @@
 #!/bin/bash
 set -euo pipefail
 
+# Keep this list in sync whenever the suite starts invoking another external tool.
+required_commands=(bundle cat chmod dirname mkdir mktemp rm sed)
+for required_command in "${required_commands[@]}"; do
+  command -v "$required_command" >/dev/null || {
+    echo "FAIL: required command not found: $required_command" >&2
+    exit 127
+  }
+done
+
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+if ! (cd "$REPO_ROOT" && bundle exec fastlane --version >/dev/null 2>&1); then
+  echo "FAIL: required bundled executable unavailable: fastlane" >&2
+  exit 1
+fi
+
 TEST_ROOT=$(mktemp -d)
 
 cleanup() {
@@ -43,6 +57,7 @@ chmod +x "$TEST_ROOT/bin/gh" "$TEST_ROOT/bin/xcrun"
 run_gates() {
   set +e
   GATE_OUTPUT=$(
+    cd "$REPO_ROOT"
     PATH="$TEST_ROOT/bin:$PATH" \
       FAKE_SCHEMA_FILE="$REPO_ROOT/fastlane/required-prod-schema.txt" \
       bundle exec fastlane gates 2>&1

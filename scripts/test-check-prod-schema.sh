@@ -1,6 +1,15 @@
 #!/bin/bash
 set -euo pipefail
 
+# Keep this list in sync whenever the suite starts invoking another external tool.
+required_commands=(chmod cp dirname grep mkdir mktemp rm)
+for required_command in "${required_commands[@]}"; do
+  command -v "$required_command" >/dev/null || {
+    echo "FAIL: required command not found: $required_command" >&2
+    exit 127
+  }
+done
+
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TEST_ROOT=$(mktemp -d)
 

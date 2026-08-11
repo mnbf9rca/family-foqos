@@ -4,6 +4,20 @@
 # This checks record-type existence only; it does not compare field definitions.
 set -euo pipefail
 
+# Keep this list in sync whenever the script starts invoking another external tool.
+required_commands=(dirname grep xcrun)
+for required_command in "${required_commands[@]}"; do
+  command -v "$required_command" >/dev/null || {
+    echo "Required command not found: $required_command" >&2
+    exit 127
+  }
+done
+
+if ! xcrun --find cktool >/dev/null 2>&1; then
+  echo "Required Xcode tool not found: cktool" >&2
+  exit 1
+fi
+
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 REQUIRED_FILE="$REPO_ROOT/fastlane/required-prod-schema.txt"
 TEAM_ID="BU7526J4QY"
