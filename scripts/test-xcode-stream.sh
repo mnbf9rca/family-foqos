@@ -534,6 +534,23 @@ status=$?
 set -e
 [[ "$status" -eq 23 ]] || fail "expected xcodebuild exit 23, got $status"
 
+reset_case rejected-missing-bundle
+mkdir -p "$CASE_ROOT/no-bundle-bin"
+cat >"$CASE_ROOT/no-bundle-bin/dirname" <<'EOF'
+#!/opt/homebrew/bin/bash
+exec /usr/bin/dirname "$@"
+EOF
+chmod +x "$CASE_ROOT/no-bundle-bin/dirname"
+set +e
+output=$(PATH="$CASE_ROOT/no-bundle-bin" "$WRAPPER" \
+  --agent build2 --session collab --xcpretty -- xcodebuild test 2>&1)
+status=$?
+set -e
+if [[ "$status" -ne 127 || "$output" != *"bundle"* ]]; then
+  fail "missing bundle must exit 127 and name bundle: exit=$status output=$output"
+fi
+[[ ! -s "$GATE_LOG" ]] || fail "missing bundle reached the gate"
+
 reset_case rejected-xcpretty-unavailable
 set +e
 output=$(XCPRETTY_PREFLIGHT_EXIT=19 run_wrapper \
