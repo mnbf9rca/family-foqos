@@ -203,6 +203,15 @@ CloudKit-specific implementation becomes disproportionate, the formatter ships w
 domain/code/localized-description and the enrichment is recorded as a follow-up in #383; the
 bare-error ban and all 70 migrations still ship in this change.
 
+Before bridging an error to `NSError`, the formatter preserves diagnostics for native Swift error
+enums that do not conform to `LocalizedError`. When `Mirror.displayStyle == .enum`, it emits the
+dynamic type name and case label. A payload-free case may obtain its case label from
+`String(describing:)`; a case with associated values obtains only
+`Mirror.children.first?.label`. Non-error associated values are never described or emitted. Any
+associated value that itself conforms to `Error`, including an error nested inside a tuple payload,
+is routed recursively through the same audited formatter under the existing depth, cycle, and line
+caps. This retains nested failure structure without allowing arbitrary payloads back into the log.
+
 ### Direct sinks
 
 `Logger(`, `os_log(`, and `NSLog(` are prohibited throughout production roots except for the single
@@ -288,6 +297,9 @@ Tests run the real script and pin these outcomes:
 - `error.localizedDescription` and `redactedErrorForLog(error)` inside literal messages
 - bounded error formatting that stops at depth `3`, detects a cyclic underlying-error chain, and
   truncates the result to `2,048` characters
+- native payload-free Swift error enum formatting that retains the type and case name
+- associated-value Swift error enum formatting that retains the case label, omits an obviously
+  sensitive non-error payload, and safely includes a nested `Error` through the audited recursion
 - CloudKit partial-error formatting that preserves permitted record/zone identifiers while an
   obviously sensitive value stored under a non-allowlisted `userInfo` key is absent from output
 - every production root, with discovered and analyzed file counts equal
