@@ -5,11 +5,12 @@
 > checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Give the on-screen device-activity card and copied Markdown one tested classifier that
-recognizes break, stop-schedule, schedule, strategy, and legacy schedule activities consistently.
+recognizes all seven runtime-dispatched device activity kinds consistently.
 
 **Architecture:** Add an app-level diagnostics utility that parses one `DeviceActivityName` into a
-display label and optional profile UUID. Both debug consumers use the same classification object
-for their type and profile-match output; timer dispatch in `FoqosShared` remains unchanged.
+display label and optional profile UUID. It aligns with `TimerActivityUtil`, the runtime source of
+truth, by referencing all seven public activity ID constants without widening `FoqosShared`'s API.
+Both debug consumers use the same classification object; runtime dispatch remains unchanged.
 
 **Tech Stack:** Swift, DeviceActivity, Foundation UUID parsing, SwiftUI, XCTest.
 
@@ -17,10 +18,12 @@ for their type and profile-match output; timer dispatch in `FoqosShared` remains
 
 - One PR closes only #248.
 - Branch from merged `main` at version `2.0.9 (28)` and strictly bump above the live main version.
-- Recognize `BreakTimerActivity`, `StopScheduleTimerActivity`, `ScheduleTimerActivity`, and
-  `StrategyTimerActivity` IDs, checking stop-schedule before schedule.
-- Preserve bare-UUID legacy schedule recognition and unknown-name behavior.
-- Do not add other activity types or change timer scheduling, dispatch, sync, or session lifecycle.
+- Recognize the actual registered formats for every ID in `TimerActivityUtil`'s seven-kind switch.
+- Reference the public activity ID constants; do not duplicate their raw string values.
+- Treat a bare UUID as the current `Schedule Timer` format.
+- Treat a known prefix with an invalid UUID as the known type with no profile match.
+- Keep a source-of-truth comment naming `TimerActivityUtil`; do not widen `FoqosShared`'s API.
+- Do not change timer scheduling, dispatch, sync, or session lifecycle.
 - Run all Xcode commands through `scripts/xcode-stream.sh --agent build1 --session collab --` with
   caller `set -o pipefail` and `bundle exec xcpretty`.
 - Never amend or force-push; request independent code review before merge; planner owns merge.
@@ -51,32 +54,59 @@ import XCTest
 final class DeviceActivityClassifierTests: XCTestCase {
   private let profileId = UUID(uuidString: "550e8400-e29b-41d4-a716-446655440000")!
 
-  func testGivenKnownPrefixedActivityNames_WhenClassifying_ThenReturnsTypeAndProfile() {
+  func testGivenEveryRuntimeActivityKind_WhenClassifying_ThenReturnsTypeAndProfile() {
+    // Keep this table aligned with TimerActivityUtil's exhaustive runtime dispatch switch.
     let cases = [
-      (BreakTimerActivity.id, "Break Timer"),
-      (StopScheduleTimerActivity.id, "Stop Schedule Timer"),
-      (ScheduleTimerActivity.id, "Schedule Timer"),
-      (StrategyTimerActivity.id, "Strategy Timer"),
+      (
+        BreakDeadlineBackstopActivity.id,
+        DeviceActivityName(
+          rawValue: "\(BreakDeadlineBackstopActivity.id):\(profileId.uuidString)"),
+        "Break Deadline Backstop"
+      ),
+      (
+        BreakTimerActivity.id,
+        DeviceActivityName(rawValue: "\(BreakTimerActivity.id):\(profileId.uuidString)"),
+        "Break Timer"
+      ),
+      (
+        OneMoreMinuteDeadlineBackstopActivity.id,
+        DeviceActivityName(
+          rawValue: "\(OneMoreMinuteDeadlineBackstopActivity.id):\(profileId.uuidString)"),
+        "One More Minute Deadline Backstop"
+      ),
+      (
+        OneMoreMinuteTimerActivity.id,
+        DeviceActivityName(
+          rawValue: "\(OneMoreMinuteTimerActivity.id):\(profileId.uuidString)"),
+        "One More Minute Timer"
+      ),
+      (
+        ScheduleTimerActivity.id,
+        DeviceActivityName(rawValue: profileId.uuidString),
+        "Schedule Timer"
+      ),
+      (
+        StopScheduleTimerActivity.id,
+        DeviceActivityName(
+          rawValue: "\(StopScheduleTimerActivity.id):\(profileId.uuidString)"),
+        "Stop Schedule Timer"
+      ),
+      (
+        StrategyTimerActivity.id,
+        DeviceActivityName(rawValue: "\(StrategyTimerActivity.id):\(profileId.uuidString)"),
+        "Strategy Timer"
+      ),
     ]
 
-    for (activityId, expectedType) in cases {
-      let activity = DeviceActivityName(rawValue: "\(activityId):\(profileId.uuidString)")
-
+    XCTAssertEqual(Set(cases.map(\.0)).count, 7)
+    for (_, activity, expectedType) in cases {
       let classification = DeviceActivityClassifier.classify(activity)
 
+      XCTAssertNotEqual(classification.type, "Unknown")
       XCTAssertEqual(classification.type, expectedType)
       XCTAssertEqual(classification.profileId, profileId)
       XCTAssertTrue(classification.matches(profileId: profileId))
     }
-  }
-
-  func testGivenLegacyBareUUID_WhenClassifying_ThenReturnsLegacyScheduleAndProfile() {
-    let activity = DeviceActivityName(rawValue: profileId.uuidString)
-
-    let classification = DeviceActivityClassifier.classify(activity)
-
-    XCTAssertEqual(classification.type, "Schedule Timer (Legacy)")
-    XCTAssertEqual(classification.profileId, profileId)
   }
 
   func testGivenUnknownName_WhenClassifying_ThenReturnsUnknownWithoutProfile() {
@@ -85,6 +115,16 @@ final class DeviceActivityClassifierTests: XCTestCase {
     let classification = DeviceActivityClassifier.classify(activity)
 
     XCTAssertEqual(classification.type, "Unknown")
+    XCTAssertNil(classification.profileId)
+    XCTAssertFalse(classification.matches(profileId: profileId))
+  }
+
+  func testGivenKnownPrefixWithInvalidUUID_WhenClassifying_ThenKeepsTypeWithoutProfile() {
+    let activity = DeviceActivityName(rawValue: "\(BreakTimerActivity.id):not-a-uuid")
+
+    let classification = DeviceActivityClassifier.classify(activity)
+
+    XCTAssertEqual(classification.type, "Break Timer")
     XCTAssertNil(classification.profileId)
     XCTAssertFalse(classification.matches(profileId: profileId))
   }
@@ -110,8 +150,8 @@ scripts/xcode-stream.sh --agent build1 --session collab -- \
   -only-testing:FoqosTests/DeviceActivityClassifierTests 2>&1 | bundle exec xcpretty
 ```
 
-Expected: compile failure because `DeviceActivityClassifier` does not exist. A different failure
-must be investigated before continuing.
+Expected on initial implementation: missing classifier compile failure. Expected during review
+delta: three production kinds return `Unknown` and bare UUID returns `Schedule Timer (Legacy)`.
 
 - [ ] **Step 3: Commit the proven RED test**
 
@@ -152,10 +192,32 @@ enum DeviceActivityClassifier {
   static func classify(_ activity: DeviceActivityName) -> Classification {
     let rawValue = activity.rawValue
 
+    // Keep these cases aligned with TimerActivityUtil's runtime dispatch switch.
+    if let result = classifyPrefixed(
+      rawValue,
+      activityId: BreakDeadlineBackstopActivity.id,
+      type: "Break Deadline Backstop"
+    ) {
+      return result
+    }
     if let result = classifyPrefixed(
       rawValue,
       activityId: BreakTimerActivity.id,
       type: "Break Timer"
+    ) {
+      return result
+    }
+    if let result = classifyPrefixed(
+      rawValue,
+      activityId: OneMoreMinuteDeadlineBackstopActivity.id,
+      type: "One More Minute Deadline Backstop"
+    ) {
+      return result
+    }
+    if let result = classifyPrefixed(
+      rawValue,
+      activityId: OneMoreMinuteTimerActivity.id,
+      type: "One More Minute Timer"
     ) {
       return result
     }
@@ -168,20 +230,13 @@ enum DeviceActivityClassifier {
     }
     if let result = classifyPrefixed(
       rawValue,
-      activityId: ScheduleTimerActivity.id,
-      type: "Schedule Timer"
-    ) {
-      return result
-    }
-    if let result = classifyPrefixed(
-      rawValue,
       activityId: StrategyTimerActivity.id,
       type: "Strategy Timer"
     ) {
       return result
     }
     if let profileId = UUID(uuidString: rawValue) {
-      return Classification(type: "Schedule Timer (Legacy)", profileId: profileId)
+      return Classification(type: "Schedule Timer", profileId: profileId)
     }
     return Classification(type: "Unknown", profileId: nil)
   }
@@ -216,7 +271,7 @@ scripts/xcode-stream.sh --agent build1 --session collab -- \
   -only-testing:FoqosTests/DeviceActivityClassifierTests 2>&1 | bundle exec xcpretty
 ```
 
-Expected: four tests pass with zero failures and no new compiler warnings from these files.
+Expected: all focused tests pass with zero failures and no new compiler warnings from these files.
 
 - [ ] **Step 4: Commit the classifier**
 
@@ -292,7 +347,7 @@ scripts/xcode-stream.sh --agent build1 --session collab -- \
   -only-testing:FoqosTests/DeviceActivityClassifierTests 2>&1 | bundle exec xcpretty
 ```
 
-Expected: all four tests pass.
+Expected: all focused tests pass.
 
 - [ ] **Step 5: Commit the consumer integration**
 
@@ -390,12 +445,16 @@ Expected: `Build Succeeded` with exit code zero.
 
 - [ ] **Step 4: Inspect scope and request independent review**
 
-Review `git diff origin/main...HEAD` and send the base SHA, head SHA, design, plan, and verification
-evidence to the read-only reviewer. Resolve every Critical or Important finding in new commits and
-rerun affected checks.
+Review `git diff origin/main...HEAD` and send the base SHA, updated head SHA, revised design, plan,
+and verification evidence to the read-only reviewer. The delta review must confirm all seven
+runtime kinds, the current schedule label, malformed known-prefix semantics, and the source-of-truth
+comment. Resolve every Critical or Important finding in new commits and rerun affected checks.
 
 - [ ] **Step 5: Publish and hand off**
 
-Push `fix/248-shared-device-activity-classifier`, open an undrafted PR that closes #248, wait for
-all CI checks to pass, and send the reviewed green PR to the planner. Do not merge it and do not
-begin #255 until the planner confirms this PR is merged and `main` is updated.
+Push `fix/248-shared-device-activity-classifier`, open an undrafted PR that closes #248, and state
+that this intentionally changes both consumers: Markdown gains strategy classification and the
+card gains stop-schedule classification. Also document seven-kind coverage, the current bare-UUID
+schedule label, and malformed known-prefix semantics. Wait for all CI checks to pass and send the
+reviewed green PR to the planner. Do not merge it and do not begin #255 until the planner confirms
+this PR is merged and `main` is updated.
