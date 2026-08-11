@@ -39,6 +39,6 @@ class RatingManager: ObservableObject {
       return
     }
 
-    SKStoreReviewController.requestReview(in: scene)
+    AppStore.requestReview(in: scene)
   }
 }

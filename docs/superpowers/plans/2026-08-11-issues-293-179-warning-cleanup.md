@@ -2,9 +2,9 @@
 
 **Goal:** Eliminate the settled tree's known warning noise with behavior-neutral code and test changes.
 
-**Architecture:** Correct actor isolation at test boundaries, express tombstone assertions as key-membership checks, adopt the supported StoreKit API, and narrowly quiet Xcode's App Intents metadata processor.
+**Architecture:** Correct actor isolation at test boundaries, express tombstone assertions as key-membership checks, adopt the supported StoreKit API, and explicitly classify the two irreducible Xcode metadata notices.
 
-**Tech stack:** Swift 6, XCTest, StoreKit, Xcode build settings.
+**Tech stack:** Swift 6, XCTest, StoreKit, Xcode.
 
 ## Task 1: Correct XCTest actor isolation
 
@@ -30,16 +30,15 @@
 2. Preserve each assertion message and presence/absence expectation.
 3. Run `SyncEngineControllerTests` and inspect the raw warning stream.
 
-## Task 3: Adopt supported StoreKit API and quiet metadata notices
+## Task 3: Adopt supported StoreKit API and classify metadata notices
 
 **Files:**
 
 - `Foqos/Utils/RatingManager.swift`
-- `FamilyFoqos.xcodeproj/project.pbxproj`
 
 1. Replace the deprecated review request call with `AppStore.requestReview(in:)`.
-2. Add `LM_FILTER_WARNINGS = YES` to project Debug and Release configurations only.
-3. Run a clean Debug build and require zero raw warning lines.
+2. Retain no ineffective metadata filter or extraction-disabling project setting.
+3. Run a clean Debug build and require zero project-source warnings plus exactly the allowlisted ShieldConfig metadata notice.
 
 ## Task 4: Advance the strict release version
 
@@ -53,8 +52,8 @@
 
 1. Run swift-format lint and repository policy gates.
 2. Run a clean serialized full test while capturing raw output.
-3. Require 1,223 passing tests and zero raw warning lines.
-4. Run a clean serialized Debug build and require zero raw warning lines.
+3. Require 1,223 passing tests, zero project-source warnings, and exactly the two allowlisted Xcode metadata notices.
+4. Run a clean serialized Debug build and require zero project-source warnings plus exactly the one allowlisted ShieldConfig notice.
 5. Request independent read-only review of the exact head.
 
 ## Task 6: Publish

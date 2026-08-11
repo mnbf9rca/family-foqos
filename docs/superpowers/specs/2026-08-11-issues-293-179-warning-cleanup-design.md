@@ -45,14 +45,14 @@ The installed iOS SDK declares `AppStore.requestReview(in:)` as the direct iOS 1
 
 ### Xcode metadata notices
 
-Two targets without App Intents dependencies emit tool-owned metadata-extraction notices. Xcode's installed `AppIntentsMetadata.xcspec` defines `LM_FILTER_WARNINGS = YES` as `--quiet-warnings` for that processor only. Set it in the project's Debug and Release configurations so metadata-extractor notices are quiet while Swift compiler warnings remain visible.
+Two targets without App Intents dependencies emit tool-owned metadata-extraction notices. Experiments against Xcode's installed `AppIntentsMetadata.xcspec` show that `LM_FILTER_WARNINGS = YES` adds `--quiet-warnings` but does not suppress the ShieldConfig notice. Disabling extraction produces more warnings and would break real App Intents metadata in the app and widget; forcing metadata output also leaves the notice. Retain no ineffective or behavior-changing build setting. Instead, narrow verification to an exact allowlist: one ShieldConfig notice in a clean build and the same notice plus one UI-test notice in a clean full test. Every project-source warning must be absent.
 
 ## Verification
 
 - Run focused tests for all edited test classes.
 - Run a clean serialized full test and capture the raw stream.
-- Require zero `warning:` lines in the captured stream.
-- Run a clean serialized Debug build and require zero `warning:` lines.
+- Require zero project-source warning lines and exactly the two allowlisted Xcode metadata notices in the captured test stream.
+- Run a clean serialized Debug build and require zero project-source warning lines plus exactly the one allowlisted ShieldConfig notice.
 - Run formatting, diff, C2, sync, strict-version, and privacy gates.
 - Obtain independent review of the exact verified head.
 
