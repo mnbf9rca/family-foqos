@@ -52,7 +52,9 @@ struct DeviceActivitiesDebugCard: View {
       DeviceActivityName(
         rawValue: "BreakScheduleActivity:550e8400-e29b-41d4-a716-446655440000"),
       DeviceActivityName(
-        rawValue: "ScheduleTimerActivity:550e8400-e29b-41d4-a716-446655440000"),
+        rawValue:
+          "\(OneMoreMinuteDeadlineBackstopActivity.id):550e8400-e29b-41d4-a716-446655440000"
+      ),
     ],
     profileId: UUID(uuidString: "550e8400-e29b-41d4-a716-446655440000")
   )
