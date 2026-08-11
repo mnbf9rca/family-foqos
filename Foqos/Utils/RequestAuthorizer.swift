@@ -67,7 +67,7 @@ class RequestAuthorizer: ObservableObject {
       self.authorizationError = nil
       return true
     } catch {
-      Log.info("Error requesting authorization: \(error)", category: .authorization)
+      Log.info("Error requesting authorization: \(redactedErrorForLog(error))", category: .authorization)
       self.isAuthorized = false
       self.authorizationError = self.describeAuthorizationError(error, for: mode)
       return false

@@ -257,12 +257,12 @@ struct BlockedProfileListView: View {
             }
           }
         } catch {
-          Log.error("Failed to delete or reorder profiles: \(error)", category: .ui)
+          Log.error("Failed to delete or reorder profiles: \(redactedErrorForLog(error))", category: .ui)
           deleteError = .syncFailed(error.localizedDescription)
         }
       }
     } catch {
-      Log.error("Failed to delete or reorder profiles: \(error)", category: .ui)
+      Log.error("Failed to delete or reorder profiles: \(redactedErrorForLog(error))", category: .ui)
       deleteError = .syncFailed(error.localizedDescription)
     }
   }
@@ -283,7 +283,7 @@ struct BlockedProfileListView: View {
         }
       }
     } catch {
-      Log.error("Failed to reorder profiles: \(error)", category: .ui)
+      Log.error("Failed to reorder profiles: \(redactedErrorForLog(error))", category: .ui)
       deleteError = .syncFailed(error.localizedDescription)
     }
   }

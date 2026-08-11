@@ -51,7 +51,7 @@ extension CloudKitNetworkService {
       _ = try await privateDatabase.save(record)
       Log.info("Saved lock code successfully", category: .cloudKit)
     } catch {
-      Log.error("Failed to save lock code: \(error)", category: .cloudKit)
+      Log.error("Failed to save lock code: \(redactedErrorForLog(error))", category: .cloudKit)
       throw CloudKitError.saveFailed(error)
     }
   }
@@ -129,14 +129,14 @@ extension CloudKitNetworkService {
           codes.append(code)
         case .failure(let error):
           Log.error(
-            "Failed to fetch lock code record from zone \(zone.zoneID): \(error)",
+            "Failed to fetch lock code record from zone \(zone.zoneID): \(redactedErrorForLog(error))",
             category: .cloudKit)
           return Self.resolveSharedLockCodeFetch(codes: [], hasRecordFailures: true)
         }
       }
     } catch {
       Log.error(
-        "Failed to fetch lock codes from zone \(zone.zoneID): \(error)", category: .cloudKit)
+        "Failed to fetch lock codes from zone \(zone.zoneID): \(redactedErrorForLog(error))", category: .cloudKit)
       // A CKError here means we could not read the family data — report DISCONNECTED so the
       // caller preserves the last-synced cache instead of treating [] as "parent cleared" (#197).
       return (codes: [], isConnected: false)
@@ -188,7 +188,7 @@ extension CloudKitNetworkService {
           return
         } else {
           Log.error(
-            "Failed to delete \(recordType) records from FamilyPolicies: \(error)",
+            "Failed to delete \(recordType) records from FamilyPolicies: \(redactedErrorForLog(error))",
             category: .cloudKit)
         }
       }

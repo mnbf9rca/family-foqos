@@ -337,7 +337,7 @@ class LockCodeManager: ObservableObject {
         await processCommand(command)
       }
     } catch {
-      Log.error("Failed to fetch pending commands: \(error)", category: .cloudKit)
+      Log.error("Failed to fetch pending commands: \(redactedErrorForLog(error))", category: .cloudKit)
     }
   }
 
@@ -383,7 +383,7 @@ class LockCodeManager: ObservableObject {
     do {
       try await cloudKitManager.deleteCommand(command)
     } catch {
-      Log.error("Failed to delete processed command: \(error)", category: .cloudKit)
+      Log.error("Failed to delete processed command: \(redactedErrorForLog(error))", category: .cloudKit)
     }
   }
 

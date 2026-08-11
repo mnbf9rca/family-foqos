@@ -51,7 +51,7 @@ extension CloudKitNetworkService {
       _ = try await sharedDatabase.save(record)
       Log.info("Registered self as \(role.rawValue) FamilyMember", category: .cloudKit)
     } catch {
-      Log.error("Failed to register self as FamilyMember: \(error)", category: .cloudKit)
+      Log.error("Failed to register self as FamilyMember: \(redactedErrorForLog(error))", category: .cloudKit)
     }
   }
 
@@ -91,7 +91,7 @@ extension CloudKitNetworkService {
           isConnected: true, userRecordID: nil, isSignedIn: false, enforcedMode: nil)
       } catch {
         Log.error(
-          "Could not fetch user record ID for verification: \(error)", category: .cloudKit)
+          "Could not fetch user record ID for verification: \(redactedErrorForLog(error))", category: .cloudKit)
         return VerificationResult(
           isConnected: true, userRecordID: nil, isSignedIn: nil, enforcedMode: nil)
       }
@@ -160,7 +160,7 @@ extension CloudKitNetworkService {
       return VerificationResult(
         isConnected: true, userRecordID: userRecordID, isSignedIn: true, enforcedMode: nil)
     } catch {
-      Log.error("Failed to verify self FamilyMember record: \(error)", category: .cloudKit)
+      Log.error("Failed to verify self FamilyMember record: \(redactedErrorForLog(error))", category: .cloudKit)
       Log.info(
         "verifySelfFamilyMember: failed (\(String(format: "%.2f", CFAbsoluteTimeGetCurrent() - start))s)",
         category: .cloudKit)
@@ -189,7 +189,7 @@ extension CloudKitNetworkService {
       }
       return me?.userIdentity.nameComponents?.formatted()
     } catch {
-      Log.debug("Could not fetch user display name from share: \(error)", category: .cloudKit)
+      Log.debug("Could not fetch user display name from share: \(redactedErrorForLog(error))", category: .cloudKit)
       return nil
     }
   }

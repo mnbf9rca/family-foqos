@@ -818,7 +818,7 @@ class StrategyManager: ObservableObject {
           Log.info("Reconciled local startTime to \(remoteStartTime)", category: .strategy)
         }
       case .error(let error):
-        Log.info("Failed to sync session start - \(error)", category: .strategy)
+        Log.info("Failed to sync session start - \(redactedErrorForLog(error))", category: .strategy)
       }
     }
   }
@@ -852,7 +852,7 @@ class StrategyManager: ObservableObject {
         sessionStopOutbox.enqueue(profileId: profileId)
       }
     case .error(let error):
-      Log.info("Failed to sync session stop - \(error)", category: .strategy)
+      Log.info("Failed to sync session stop - \(redactedErrorForLog(error))", category: .strategy)
       // #201: persist the dropped stop intent for foreground re-drive instead of losing it.
       sessionStopOutbox.enqueue(profileId: profileId)
     }
@@ -1163,7 +1163,7 @@ class StrategyManager: ObservableObject {
                 "Reconciled scheduled session startTime to \(remoteStartTime)", category: .strategy)
             }
           case .error(let error):
-            Log.info("Failed to sync scheduled session - \(error)", category: .strategy)
+            Log.info("Failed to sync scheduled session - \(redactedErrorForLog(error))", category: .strategy)
           }
         }
       }
@@ -1626,7 +1626,7 @@ class StrategyManager: ObservableObject {
         "Started remote session for profile '\(profile.name)' with synced startTime",
         category: .strategy)
     } catch {
-      Log.info("Error starting remote session - \(error)", category: .strategy)
+      Log.info("Error starting remote session - \(redactedErrorForLog(error))", category: .strategy)
     }
   }
 

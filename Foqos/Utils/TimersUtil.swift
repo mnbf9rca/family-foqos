@@ -344,7 +344,7 @@ final class TimersUtil: TimersUtilScheduling, @unchecked Sendable {  // SAFETY: 
       do {
         try BGTaskScheduler.shared.submit(request)
       } catch {
-        Log.info("Could not schedule background task: \(error)", category: .timer)
+        Log.info("Could not schedule background task: \(redactedErrorForLog(error))", category: .timer)
       }
     }
   }

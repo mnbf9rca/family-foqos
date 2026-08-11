@@ -35,7 +35,7 @@ extension CloudKitNetworkService {
           "Command already pending (serverRecordChanged) - idempotent success",
           category: .cloudKit)
       case .failed:
-        Log.error("Failed to send command: \(error)", category: .cloudKit)
+        Log.error("Failed to send command: \(redactedErrorForLog(error))", category: .cloudKit)
         throw CloudKitError.saveFailed(error)
       }
     }
@@ -93,7 +93,7 @@ extension CloudKitNetworkService {
         }
       } catch {
         Log.error(
-          "Failed to fetch commands from zone \(zone.zoneID): \(error)", category: .cloudKit)
+          "Failed to fetch commands from zone \(zone.zoneID): \(redactedErrorForLog(error))", category: .cloudKit)
       }
     }
 
@@ -116,7 +116,7 @@ extension CloudKitNetworkService {
       } catch let error as CKError where error.code == .unknownItem {
         continue
       } catch {
-        Log.error("Failed to delete command: \(error)", category: .cloudKit)
+        Log.error("Failed to delete command: \(redactedErrorForLog(error))", category: .cloudKit)
         throw CloudKitError.deleteFailed(error)
       }
     }
@@ -133,7 +133,7 @@ extension CloudKitNetworkService {
           zone.zoneID, database: sharedDatabase, cutoffDate: cutoffDate)
       }
     } catch {
-      Log.debug("No shared zones to cleanup: \(error)", category: .cloudKit)
+      Log.debug("No shared zones to cleanup: \(redactedErrorForLog(error))", category: .cloudKit)
     }
 
     if policyZoneVerified {
@@ -159,12 +159,12 @@ extension CloudKitNetworkService {
             try await database.deleteRecord(withID: recordID)
             Log.info("Cleaned up stale command: \(recordID.recordName)", category: .cloudKit)
           } catch {
-            Log.error("Failed to delete stale command: \(error)", category: .cloudKit)
+            Log.error("Failed to delete stale command: \(redactedErrorForLog(error))", category: .cloudKit)
           }
         }
       }
     } catch {
-      Log.debug("No stale commands to cleanup in zone \(zoneID): \(error)", category: .cloudKit)
+      Log.debug("No stale commands to cleanup in zone \(zoneID): \(redactedErrorForLog(error))", category: .cloudKit)
     }
   }
 }

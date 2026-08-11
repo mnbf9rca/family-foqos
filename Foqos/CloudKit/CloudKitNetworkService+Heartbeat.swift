@@ -26,7 +26,7 @@ extension CloudKitNetworkService {
           Log.info("Heartbeat written successfully", category: .cloudKit)
           continuation.resume()
         case .failure(let error):
-          Log.warning("Failed to write heartbeat: \(error)", category: .cloudKit)
+          Log.warning("Failed to write heartbeat: \(redactedErrorForLog(error))", category: .cloudKit)
           continuation.resume(throwing: error)
         }
       }
@@ -60,7 +60,7 @@ extension CloudKitNetworkService {
           }
         }
       } catch {
-        Log.error("Failed to fetch heartbeats from private DB: \(error)", category: .cloudKit)
+        Log.error("Failed to fetch heartbeats from private DB: \(redactedErrorForLog(error))", category: .cloudKit)
       }
     }
 
@@ -82,7 +82,7 @@ extension CloudKitNetworkService {
           }
         }
       } catch {
-        Log.error("Failed to fetch heartbeats from shared DB: \(error)", category: .cloudKit)
+        Log.error("Failed to fetch heartbeats from shared DB: \(redactedErrorForLog(error))", category: .cloudKit)
       }
     }
 
@@ -107,7 +107,7 @@ extension CloudKitNetworkService {
       } catch let error as CKError where error.code == .unknownItem {
         Log.debug("Heartbeat not in private DB, trying shared DB", category: .cloudKit)
       } catch {
-        Log.error("Failed to delete heartbeat from private DB: \(error)", category: .cloudKit)
+        Log.error("Failed to delete heartbeat from private DB: \(redactedErrorForLog(error))", category: .cloudKit)
       }
     }
 
@@ -120,7 +120,7 @@ extension CloudKitNetworkService {
       try await sharedDatabase.deleteRecord(withID: sharedRecordID)
       Log.info("Deleted heartbeat record from shared DB: \(recordName)", category: .cloudKit)
     } catch {
-      Log.error("Failed to delete heartbeat from shared DB: \(error)", category: .cloudKit)
+      Log.error("Failed to delete heartbeat from shared DB: \(redactedErrorForLog(error))", category: .cloudKit)
       throw CloudKitError.deleteFailed(error)
     }
   }

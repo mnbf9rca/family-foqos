@@ -160,8 +160,8 @@ struct MapLocationPicker: View {
 #Preview {
   MapLocationPicker(
     initialCoordinate: nil
-  ) { coordinate in
-    Log.debug("Selected: \(coordinate)", category: .ui)
+  ) { _ in
+    Log.debug("Selected preview location", category: .ui)
   }
   .environmentObject(ThemeManager.shared)
 }
@@ -169,8 +169,8 @@ struct MapLocationPicker: View {
 #Preview("With Initial Location") {
   MapLocationPicker(
     initialCoordinate: CLLocationCoordinate2D(latitude: 51.5074, longitude: -0.1278)
-  ) { coordinate in
-    Log.debug("Selected: \(coordinate)", category: .ui)
+  ) { _ in
+    Log.debug("Selected alternate preview location", category: .ui)
   }
   .environmentObject(ThemeManager.shared)
 }

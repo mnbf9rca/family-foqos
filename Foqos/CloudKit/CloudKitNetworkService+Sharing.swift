@@ -76,7 +76,7 @@ extension CloudKitNetworkService {
           Log.info("Created family share successfully", category: .cloudKit)
           continuation.resume(returning: share)
         case .failure(let error):
-          Log.error("Failed to create family share: \(error)", category: .cloudKit)
+          Log.error("Failed to create family share: \(redactedErrorForLog(error))", category: .cloudKit)
           continuation.resume(throwing: CloudKitError.shareFailed(error))
         }
       }
@@ -128,7 +128,7 @@ extension CloudKitNetworkService {
       Log.info("Found \(participants.count) share participants", category: .cloudKit)
       return participants
     } catch {
-      Log.error("Failed to fetch share participants: \(error)", category: .cloudKit)
+      Log.error("Failed to fetch share participants: \(redactedErrorForLog(error))", category: .cloudKit)
       return []
     }
   }
@@ -163,7 +163,7 @@ extension CloudKitNetworkService {
       self.activeZoneShare = share
       Log.info("Share permissions upgraded to readWrite", category: .cloudKit)
     } catch {
-      Log.error("Failed to upgrade share permissions: \(error)", category: .cloudKit)
+      Log.error("Failed to upgrade share permissions: \(redactedErrorForLog(error))", category: .cloudKit)
     }
   }
 
@@ -202,7 +202,7 @@ extension CloudKitNetworkService {
       share = fetchedShare
       self.activeZoneShare = share
     } catch {
-      Log.error("Could not fetch share: \(error)", category: .cloudKit)
+      Log.error("Could not fetch share: \(redactedErrorForLog(error))", category: .cloudKit)
       return ParticipantSyncResult(pendingParticipants: [], familyMembers: [])
     }
 
@@ -260,7 +260,7 @@ extension CloudKitNetworkService {
         Log.info(
           "Removed FamilyMember who left share: \(member.redactedLogLabel)", category: .cloudKit)
       } catch {
-        Log.error("Failed to remove stale FamilyMember: \(error)", category: .cloudKit)
+        Log.error("Failed to remove stale FamilyMember: \(redactedErrorForLog(error))", category: .cloudKit)
       }
     }
 

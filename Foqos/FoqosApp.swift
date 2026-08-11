@@ -407,7 +407,7 @@ class AppDelegate: NSObject, UIApplicationDelegate {
     _: UIApplication,
     didFailToRegisterForRemoteNotificationsWithError error: Error
   ) {
-    Log.error("Failed to register for remote notifications: \(error)", category: .app)
+    Log.error("Failed to register for remote notifications: \(redactedErrorForLog(error))", category: .app)
   }
 
   func application(
@@ -535,13 +535,13 @@ func acceptCloudKitShare(_ metadata: CKShare.Metadata) {
     case .notChildDevice:
       detectedRole = .parent
     case .networkError(let error):
-      Log.error("Network error during role detection: \(error)", category: .cloudKit)
+      Log.error("Network error during role detection: \(redactedErrorForLog(error))", category: .cloudKit)
       CloudKitManager.shared.shareAcceptanceIsError = true
       CloudKitManager.shared.shareAcceptedMessage =
         "Unable to verify device type. Please check your internet connection and try again."
       return
     case .unknownError(let error):
-      Log.error("Unknown error during role detection: \(error)", category: .cloudKit)
+      Log.error("Unknown error during role detection: \(redactedErrorForLog(error))", category: .cloudKit)
       CloudKitManager.shared.shareAcceptanceIsError = true
       CloudKitManager.shared.shareAcceptedMessage =
         "Unable to verify device type: \(error.localizedDescription)"
@@ -568,7 +568,7 @@ func completeShareAcceptance(metadata: CKShare.Metadata, role: FamilyRole) {
       try await CloudKitManager.shared.acceptShareDirect(metadata: metadata)
       Log.info("Share accepted for role: \(role.rawValue)", category: .cloudKit)
     } catch {
-      Log.error("Share acceptance failed: \(error)", category: .cloudKit)
+      Log.error("Share acceptance failed: \(redactedErrorForLog(error))", category: .cloudKit)
       CloudKitManager.shared.shareAcceptanceIsError = true
       CloudKitManager.shared.shareAcceptedMessage =
         "Failed to accept invitation: \(error.localizedDescription)"
@@ -584,7 +584,7 @@ func completeShareAcceptance(metadata: CKShare.Metadata, role: FamilyRole) {
       _ = try await CloudKitManager.shared.ensureUserRecordID()
       await CloudKitManager.shared.registerSelfAsFamilyMember(role: role)
     } catch {
-      Log.error("Self-registration failed (will retry on next activation): \(error)", category: .cloudKit)
+      Log.error("Self-registration failed (will retry on next activation): \(redactedErrorForLog(error))", category: .cloudKit)
     }
 
     // 4. Best-effort: fetch shared lock codes
