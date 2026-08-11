@@ -2,7 +2,7 @@
 
 ## Goal
 
-Delete `ChildAuthorizationRequiredView`, its file-local companion `SetupStepRow`, and their
+Delete `ChildAuthorizationRequiredView`, its module-internal companion `SetupStepRow`, and their
 misleading Family Sharing setup guidance because the application no longer has a presentation path
 for that screen.
 
@@ -27,8 +27,10 @@ accepted from the historical handover.
 
 ### Static and stringly reachability
 
-- Exact searches for `ChildAuthorizationRequiredView` and `SetupStepRow` find Swift hits only in
-  `Foqos/Views/Child/ChildAuthorizationRequiredView.swift` itself.
+- Exact searches for `ChildAuthorizationRequiredView` and `SetupStepRow` across the entire Foqos
+  module find Swift hits only in `Foqos/Views/Child/ChildAuthorizationRequiredView.swift` itself.
+  The module-wide radius is required because `SetupStepRow` has internal access rather than
+  file-private access.
 - Searches for the removed trigger names `childAuthorizationFailed`,
   `setChildAuthorizationFailure`, and `childAuthorizationRequired` find no current Swift hit.
 - Searches for the filename and distinctive UI strings find no resource, plist, script, project,
