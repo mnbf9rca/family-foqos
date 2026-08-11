@@ -1,6 +1,15 @@
 #!/bin/bash
 set -euo pipefail
 
+# Keep this list in sync whenever the suite starts invoking another external tool.
+required_commands=(cat dirname grep mktemp rg rm ruby)
+for required_command in "${required_commands[@]}"; do
+  command -v "$required_command" >/dev/null || {
+    echo "FAIL: required command not found: $required_command" >&2
+    exit 127
+  }
+done
+
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TEST_ROOT=$(mktemp -d)
 
@@ -94,6 +103,12 @@ if grep -nE 'XCTEST_DEVICES_DIR|created\.each|simctl.*--set|Clone [[:digit:]]' \
   "$REPO_ROOT/fastlane/Fastfile"; then
   echo "FAIL: Fastfile still contains run-created XCTestDevices cleanup" >&2
   exit 1
+else
+  grep_status=$?
+  if [[ "$grep_status" -ne 1 ]]; then
+    echo "FAIL: could not inspect fastlane/Fastfile (grep exit $grep_status)" >&2
+    exit "$grep_status"
+  fi
 fi
 
 rg -n 'SimulatorGate\.assert_registered_device!' "$REPO_ROOT/fastlane/Fastfile" >/dev/null || {

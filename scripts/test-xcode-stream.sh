@@ -1,6 +1,34 @@
 #!/opt/homebrew/bin/bash
 set -euo pipefail
 
+# Keep this list in sync whenever the suite starts invoking another external tool.
+required_commands=(
+  /opt/homebrew/bin/bash
+  /opt/homebrew/bin/jq
+  /usr/bin/true
+  basename
+  cat
+  chmod
+  cmp
+  dirname
+  grep
+  mkdir
+  mktemp
+  mv
+  rm
+  zsh
+)
+for required_command in "${required_commands[@]}"; do
+  command -v "$required_command" >/dev/null || {
+    echo "FAIL: required command not found: $required_command" >&2
+    exit 127
+  }
+done
+if [[ "${BASH_VERSINFO[0]}" -lt 4 ]]; then
+  echo "FAIL: Bash 4+ is required" >&2
+  exit 127
+fi
+
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 WRAPPER="$REPO_ROOT/scripts/xcode-stream.sh"
 ADAPTER="$REPO_ROOT/scripts/ios-sim-gate-bin/xcrun"
@@ -620,6 +648,9 @@ done
 assert_not_contains "$POLICY_FILE" "NO parallel development on the same machine"
 if grep -nE '^xcodebuild ' "$POLICY_FILE" >/dev/null; then
   fail "AGENTS.md still documents a raw xcodebuild entrypoint"
+else
+  grep_status=$?
+  [[ "$grep_status" -eq 1 ]] || fail "could not inspect AGENTS.md (grep exit $grep_status)"
 fi
 
 echo "PASS: xcode stream allocation, enforcement, adapter scoping, and exact exit propagation"
