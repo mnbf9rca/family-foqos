@@ -271,11 +271,12 @@ struct DebugView: View {
       markdown += "No device activities scheduled.\n\n"
     } else {
       for (index, activity) in deviceActivities.enumerated() {
+        let classification = DeviceActivityClassifier.classify(activity)
         markdown += "### Activity \(index + 1)\n"
         markdown += "- **Name:** \(activity.rawValue)\n"
-        markdown += "- **Type:** \(activityType(for: activity))\n"
+        markdown += "- **Type:** \(classification.type)\n"
         markdown +=
-          "- **Matches Profile:** \(isActivityForProfile(activity, profileId: profile.id) ? "Yes" : "No")\n"
+          "- **Matches Profile:** \(classification.matches(profileId: profile.id) ? "Yes" : "No")\n"
         markdown += "\n"
       }
     }
@@ -298,47 +299,6 @@ struct DebugView: View {
     // Copy to clipboard
     UIPasteboard.general.string = markdown
     showCopyConfirmation = true
-  }
-
-  private func activityType(for activity: DeviceActivityName) -> String {
-    let rawValue = activity.rawValue
-
-    if rawValue.hasPrefix(BreakTimerActivity.id) {
-      return "Break Timer"
-    } else if rawValue.hasPrefix(StopScheduleTimerActivity.id) {
-      return "Stop Schedule Timer"
-    } else if rawValue.hasPrefix(ScheduleTimerActivity.id) {
-      return "Schedule Timer"
-    } else {
-      // Check if it's a UUID (legacy schedule format)
-      if UUID(uuidString: rawValue) != nil {
-        return "Schedule Timer (Legacy)"
-      }
-      return "Unknown"
-    }
-  }
-
-  private func isActivityForProfile(_ activity: DeviceActivityName, profileId: UUID) -> Bool {
-    let rawValue = activity.rawValue
-    let profileIdString = profileId.uuidString
-
-    // Check if it's a break timer activity for this profile
-    if rawValue.hasPrefix(BreakTimerActivity.id) {
-      return rawValue.hasSuffix(profileIdString)
-    }
-
-    // Check if it's a stop schedule timer activity for this profile
-    if rawValue.hasPrefix(StopScheduleTimerActivity.id) {
-      return rawValue.hasSuffix(profileIdString)
-    }
-
-    // Check if it's a schedule timer activity for this profile
-    if rawValue.hasPrefix(ScheduleTimerActivity.id) {
-      return rawValue.hasSuffix(profileIdString)
-    }
-
-    // Check if it's a legacy schedule format (just the UUID)
-    return rawValue == profileIdString
   }
 }
 
