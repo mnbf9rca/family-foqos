@@ -2,6 +2,7 @@ import XCTest
 
 @testable import FamilyFoqos
 
+@MainActor
 final class TimerDurationSnapTests: XCTestCase {
 
   // Mirrors the production snapPoints after the 1440 entry is removed.

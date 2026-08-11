@@ -634,7 +634,9 @@ final class SyncEngineControllerTests: XCTestCase {
     controller.start()
     await controller.startupTask?.value
 
-    XCTAssertNil(store.deleteTombstones[id.uuidString], "entity present ⇒ abort, clear tombstone")
+    XCTAssertFalse(
+      store.deleteTombstones.keys.contains(id.uuidString),
+      "entity present ⇒ abort, clear tombstone")
     XCTAssertNil(store.deleteWatermark(for: id.uuidString), "entity present ⇒ abort, clear watermark")
     XCTAssertTrue(pendingDeleteNames().isEmpty, "no delete enqueued")
   }
@@ -649,7 +651,9 @@ final class SyncEngineControllerTests: XCTestCase {
     controller.start()
     await controller.startupTask?.value
 
-    XCTAssertNil(store.deleteTombstones[id.uuidString], "absent ⇒ already complete, cleared")
+    XCTAssertFalse(
+      store.deleteTombstones.keys.contains(id.uuidString),
+      "absent ⇒ already complete, cleared")
     XCTAssertFalse(pendingDeleteNames().contains(id.uuidString))
   }
 
@@ -669,8 +673,9 @@ final class SyncEngineControllerTests: XCTestCase {
     XCTAssertTrue(
       pendingDeleteNames().contains(id.uuidString),
       "matching tag ⇒ delete enqueued (CRA-5)")
-    XCTAssertNotNil(
-      store.deleteTombstones[id.uuidString], "tombstone retained until delete confirmed")
+    XCTAssertTrue(
+      store.deleteTombstones.keys.contains(id.uuidString),
+      "tombstone retained until delete confirmed")
   }
 
   // #302 acceptance: a tombstone written while sync is disabled enters the existing I12
@@ -709,7 +714,9 @@ final class SyncEngineControllerTests: XCTestCase {
     controller.start()
     await controller.startupTask?.value
 
-    XCTAssertNil(store.deleteTombstones[id.uuidString], "different tag ⇒ re-adopted, cleared")
+    XCTAssertFalse(
+      store.deleteTombstones.keys.contains(id.uuidString),
+      "different tag ⇒ re-adopted, cleared")
     XCTAssertFalse(pendingDeleteNames().contains(id.uuidString), "no delete")
     XCTAssertNotNil(SyncConflictManager.shared.conflictedProfiles[id], "conflict surfaced")
   }
@@ -724,7 +731,9 @@ final class SyncEngineControllerTests: XCTestCase {
     controller.start()
     await controller.startupTask?.value
 
-    XCTAssertNotNil(store.deleteTombstones[id.uuidString], "transient ⇒ keep, retry later")
+    XCTAssertTrue(
+      store.deleteTombstones.keys.contains(id.uuidString),
+      "transient ⇒ keep, retry later")
     XCTAssertFalse(pendingDeleteNames().contains(id.uuidString))
   }
 
@@ -741,8 +750,9 @@ final class SyncEngineControllerTests: XCTestCase {
     controller.start()
     await controller.startupTask?.value
 
-    XCTAssertNotNil(
-      store.deleteTombstones[id.uuidString], "zoneNotFound ⇒ keep, §5.6 re-verifies (Fix 3)")
+    XCTAssertTrue(
+      store.deleteTombstones.keys.contains(id.uuidString),
+      "zoneNotFound ⇒ keep, §5.6 re-verifies (Fix 3)")
     XCTAssertFalse(pendingDeleteNames().contains(id.uuidString))
   }
 
@@ -858,8 +868,8 @@ final class SyncEngineControllerTests: XCTestCase {
     XCTAssertNil(
       store.failedApplies.first { $0.recordName == id.uuidString },
       "verified-present retry drops the stale remote failed apply")
-    XCTAssertNotNil(
-      store.deleteTombstones[id.uuidString],
+    XCTAssertTrue(
+      store.deleteTombstones.keys.contains(id.uuidString),
       "newer local delete tombstone must survive the remote failed-apply cleanup")
     XCTAssertNotNil(
       store.systemFields(for: id.uuidString),
@@ -1008,13 +1018,17 @@ final class SyncEngineControllerTests: XCTestCase {
         deletions: [(recordID: recordID(id.uuidString), recordType: SyncedProfile.recordType)]))
 
     XCTAssertNil(try? fetchProfile(id), "local profile deleted (§5.2)")
-    XCTAssertNotNil(store.deleteTombstones[id.uuidString], "tombstone retained until durable delete")
+    XCTAssertTrue(
+      store.deleteTombstones.keys.contains(id.uuidString),
+      "tombstone retained until durable delete")
     XCTAssertNotNil(store.systemFields(for: id.uuidString))
     XCTAssertTrue(pendingDeleteNames().contains(id.uuidString), "pending delete retained until commit")
 
     profileDeleteCommitScheduler.runNext()
 
-    XCTAssertNil(store.deleteTombstones[id.uuidString], "tombstone cleared (I12)")
+    XCTAssertFalse(
+      store.deleteTombstones.keys.contains(id.uuidString),
+      "tombstone cleared (I12)")
     XCTAssertNil(store.systemFields(for: id.uuidString))
     XCTAssertFalse(pendingDeleteNames().contains(id.uuidString), "pending .deleteRecord removed (§5.2)")
   }
@@ -1337,7 +1351,9 @@ final class SyncEngineControllerTests: XCTestCase {
           (recordID: recordID(id.uuidString), error: makeCKError(.unknownItem))
         ]))
 
-    XCTAssertNil(store.deleteTombstones[id.uuidString], "U-delete clears the tombstone")
+    XCTAssertFalse(
+      store.deleteTombstones.keys.contains(id.uuidString),
+      "U-delete clears the tombstone")
     XCTAssertNil(store.systemFields(for: id.uuidString), "U-delete drops the system-fields entry")
   }
 
@@ -1354,7 +1370,9 @@ final class SyncEngineControllerTests: XCTestCase {
         savedRecords: [], failedRecordSaves: [],
         deletedRecordIDs: [recordID(id.uuidString)], failedRecordDeletes: []))
 
-    XCTAssertNil(store.deleteTombstones[id.uuidString], "confirmed delete clears tombstone (I12)")
+    XCTAssertFalse(
+      store.deleteTombstones.keys.contains(id.uuidString),
+      "confirmed delete clears tombstone (I12)")
     XCTAssertNil(store.systemFields(for: id.uuidString))
     XCTAssertTrue(apply.recentlyConfirmedDeletes.contains(id.uuidString), "echo guard populated")
   }
@@ -1798,7 +1816,9 @@ final class SyncEngineControllerTests: XCTestCase {
     XCTAssertNil(store.engineState, "engine state discarded")
     XCTAssertNil(store.resetIntent)
     XCTAssertFalse(store.pendingSeedIntent)
-    XCTAssertNotNil(store.deleteTombstones["keep"], "tombstones survive (not consent-scoped)")
+    XCTAssertTrue(
+      store.deleteTombstones.keys.contains("keep"),
+      "tombstones survive (not consent-scoped)")
     XCTAssertFalse(SharedData.deviceSyncEnabled, "sync disabled")
     XCTAssertTrue(pendingSaveNames().isEmpty, "nothing enqueued")
     XCTAssertNil(controller.reset)
@@ -1863,7 +1883,9 @@ final class SyncEngineControllerTests: XCTestCase {
     XCTAssertTrue(stopResetCalled, "reset dequeue hook invoked first (T11)")
     XCTAssertFalse(store.pendingSeedIntent)
     XCTAssertNil(store.engineState, "engine state discarded (N5 saves lost)")
-    XCTAssertNotNil(store.deleteTombstones["keep"], "tombstones survive T11 (re-propagate via I12)")
+    XCTAssertTrue(
+      store.deleteTombstones.keys.contains("keep"),
+      "tombstones survive T11 (re-propagate via I12)")
     XCTAssertEqual(driver.sendChangesCount, 1, "best-effort final send")
     XCTAssertEqual(controller.state, .disabled)
     XCTAssertNil(controller.reset)
