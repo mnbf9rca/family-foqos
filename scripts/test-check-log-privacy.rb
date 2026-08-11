@@ -149,7 +149,7 @@ CASES = [
   ),
   Case.new(
     name: 'unbalanced call',
-    fixture: 'fail/unbalanced_call.swift',
+    fixture: 'fail/unbalanced_call.swift.txt',
     status: 2,
     diagnostic: 'unbalanced Log call',
     site_floor: 1,

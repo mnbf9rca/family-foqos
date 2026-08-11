@@ -1,3 +1,4 @@
+// swift-format-ignore-file
 // Log.error("commented failure: \(error)", category: .sync)
 /*
   Log.error("block-comment failure: \(error)", category: .sync)
