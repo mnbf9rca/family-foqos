@@ -701,14 +701,24 @@ module LogPrivacy
       mask_scope = mask_before_call[function_start..]
       declarations = parameter_declarations(source_scope, mask_scope)
 
-      assignment_pattern =
-        /^[ \t]*(?:(?:guard|if)\s+)?(?:case\s+)?(?:let|var)\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s*:\s*([^=\n]+))?\s*=/
-      mask_scope.to_enum(:scan, assignment_pattern).each do
-        assignment = Regexp.last_match
+      declaration_pattern =
+        /(?:^|;)[ \t]*(?:(?:guard|if)\s+)?(?:case\s+)?(?:let|var)\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s*:\s*([^=\n]+))?\s*=/
+      reassignment_pattern = /(?:^|;)[ \t]*([A-Za-z_][A-Za-z0-9_]*)\s*=(?!=)/
+      declaration_events = mask_scope.to_enum(:scan, declaration_pattern).map do
+        [:declaration, Regexp.last_match]
+      end
+      reassignment_events = mask_scope.to_enum(:scan, reassignment_pattern).map do
+        [:reassignment, Regexp.last_match]
+      end
+
+      assignment_events = declaration_events + reassignment_events
+      assignment_events.sort_by { |_, assignment| assignment.begin(0) }.each do |kind, assignment|
         origin = assignment_origin(source_scope, mask_scope, assignment)
+        next if kind == :reassignment && !declarations.key?(assignment[1])
+
         declarations[assignment[1]] = Declaration.new(
           name: assignment[1],
-          type: assignment[2]&.strip,
+          type: kind == :declaration ? assignment[2]&.strip : declarations[assignment[1]].type,
           origin: origin
         )
       end

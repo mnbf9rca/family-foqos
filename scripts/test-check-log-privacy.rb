@@ -46,6 +46,15 @@ CASES = [
     annotation_count: 0
   ),
   Case.new(
+    name: 'same-line and line-separated reassignment',
+    fixture: 'fail/reassignment.swift',
+    status: 1,
+    diagnostic: 'sensitive local origin',
+    site_floor: 2,
+    annotation_count: 0,
+    diagnostic_count: 2
+  ),
+  Case.new(
     name: 'bare error',
     fixture: 'fail/bare_error.swift',
     status: 1,
@@ -246,6 +255,15 @@ CASES = [
     diagnostic: 'sensitive local origin',
     site_floor: 1,
     annotation_count: 0
+  ),
+  Case.new(
+    name: 'renamed same-line and line-separated reassignment',
+    fixture: 'fail/renamed/reassignment.swift',
+    status: 1,
+    diagnostic: 'sensitive local origin',
+    site_floor: 2,
+    annotation_count: 0,
+    diagnostic_count: 2
   ),
   Case.new(
     name: 'renamed bare error',

@@ -34,10 +34,11 @@ too common to remain meaningful.
 ## Data Flow
 
 For each `Log.*` call, the analyzer uses the source before that call, bounded to the current function.
-It collects parameter and local declarations, extracts each local assignment before the call, and
-classifies dependencies recursively with cycle protection. A value is sensitive if its declared type,
-direct expression, or any dependency is sensitive. A value is safe only when an existing semantic
-allowlist proves it safe. All other origins are ambiguous and fail closed.
+It collects parameters, local declarations, and plain-identifier reassignments in source order,
+including statements that begin after a semicolon. It extracts each assignment before the call and
+classifies dependencies recursively with cycle protection. A value is sensitive if its declared
+type, direct expression, or any dependency is sensitive. A value is safe only when an existing
+semantic allowlist proves it safe. All other origins are ambiguous and fail closed.
 
 Declaration tracking is deliberately conservative when a nested scope shadows an earlier binding
 with the same name. The analyzer may retain the earlier taint and reject the interpolation rather
