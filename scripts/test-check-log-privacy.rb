@@ -23,6 +23,7 @@ Case = Struct.new(
   :diagnostic,
   :site_floor,
   :annotation_count,
+  :diagnostic_count,
   keyword_init: true
 )
 
@@ -218,6 +219,128 @@ CASES = [
     diagnostic: 'sites_analyzed=2 annotations=0',
     site_floor: 2,
     annotation_count: 0
+  ),
+  Case.new(
+    name: 'renamed multiline display name',
+    fixture: 'fail/renamed/multiline_display_name.swift',
+    status: 1,
+    diagnostic: 'sensitive display name',
+    site_floor: 1,
+    annotation_count: 0
+  ),
+  Case.new(
+    name: 'renamed laundered participant identity',
+    fixture: 'fail/renamed/laundered_display_info.swift',
+    status: 1,
+    diagnostic: 'sensitive local origin',
+    site_floor: 1,
+    annotation_count: 0
+  ),
+  Case.new(
+    name: 'renamed bare error',
+    fixture: 'fail/renamed/bare_error.swift',
+    status: 1,
+    diagnostic: 'whole Error',
+    site_floor: 1,
+    annotation_count: 0
+  ),
+  Case.new(
+    name: 'renamed raw URL',
+    fixture: 'fail/renamed/raw_url.swift',
+    status: 1,
+    diagnostic: 'raw URL',
+    site_floor: 1,
+    annotation_count: 0
+  ),
+  Case.new(
+    name: 'renamed coordinates',
+    fixture: 'fail/renamed/coordinates.swift',
+    status: 1,
+    diagnostic: 'coordinate',
+    site_floor: 3,
+    annotation_count: 0,
+    diagnostic_count: 3
+  ),
+  Case.new(
+    name: 'renamed replayable NFC identifier',
+    fixture: 'fail/renamed/nfc_identifier.swift',
+    status: 1,
+    diagnostic: 'replayable NFC',
+    site_floor: 1,
+    annotation_count: 0
+  ),
+  Case.new(
+    name: 'renamed replayable QR identifier',
+    fixture: 'fail/renamed/qr_identifier.swift',
+    status: 1,
+    diagnostic: 'replayable QR',
+    site_floor: 1,
+    annotation_count: 0
+  ),
+  Case.new(
+    name: 'renamed participant contact properties',
+    fixture: 'fail/renamed/participant_contact.swift',
+    status: 1,
+    diagnostic: 'participant contact',
+    site_floor: 3,
+    annotation_count: 0,
+    diagnostic_count: 3
+  ),
+  Case.new(
+    name: 'renamed whole member object',
+    fixture: 'fail/renamed/whole_member.swift',
+    status: 1,
+    diagnostic: 'whole object',
+    site_floor: 1,
+    annotation_count: 0
+  ),
+  Case.new(
+    name: 'renamed described member object',
+    fixture: 'fail/renamed/string_describing_member.swift',
+    status: 1,
+    diagnostic: 'whole object',
+    site_floor: 1,
+    annotation_count: 0
+  ),
+  Case.new(
+    name: 'renamed direct Logger sink',
+    fixture: 'fail/renamed/logger.swift',
+    status: 1,
+    diagnostic: 'use the shared Log facade',
+    site_floor: 0,
+    annotation_count: 0
+  ),
+  Case.new(
+    name: 'renamed message variable',
+    fixture: 'fail/renamed/message_variable.swift',
+    status: 2,
+    diagnostic: 'message must be an analyzable literal',
+    site_floor: 1,
+    annotation_count: 0
+  ),
+  Case.new(
+    name: 'renamed unresolved origin',
+    fixture: 'fail/renamed/unresolved_origin.swift',
+    status: 2,
+    diagnostic: 'cannot resolve',
+    site_floor: 1,
+    annotation_count: 0
+  ),
+  Case.new(
+    name: 'renamed valid annotation',
+    fixture: 'fail/renamed/valid_annotation.swift',
+    status: 2,
+    diagnostic: 'annotation count changed from 0 to 1',
+    site_floor: 1,
+    annotation_count: 0
+  ),
+  Case.new(
+    name: 'renamed multihop participant identity',
+    fixture: 'fail/renamed/multihop_participant_identity.swift',
+    status: 1,
+    diagnostic: 'sensitive local origin',
+    site_floor: 1,
+    annotation_count: 0
   )
 ].freeze
 
@@ -246,14 +369,20 @@ def run_analyzer(root)
   Open3.capture3(RbConfig.ruby, ANALYZER.to_s, '--root', root.to_s)
 end
 
-def result_matches?(name:, expected_status:, diagnostic:, stdout:, stderr:, process_status:)
+def result_matches?(
+  name:, expected_status:, diagnostic:, stdout:, stderr:, process_status:,
+  diagnostic_count: nil
+)
   output = stdout + stderr
-  return true if process_status.exitstatus == expected_status && output.include?(diagnostic)
+  matches_diagnostic = output.include?(diagnostic)
+  matches_count = diagnostic_count.nil? || output.scan(diagnostic).length == diagnostic_count
+  return true if process_status.exitstatus == expected_status && matches_diagnostic && matches_count
 
   warn "FAIL: #{name}"
   warn "  expected status: #{expected_status}"
   warn "  actual status:   #{process_status.exitstatus}"
   warn "  expected output: #{diagnostic.inspect}"
+  warn "  expected count:  #{diagnostic_count}" if diagnostic_count
   warn output.lines.map { |line| "  #{line}" }.join
   false
 end
@@ -271,7 +400,8 @@ def run_case?(test_case)
       diagnostic: test_case.diagnostic,
       stdout: stdout,
       stderr: stderr,
-      process_status: process_status
+      process_status: process_status,
+      diagnostic_count: test_case.diagnostic_count
     )
   end
   true
