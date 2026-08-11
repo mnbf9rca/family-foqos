@@ -22,6 +22,11 @@ The `HeartbeatManager` exhaustiveness warning named in #293 is absent from the s
 
 Five `@MainActor` test classes override synchronous `setUp()` and `tearDown()`. XCTest declares those synchronous overrides nonisolated, so they cannot safely access main-actor state. Convert only those overrides to the established async-throwing lifecycle pattern used by clean neighboring tests:
 
+Scope is based on warning sites measured in the clean baseline, not on the class annotation alone.
+`ScreenshotDemoScheduleTests`, `FamilyCommandApplyTests`, and `LockCodeThrottleTests` have the
+same synchronous lifecycle shape but emitted no lifecycle warning, so they remain unchanged until
+compiler output demonstrates a problem.
+
 ```swift
 override func setUp() async throws {
   try await super.setUp()
