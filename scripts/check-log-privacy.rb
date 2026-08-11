@@ -1,6 +1,11 @@
 # frozen_string_literal: true
 
 require 'optparse'
+# Ruby 2.6 does not preload these constants when Xcode launches the analyzer.
+# rubocop:disable Lint/RedundantRequireStatement
+require 'pathname'
+require 'set'
+# rubocop:enable Lint/RedundantRequireStatement
 
 module LogPrivacy
   PRODUCTION_ROOTS = %w[
@@ -596,7 +601,7 @@ module LogPrivacy
 
     def analyze_interpolations(call, lexer)
       declarations = nil
-      call.interpolations.filter_map do |interpolation|
+      call.interpolations.each_with_object([]) do |interpolation, findings|
         expression = interpolation.expression.strip
         next if safe_expression?(expression)
 
@@ -606,11 +611,13 @@ module LogPrivacy
         end
 
         message = violation_message(expression)
-        if message
-          Finding.new(path: call.path, line: interpolation.line, message: message)
-        elsif (identifier = semantic_identifier(expression))
-          analyze_semantic_origin(identifier, call, interpolation, lexer)
-        end
+        finding =
+          if message
+            Finding.new(path: call.path, line: interpolation.line, message: message)
+          elsif (identifier = semantic_identifier(expression))
+            analyze_semantic_origin(identifier, call, interpolation, lexer)
+          end
+        findings << finding if finding
       end
     end
 

@@ -2,8 +2,13 @@
 
 require 'fileutils'
 require 'open3'
+# Ruby 2.6 does not preload Pathname when it launches the fixture harness.
+# rubocop:disable Lint/RedundantRequireStatement
+require 'pathname'
+# rubocop:enable Lint/RedundantRequireStatement
 require 'tmpdir'
 
+SYSTEM_RUBY = '/usr/bin/ruby'
 REPO_ROOT = Pathname(__dir__).parent.freeze
 ANALYZER = REPO_ROOT.join('scripts/check-log-privacy.rb').freeze
 FIXTURE_ROOT = REPO_ROOT.join('scripts/fixtures/log-privacy').freeze
@@ -428,7 +433,7 @@ def with_fixture_root(fixture:, site_floor:, annotation_count:)
 end
 
 def run_analyzer(root)
-  Open3.capture3(RbConfig.ruby, ANALYZER.to_s, '--root', root.to_s)
+  Open3.capture3(SYSTEM_RUBY, ANALYZER.to_s, '--root', root.to_s)
 end
 
 def result_matches?(
