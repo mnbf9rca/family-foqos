@@ -192,7 +192,7 @@ func testGivenMembersOutOfOrder_WhenFormattingRoster_ThenSortsRoleNameAndUUID() 
   ])
 }
 
-func testGivenEmptyRecordNameAndEmptyRoster_WhenFormatting_ThenOmitsBlankFieldAndReturnsEmpty() {
+func testGivenEmptyRecordName_WhenFormatting_ThenOmitsBlankFieldAndDoesNotMatchDevices() {
   let member = FamilyMember(
     id: UUID(uuidString: "3F2A9C1B-672E-4C4A-9039-FF6107FBCE91")!,
     userRecordName: "",
@@ -201,9 +201,15 @@ func testGivenEmptyRecordNameAndEmptyRoster_WhenFormatting_ThenOmitsBlankFieldAn
   )
 
   XCTAssertEqual(
-    FamilyRosterExport.content(for: [member], monitoredDevices: []),
+    FamilyRosterExport.content(
+      for: [member],
+      monitoredDevices: [monitoredDevice(identifier: "device-a", childRecordName: "")]
+    ),
     "child·3F2A9C1B — Emma — 3F2A9C1B-672E-4C4A-9039-FF6107FBCE91\n"
   )
+}
+
+func testGivenNoMembers_WhenFormattingRoster_ThenReturnsEmptyContent() {
   XCTAssertEqual(FamilyRosterExport.content(for: [], monitoredDevices: []), "")
 }
 
@@ -239,7 +245,9 @@ let lines = members.sorted(by: memberComesBefore).flatMap { member -> [String] i
     fields.append("(departed)")
   }
 
-  let deviceLines = (devicesByMember[member.userRecordName] ?? [])
+  let matchedDevices =
+    member.userRecordName.isEmpty ? [] : (devicesByMember[member.userRecordName] ?? [])
+  let deviceLines = matchedDevices
     .sorted(by: deviceComesBefore)
     .map { device in
       let heartbeatRecordName = DeviceHeartbeat.recordName(
