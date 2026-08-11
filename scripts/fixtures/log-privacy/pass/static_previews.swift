@@ -6,7 +6,7 @@
 
 #Preview("Scanner") {
   Scanner(
-    onSuccess: { Log.debug("Preview scanned code", category: .ui) },
+    onSuccess: { _ in },
     onFailure: { _ in Log.debug("Preview scanning failed", category: .ui) }
   )
 }

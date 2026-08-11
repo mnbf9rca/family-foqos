@@ -172,6 +172,22 @@ CASES = [
     annotation_count: 0
   ),
   Case.new(
+    name: 'literal concatenated with safe expression',
+    fixture: 'pass/literal_plus_safe_expression.swift',
+    status: 0,
+    diagnostic: 'sites_analyzed=1 annotations=0',
+    site_floor: 1,
+    annotation_count: 0
+  ),
+  Case.new(
+    name: 'pre-redacted local identifier',
+    fixture: 'pass/redacted_local.swift',
+    status: 0,
+    diagnostic: 'sites_analyzed=1 annotations=0',
+    site_floor: 1,
+    annotation_count: 0
+  ),
+  Case.new(
     name: 'display name outside a sink',
     fixture: 'pass/roster_display_name.swift',
     status: 0,
@@ -222,9 +238,9 @@ def run_analyzer(root)
   Open3.capture3(RbConfig.ruby, ANALYZER.to_s, '--root', root.to_s)
 end
 
-def assert_result(name:, expected_status:, diagnostic:, stdout:, stderr:, process_status:)
+def result_matches?(name:, expected_status:, diagnostic:, stdout:, stderr:, process_status:)
   output = stdout + stderr
-  return if process_status.exitstatus == expected_status && output.include?(diagnostic)
+  return true if process_status.exitstatus == expected_status && output.include?(diagnostic)
 
   warn "FAIL: #{name}"
   warn "  expected status: #{expected_status}"
@@ -234,14 +250,14 @@ def assert_result(name:, expected_status:, diagnostic:, stdout:, stderr:, proces
   false
 end
 
-def run_case(test_case)
+def run_case?(test_case)
   with_fixture_root(
     fixture: test_case.fixture,
     site_floor: test_case.site_floor,
     annotation_count: test_case.annotation_count
   ) do |root, _destination|
     stdout, stderr, process_status = run_analyzer(root)
-    return assert_result(
+    return result_matches?(
       name: test_case.name,
       expected_status: test_case.status,
       diagnostic: test_case.diagnostic,
@@ -258,12 +274,12 @@ unless ANALYZER.file?
   exit 1
 end
 
-failures = CASES.count { |test_case| run_case(test_case) == false }
+failures = CASES.count { |test_case| run_case?(test_case) == false }
 
 with_fixture_root(fixture: 'pass/roster_display_name.swift', site_floor: 0, annotation_count: 0) do |root, _|
   FileUtils.rm_rf(root.join('FoqosWidget'))
   stdout, stderr, status = run_analyzer(root)
-  failures += 1 unless assert_result(
+  failures += 1 unless result_matches?(
     name: 'missing production root',
     expected_status: 2,
     diagnostic: 'missing production root',
@@ -279,7 +295,7 @@ with_fixture_root(fixture: 'pass/roster_display_name.swift', site_floor: 0, anno
     root.join('scripts/log-privacy-baseline.txt')
   )
   stdout, stderr, status = run_analyzer(root)
-  failures += 1 unless assert_result(
+  failures += 1 unless result_matches?(
     name: 'malformed site baseline',
     expected_status: 2,
     diagnostic: 'malformed site baseline',
@@ -295,7 +311,7 @@ with_fixture_root(fixture: 'pass/roster_display_name.swift', site_floor: 0, anno
     root.join('scripts/log-privacy-annotation-baseline.txt')
   )
   stdout, stderr, status = run_analyzer(root)
-  failures += 1 unless assert_result(
+  failures += 1 unless result_matches?(
     name: 'malformed annotation baseline',
     expected_status: 2,
     diagnostic: 'malformed annotation baseline',
@@ -307,7 +323,7 @@ end
 
 with_fixture_root(fixture: 'pass/redacted_contrast.swift', site_floor: 4, annotation_count: 0) do |root, _|
   stdout, stderr, status = run_analyzer(root)
-  failures += 1 unless assert_result(
+  failures += 1 unless result_matches?(
     name: 'site coverage floor',
     expected_status: 2,
     diagnostic: 'coverage shrank from 4 to 3',
@@ -319,7 +335,7 @@ end
 
 with_fixture_root(fixture: 'fail/valid_annotation.swift', site_floor: 1, annotation_count: 0) do |root, _|
   stdout, stderr, status = run_analyzer(root)
-  failures += 1 unless assert_result(
+  failures += 1 unless result_matches?(
     name: 'annotation exact count',
     expected_status: 2,
     diagnostic: 'annotation count changed from 0 to 1',
@@ -333,7 +349,7 @@ with_fixture_root(fixture: 'pass/roster_display_name.swift', site_floor: 0, anno
   destination.chmod(0o000)
   begin
     stdout, stderr, status = run_analyzer(root)
-    failures += 1 unless assert_result(
+    failures += 1 unless result_matches?(
       name: 'unreadable discovered file',
       expected_status: 2,
       diagnostic: 'numeric baselines cannot repair file coverage',
