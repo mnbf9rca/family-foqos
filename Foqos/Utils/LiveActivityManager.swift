@@ -78,7 +78,7 @@ class LiveActivityManager: ObservableObject {
       }) {
         // Found the existing activity
         self.currentActivity = existingActivity
-        Log.info("Restored existing Live Activity with ID: \(existingActivity.id)", category: .liveActivity)
+        Log.info("Restored existing Live Activity", category: .liveActivity)
       } else {
         // The activity no longer exists, clean up the stored ID
         Log.info("No existing activity found with saved ID, removing reference", category: .liveActivity)
@@ -147,7 +147,9 @@ class LiveActivityManager: ObservableObject {
 
       saveActivityId(activity.id)
       storedActivityProfileId = session.blockedProfile.id.uuidString
-      Log.info("Started Live Activity with ID: \(activity.id) for profile: \(profileName)", category: .liveActivity)
+      Log.info(
+        "Started Live Activity for profile: \(session.blockedProfile.id.uuidString)",
+        category: .liveActivity)
     } catch {
       Log.info("Error starting Live Activity: \(error.localizedDescription)", category: .liveActivity)
     }
@@ -171,7 +173,7 @@ class LiveActivityManager: ObservableObject {
     let activityId = activity.id
     Task {
       await Self.updateActivity(withId: activityId, to: updatedState)
-      Log.info("Updated Live Activity with ID: \(activityId)", category: .liveActivity)
+      Log.info("Updated Live Activity", category: .liveActivity)
     }
   }
 
@@ -191,10 +193,9 @@ class LiveActivityManager: ObservableObject {
     )
 
     let activityId = activity.id
-    let isBreakActive = session.isBreakActive
     Task {
       await Self.updateActivity(withId: activityId, to: updatedState)
-      Log.info("Updated Live Activity break state: \(isBreakActive)", category: .liveActivity)
+      Log.info("Updated Live Activity break state", category: .liveActivity)
     }
   }
 

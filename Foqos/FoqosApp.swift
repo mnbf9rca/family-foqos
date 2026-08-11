@@ -142,7 +142,7 @@ struct FoqosApp: App {
           Log.debug("rootView onAppear", category: .app)
         }
         .onChange(of: scenePhase) { oldPhase, newPhase in
-          Log.debug("scenePhase changed from \(oldPhase) to \(newPhase)", category: .app)
+          Log.debug("scenePhase changed", category: .app)
           if newPhase == .active {
             if !ScreenshotDemoMode.isActive {
               Task {

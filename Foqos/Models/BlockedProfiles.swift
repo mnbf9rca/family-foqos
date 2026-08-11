@@ -791,7 +791,7 @@ extension BlockedProfiles {
   func migrateToV2IfEligible(hasActiveSession: Bool) -> Bool {
     guard needsMigration else { return false }
     guard !hasActiveSession else {
-      Log.info("Deferring migration for '\(name)' — active session", category: .app)
+      Log.info("Deferring profile migration — active session", category: .app)
       return false
     }
     migrateToV2IfNeeded()
@@ -840,7 +840,7 @@ extension BlockedProfiles {
     // If any Data field is nil after setting, encoding failed silently
     guard startTriggersData != nil, stopConditionsData != nil else {
       Log.error(
-        "Migration encoding failed for '\(name)' — staying at V1",
+        "Profile migration encoding failed — staying at V1",
         category: .app
       )
       return

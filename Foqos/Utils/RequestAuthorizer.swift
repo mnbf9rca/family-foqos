@@ -29,7 +29,7 @@ class RequestAuthorizer: ObservableObject {
         let approved = Self.isApproved(newStatus)
         if self.authorizationStatus != newStatus {
           Log.info(
-            "AuthorizationCenter status changed: \(self.authorizationStatus) → \(newStatus)",
+            "AuthorizationCenter status changed: \(self.authorizationStatus.rawValue) → \(newStatus.rawValue)",
             category: .authorization)
         }
         self.authorizationStatus = newStatus
@@ -62,7 +62,7 @@ class RequestAuthorizer: ObservableObject {
 
     do {
       try await authorizationCenter.requestAuthorization(for: member)
-      Log.info("Authorization successful for mode: \(mode)", category: .authorization)
+      Log.info("Authorization successful for mode: \(mode.rawValue)", category: .authorization)
       self.isAuthorized = true
       self.authorizationError = nil
       return true

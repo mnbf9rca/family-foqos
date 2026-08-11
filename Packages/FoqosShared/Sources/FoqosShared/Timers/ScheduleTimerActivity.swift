@@ -144,7 +144,7 @@ public class ScheduleTimerActivity: TimerActivity {
     )
     guard case .allowed = decision else {
       Log.info(
-        "Stop schedule timer activity for \(profileId) refused by policy: \(decision)",
+        "Stop schedule timer activity for \(profileId) refused by policy",
         category: .timer
       )
       return

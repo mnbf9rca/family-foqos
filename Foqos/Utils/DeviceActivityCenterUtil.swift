@@ -68,7 +68,7 @@ class DeviceActivityCenterUtil {
       // Remove any existing schedule and create a new one
       stopActivities(for: [deviceActivityName], with: center)
       try center.startMonitoring(deviceActivityName, during: deviceActivitySchedule)
-      Log.info("Scheduled restrictions from \(intervalStart) to \(intervalEnd) daily", category: .timer)
+      Log.info("Scheduled daily restrictions", category: .timer)
 
       // Schedule pre-activation reminder if enabled
       if hasV2StartSchedule, let startSchedule = profile.startSchedule {
@@ -241,7 +241,7 @@ class DeviceActivityCenterUtil {
       // Remove any existing schedule and create a new one
       stopActivities(for: [deviceActivityName], with: center)
       try center.startMonitoring(deviceActivityName, during: deviceActivitySchedule)
-      Log.info("Scheduled break timer activity from \(intervalStart) to \(intervalEnd) daily", category: .timer)
+      Log.info("Scheduled break timer activity", category: .timer)
     } catch {
       Log.info("Failed to start break timer activity: \(error.localizedDescription)", category: .timer)
     }
@@ -274,7 +274,7 @@ class DeviceActivityCenterUtil {
       // Remove any existing activity and create a new one
       stopActivities(for: [deviceActivityName], with: center)
       try center.startMonitoring(deviceActivityName, during: deviceActivitySchedule)
-      Log.info("Scheduled strategy timer activity from \(intervalStart) to \(intervalEnd) daily", category: .timer)
+      Log.info("Scheduled strategy timer activity", category: .timer)
     } catch {
       Log.info("Failed to start strategy timer activity: \(error.localizedDescription)", category: .timer)
     }
@@ -341,10 +341,7 @@ class DeviceActivityCenterUtil {
 
     stopActivities(for: [deviceActivityName], with: center)
     try center.startMonitoring(deviceActivityName, during: deviceActivitySchedule)
-    Log.info(
-      "Scheduled one more minute activity from \(intervalStart) to \(intervalEnd)",
-      category: .timer
-    )
+    Log.info("Scheduled one more minute activity", category: .timer)
   }
 
   static func removeOneMoreMinuteActivity(for profile: BlockedProfiles) {

@@ -28,6 +28,7 @@ module LogPrivacy
     :interpolations,
     keyword_init: true
   )
+  Declaration = Struct.new(:name, :type, :origin, keyword_init: true)
 
   class AnalysisError < StandardError
     attr_reader :path, :line
@@ -42,7 +43,7 @@ module LogPrivacy
   class SwiftLexer
     LEXICAL_TOKEN = %r{//|/\*|\#*"""|\#*"}
 
-    attr_reader :path, :source
+    attr_reader :mask, :path, :source
 
     def initialize(path, source)
       @path = path
@@ -358,13 +359,39 @@ module LogPrivacy
       /\.localizedDescription\b/,
       /(?:^|\.)role(?:\.|$)/,
       /\.count\b/,
-      /\b(?:recordName|zoneName|recordID|zoneID|uuid|UUID|timestamp|startTime|endTime|date|duration|errno)\b/i,
+      /
+        \b(?:
+          recordName|zoneName|recordID|zoneID|uuid|UUID|uuidString|sequenceNumber|timestamp|
+          startTime|endTime|date|duration|errno
+        )\b
+      /ix,
       /\b(?:code|status|rawValue)\b/
     ].freeze
-    SUSPICIOUS_LOCAL = /
-      (?:displayInfo|displayName|nameComponents|email|phone|coordinate|latitude|longitude|url|
-      tagIdentifier|nfc\w*(?:id|identifier)|qr(?:code|value|id|identifier)|scannedCode)
-    /ix
+    SENSITIVE_TYPE_RULES = [
+      [
+        /(?:^|\W)(?:any\s+)?Error\b|NSError\b/,
+        'whole Error interpolation is prohibited; use redactedErrorForLog(error)'
+      ],
+      [
+        /\b(?:FamilyMember|CKShare\.Participant|CKUserIdentity)\b/,
+        'whole object interpolation may expose participant data'
+      ],
+      [/\b(?:URL|NSURL)\b/, 'raw URL interpolation is prohibited; use redactedURLString'],
+      [
+        /\b(?:CLLocationCoordinate2D|CLLocation)\b/,
+        'raw coordinate interpolation is prohibited'
+      ]
+    ].freeze
+    SENSITIVE_CONTEXT_RULES = [
+      [/\b(?:nfc|tag)\b/i, 'replayable NFC identifier interpolation is prohibited'],
+      [/\bqr\b|\bscann(?:ed|ing)?\s+code\b/i, 'replayable QR identifier interpolation is prohibited']
+    ].freeze
+    SAFE_SCALAR_TYPE = /
+      \A(?:
+        Bool|Int(?:8|16|32|64)?|UInt(?:8|16|32|64)?|Double|Float|CGFloat|
+        TimeInterval|Date|UUID|CKRecord\.RecordType
+      )\??\z
+    /x
 
     attr_reader :root
 
@@ -568,8 +595,8 @@ module LogPrivacy
         message = violation_message(expression)
         if message
           Finding.new(path: call.path, line: interpolation.line, message: message)
-        elsif simple_identifier?(expression) && suspicious_local?(expression)
-          analyze_local(expression, call, interpolation, lexer)
+        elsif (identifier = semantic_identifier(expression))
+          analyze_semantic_origin(identifier, call, interpolation, lexer)
         end
       end
     end
@@ -610,8 +637,8 @@ module LogPrivacy
     end
 
     def sensitive_display_name?(expression)
-      expression.match?(/\b(?:member|participant|person|userIdentity)\b.*\.displayName\b/i) &&
-        !expression.match?(/\.role\.displayName\b/)
+      expression.match?(/\.displayName\b/) &&
+        !expression.match?(/\.(?:role|mode|ruleType)\.displayName\b/)
     end
 
     def participant_contact?(expression)
@@ -622,37 +649,29 @@ module LogPrivacy
       expression.match?(/\A[A-Za-z_][A-Za-z0-9_]*\z/)
     end
 
-    def suspicious_local?(expression)
-      SUSPICIOUS_LOCAL.match?(expression)
+    def semantic_identifier(expression)
+      return expression if simple_identifier?(expression)
+
+      match = expression.match(
+        /\AString\s*\(\s*describing:\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)\z/
+      )
+      match&.[](1)
     end
 
-    def analyze_local(identifier, call, interpolation, lexer)
+    def analyze_semantic_origin(identifier, call, interpolation, lexer)
       return if lexer.annotated?(call)
 
-      source_before_call = lexer.source[0...lexer.source.index(call.source)]
-      function_start = source_before_call.rindex(/\b(?:func|init)\b/) || 0
-      scope = source_before_call[function_start..]
-      assignment = scope.to_enum(:scan, /\b(?:let|var)\s+#{Regexp.escape(identifier)}(?:\s*:[^=\n]+)?\s*=/).map do
-        Regexp.last_match
-      end.last
-      unless assignment
-        raise AnalysisError.new(
-          "cannot resolve suspicious origin for #{identifier}; add an adjacent " \
-          '// LOG-PRIVACY-SAFE: reason only after audit',
-          path: call.path,
-          line: interpolation.line
-        )
-      end
-
-      origin = scope[assignment.end(0)..]
-      if violation_message(origin) || participant_contact?(origin) || sensitive_display_name?(origin)
+      declarations = declarations_before(call, lexer)
+      context = message_context(call)
+      classification, message = classify_identifier(identifier, declarations, context)
+      if classification == :sensitive
         return Finding.new(
           path: call.path,
           line: interpolation.line,
-          message: "sensitive local origin for #{identifier}"
+          message: message
         )
       end
-      return if safe_expression?(origin)
+      return if classification == :safe
 
       raise AnalysisError.new(
         "cannot resolve suspicious origin for #{identifier}; add an adjacent " \
@@ -660,6 +679,160 @@ module LogPrivacy
         path: call.path,
         line: interpolation.line
       )
+    end
+
+    def declarations_before(call, lexer)
+      source_before_call = lexer.source[0...call.message_offset]
+      mask_before_call = lexer.mask[0...call.message_offset]
+      function_start = source_before_call.rindex(/\b(?:func|init)\b/) || 0
+      source_scope = source_before_call[function_start..]
+      mask_scope = mask_before_call[function_start..]
+      declarations = parameter_declarations(source_scope, mask_scope)
+
+      assignment_pattern =
+        /^[ \t]*(?:(?:guard|if)\s+)?(?:case\s+)?(?:let|var)\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s*:\s*([^=\n]+))?\s*=/
+      mask_scope.to_enum(:scan, assignment_pattern).each do
+        assignment = Regexp.last_match
+        origin = assignment_origin(source_scope, mask_scope, assignment)
+        declarations[assignment[1]] = Declaration.new(
+          name: assignment[1],
+          type: assignment[2]&.strip,
+          origin: origin
+        )
+      end
+      declarations
+    end
+
+    def parameter_declarations(source_scope, mask_scope)
+      brace_index = mask_scope.index('{')
+      return {} unless brace_index
+
+      signature = source_scope[0...brace_index]
+      declarations = {}
+      signature.to_enum(
+        :scan,
+        /(?:\A|[,(])\s*(?:(?:_|[A-Za-z_][A-Za-z0-9_]*)\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([^,)=]+)/
+      ).each do
+        parameter = Regexp.last_match
+        declarations[parameter[1]] = Declaration.new(
+          name: parameter[1],
+          type: parameter[2].strip,
+          origin: nil
+        )
+      end
+      declarations
+    end
+
+    def assignment_origin(source_scope, mask_scope, assignment)
+      control_binding = assignment[0].lstrip.start_with?('if ', 'guard ')
+      origin_end = assignment_origin_end(
+        mask_scope,
+        assignment.end(0),
+        control_binding: control_binding
+      )
+      source_scope[assignment.end(0)...origin_end].strip
+    end
+
+    def assignment_origin_end(mask_scope, origin_start, control_binding:)
+      index = origin_start
+      depth = 0
+      has_code = false
+      while index < mask_scope.length
+        character = mask_scope[index]
+        case character
+        when '(', '[' then depth += 1
+        when '{'
+          return index if control_binding && depth.zero?
+
+          depth += 1
+        when ')', ']', '}' then depth -= 1 if depth.positive?
+        when ';' then return index if depth.zero?
+        when "\n"
+          return index if has_code && depth.zero? && !assignment_continues?(mask_scope, origin_start, index)
+        end
+        has_code ||= !character.match?(/\s/)
+        index += 1
+      end
+      index
+    end
+
+    def assignment_continues?(mask_scope, origin_start, newline_index)
+      previous_line = mask_scope[origin_start...newline_index].rstrip.lines.last.to_s
+      next_content = mask_scope.index(/\S/, newline_index + 1)
+      return false unless next_content
+
+      next_line_end = mask_scope.index("\n", next_content) || mask_scope.length
+      next_line = mask_scope[next_content...next_line_end].lstrip
+      previous_line.match?(%r{(?:\?\?|&&|\|\||->|[=,+\-*/%&|?:.])\z}) ||
+        next_line.match?(%r{\A(?:\?\?|&&|\|\||[.,+\-*/%&|?:])})
+    end
+
+    def classify_identifier(identifier, declarations, context, visiting = Set.new)
+      declaration = declarations[identifier]
+      return [:ambiguous, nil] unless declaration
+      return [:ambiguous, nil] if visiting.include?(identifier)
+      if (context_result = context_classification(context))
+        return context_result
+      end
+
+      if (message = sensitive_type_message(declaration.type))
+        return [:sensitive, message]
+      end
+
+      return safe_scalar_classification(declaration.type) if declaration.origin.nil?
+
+      origin = declaration.origin
+      if violation_message(origin) || participant_contact?(origin) || sensitive_display_name?(origin)
+        return [:sensitive, "sensitive local origin for #{identifier}"]
+      end
+      return [:safe, nil] if safe_expression?(origin)
+
+      dependencies = origin.scan(/\b[A-Za-z_][A-Za-z0-9_]*\b/).uniq & declarations.keys
+      next_visiting = visiting.dup.add(identifier)
+      dependency_results = dependencies.map do |dependency|
+        classify_identifier(dependency, declarations, context, next_visiting)
+      end
+      if dependency_results.any? { |classification, _| classification == :sensitive }
+        return [:sensitive, "sensitive local origin for #{identifier}"]
+      end
+      return [:ambiguous, nil] if dependency_results.any? { |classification, _| classification == :ambiguous }
+      return [:safe, nil] unless dependencies.empty?
+
+      literal_origin_classification(origin) || safe_scalar_classification(declaration.type)
+    end
+
+    def sensitive_type_message(type)
+      return unless type
+
+      SENSITIVE_TYPE_RULES.each do |pattern, message|
+        return message if pattern.match?(type)
+      end
+      nil
+    end
+
+    def context_classification(context)
+      SENSITIVE_CONTEXT_RULES.each do |pattern, message|
+        return [:sensitive, message] if pattern.match?(context)
+      end
+      nil
+    end
+
+    def safe_scalar_classification(type)
+      return [:safe, nil] if type&.match?(SAFE_SCALAR_TYPE)
+
+      [:ambiguous, nil]
+    end
+
+    def literal_origin_classification(origin)
+      return [:safe, nil] if origin.match?(/\A(?:true|false|nil|-?\d+(?:\.\d+)?|"(?:[^"\\]|\\.)*")\z/m)
+
+      nil
+    end
+
+    def message_context(call)
+      context = call.message_source.dup
+      call.interpolations.each { |interpolation| context.sub!(interpolation.expression, '') }
+      context
     end
 
     def emit(items, totals, status)

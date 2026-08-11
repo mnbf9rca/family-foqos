@@ -95,7 +95,8 @@ extension CloudKitNetworkService {
         share.removeParticipant(participant)
         try await privateDatabase.save(share)
         self.activeZoneShare = share
-        Log.info("Revoked share access for \(userRecordName)", category: .cloudKit)
+        let participantId = ShareParticipantLog.label(userRecordName: userRecordName)
+        Log.info("Revoked share access for \(participantId)", category: .cloudKit)
         // NOTE: Manager handles refreshShareParticipants() after this call
       } else {
         Log.debug("Participant not found in share", category: .cloudKit)

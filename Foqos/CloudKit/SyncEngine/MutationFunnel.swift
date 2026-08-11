@@ -221,7 +221,7 @@ final class MutationFunnel {
         try enqueueSave(profileId: profileId)
       } catch {
         Log.warning(
-          "Location-delete profile repair re-push failed for \(profileId): "
+          "Location-delete profile repair re-push failed for \(profileId.uuidString): "
             + error.localizedDescription,
           category: .sync)
       }

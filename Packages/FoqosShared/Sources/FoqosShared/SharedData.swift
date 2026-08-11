@@ -565,13 +565,11 @@ public enum SharedData {
   }
 
   private static func activeSharedSessionMatchesExpected(
-    _ expectedSessionId: String, operation: String
+    _ expectedSessionId: String, operation _: String
   ) -> Bool {
     guard activeSharedSession?.id == expectedSessionId else {
-      let activeSessionId = activeSharedSession?.id ?? "nil"
       Log.debug(
-        "SharedData \(operation) skipped: expected session \(expectedSessionId), "
-          + "active session \(activeSessionId)",
+        "SharedData session operation skipped: active session did not match expectation",
         category: .session
       )
       return false

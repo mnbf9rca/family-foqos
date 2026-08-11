@@ -73,8 +73,9 @@ CASES = [
     fixture: 'fail/nfc_identifier.swift',
     status: 1,
     diagnostic: 'replayable NFC',
-    site_floor: 1,
-    annotation_count: 0
+    site_floor: 2,
+    annotation_count: 0,
+    diagnostic_count: 2
   ),
   Case.new(
     name: 'replayable QR identifier',
@@ -266,8 +267,9 @@ CASES = [
     fixture: 'fail/renamed/nfc_identifier.swift',
     status: 1,
     diagnostic: 'replayable NFC',
-    site_floor: 1,
-    annotation_count: 0
+    site_floor: 2,
+    annotation_count: 0,
+    diagnostic_count: 2
   ),
   Case.new(
     name: 'renamed replayable QR identifier',

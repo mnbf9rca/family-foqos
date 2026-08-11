@@ -178,7 +178,7 @@ extension CloudKitNetworkService {
         guard !recordIDs.isEmpty else { continue }
         _ = try await privateDatabase.modifyRecords(saving: [], deleting: recordIDs)
         Log.info(
-          "Deleted \(recordIDs.count) \(recordType) records from FamilyPolicies",
+          "Deleted \(recordIDs.count) records from FamilyPolicies",
           category: .cloudKit)
       } catch {
         if let ckError = error as? CKError, ckError.code == .zoneNotFound {
@@ -188,7 +188,7 @@ extension CloudKitNetworkService {
           return
         } else {
           Log.error(
-            "Failed to delete \(recordType) records from FamilyPolicies: \(redactedErrorForLog(error))",
+            "Failed to delete records from FamilyPolicies: \(redactedErrorForLog(error))",
             category: .cloudKit)
         }
       }

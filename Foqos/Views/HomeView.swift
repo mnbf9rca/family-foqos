@@ -276,7 +276,7 @@ struct HomeView: View {
       }
     }
     .onChange(of: requestAuthorizer.isAuthorized) { _, newValue in
-      Log.debug("isAuthorized changed to \(newValue)", category: .authorization)
+      Log.debug("isAuthorized changed", category: .authorization)
       if newValue {
         showIntroScreen = false
         hasCompletedOnboarding = true
@@ -662,9 +662,7 @@ struct HomeView: View {
     }
 
     // Safety net: if onboarding was never completed and both screens are dismissed, reset
-    Log.debug(
-      "onAppearApp safety net check: hasCompletedOnboarding=\(hasCompletedOnboarding), showIntroScreen=\(showIntroScreen), showModeSelection=\(showModeSelection)",
-      category: .authorization)
+    Log.debug("onAppearApp safety net check", category: .authorization)
     if !hasCompletedOnboarding && !showIntroScreen && !showModeSelection {
       Log.warning(
         "Safety net triggered: onboarding incomplete but both screens dismissed, resetting",
