@@ -611,7 +611,6 @@ policy_requirements=(
   "-disable-concurrent-destination-testing"
   "scripts/fastlane.sh screenshots"
   "scripts/clean-build.sh"
-  "bundle exec xcpretty"
   "Read-only work does not consume a gate slot"
   "Archive and upload lanes do not boot simulators"
 )

@@ -58,13 +58,10 @@ Always place `xcodebuild` directly after the wrapper's `--`; never mediate it th
 `env`, `bundle`, or a shell command.
 
 ```bash
-# Preserve xcodebuild's status when formatting output.
-set -o pipefail
-
-# Build from command line
-scripts/xcode-stream.sh --agent <agent> --session <session> -- \
+# Build from command line with wrapper-owned output formatting.
+scripts/xcode-stream.sh --agent <agent> --session <session> --xcpretty -- \
   xcodebuild -project FamilyFoqos.xcodeproj -scheme FamilyFoqos \
-  -configuration Debug build 2>&1 | bundle exec xcpretty
+  -configuration Debug build
 
 # Clean only this owner's gate-assigned DerivedData.
 scripts/xcode-stream.sh --agent <agent> --session <session> -- scripts/clean-build.sh
@@ -395,11 +392,11 @@ The wrong pattern blocks both Individual AND Child modes. Only Child mode should
 
 ## Build Output
 
-When formatting a gated xcodebuild, enable `pipefail` so the command retains xcodebuild's status:
+When formatting a gated xcodebuild, use the wrapper-owned option. This retains the exact child
+status without depending on caller shell options:
 
 ```bash
-set -o pipefail
-scripts/xcode-stream.sh --agent <agent> --session <session> -- \
+scripts/xcode-stream.sh --agent <agent> --session <session> --xcpretty -- \
   xcodebuild -project FamilyFoqos.xcodeproj -scheme FamilyFoqos \
-  -configuration Debug build 2>&1 | bundle exec xcpretty
+  -configuration Debug build
 ```
