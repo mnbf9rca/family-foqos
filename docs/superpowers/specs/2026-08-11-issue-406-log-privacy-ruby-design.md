@@ -22,8 +22,10 @@ The failure is reproducible and bounded:
 
 System Ruby is the runtime contract for the build guard.
 
-- The Xcode build phase invokes `/usr/bin/ruby` directly. It performs no interpreter lookup and
-  does not depend on GUI or shell `PATH` configuration.
+- The Xcode build phase first checks `[ -x /usr/bin/ruby ]` and emits the named dependency error
+  `Log Privacy Lint requires macOS system Ruby at /usr/bin/ruby` if it is unavailable, then invokes
+  `/usr/bin/ruby` directly. It performs no interpreter lookup and does not depend on GUI or shell
+  `PATH` configuration.
 - The fixture harness invokes every analyzer subprocess with `/usr/bin/ruby`, matching the runtime
   shipped by the build phase even when the harness itself runs under another Ruby.
 - Both analyzer and fixture harness explicitly load `pathname`; the analyzer also explicitly loads
