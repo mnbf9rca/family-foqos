@@ -46,6 +46,15 @@ final class DeviceActivityClassifierTests: XCTestCase {
     XCTAssertFalse(classification.matches(profileId: profileId))
   }
 
+  func testGivenKnownPrefixWithInvalidUUID_WhenClassifying_ThenReturnsUnknown() {
+    let activity = DeviceActivityName(rawValue: "\(BreakTimerActivity.id):not-a-uuid")
+
+    let classification = DeviceActivityClassifier.classify(activity)
+
+    XCTAssertEqual(classification.type, "Unknown")
+    XCTAssertNil(classification.profileId)
+  }
+
   func testGivenDifferentProfile_WhenMatching_ThenReturnsFalse() {
     let activity = DeviceActivityName(
       rawValue: "\(StrategyTimerActivity.id):\(profileId.uuidString)")
