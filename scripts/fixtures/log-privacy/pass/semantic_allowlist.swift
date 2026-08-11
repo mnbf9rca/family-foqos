@@ -6,7 +6,7 @@ func report(recordName: String, zoneName: String, id: UUID, timestamp: Date) {
     category: .cloudKit
   )
   Log.info(
-    "tag=\(DebugRedaction.physicalUnblockNFCTagIdForLog(\"ABCDEF12\")) "
+    "tag=\(DebugRedaction.physicalUnblockNFCTagIdForLog("ABCDEF12")) "
       + "url=\(redactedURLString)",
     category: .nfc
   )
