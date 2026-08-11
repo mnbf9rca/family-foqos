@@ -680,4 +680,5 @@ struct ChildSettingsView: View {
 
 #Preview {
   ChildDashboardView()
+    .modelContainer(for: BlockedProfiles.self, inMemory: true)
 }

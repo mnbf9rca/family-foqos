@@ -1,4 +1,5 @@
 import FamilyControls
+import SwiftData
 import SwiftUI
 
 struct BlockedProfileCarousel: View {
@@ -265,62 +266,34 @@ struct BlockedProfileCarousel: View {
 
 }
 
-// Active preview
-#Preview {
-  let activeId = UUID()
+#if DEBUG
+  @MainActor
+  struct BlockedProfileCarouselPreview: View {
+    enum Scenario: CaseIterable {
+      case active
+      case inactive
+      case startingProfile
+    }
 
-  ZStack {
-    Color(.systemGroupedBackground).ignoresSafeArea()
+    let container: ModelContainer
+    let profiles: [BlockedProfiles]
+    let scenario: Scenario
 
-    BlockedProfileCarousel(
-      profiles: [
-        BlockedProfiles(
-          id: activeId,
-          name: "Work",
-          selectedActivity: FamilyActivitySelection(),
-          blockingStrategyId: NFCBlockingStrategy.id,
-          enableLiveActivity: true,
-          reminderTimeInSeconds: 3600
-        ),
-        BlockedProfiles(
-          id: UUID(),
-          name: "Gaming",
-          selectedActivity: FamilyActivitySelection(),
-          blockingStrategyId: QRCodeBlockingStrategy.id,
-          enableLiveActivity: false,
-          reminderTimeInSeconds: nil
-        ),
-        BlockedProfiles(
-          id: UUID(),
-          name: "Social Media",
-          selectedActivity: FamilyActivitySelection(),
-          blockingStrategyId: ManualBlockingStrategy.id,
-          enableLiveActivity: true,
-          reminderTimeInSeconds: 1800
-        ),
-      ],
-      isBlocking: true,
-      isBreakAvailable: true,
-      isBreakActive: false,
-      activeSessionProfileId: activeId,
-      elapsedTime: 1234,
-      onStartTapped: { _ in },
-      onStopTapped: { _ in },
-      onEditTapped: { _ in },
-      onStatsTapped: { _ in },
-      onBreakTapped: { _ in },
-      onManageTapped: {},
-      onEmergencyTapped: {}
-    )
-  }
-}
+    init(scenario: Scenario) {
+      let schema = Schema([BlockedProfiles.self])
+      let configuration = ModelConfiguration(
+        schema: schema,
+        isStoredInMemoryOnly: true,
+        cloudKitDatabase: .none
+      )
 
-#Preview {
-  ZStack {
-    Color(.systemGroupedBackground).ignoresSafeArea()
+      do {
+        container = try ModelContainer(for: schema, configurations: [configuration])
+      } catch {
+        fatalError("Failed to create carousel preview container: \(error)")
+      }
 
-    BlockedProfileCarousel(
-      profiles: [
+      profiles = [
         BlockedProfiles(
           id: UUID(),
           name: "Work",
@@ -345,70 +318,47 @@ struct BlockedProfileCarousel: View {
           enableLiveActivity: true,
           reminderTimeInSeconds: 1800
         ),
-      ],
-      isBlocking: false,
-      isBreakAvailable: false,
-      isBreakActive: false,
-      activeSessionProfileId: nil,
-      elapsedTime: 1234,
-      onStartTapped: { _ in },
-      onStopTapped: { _ in },
-      onEditTapped: { _ in },
-      onStatsTapped: { _ in },
-      onBreakTapped: { _ in },
-      onManageTapped: {},
-      onEmergencyTapped: {}
-    )
+      ]
+      self.scenario = scenario
+
+      for profile in profiles {
+        container.mainContext.insert(profile)
+      }
+    }
+
+    var body: some View {
+      ZStack {
+        Color(.systemGroupedBackground).ignoresSafeArea()
+
+        BlockedProfileCarousel(
+          profiles: profiles,
+          isBlocking: scenario == .active,
+          isBreakAvailable: scenario == .active,
+          isBreakActive: false,
+          activeSessionProfileId: scenario == .active ? profiles.first?.id : nil,
+          elapsedTime: 1234,
+          startingProfileId: scenario == .startingProfile ? profiles[safe: 1]?.id : nil,
+          onStartTapped: { _ in },
+          onStopTapped: { _ in },
+          onEditTapped: { _ in },
+          onStatsTapped: { _ in },
+          onBreakTapped: { _ in },
+          onManageTapped: {},
+          onEmergencyTapped: {}
+        )
+      }
+      .modelContainer(container)
+    }
   }
-}
-
-// Preview with startingProfileId set to "Gaming" (second profile)
-#Preview("Starting Profile - Gaming") {
-  let gamingProfileId = UUID()
-
-  ZStack {
-    Color(.systemGroupedBackground).ignoresSafeArea()
-
-    BlockedProfileCarousel(
-      profiles: [
-        BlockedProfiles(
-          id: UUID(),
-          name: "Work",
-          selectedActivity: FamilyActivitySelection(),
-          blockingStrategyId: NFCBlockingStrategy.id,
-          enableLiveActivity: true,
-          reminderTimeInSeconds: 3600
-        ),
-        BlockedProfiles(
-          id: gamingProfileId,
-          name: "Gaming",
-          selectedActivity: FamilyActivitySelection(),
-          blockingStrategyId: QRCodeBlockingStrategy.id,
-          enableLiveActivity: false,
-          reminderTimeInSeconds: nil
-        ),
-        BlockedProfiles(
-          id: UUID(),
-          name: "Social Media",
-          selectedActivity: FamilyActivitySelection(),
-          blockingStrategyId: ManualBlockingStrategy.id,
-          enableLiveActivity: true,
-          reminderTimeInSeconds: 1800
-        ),
-      ],
-      isBlocking: false,
-      isBreakAvailable: false,
-      isBreakActive: false,
-      activeSessionProfileId: nil,
-      elapsedTime: 1234,
-      startingProfileId: gamingProfileId,
-      onStartTapped: { _ in },
-      onStopTapped: { _ in },
-      onEditTapped: { _ in },
-      onStatsTapped: { _ in },
-      onBreakTapped: { _ in },
-      onManageTapped: {},
-      onEmergencyTapped: {}
-    )
+  #Preview("Active") {
+    BlockedProfileCarouselPreview(scenario: .active)
   }
-}
+
+  #Preview("Inactive") {
+    BlockedProfileCarouselPreview(scenario: .inactive)
+  }
+
+  #Preview("Starting Profile - Gaming") {
+    BlockedProfileCarouselPreview(scenario: .startingProfile)
+  }
+#endif

@@ -3,6 +3,16 @@ import XCTest
 @testable import FamilyFoqos
 
 final class BlockedProfileCarouselTests: XCTestCase {
+  @MainActor
+  func testGivenCarouselPreviewScenarios_WhenConstructed_ThenAllProfilesAreRegistered() {
+    for scenario in BlockedProfileCarouselPreview.Scenario.allCases {
+      let preview = BlockedProfileCarouselPreview(scenario: scenario)
+
+      XCTAssertEqual(preview.profiles.count, 3)
+      XCTAssertTrue(preview.profiles.allSatisfy(\.isPersistentModelValid))
+    }
+  }
+
   func testGivenCurrentPageStillPresent_WhenProfilesChange_ThenCurrentPageKept() {
     let currentId = UUID()
     let nextId = UUID()
