@@ -14,10 +14,32 @@ enum DeviceActivityClassifier {
   static func classify(_ activity: DeviceActivityName) -> Classification {
     let rawValue = activity.rawValue
 
+    // Keep these cases aligned with TimerActivityUtil's runtime dispatch switch.
+    if let result = classifyPrefixed(
+      rawValue,
+      activityId: BreakDeadlineBackstopActivity.id,
+      type: "Break Deadline Backstop"
+    ) {
+      return result
+    }
     if let result = classifyPrefixed(
       rawValue,
       activityId: BreakTimerActivity.id,
       type: "Break Timer"
+    ) {
+      return result
+    }
+    if let result = classifyPrefixed(
+      rawValue,
+      activityId: OneMoreMinuteDeadlineBackstopActivity.id,
+      type: "One More Minute Deadline Backstop"
+    ) {
+      return result
+    }
+    if let result = classifyPrefixed(
+      rawValue,
+      activityId: OneMoreMinuteTimerActivity.id,
+      type: "One More Minute Timer"
     ) {
       return result
     }
@@ -30,20 +52,13 @@ enum DeviceActivityClassifier {
     }
     if let result = classifyPrefixed(
       rawValue,
-      activityId: ScheduleTimerActivity.id,
-      type: "Schedule Timer"
-    ) {
-      return result
-    }
-    if let result = classifyPrefixed(
-      rawValue,
       activityId: StrategyTimerActivity.id,
       type: "Strategy Timer"
     ) {
       return result
     }
     if let profileId = UUID(uuidString: rawValue) {
-      return Classification(type: "Schedule Timer (Legacy)", profileId: profileId)
+      return Classification(type: "Schedule Timer", profileId: profileId)
     }
     return Classification(type: "Unknown", profileId: nil)
   }
@@ -56,7 +71,6 @@ enum DeviceActivityClassifier {
     let prefix = "\(activityId):"
     guard rawValue.hasPrefix(prefix) else { return nil }
     let rawProfileId = String(rawValue.dropFirst(prefix.count))
-    guard let profileId = UUID(uuidString: rawProfileId) else { return nil }
-    return Classification(type: type, profileId: profileId)
+    return Classification(type: type, profileId: UUID(uuidString: rawProfileId))
   }
 }
