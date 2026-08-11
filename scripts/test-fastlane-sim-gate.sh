@@ -90,7 +90,8 @@ RUBY
 
 REPO_ROOT="$REPO_ROOT" ruby "$TEST_ROOT/test.rb"
 
-if rg -n 'XCTEST_DEVICES_DIR|created\.each|simctl.*--set|Clone \\d' "$REPO_ROOT/fastlane/Fastfile"; then
+if grep -nE 'XCTEST_DEVICES_DIR|created\.each|simctl.*--set|Clone [[:digit:]]' \
+  "$REPO_ROOT/fastlane/Fastfile"; then
   echo "FAIL: Fastfile still contains run-created XCTestDevices cleanup" >&2
   exit 1
 fi

@@ -618,7 +618,7 @@ for requirement in "${policy_requirements[@]}"; do
   assert_contains "$POLICY_FILE" "$requirement"
 done
 assert_not_contains "$POLICY_FILE" "NO parallel development on the same machine"
-if rg -n '^xcodebuild ' "$POLICY_FILE" >/dev/null; then
+if grep -nE '^xcodebuild ' "$POLICY_FILE" >/dev/null; then
   fail "AGENTS.md still documents a raw xcodebuild entrypoint"
 fi
 
