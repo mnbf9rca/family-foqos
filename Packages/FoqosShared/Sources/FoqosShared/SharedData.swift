@@ -1,6 +1,5 @@
 import FamilyControls
 import Foundation
-import os
 
 // MARK: – Break-duration calculation shared by SessionSnapshot, ContentState, and BlockedProfileSession
 
@@ -62,9 +61,6 @@ public enum SharedData {
     return containerURL?.appendingPathComponent(".shared-data.lock").path
   }
 
-  private static let lockLog = Logger(
-    subsystem: "com.cynexia.family-foqos", category: "SharedData"
-  )
   private static let nonblockingLockRetryCount = 50
   private static let nonblockingLockRetrySleepMicroseconds: useconds_t = 10_000
 
@@ -79,12 +75,13 @@ public enum SharedData {
   /// never call a withLock-wrapped method from inside another withLock closure.
   public static func withLock<T>(_ body: () -> T) -> T {
     guard let lockPath else {
-      lockLog.warning("SharedData: no lockPath (test mode?) — proceeding unlocked")
+      Log.warning("SharedData: no lockPath (test mode?) — proceeding unlocked", category: .app)
       return body()
     }
     let fd = open(lockPath, O_CREAT | O_RDWR, 0o644)
     guard fd >= 0 else {
-      lockLog.warning("SharedData: open() failed, errno \(errno) — proceeding unlocked")
+      Log.warning(
+        "SharedData: open() failed, errno \(errno) — proceeding unlocked", category: .app)
       return body()
     }
     defer { close(fd) }
@@ -93,7 +90,8 @@ public enum SharedData {
       ret = flock(fd, LOCK_EX)
     } while ret == -1 && errno == EINTR
     guard ret == 0 else {
-      lockLog.warning("SharedData: flock() failed, errno \(errno) — proceeding unlocked")
+      Log.warning(
+        "SharedData: flock() failed, errno \(errno) — proceeding unlocked", category: .app)
       return body()
     }
     defer { flock(fd, LOCK_UN) }
@@ -110,12 +108,13 @@ public enum SharedData {
   /// bounded retry so extension wakes do not wedge behind a suspended lock holder.
   public static func withLockStatus<T>(blocking: Bool, _ body: (LockOutcome) -> T) -> T {
     guard let lockPath else {
-      lockLog.warning("SharedData: no lockPath (test mode?) — proceeding unlocked")
+      Log.warning("SharedData: no lockPath (test mode?) — proceeding unlocked", category: .app)
       return body(.degraded)
     }
     let fd = open(lockPath, O_CREAT | O_RDWR, 0o644)
     guard fd >= 0 else {
-      lockLog.warning("SharedData: open() failed, errno \(errno) — proceeding unlocked")
+      Log.warning(
+        "SharedData: open() failed, errno \(errno) — proceeding unlocked", category: .app)
       return body(.degraded)
     }
     defer { close(fd) }
@@ -126,7 +125,9 @@ public enum SharedData {
         ret = flock(fd, LOCK_EX)
       } while ret != 0 && errno == EINTR
       guard ret == 0 else {
-        lockLog.warning("SharedData: flock(LOCK_EX) failed, errno \(errno) — proceeding unlocked")
+        Log.warning(
+          "SharedData: flock(LOCK_EX) failed, errno \(errno) — proceeding unlocked",
+          category: .app)
         return body(.degraded)
       }
     } else {
@@ -141,7 +142,7 @@ public enum SharedData {
         usleep(nonblockingLockRetrySleepMicroseconds)
       }
       guard acquired else {
-        lockLog.warning("SharedData: LOCK_NB timed out — proceeding unlocked")
+        Log.warning("SharedData: LOCK_NB timed out — proceeding unlocked", category: .app)
         return body(.degraded)
       }
     }
@@ -564,13 +565,11 @@ public enum SharedData {
   }
 
   private static func activeSharedSessionMatchesExpected(
-    _ expectedSessionId: String, operation: String
+    _ expectedSessionId: String, operation _: String
   ) -> Bool {
     guard activeSharedSession?.id == expectedSessionId else {
-      let activeSessionId = activeSharedSession?.id ?? "nil"
       Log.debug(
-        "SharedData \(operation) skipped: expected session \(expectedSessionId), "
-          + "active session \(activeSessionId)",
+        "SharedData session operation skipped: active session did not match expectation",
         category: .session
       )
       return false

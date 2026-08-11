@@ -18,11 +18,11 @@ extension CloudKitNetworkService {
         let recordID = try await container.userRecordID()
         return (status: status, userRecordID: recordID, error: nil)
       } catch {
-        Log.error("Failed to fetch user record ID: \(error)", category: .cloudKit)
+        Log.error("Failed to fetch user record ID: \(redactedErrorForLog(error))", category: .cloudKit)
         return (status: status, userRecordID: nil, error: nil)
       }
     } catch {
-      Log.error("Account status detail error: \(error)", category: .cloudKit)
+      Log.error("Account status detail error: \(redactedErrorForLog(error))", category: .cloudKit)
       return (status: .couldNotDetermine, userRecordID: nil, error: error)
     }
   }
@@ -45,7 +45,7 @@ extension CloudKitNetworkService {
             category: .cloudKit)
           return (isSignedIn: true, userRecordID: recordID)
         } catch {
-          Log.error("Failed to fetch user record ID: \(error)", category: .cloudKit)
+          Log.error("Failed to fetch user record ID: \(redactedErrorForLog(error))", category: .cloudKit)
           return (isSignedIn: true, userRecordID: nil)
         }
       }
@@ -55,7 +55,7 @@ extension CloudKitNetworkService {
         category: .cloudKit)
       return (isSignedIn: false, userRecordID: nil)
     } catch {
-      Log.error("Account status error: \(error)", category: .cloudKit)
+      Log.error("Account status error: \(redactedErrorForLog(error))", category: .cloudKit)
       return (isSignedIn: false, userRecordID: nil)
     }
   }

@@ -140,7 +140,7 @@ extension NFCWriter: NFCTagReaderSessionDelegate {
         default:
           // Log the actual error for debugging
           Log.info(
-            "⚠️ NFC Writer error: \(errorCode.rawValue) - \(localizedDescription)", category: .nfc)
+            "⚠️ NFC Writer error code: \(errorCode.rawValue)", category: .nfc)
           self.errorMessage = localizedDescription
         }
       }

@@ -120,7 +120,7 @@ class HeartbeatManager: ObservableObject {
       do {
         try await CloudKitManager.shared.writeHeartbeat(heartbeat)
       } catch {
-        Log.warning("Heartbeat write failed (non-blocking): \(error)", category: .cloudKit)
+        Log.warning("Heartbeat write failed (non-blocking): \(redactedErrorForLog(error))", category: .cloudKit)
       }
     }
   }
@@ -154,7 +154,7 @@ class HeartbeatManager: ObservableObject {
         deviceIdentifier: device.deviceIdentifier
       )
     } catch {
-      Log.warning("Failed to delete heartbeat record: \(error)", category: .cloudKit)
+      Log.warning("Failed to delete heartbeat record: \(redactedErrorForLog(error))", category: .cloudKit)
     }
   }
 
@@ -234,7 +234,7 @@ class HeartbeatManager: ObservableObject {
         self.authRevokedNotificationDeviceIdsInFlight.remove(device.id)
       }
       if let error {
-        Log.warning("Failed to schedule heartbeat notification: \(error)", category: .cloudKit)
+        Log.warning("Failed to schedule heartbeat notification: \(redactedErrorForLog(error))", category: .cloudKit)
         return
       }
 

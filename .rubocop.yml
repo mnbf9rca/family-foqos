@@ -17,4 +17,5 @@ Style/Documentation:
 # Executable Ruby harnesses follow the repository's existing test-script naming convention.
 Naming/FileName:
   Exclude:
+    - scripts/check-log-privacy.rb
     - scripts/test-*.rb

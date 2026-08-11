@@ -138,7 +138,7 @@ struct AppSelectionPrompt: View {
       )
       Log.info("Saved app selection for profile '\(profile.name)'", category: .ui)
     } catch {
-      Log.error("Failed to save app selection: \(error)", category: .ui)
+      Log.error("Failed to save app selection: \(redactedErrorForLog(error))", category: .ui)
     }
   }
 }

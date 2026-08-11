@@ -67,7 +67,7 @@ final class SyncApplyService {
     let recordName = record.recordID.recordName
     if let gated = generationGate(record) {
       Log.debug(
-        "Generation-gated fetched modification \(recordName): \(gated)",
+        "Generation-gated fetched modification \(recordName)",
         category: .sync)
       return gated
     }

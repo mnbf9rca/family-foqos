@@ -54,7 +54,7 @@ actor CloudKitNetworkService {
       let zones = try await sharedDatabase.allRecordZones()
       return zones.first { $0.zoneID.zoneName == policyZoneName }
     } catch {
-      Log.error("Failed to fetch shared zones: \(error)", category: .cloudKit)
+      Log.error("Failed to fetch shared zones: \(redactedErrorForLog(error))", category: .cloudKit)
       return nil
     }
   }

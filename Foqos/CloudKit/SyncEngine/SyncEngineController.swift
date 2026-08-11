@@ -38,7 +38,7 @@ final class SyncEngineController: SyncEngineDriverDelegate {
   private(set) var state: SyncEngineState = .disabled {
     didSet {
       guard state != oldValue else { return }
-      Log.debug("state \(oldValue) -> \(state) (main=\(Thread.isMainThread))", category: .sync)
+      Log.debug("Sync engine state changed (main=\(Thread.isMainThread))", category: .sync)
     }
   }
   private(set) var isSending = false
@@ -374,7 +374,7 @@ final class SyncEngineController: SyncEngineDriverDelegate {
 
   func handle(_ event: SyncEngineEvent) {
     guard driver != nil else {
-      Log.debug("engine event ignored: driver torn down (\(event))", category: .sync)
+      Log.debug("engine event ignored: driver torn down", category: .sync)
       return
     }
     switch event {
@@ -434,7 +434,7 @@ final class SyncEngineController: SyncEngineDriverDelegate {
     else { return }
 
     queueDrainTask?.cancel()
-    let attempt = queueDrainAttempt
+    let attempt: Int = queueDrainAttempt
     let delayNanos = drainDelayNanos(attempt: attempt, retryAfter: queueDrainRetryAfter)
     queueDrainRetryAfter = nil
     queueDrainAttempt = min(attempt + 1, 5)
@@ -1175,12 +1175,12 @@ final class SyncEngineController: SyncEngineDriverDelegate {
     return false
   }
 
-  private func surfaceConflict(forRecordName name: String, record: CKRecord?) {
-    guard let uuid = UUID(uuidString: name) else {
-      Log.warning("Conflict surfaced for non-UUID record \(name)", category: .sync)
+  private func surfaceConflict(forRecordName recordName: String, record: CKRecord?) {
+    guard let uuid = UUID(uuidString: recordName) else {
+      Log.warning("Conflict surfaced for non-UUID record \(recordName)", category: .sync)
       return
     }
-    let fallbackName = record?[SyncedProfile.FieldKey.name.rawValue] as? String ?? name
+    let fallbackName = record?[SyncedProfile.FieldKey.name.rawValue] as? String ?? recordName
     SyncConflictManager.shared.addConflict(profileId: uuid, profileName: fallbackName)
   }
 
@@ -1343,10 +1343,10 @@ enum SyncDiagnostics {
       category: .sync)
   }
 
-  static func repairReenqueue(source: String, recordIDs: [CKRecord.ID]) {
+  static func repairReenqueue(source _: String, recordIDs: [CKRecord.ID]) {
     guard !recordIDs.isEmpty else { return }
     Log.debug(
-      "sync.event=repair_reenqueue source=\(source) count=\(recordIDs.count) "
+      "sync.event=repair_reenqueue count=\(recordIDs.count) "
         + "records=\(recordNames(recordIDs))",
       category: .sync)
   }
@@ -1420,7 +1420,7 @@ enum SyncDiagnostics {
 
   static func profileApply(
     profileId: UUID,
-    branch: String,
+    branch _: String,
     remoteVersion: Int,
     localVersion: Int?,
     remoteSchema: Int,
@@ -1429,7 +1429,7 @@ enum SyncDiagnostics {
     localGeofenceRefCount: Int?
   ) {
     Log.debug(
-      "sync.event=profile_apply profile=\(profileId.uuidString) branch=\(branch) "
+      "sync.event=profile_apply profile=\(profileId.uuidString) "
         + "remote_version=\(remoteVersion) local_version=\(optionalInt(localVersion)) "
         + "remote_schema=\(remoteSchema) local_schema=\(optionalInt(localSchema)) "
         + "remote_geofence_refs=\(optionalInt(remoteGeofenceRefCount)) "
@@ -1451,12 +1451,12 @@ enum SyncDiagnostics {
 
   static func locationApply(
     locationId: UUID,
-    branch: String,
+    branch _: String,
     localVersion: Int?,
     newLocalVersion: Int
   ) {
     Log.debug(
-      "sync.event=location_apply location=\(locationId.uuidString) branch=\(branch) "
+      "sync.event=location_apply location=\(locationId.uuidString) "
         + "local_version=\(optionalInt(localVersion)) new_local_version=\(newLocalVersion)",
       category: .sync)
   }
@@ -1474,9 +1474,9 @@ enum SyncDiagnostics {
       category: .sync)
   }
 
-  static func emergencySettingsApply(branch: String, remoteVersion: Int, localVersion: Int) {
+  static func emergencySettingsApply(branch _: String, remoteVersion: Int, localVersion: Int) {
     Log.debug(
-      "sync.event=emergency_settings_apply branch=\(branch) "
+      "sync.event=emergency_settings_apply "
         + "remote_version=\(remoteVersion) local_version=\(localVersion)",
       category: .sync)
   }
@@ -1493,9 +1493,9 @@ enum SyncDiagnostics {
       category: .sync)
   }
 
-  static func sessionApply(profileId: UUID, branch: String) {
+  static func sessionApply(profileId: UUID, branch _: String) {
     Log.debug(
-      "sync.event=session_apply profile=\(profileId.uuidString) branch=\(branch)",
+      "sync.event=session_apply profile=\(profileId.uuidString)",
       category: .sync)
   }
 

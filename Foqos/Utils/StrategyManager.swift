@@ -593,7 +593,7 @@ class StrategyManager: ObservableObject {
 
       if profile.needsAppSelection {
         let message = needsAppSelectionMessage(for: profile)
-        Log.info("Refusing background start: \(message)", category: .strategy)
+        Log.info("Refusing background start: app selection required", category: .strategy)
         self.errorMessage = message
         throw IntentError.needsAppSelection(profileName: profile.name)
       }
@@ -716,26 +716,20 @@ class StrategyManager: ObservableObject {
       case .allowed:
         break
       case .denied(.geofenceNotSatisfied(let reason)):
-        Log.info(
-          "Geofence blocked background stop for profile: \(profile.name) — \(reason)",
-          category: .strategy)
+        Log.info("Geofence blocked background stop", category: .strategy)
         geofenceEvaluator.postGeofenceBlockedNotification(
           profileId: profile.id, profileName: profile.name, reason: reason)
         self.errorMessage = "Cannot stop — \(reason)"
         throw IntentError.geofenceBlocked(reason: reason)
       case .denied(.geofenceUnavailable):
         let reason = "Your location can't be confirmed right now."
-        Log.info(
-          "Geofence blocked background stop for profile: \(profile.name) — \(reason)",
-          category: .strategy)
+        Log.info("Geofence blocked background stop: location unavailable", category: .strategy)
         geofenceEvaluator.postGeofenceBlockedNotification(
           profileId: profile.id, profileName: profile.name, reason: reason)
         self.errorMessage = "Cannot stop — \(reason)"
         throw IntentError.geofenceBlocked(reason: reason)
       case .denied(.stopConditionNotMet(let reason)):
-        Log.info(
-          "Background stop refused for profile: \(profile.name) — stop conditions not met",
-          category: .strategy)
+        Log.info("Background stop refused: stop conditions not met", category: .strategy)
         self.errorMessage = reason
         throw IntentError.stopConditionsNotMet(reason: reason)
       case .denied(.backgroundStopsDisabled):
@@ -793,8 +787,8 @@ class StrategyManager: ObservableObject {
       )
 
       switch result {
-      case .started(let seq):
-        Log.info("Session synced with seq=\(seq)", category: .strategy)
+      case .started:
+        Log.info("Session synced", category: .strategy)
       case .alreadyActive(let existing):
         Log.info(
           "Joined existing session from \(existing.sessionOriginDevice ?? "unknown")",
@@ -818,7 +812,7 @@ class StrategyManager: ObservableObject {
           Log.info("Reconciled local startTime to \(remoteStartTime)", category: .strategy)
         }
       case .error(let error):
-        Log.info("Failed to sync session start - \(error)", category: .strategy)
+        Log.info("Failed to sync session start - \(redactedErrorForLog(error))", category: .strategy)
       }
     }
   }
@@ -833,8 +827,8 @@ class StrategyManager: ObservableObject {
     _ result: SessionSyncService.StopResult, profileId: UUID
   ) async {
     switch result {
-    case .stopped(let seq):
-      Log.info("Session stop synced with seq=\(seq)", category: .strategy)
+    case .stopped:
+      Log.info("Session stop synced", category: .strategy)
     case .alreadyStopped:
       Log.info("Session was already stopped", category: .strategy)
     case .conflict(let current):
@@ -842,17 +836,17 @@ class StrategyManager: ObservableObject {
       // Retry stop once
       let retryResult = await sessionSyncService.stopSession(profileId: profileId)
       switch retryResult {
-      case .stopped(let seq):
-        Log.info("Stop retry succeeded with seq=\(seq)", category: .strategy)
+      case .stopped:
+        Log.info("Stop retry succeeded", category: .strategy)
       case .alreadyStopped:
         Log.info("Stop retry found session already stopped", category: .strategy)
       case .conflict, .error:
-        Log.info("Stop retry failed - \(retryResult)", category: .strategy)
+        Log.info("Stop retry failed", category: .strategy)
         // #201: persist the dropped stop intent for foreground re-drive instead of losing it.
         sessionStopOutbox.enqueue(profileId: profileId)
       }
     case .error(let error):
-      Log.info("Failed to sync session stop - \(error)", category: .strategy)
+      Log.info("Failed to sync session stop - \(redactedErrorForLog(error))", category: .strategy)
       // #201: persist the dropped stop intent for foreground re-drive instead of losing it.
       sessionStopOutbox.enqueue(profileId: profileId)
     }
@@ -1135,8 +1129,8 @@ class StrategyManager: ObservableObject {
           )
 
           switch result {
-          case .started(let seq):
-            Log.info("Scheduled session synced with seq=\(seq)", category: .strategy)
+          case .started:
+            Log.info("Scheduled session synced", category: .strategy)
           case .alreadyActive(let existing):
             Log.info(
               "Scheduled session joined existing from \(existing.sessionOriginDevice ?? "unknown")",
@@ -1163,7 +1157,7 @@ class StrategyManager: ObservableObject {
                 "Reconciled scheduled session startTime to \(remoteStartTime)", category: .strategy)
             }
           case .error(let error):
-            Log.info("Failed to sync scheduled session - \(error)", category: .strategy)
+            Log.info("Failed to sync scheduled session - \(redactedErrorForLog(error))", category: .strategy)
           }
         }
       }
@@ -1191,8 +1185,8 @@ class StrategyManager: ObservableObject {
           )
 
           switch result {
-          case .stopped(let seq):
-            Log.info("Scheduled session stop synced with seq=\(seq)", category: .strategy)
+          case .stopped:
+            Log.info("Scheduled session stop synced", category: .strategy)
           case .alreadyStopped:
             Log.info("Scheduled session was already stopped", category: .strategy)
           case .conflict, .error:
@@ -1224,7 +1218,7 @@ class StrategyManager: ObservableObject {
 
     if let rejection = rejectionForStart(definedProfile, context: context) {
       errorMessage = rejection
-      Log.info("Refusing manual start: \(rejection)", category: .strategy)
+      Log.info("Refusing manual start", category: .strategy)
       return
     }
 
@@ -1343,7 +1337,7 @@ class StrategyManager: ObservableObject {
   private func startWithTag(context: ModelContext, profile: BlockedProfiles, tag: String) {
     if let rejection = rejectionForStart(profile, context: context) {
       errorMessage = rejection
-      Log.info("Refusing tag start: \(rejection)", category: .strategy)
+      Log.info("Refusing tag start", category: .strategy)
       return
     }
 
@@ -1626,7 +1620,7 @@ class StrategyManager: ObservableObject {
         "Started remote session for profile '\(profile.name)' with synced startTime",
         category: .strategy)
     } catch {
-      Log.info("Error starting remote session - \(error)", category: .strategy)
+      Log.info("Error starting remote session - \(redactedErrorForLog(error))", category: .strategy)
     }
   }
 

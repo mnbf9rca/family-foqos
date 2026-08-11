@@ -123,7 +123,7 @@ class AuthorizationVerifier: ObservableObject {
       Log.info("Individual authorization successful", category: .authorization)
       return true
     } catch {
-      Log.info("Individual authorization failed - \(error)", category: .authorization)
+      Log.info("Individual authorization failed - \(redactedErrorForLog(error))", category: .authorization)
       return false
     }
   }

@@ -44,7 +44,7 @@ public class StopScheduleTimerActivity: TimerActivity {
     )
     guard case .allowed = decision else {
       Log.info(
-        "Stop schedule timer for \(profileId) refused by background-stop policy: \(decision)",
+        "Stop schedule timer for \(profileId) refused by background-stop policy",
         category: .timer)
       return
     }

@@ -20,7 +20,7 @@ extension CloudKitNetworkService {
       _ = try await privateDatabase.save(record)
       Log.info("Saved family member: \(member.redactedLogLabel)", category: .cloudKit)
     } catch {
-      Log.error("Failed to save family member: \(error)", category: .cloudKit)
+      Log.error("Failed to save family member: \(redactedErrorForLog(error))", category: .cloudKit)
       throw CloudKitError.saveFailed(error)
     }
   }
@@ -95,13 +95,14 @@ extension CloudKitNetworkService {
         share.removeParticipant(participant)
         try await privateDatabase.save(share)
         self.activeZoneShare = share
-        Log.info("Revoked share access for \(userRecordName)", category: .cloudKit)
+        let participantId = ShareParticipantLog.label(userRecordName: userRecordName)
+        Log.info("Revoked share access for \(participantId)", category: .cloudKit)
         // NOTE: Manager handles refreshShareParticipants() after this call
       } else {
         Log.debug("Participant not found in share", category: .cloudKit)
       }
     } catch {
-      Log.error("Failed to revoke share access: \(error)", category: .cloudKit)
+      Log.error("Failed to revoke share access: \(redactedErrorForLog(error))", category: .cloudKit)
     }
   }
 

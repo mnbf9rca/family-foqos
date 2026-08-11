@@ -8,13 +8,7 @@
 import DeviceActivity
 import FoqosShared
 import ManagedSettings
-import OSLog
 import WidgetKit
-
-private let log = Logger(
-  subsystem: "com.cynexia.family-foqos.monitor",
-  category: "DeviceActivity"
-)
 
 // Optionally override any of the functions below.
 // Make sure that your class name matches the NSExtensionPrincipalClass in your Info.plist.
@@ -34,7 +28,7 @@ class DeviceActivityMonitorExtension: DeviceActivityMonitor {
   override func intervalDidStart(for activity: DeviceActivityName) {
     super.intervalDidStart(for: activity)
 
-    log.info("intervalDidStart for activity: \(activity.rawValue)")
+    Log.info("intervalDidStart for activity: \(activity.rawValue)", category: .timer)
     TimerActivityUtil.startTimerActivity(for: activity)
     reconcileAfterWake()
   }
@@ -42,7 +36,7 @@ class DeviceActivityMonitorExtension: DeviceActivityMonitor {
   override func intervalDidEnd(for activity: DeviceActivityName) {
     super.intervalDidEnd(for: activity)
 
-    log.info("intervalDidEnd for activity: \(activity.rawValue)")
+    Log.info("intervalDidEnd for activity: \(activity.rawValue)", category: .timer)
     TimerActivityUtil.stopTimerActivity(for: activity)
     reconcileAfterWake()
   }
