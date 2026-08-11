@@ -703,7 +703,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = FoqosDeviceMonitor/FoqosDeviceMonitor.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 31;
+				CURRENT_PROJECT_VERSION = 32;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = FoqosDeviceMonitor/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = FoqosDeviceMonitor;
@@ -714,7 +714,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 2.0.12;
+				MARKETING_VERSION = 2.0.13;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.cynexia.family-foqos.FoqosDeviceMonitor";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
@@ -735,7 +735,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = FoqosDeviceMonitor/FoqosDeviceMonitor.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 31;
+				CURRENT_PROJECT_VERSION = 32;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = FoqosDeviceMonitor/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = FoqosDeviceMonitor;
@@ -746,7 +746,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 2.0.12;
+				MARKETING_VERSION = 2.0.13;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.cynexia.family-foqos.FoqosDeviceMonitor";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
@@ -894,7 +894,7 @@
 				CODE_SIGN_ENTITLEMENTS = foqos/foqos.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 31;
+				CURRENT_PROJECT_VERSION = 32;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "\"foqos/Preview Content\"";
 				ENABLE_APP_SANDBOX = YES;
@@ -922,7 +922,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 14.5;
-				MARKETING_VERSION = 2.0.12;
+				MARKETING_VERSION = 2.0.13;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.cynexia.family-foqos";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -948,7 +948,7 @@
 				CODE_SIGN_ENTITLEMENTS = foqos/foqos.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 31;
+				CURRENT_PROJECT_VERSION = 32;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "\"foqos/Preview Content\"";
 				ENABLE_APP_SANDBOX = YES;
@@ -976,7 +976,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 14.5;
-				MARKETING_VERSION = 2.0.12;
+				MARKETING_VERSION = 2.0.13;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.cynexia.family-foqos";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -998,12 +998,12 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 31;
+				CURRENT_PROJECT_VERSION = 32;
 				DEAD_CODE_STRIPPING = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.6;
 				MACOSX_DEPLOYMENT_TARGET = 14.5;
-				MARKETING_VERSION = 2.0.12;
+				MARKETING_VERSION = 2.0.13;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.cynexia.family-FoqosTests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
@@ -1024,12 +1024,12 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 31;
+				CURRENT_PROJECT_VERSION = 32;
 				DEAD_CODE_STRIPPING = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.6;
 				MACOSX_DEPLOYMENT_TARGET = 14.5;
-				MARKETING_VERSION = 2.0.12;
+				MARKETING_VERSION = 2.0.13;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.cynexia.family-FoqosTests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
@@ -1049,12 +1049,12 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 31;
+				CURRENT_PROJECT_VERSION = 32;
 				DEAD_CODE_STRIPPING = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.6;
 				MACOSX_DEPLOYMENT_TARGET = 14.5;
-				MARKETING_VERSION = 2.0.12;
+				MARKETING_VERSION = 2.0.13;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.cynexia.family-FoqosUITests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
@@ -1074,12 +1074,12 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 31;
+				CURRENT_PROJECT_VERSION = 32;
 				DEAD_CODE_STRIPPING = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.6;
 				MACOSX_DEPLOYMENT_TARGET = 14.5;
-				MARKETING_VERSION = 2.0.12;
+				MARKETING_VERSION = 2.0.13;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.cynexia.family-FoqosUITests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
@@ -1100,7 +1100,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = FoqosShieldConfig/FoqosShieldConfig.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 31;
+				CURRENT_PROJECT_VERSION = 32;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = FoqosShieldConfig/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = FoqosShieldConfig;
@@ -1111,7 +1111,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 2.0.12;
+				MARKETING_VERSION = 2.0.13;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.cynexia.family-foqos.FoqosShieldConfig";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
@@ -1132,7 +1132,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = FoqosShieldConfig/FoqosShieldConfig.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 31;
+				CURRENT_PROJECT_VERSION = 32;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = FoqosShieldConfig/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = FoqosShieldConfig;
@@ -1143,7 +1143,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 2.0.12;
+				MARKETING_VERSION = 2.0.13;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.cynexia.family-foqos.FoqosShieldConfig";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
@@ -1167,7 +1167,7 @@
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CODE_SIGN_ENTITLEMENTS = FoqosWidget/FoqosWidgetExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 31;
+				CURRENT_PROJECT_VERSION = 32;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = FoqosWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = FoqosWidget;
@@ -1178,7 +1178,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 2.0.12;
+				MARKETING_VERSION = 2.0.13;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.cynexia.family-foqos.FoqosWidget";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
@@ -1201,7 +1201,7 @@
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CODE_SIGN_ENTITLEMENTS = FoqosWidget/FoqosWidgetExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 31;
+				CURRENT_PROJECT_VERSION = 32;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = FoqosWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = FoqosWidget;
@@ -1212,7 +1212,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 2.0.12;
+				MARKETING_VERSION = 2.0.13;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.cynexia.family-foqos.FoqosWidget";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
