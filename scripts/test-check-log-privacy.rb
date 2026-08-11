@@ -160,6 +160,14 @@ CASES = [
     annotation_count: 0
   ),
   Case.new(
+    name: 'name-keyed status cannot hide participant contact',
+    fixture: 'fail/name_keyed_status.swift',
+    status: 1,
+    diagnostic: 'sensitive local origin',
+    site_floor: 1,
+    annotation_count: 0
+  ),
+  Case.new(
     name: 'unbalanced call',
     fixture: 'fail/unbalanced_call.swift.txt',
     status: 2,
@@ -181,6 +189,22 @@ CASES = [
     status: 0,
     diagnostic: 'sites_analyzed=3 annotations=0',
     site_floor: 3,
+    annotation_count: 0
+  ),
+  Case.new(
+    name: 'literal-assigned locals',
+    fixture: 'pass/literal_assigned_locals.swift',
+    status: 0,
+    diagnostic: 'sites_analyzed=4 annotations=0',
+    site_floor: 4,
+    annotation_count: 0
+  ),
+  Case.new(
+    name: 'renamed literal-assigned locals',
+    fixture: 'pass/renamed/literal_assigned_locals.swift',
+    status: 0,
+    diagnostic: 'sites_analyzed=4 annotations=0',
+    site_floor: 4,
     annotation_count: 0
   ),
   Case.new(
@@ -353,6 +377,14 @@ CASES = [
     fixture: 'fail/renamed/unresolved_origin.swift',
     status: 2,
     diagnostic: 'cannot resolve',
+    site_floor: 1,
+    annotation_count: 0
+  ),
+  Case.new(
+    name: 'renamed local cannot hide participant contact',
+    fixture: 'fail/renamed/name_keyed_status.swift',
+    status: 1,
+    diagnostic: 'sensitive local origin',
     site_floor: 1,
     annotation_count: 0
   ),

@@ -121,23 +121,29 @@ module LogPrivacy
       index = 0
       while (token = LEXICAL_TOKEN.match(source, index))
         index = token.begin(0)
-        finish =
+        finish, kind =
           if token[0] == '//'
-            source.index("\n", index) || source.length
+            [source.index("\n", index) || source.length, :comment]
           elsif token[0] == '/*'
-            block_comment_end(index)
+            [block_comment_end(index), :comment]
           else
-            string_end(index)
+            [string_end(index), :string]
           end
-        blank(mask, index, finish)
+        blank(mask, index, finish, kind: kind)
         index = finish
       end
       mask
     end
 
-    def blank(mask, start_index, end_index)
+    def blank(mask, start_index, end_index, kind:)
       segment = source[start_index...end_index]
-      mask[start_index...end_index] = segment.gsub(/[^\n]/, ' ')
+      replacement =
+        if kind == :string
+          "S#{' ' * (segment.length - 1)}"
+        else
+          segment.gsub(/[^\n]/, ' ')
+        end
+      mask[start_index...end_index] = replacement
     end
 
     def block_comment_end(start_index)
@@ -365,7 +371,7 @@ module LogPrivacy
           startTime|endTime|date|duration|errno
         )\b
       /ix,
-      /\b(?:code|status|rawValue)\b/
+      /\.(?:code|rawValue|status|authorizationStatus)\b|\baccountStatus\s*\(/
     ].freeze
     SENSITIVE_TYPE_RULES = [
       [
