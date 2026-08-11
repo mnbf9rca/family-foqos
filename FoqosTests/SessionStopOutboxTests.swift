@@ -11,16 +11,16 @@ final class SessionStopOutboxTests: XCTestCase {
   private var suiteName: String!
   private var defaults: UserDefaults!
 
-  override func setUp() {
-    super.setUp()
+  override func setUp() async throws {
+    try await super.setUp()
     suiteName = "stop-outbox-\(UUID().uuidString)"
     defaults = UserDefaults(suiteName: suiteName)!
   }
 
-  override func tearDown() {
+  override func tearDown() async throws {
     defaults.removePersistentDomain(forName: suiteName)
     defaults = nil
-    super.tearDown()
+    try await super.tearDown()
   }
 
   func testGivenEnqueue_WhenReloaded_ThenPersistsAndDeduplicates() {
