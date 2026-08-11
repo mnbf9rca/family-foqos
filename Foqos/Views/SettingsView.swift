@@ -2,8 +2,6 @@ import FamilyControls
 import SwiftData
 import SwiftUI
 
-let amznStoreLink = "https://amzn.to/4fbMuTM"
-
 struct SettingsView: View {
   enum WipeConfirmationAction: Equatable {
     case blocked
@@ -377,18 +375,6 @@ struct SettingsView: View {
             Text("Calgary AB 🇨🇦\nand London 🇬🇧")
               .foregroundStyle(.secondary)
               .multilineTextAlignment(.trailing)
-          }
-        }
-
-        Section("Buy NFC Tags") {
-          Link(destination: URL(string: amznStoreLink)!) {
-            HStack {
-              Text("Amazon (original author affiliate link)")
-                .foregroundColor(.primary)
-              Spacer()
-              Image(systemName: "arrow.up.right.square")
-                .foregroundColor(.secondary)
-            }
           }
         }
 
