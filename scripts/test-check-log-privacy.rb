@@ -210,6 +210,14 @@ CASES = [
     diagnostic: 'sites_analyzed=4 annotations=0',
     site_floor: 4,
     annotation_count: 0
+  ),
+  Case.new(
+    name: 'lexer skips comments and string contents',
+    fixture: 'pass/lexer_boundaries.swift',
+    status: 0,
+    diagnostic: 'sites_analyzed=2 annotations=0',
+    site_floor: 2,
+    annotation_count: 0
   )
 ].freeze
 

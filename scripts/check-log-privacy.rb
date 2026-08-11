@@ -40,6 +40,8 @@ module LogPrivacy
   end
 
   class SwiftLexer
+    LEXICAL_TOKEN = %r{//|/\*|\#*"""|\#*"}
+
     attr_reader :path, :source
 
     def initialize(path, source)
@@ -116,30 +118,25 @@ module LogPrivacy
     def code_mask
       mask = source.dup
       index = 0
-      while index < source.length
-        if starts_at?(source, '//', index)
-          finish = source.index("\n", index) || source.length
-          blank(mask, index, finish)
-          index = finish
-        elsif starts_at?(source, '/*', index)
-          finish = block_comment_end(index)
-          blank(mask, index, finish)
-          index = finish
-        elsif string_start(index)
-          finish = string_end(index)
-          blank(mask, index, finish)
-          index = finish
-        else
-          index += 1
-        end
+      while (token = LEXICAL_TOKEN.match(source, index))
+        index = token.begin(0)
+        finish =
+          if token[0] == '//'
+            source.index("\n", index) || source.length
+          elsif token[0] == '/*'
+            block_comment_end(index)
+          else
+            string_end(index)
+          end
+        blank(mask, index, finish)
+        index = finish
       end
       mask
     end
 
     def blank(mask, start_index, end_index)
-      (start_index...end_index).each do |index|
-        mask[index] = ' ' unless source[index] == "\n"
-      end
+      segment = source[start_index...end_index]
+      mask[start_index...end_index] = segment.gsub(/[^\n]/, ' ')
     end
 
     def block_comment_end(start_index)
