@@ -65,6 +65,9 @@ disproportionate while the lexical analyzer can fail closed on unsupported synta
   bounded local-origin analysis, diagnostics, and coverage assertions.
 - `scripts/log-privacy-baseline.txt` contains the deliberately maintained production facade-site
   floor. Its initial value is `503` after the nine direct-sink migrations.
+- `scripts/log-privacy-annotation-baseline.txt` contains the deliberately maintained count of
+  `LOG-PRIVACY-SAFE` annotations. Its initial value is `0`; changing that exact count requires a
+  visible, reviewed baseline edit.
 - `scripts/test-check-log-privacy.rb` executes the real analyzer against isolated fixtures and the
   production tree. It does not mock analyzer behavior.
 - `scripts/fixtures/log-privacy/` contains only explicit analyzer inputs. It is outside every
@@ -75,6 +78,11 @@ disproportionate while the lexical analyzer can fail closed on unsupported synta
 - `FoqosDeviceMonitor/DeviceActivityMonitorExtension.swift` and
   `Packages/FoqosShared/Sources/FoqosShared/SharedData.swift` migrate nine direct `Logger` calls to
   the shared facade.
+- `Packages/FoqosShared/Sources/FoqosShared/LogPrivacy.swift` owns the single audited
+  `redactedErrorForLog(_:)` formatter. The 70 production facade sites that currently interpolate a
+  bare error object migrate mechanically to this helper.
+- `FoqosTests/LogPrivacyTests.swift` constructs bounded-chain, cyclic-chain, long-line, CloudKit
+  partial-error, and rejected-`userInfo` fixtures against the real shared formatter.
 - `Foqos/Views/ModeSelectionView.swift`, `Foqos/Components/Strategy/QRCodeScanner.swift`, and
   `Foqos/Components/Settings/MapLocationPicker.swift` remove the four remaining dynamic preview-log
   interpolations.
@@ -164,11 +172,36 @@ assigned in a nested closure, and other origins outside the bounded analysis pro
 error or require a narrow adjacent `// LOG-PRIVACY-SAFE: <reason>` annotation. Empty annotations,
 non-adjacent annotations, and annotations without a reason do not suppress a finding.
 
+The analyzer counts every valid `LOG-PRIVACY-SAFE` annotation and requires the count to equal the
+maintained annotation baseline, initially `0`. Additions and removals both require an explicit
+baseline change in the same reviewed diff, so an escape hatch cannot appear or disappear silently.
+An unresolved suspicious origin without a valid adjacent annotation is exit `2` because analysis
+could not prove the interpolation safe; a resolved sensitive origin is exit `1` because it is a
+confirmed privacy violation.
+
 ### Whole-object interpolation
 
 Interpolating an object known to carry PII, such as `\(member)`, fails. Wrappers such as
 `String(describing: member)` also fail. This prevents synthesized descriptions or reflection from
 dumping stored properties while evading property-token checks.
+
+Bare error interpolation, `\(error)`, is also prohibited whole-object interpolation because an
+`NSError` description can include unaudited `userInfo`. `error.localizedDescription` remains
+legal. Callers that need structured diagnostics use `redactedErrorForLog(error)` as an allowlisted
+interpolation expression inside a literal message; it is not an allowlisted whole-message
+formatter and therefore does not weaken the message-as-variable rule.
+
+`redactedErrorForLog(_:)` emits a bounded, single-line representation containing the error domain,
+numeric code, localized description, and only explicitly permitted CloudKit metadata. The
+`userInfo` allowlist is exhaustive: opaque CloudKit record and zone names may be retained, while
+every unlisted key and value is dropped. `NSUnderlyingError` and `CKPartialErrorsByItemID` are
+expanded only to a depth of `3`, cycle detection stops repeated error identities, partial errors
+are rendered per record identifier, embedded line breaks are normalized to spaces, and the final
+line is truncated to `2,048` Swift `Character` values. A
+malformed or cyclic chain therefore cannot hang or produce unbounded output. If the
+CloudKit-specific implementation becomes disproportionate, the formatter ships with only
+domain/code/localized-description and the enrichment is recorded as a follow-up in #383; the
+bare-error ban and all 70 migrations still ship in this change.
 
 ### Direct sinks
 
@@ -190,17 +223,27 @@ There are four dynamic log interpolations inside `#Preview` blocks at the baseli
 
 They become static preview event messages. Preview behavior remains useful without exporting sample
 coordinates, mode values, or error descriptions, and the analyzer carries no preview exception.
+The calls remain facade sites and still count toward the `503` production-site floor.
 
 ## Build integration and failure behavior
 
 The `Log Privacy Lint` shell phase invokes only:
 
 ```sh
+command -v ruby >/dev/null 2>&1 || {
+  echo "error: Log Privacy Lint requires ruby on PATH" >&2
+  exit 2
+}
 ruby "${SRCROOT}/scripts/check-log-privacy.rb" --root "${SRCROOT}"
 ```
 
-It runs before Sources, is always out of date, and lists the analyzer, baseline, and production
-roots as inputs. The pre-commit hook remains unchanged.
+It runs before Sources, is always out of date, and lists the analyzer, both baselines, and
+production roots as inputs. The pre-commit hook remains unchanged. The warm production scan must complete in
+under `2.0` seconds on the implementation machine, measured over five consecutive direct runs;
+the PR body records the median and maximum. If it exceeds that budget, implementation stops for a
+reviewed caching design keyed by every discovered file's path, modification time, and size plus the
+analyzer and baseline digests. A cache miss still performs a full production-root scan; changed-file
+scoping and disabling the build phase are not acceptable fallbacks.
 
 Exit behavior is stable:
 
@@ -221,6 +264,7 @@ Tests run the real script and pin these outcomes:
 - exact #359 laundering chain from `nameComponents`/`emailAddress` through `displayInfo`
 - raw tag identifier, URL, coordinate, latitude, longitude, name, email, and phone interpolation
 - whole-object `\(member)` and `String(describing: member)`
+- bare `\(error)` whole-object interpolation
 - direct `Logger(`, `os_log(` outside the facade, and `NSLog(`
 
 ### Must fail as analysis errors
@@ -232,6 +276,7 @@ Tests run the real script and pin these outcomes:
 - malformed baseline
 - discovered/analyzed file mismatch
 - site count below the maintained floor, with the deliberate-removal workflow in the message
+- annotation count different from its maintained exact baseline
 
 ### Must pass
 
@@ -240,6 +285,11 @@ Tests run the real script and pin these outcomes:
 - `ShareParticipantLog.*`, `DebugRedaction.*ForLog`, `redactedURLString`, `role.*`, collection
   `.count`, permitted UUID/record-name values, and timestamps
 - facade-owned `os_log`
+- `error.localizedDescription` and `redactedErrorForLog(error)` inside literal messages
+- bounded error formatting that stops at depth `3`, detects a cyclic underlying-error chain, and
+  truncates the result to `2,048` characters
+- CloudKit partial-error formatting that preserves permitted record/zone identifiers while an
+  obviously sensitive value stored under a non-allowlisted `userInfo` key is absent from output
 - every production root, with discovered and analyzed file counts equal
 - current production tree at 503 or more facade sites after migration
 
