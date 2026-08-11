@@ -14,7 +14,7 @@ final class LogExportManager {
 
   /// Create a zip archive of all log files
   /// Offloads heavy file I/O to a background thread to avoid blocking the UI
-  func createLogArchive() async throws -> URL {
+  func createLogArchive(familyRoster: String? = nil) async throws -> URL {
     // Capture values that need main actor access
     let deviceInfo = generateDeviceInfo()
     let timestamp = formattedTimestamp()
@@ -47,6 +47,8 @@ final class LogExportManager {
       guard !copiedFiles.isEmpty else {
         throw LogExportError.noLogsAvailable
       }
+
+      try Self.writeFamilyRoster(familyRoster, to: stagingDir, fileManager: fileManager)
 
       // Add device info file
       let deviceInfoURL = stagingDir.appendingPathComponent("device-info.txt")
@@ -95,6 +97,16 @@ final class LogExportManager {
     let formatter = DateFormatter()
     formatter.dateFormat = "yyyy-MM-dd-HHmmss"
     return formatter.string(from: Date())
+  }
+
+  nonisolated static func writeFamilyRoster(
+    _ content: String?,
+    to stagingDirectory: URL,
+    fileManager: FileManager
+  ) throws {
+    guard let content else { return }
+    let rosterURL = stagingDirectory.appendingPathComponent("roster.txt")
+    try content.write(to: rosterURL, atomically: true, encoding: .utf8)
   }
 
   /// Create zip using Cocoa compression (static version for use in detached tasks)
