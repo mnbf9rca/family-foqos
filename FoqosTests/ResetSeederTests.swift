@@ -10,18 +10,18 @@ final class ResetSeederTests: XCTestCase {
   private var defaults: UserDefaults!
   private var store: SyncEngineStore!
 
-  override func setUp() {
-    super.setUp()
+  override func setUp() async throws {
+    try await super.setUp()
     suiteName = "reset-seeder-\(UUID().uuidString)"
     defaults = UserDefaults(suiteName: suiteName)!
     SharedData.configure(suite: defaults)
     store = SyncEngineStore(userRecordName: "user-A", defaults: defaults)
   }
 
-  override func tearDown() {
+  override func tearDown() async throws {
     defaults.removePersistentDomain(forName: suiteName)
     defaults = nil
-    super.tearDown()
+    try await super.tearDown()
   }
 
   func testGivenSeeder_WhenPerformI6Purge_ThenPurgesSystemFieldsAndFlushesSessionCache() async {
