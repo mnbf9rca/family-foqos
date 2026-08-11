@@ -1,5 +1,9 @@
 # frozen_string_literal: true
 
+# Runs under macOS system Ruby (/usr/bin/ruby, currently 2.6): use only 2.6-compatible APIs.
+# RuboCop targets Ruby 4.0 and will not catch violations; the dual-interpreter fixture suite is the
+# only guard, so run it under /usr/bin/ruby.
+
 require 'optparse'
 # Ruby 2.6 does not preload these constants when Xcode launches the analyzer.
 # rubocop:disable Lint/RedundantRequireStatement

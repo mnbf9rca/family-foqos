@@ -68,6 +68,11 @@ uses PATH Ruby while analyzer subprocesses remain pinned to the shipped system r
 fixture always exercises the deployed analyzer interpreter, while the harness remains compatible
 with the developer runtime too.
 
+Both scripts run under macOS system Ruby (`/usr/bin/ruby`, currently 2.6) and therefore must use only
+Ruby 2.6-compatible APIs. The project's RuboCop configuration targets Ruby 4.0 and will not catch
+compatibility violations; it is a style check, not the compatibility guard. The complete
+dual-interpreter fixture suite is that guard and must be run under `/usr/bin/ruby`.
+
 Additional verification runs Ruby 2.6 syntax checks for both scripts, RuboCop under the project
 bundle, the analyzer against the production tree with `/usr/bin/ruby`, and a static inspection of the
 Xcode phase confirming `/usr/bin/ruby` replaces `command -v ruby` and the bare `ruby` invocation.
