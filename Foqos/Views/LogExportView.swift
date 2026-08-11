@@ -30,7 +30,7 @@ struct LogExportView: View {
 
             Text(
               includeFamilyMemberNames
-                ? "This export includes currently loaded family member names, full identifiers, and CloudKit record names in roster.txt. It does not refresh family data. Share it only with Family Foqos support."
+                ? "This export includes family member names, full identifiers, and CloudKit record names in roster.txt. Family data refreshes in the background when this option is enabled, while Share Logs still works offline using available data. Share it only with Family Foqos support."
                 : "Logs may contain profile names, timestamps, and technical device or account identifiers. Family member names, passwords, and lock codes are not included."
             )
             .font(.caption)
@@ -47,7 +47,7 @@ struct LogExportView: View {
         Section("Support Options") {
           Toggle("Include family member names", isOn: $includeFamilyMemberNames)
           Text(
-            "Turn this on only when Family Foqos support asks. Adds roster.txt from family information already loaded in the app, without refreshing CloudKit, so support can match diagnostic identifiers to family members."
+            "Turn this on only when Family Foqos support asks. Adds roster.txt and refreshes family information in the background when possible so support can match diagnostic identifiers to family members."
           )
           .font(.caption)
           .foregroundColor(.secondary)
@@ -141,6 +141,13 @@ struct LogExportView: View {
       }
       .onAppear {
         refreshStats()
+      }
+      .onChange(of: includeFamilyMemberNames) { _, isEnabled in
+        guard isEnabled else { return }
+
+        Task {
+          _ = try? await CloudKitManager.shared.fetchFamilyMembers()
+        }
       }
     }
   }

@@ -31,7 +31,9 @@ enum FamilyRosterExport {
       return [fields.joined(separator: " — ")] + deviceLines
     }
 
-    guard !lines.isEmpty else { return "" }
+    guard !lines.isEmpty else {
+      return "No family members were cached on this device at export time.\n"
+    }
     return lines.joined(separator: "\n") + "\n"
   }
 

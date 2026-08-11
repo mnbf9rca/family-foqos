@@ -107,8 +107,11 @@ final class FamilyRosterExportTests: XCTestCase {
     )
   }
 
-  func testGivenNoMembers_WhenFormattingRoster_ThenReturnsEmptyContent() {
-    XCTAssertEqual(FamilyRosterExport.content(for: [], monitoredDevices: []), "")
+  func testGivenNoMembers_WhenFormattingRoster_ThenExplainsEmptyCache() {
+    XCTAssertEqual(
+      FamilyRosterExport.content(for: [], monitoredDevices: []),
+      "No family members were cached on this device at export time.\n"
+    )
   }
 
   private func monitoredDevice(identifier: String, childRecordName: String) -> MonitoredDevice {
