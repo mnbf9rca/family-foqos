@@ -204,26 +204,13 @@ git commit -m "Own xcpretty status propagation for #379"
 **Files:**
 - Modify: `AGENTS.md`
 - Modify: `FamilyFoqos.xcodeproj/project.pbxproj`
-- Test: `scripts/test-xcode-stream.sh`
 - Test: `scripts/test-check-version-increment.sh`
 
 **Interfaces:**
 - Consumes: the public `--xcpretty` syntax from Task 2.
 - Produces: one safe documented formatted invocation and release 2.0.18 (37) in every configuration.
 
-- [ ] **Step 1: Add and run the RED documentation policy regression**
-
-Extend the existing `policy_requirements` with `--xcpretty`, then reject the unsafe instructions:
-
-```bash
-assert_not_contains "$POLICY_FILE" "set -o pipefail"
-assert_not_contains "$POLICY_FILE" "2>&1 | bundle exec xcpretty"
-```
-
-Run `scripts/test-xcode-stream.sh` and require it to fail because `AGENTS.md` still contains the
-old caller-owned pipeline.
-
-- [ ] **Step 2: Replace both canonical formatted examples**
+- [ ] **Step 1: Replace both canonical formatted examples**
 
 Use this shape in Build & Test Commands and Build Output:
 
@@ -235,6 +222,12 @@ scripts/xcode-stream.sh --agent <agent> --session <session> --xcpretty -- \
 
 Remove the preceding `set -o pipefail`, trailing `2>&1 | bundle exec xcpretty`, and wording that
 assigns status preservation to the caller.
+
+- [ ] **Step 2: Remove the obsolete policy-text expectation**
+
+Delete `bundle exec xcpretty` from `scripts/test-xcode-stream.sh`'s `policy_requirements`. Do not
+replace it with a `--xcpretty` source-text assertion: the behavioral regressions in Tasks 1 and 2
+prove safe formatting, while human and independent review verify the documentation examples.
 
 - [ ] **Step 3: Bump every target configuration**
 
@@ -248,14 +241,17 @@ Run:
 ```bash
 scripts/test-xcode-stream.sh
 scripts/test-check-version-increment.sh
+rg -n 'set -o pipefail|2>&1 \| bundle exec xcpretty' AGENTS.md
 ```
 
-Expected: both return zero; the version gate reports 2.0.17 to 2.0.18 and 36 to 37.
+Expected: both scripts return zero; the version gate reports 2.0.17 to 2.0.18 and 36 to 37; the
+`rg` audit finds no obsolete caller-owned formatting instruction and therefore returns 1 with no
+matches.
 
 - [ ] **Step 5: Commit docs and version**
 
 ```bash
-git add AGENTS.md FamilyFoqos.xcodeproj/project.pbxproj
+git add AGENTS.md FamilyFoqos.xcodeproj/project.pbxproj scripts/test-xcode-stream.sh
 git commit -m "Document safe formatted builds for #379"
 ```
 
