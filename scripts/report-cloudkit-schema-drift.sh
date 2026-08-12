@@ -125,6 +125,7 @@ comm -23 "$TEMP_DIR/code" "$TEMP_DIR/manifest" >"$TEMP_DIR/missing-manifest"
 comm -13 "$TEMP_DIR/code" "$TEMP_DIR/manifest" |
   awk -v exception="$MANIFEST_ONLY_EXCEPTION" '$0 != exception' >"$TEMP_DIR/extra-manifest"
 comm -23 "$TEMP_DIR/manifest" "$TEMP_DIR/schema" >"$TEMP_DIR/missing-schema"
+# A type-only manifest entry checks existence only because the app owns no fields, as with legacy SyncedSession.
 comm -13 "$TEMP_DIR/manifest" "$TEMP_DIR/schema" |
   awk -v prefix="$SCHEMA_ONLY_EXCEPTION_PREFIX" '
     NR == FNR {
