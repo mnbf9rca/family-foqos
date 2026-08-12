@@ -1,4 +1,4 @@
-# CloudKit Production Schema Runbook
+# CloudKit Schema Upgrade Process
 
 Container: `iCloud.com.cynexia.family-foqos`
 
@@ -7,43 +7,73 @@ Production environment, so promote the final Development schema before uploading
 that depends on it. Production schema changes are additive-only; never rename or remove a deployed
 record type or field.
 
-## Repository Preflight
+## 1. Routine Schema Change
 
-Run these checks after the final schema-touching pull request has merged:
+Use this checklist whenever a code change adds or changes a CloudKit record type or field.
 
-```bash
-bash scripts/check-cloudkit-schema-export.sh
-bash scripts/test-check-prod-schema.sh
-```
+1. Make the record-type or field change in code.
+2. Run the manifest header searches to find every declared record type and field:
 
-Review `Foqos/CloudKit/cloudkit-schema.ckdb` against the pending Development schema in CloudKit
-Console. The local checker proves that the `.ckdb` covers every record type and field listed in
-`fastlane/required-prod-schema.txt`. Keep that manifest aligned with the app's declared `FieldKey`
-and `RecordKey` values through the hand-reconciliation commands in its header. Field review remains
-part of the Console promotion review because the checker does not derive the manifest from code.
+   Prerequisite: install ripgrep with `brew install ripgrep`.
 
-## Promote to Production — Maintainer Only
+   ```bash
+   rg -n 'static let recordType\s*=\s*"[^"]+"' Foqos FoqosDeviceMonitor FoqosShieldConfig FoqosWidget
+   rg -n 'CKRecord\(recordType:\s*"[^"]+"' Foqos FoqosDeviceMonitor FoqosShieldConfig FoqosWidget
+   rg -n 'static let recordType|enum FieldKey: String|^[[:space:]]+case [[:alnum:]_]+( = "[^"]+")?$' Foqos/CloudKit/SyncModels.swift Foqos/CloudKit/ProfileSessionRecord.swift
+   rg -n 'static let recordType|enum RecordKey|^[[:space:]]+static let [[:alnum:]_]+ = "[^"]+"' Foqos/Models/DeviceHeartbeat.swift Foqos/Models/FamilyCommand.swift Foqos/Models/FamilyLockCode.swift Foqos/Models/FamilyMember.swift
+   rg -n 'rootRecord\["[^"]+"\]' Foqos/CloudKit/CloudKitNetworkService.swift Foqos/CloudKit/CloudKitNetworkService+Sharing.swift
+   ```
 
-1. Sign in to [CloudKit Console](https://icloud.developer.apple.com/).
-2. Select `iCloud.com.cynexia.family-foqos` and its CloudKit Database.
-3. Confirm the Development schema contains the record types and fields in
-   `Foqos/CloudKit/cloudkit-schema.ckdb`.
-4. Review the pending schema changes and deploy them to Production.
-5. Confirm the deployment completes before creating the TestFlight archive.
+3. Reconcile `fastlane/required-prod-schema.txt` with the search results. Preserve built-in and
+   deprecated requirements, and update the reconciliation date and descriptive counts in its
+   header.
+4. Reconcile `Foqos/CloudKit/cloudkit-schema.ckdb` with the CloudKit Development schema. Preserve
+   declarations already deployed to Production for compatibility.
+5. Run the checked-in schema checker and its harness:
 
-This Console deployment is a maintainer keystroke. Agents update and verify repository artifacts;
-they do not promote the Production schema.
+   ```bash
+   bash scripts/check-cloudkit-schema-export.sh
+   bash scripts/test-check-cloudkit-schema-export.sh
+   ```
 
-## Postflight
+6. Include the code change, manifest, `.ckdb`, and successful checker and harness output in the pull
+   request.
 
-With `cktool` authenticated for the container, verify the deployed Production record types:
+## 2. Release Promotion
 
-```bash
-bash scripts/check-prod-schema.sh
-```
+Use this checklist after the final schema-touching pull request has merged and before the first
+TestFlight or App Store build that depends on it.
 
-The command must print `Production schema OK.` before TestFlight upload. It checks required record
-types; also confirm the newly promoted fields in CloudKit Console.
+1. Run repository preflight:
+
+   ```bash
+   bash scripts/check-cloudkit-schema-export.sh
+   bash scripts/test-check-prod-schema.sh
+   ```
+
+2. Sign in to [CloudKit Console](https://icloud.developer.apple.com/), select
+   `iCloud.com.cynexia.family-foqos`, choose its CloudKit Database, and select the Development
+   environment. Compare its schema with `Foqos/CloudKit/cloudkit-schema.ckdb`.
+3. Review the pending additive changes, choose **Deploy Schema Changes**, confirm the deployment,
+   and wait for completion.
+4. With `cktool` authenticated for the container, run Production postflight:
+
+   ```bash
+   bash scripts/check-prod-schema.sh
+   ```
+
+   Do not continue unless the command exits `0` and prints `Production schema OK.`. Also confirm
+   newly promoted fields in CloudKit Console because this postflight checks required record types.
+5. Close the release's schema tracking issue.
+6. Proceed with the appropriate upload only after postflight is green:
+
+   ```bash
+   scripts/fastlane.sh beta     # TestFlight
+   scripts/fastlane.sh release  # App Store submission
+   ```
+
+The Console deployment is a maintainer-only action. Agents can update, check, and review repository
+artifacts, but they must not promote the Production schema.
 
 ## Apple References
 
