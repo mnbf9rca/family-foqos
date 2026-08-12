@@ -54,16 +54,21 @@ and before the first dependent TestFlight or App Store build.
      --team-id BU7526J4QY \
      --container-id iCloud.com.cynexia.family-foqos \
      --environment development \
+     --validate \
      --file Foqos/CloudKit/cloudkit-schema.ckdb
    ```
 
    Alternatively, in [CloudKit Console](https://icloud.developer.apple.com/), select the container's
    Development environment, choose **Import Schema**, and select the same checked-in `.ckdb` file.
 
-   Import makes Development match the canonical checked-in file, so it flushes Console-side
-   experiments that are not represented in that file.
+   Treat the checked-in file as canonical. Import applies it to Development and may remove
+   Development-only experiments that are absent from the file. CloudKit rejects the update without
+   making changes if the required modifications could cause data loss relative to Production;
+   resolve any rejection before continuing.
 3. In CloudKit Console, choose **Deploy Schema Changes** and review the actual
-   Development-to-Production additive diff. Confirm the deployment and wait for completion.
+   Development-to-Production additive diff. If nothing is pending, record that the canonical schema
+   is already deployed and continue to postflight. Otherwise, confirm the deployment and wait for
+   completion.
 4. With `cktool` authenticated for the container, run Production postflight:
 
    ```bash
