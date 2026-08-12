@@ -47,7 +47,8 @@ platform :ios do
         project: XCODEPROJ,
         scheme: SCHEME,
         configuration: 'Release',
-        export_method: 'app-store-connect',
+        # Gym 2.237.0 rejects Xcode's app-store-connect spelling before archiving.
+        export_method: 'app-store',
         xcargs: "CURRENT_PROJECT_VERSION=#{build} -allowProvisioningUpdates " \
                 "-authenticationKeyPath #{Shellwords.escape(key_path)} " \
                 "-authenticationKeyID #{api_key.fetch(:key_id)} " \

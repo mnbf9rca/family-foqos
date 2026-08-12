@@ -59,7 +59,9 @@ remain mandatory. Omit the override for ordinary releases, which continue to req
 The upload lanes use automatic signing with an App Store Connect API key. The `check_asc_key` lane
 proves only that the credential loads; it cannot verify the key's role or its access to
 cloud-managed distribution certificates. Before running `beta` or `release`, use an Admin team API
-key whose team has enabled cloud-managed distribution-certificate access.
+key whose team has enabled cloud-managed distribution-certificate access. Apple restricts creating
+those certificates to Account Holder and Admin roles, so an App Manager key can upload builds but
+still fail this automatic-signing step.
 
 If export fails with `Cloud signing permission error` followed by `No profiles for ... were found`,
 stop instead of repeatedly rebuilding the archive. Either replace the credential with an Admin key
