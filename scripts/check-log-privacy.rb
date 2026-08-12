@@ -442,7 +442,7 @@ module LogPrivacy
             findings.concat(analyze_interpolations(call, lexer))
           end
           analyzed += 1
-        rescue AnalysisError, Errno::EACCES, Errno::ENOENT => e
+        rescue AnalysisError, ArgumentError, Errno::EACCES, Errno::ENOENT => e
           line = e.respond_to?(:line) ? e.line : nil
           errors << Finding.new(
             path: file,

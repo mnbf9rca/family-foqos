@@ -582,9 +582,22 @@ with_fixture_root(fixture: 'pass/roster_display_name.swift', site_floor: 0, anno
   end
 end
 
+with_fixture_root(fixture: 'pass/roster_display_name.swift', site_floor: 0, annotation_count: 0) do |root, destination|
+  File.binwrite(destination, [0xFF].pack('C'))
+  stdout, stderr, status = run_analyzer(root)
+  failures += 1 unless result_matches?(
+    name: 'invalid UTF-8 names the discovered file',
+    expected_status: 2,
+    diagnostic: 'Foqos/Fixture.swift:1: error: invalid byte sequence in UTF-8',
+    stdout: stdout,
+    stderr: stderr,
+    process_status: status
+  )
+end
+
 if failures.positive?
   warn "FAIL: #{failures} log privacy lint test(s) failed"
   exit 1
 end
 
-puts "PASS: #{CASES.length + 6} log privacy lint cases"
+puts "PASS: #{CASES.length + 7} log privacy lint cases"

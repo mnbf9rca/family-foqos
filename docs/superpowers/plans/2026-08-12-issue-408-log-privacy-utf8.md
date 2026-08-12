@@ -14,8 +14,8 @@
 - Use only APIs supported by macOS system Ruby 2.6; RuboCop targets Ruby 4.0 and is not the compatibility guard.
 - Decode every analyzer text input explicitly as `Encoding::UTF_8`; do not assign `Encoding.default_external` or add `-E` launcher flags.
 - Every fixture analyzer subprocess must remove `LANG`, `LC_ALL`, and `LC_CTYPE`.
-- Preserve all 52 fixture classifications, diagnostics, Swift fixtures, and baseline values.
-- Genuinely invalid UTF-8 must remain a loud nonzero failure; do not normalize or replace invalid bytes.
+- Preserve all 52 existing privacy-case classifications, diagnostics, Swift fixtures, and baseline values.
+- Genuinely invalid UTF-8 must produce a named nonzero file diagnostic; do not normalize or replace invalid bytes.
 - Increment `MARKETING_VERSION` from 2.0.22 to 2.0.23 and `CURRENT_PROJECT_VERSION` from 41 to 42.
 - Do not run Xcode or simulator tests; locale-stripped Ruby commands reproduce the exact GUI failure boundary.
 - Never amend or force-push. All commits must be signed, and independent review is required before merge.
@@ -29,7 +29,7 @@
 - Test: `scripts/fixtures/log-privacy/pass/lexer_boundaries.swift` through the existing harness case `lexer skips comments and string contents`
 
 **Interfaces:**
-- Consumes: `SYSTEM_RUBY = '/usr/bin/ruby'`, `Open3.capture3`, and the existing 52-case fixture suite.
+- Consumes: `SYSTEM_RUBY = '/usr/bin/ruby'`, `Open3.capture3`, and the existing 52-case privacy suite.
 - Produces: `ANALYZER_ENVIRONMENT`, a frozen hash passed as the first argument to `Open3.capture3` so analyzer subprocesses run without locale variables.
 
 - [ ] **Step 1: Record the existing locale-stripped RED**
@@ -104,7 +104,15 @@ In `read_nonnegative_integer`, replace the implicit read with:
 value = path.read(encoding: Encoding::UTF_8)
 ```
 
-- [ ] **Step 3: Run the complete suite under every required harness context**
+- [ ] **Step 3: Add a named invalid-UTF-8 regression case**
+
+Use `with_fixture_root` to overwrite its temporary `Foqos/Fixture.swift` with
+`File.binwrite(destination, [0xFF].pack('C'))`. Run the real analyzer and require status 2 plus the
+literal diagnostic `Foqos/Fixture.swift:1: error: invalid byte sequence in UTF-8`. Add
+`ArgumentError` to the existing per-file rescue list so the analyzer converts the exception into a
+path-bearing `Finding` without accepting the damaged file.
+
+- [ ] **Step 4: Run the complete suite under every required harness context**
 
 Run:
 
@@ -114,9 +122,9 @@ ruby scripts/test-check-log-privacy.rb
 env -u LANG -u LC_ALL -u LC_CTYPE /usr/bin/ruby scripts/test-check-log-privacy.rb
 ```
 
-Expected from each: `PASS: 52 log privacy lint cases`. Every analyzer subprocess is system Ruby with locale variables removed; the third command also proves the harness itself works without a locale.
+Expected from each: `PASS: 53 log privacy lint cases`. Every analyzer subprocess is system Ruby with locale variables removed; the third command also proves the harness itself works without a locale.
 
-- [ ] **Step 4: Verify production behavior is locale-independent by effect**
+- [ ] **Step 5: Verify production behavior is locale-independent by effect**
 
 Run:
 
@@ -211,7 +219,7 @@ git status --porcelain=v1
 git log --show-signature --format='%h %G? %s' origin/main..HEAD
 ```
 
-Expected: all suites pass 52 cases; both production runs report identical 232/232 and 500-site totals; syntax, style, version, and diff gates pass; status is empty; every commit has a good signature.
+Expected: all suites pass 53 cases; both production runs report identical 232/232 and 500-site totals; syntax, style, version, and diff gates pass; status is empty; every commit has a good signature.
 
 - [ ] **Step 2: Request independent AMQ review**
 

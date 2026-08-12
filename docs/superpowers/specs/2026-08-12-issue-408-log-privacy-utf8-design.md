@@ -35,14 +35,13 @@ state.
   by the shipped macOS Ruby 2.6 runtime and returns the production source as valid UTF-8 even when
   locale variables are absent.
 - The fixture harness always removes `LANG`, `LC_ALL`, and `LC_CTYPE` from analyzer subprocesses by
-  passing a frozen environment override to `Open3.capture3`. Every one of the existing 52 cases then
-  exercises the harshest deployed environment automatically, regardless of the terminal or harness
-  interpreter.
+  passing a frozen environment override to `Open3.capture3`. Every case then exercises the harshest
+  deployed environment automatically, regardless of the terminal or harness interpreter.
 - The Xcode phase remains unchanged. It already invokes `/usr/bin/ruby` absolutely and needs no
   locale setup once the analyzer owns its input encoding.
-- Genuinely invalid UTF-8 remains a loud, nonzero analyzer failure. Adding a specialized per-file
-  diagnostic is outside this fix because no project input exhibits that condition and current
-  behavior already fails closed.
+- Genuinely invalid UTF-8 produces a named, nonzero Xcode-formatted diagnostic for the offending
+  file. The existing per-file rescue converts `ArgumentError` into a `Finding`; it does not normalize,
+  replace, or silently skip invalid bytes.
 
 This design preserves all privacy classifications, diagnostics, fixtures, and baselines. It changes
 only how existing bytes are decoded and how the harness constructs the analyzer environment.
@@ -66,7 +65,7 @@ system-Ruby or PATH-Ruby fixture harness
   -> Open3 environment removes LANG/LC_ALL/LC_CTYPE
   -> /usr/bin/ruby analyzer subprocess
   -> explicit UTF-8 reads
-  -> unchanged expected result for each of 52 fixtures
+  -> unchanged expected result for each privacy fixture
 ```
 
 The harness remains compatible with both system Ruby 2.6 and the developer's PATH Ruby. Analyzer
@@ -90,9 +89,10 @@ requirement across callers. The analyzer must be deterministic on its own.
 ## Error Handling
 
 Missing files and malformed numeric baselines retain their existing named, nonzero diagnostics.
-Unreadable files retain the existing fail-closed handling. Invalid UTF-8 remains nonzero rather than
-being normalized, replaced, or silently skipped; accepting damaged source would weaken a build
-guard.
+Unreadable files retain the existing fail-closed handling. A genuinely invalid UTF-8 source is
+converted at the per-file rescue boundary into `path:1: error: invalid byte sequence in UTF-8`, while
+the analyzer remains nonzero and reports incomplete file coverage. It is never normalized, replaced,
+or silently skipped; accepting damaged source would weaken a build guard.
 
 The macOS Privacy & Security prompt that concurrently said `ruby` was prevented from modifying a
 path is incidental to this encoding failure. The production analyzer has no write operations, the
@@ -112,7 +112,8 @@ env -u LANG -u LC_ALL -u LC_CTYPE /usr/bin/ruby \
 ```
 
 The suite fails the existing Unicode lexer fixture, and production analysis raises from
-`SwiftLexer#code_mask`.
+`SwiftLexer#code_mask`. A separate temporary invalid-byte case proves the pre-fix analyzer emits a
+raw backtrace without naming the offending Swift file.
 
 After implementation, run the complete suite through all required harness contexts:
 
@@ -124,7 +125,8 @@ env -u LANG -u LC_ALL -u LC_CTYPE /usr/bin/ruby \
 ```
 
 Because the harness strips locale from every analyzer subprocess, all three commands enforce the GUI
-environment; the third additionally proves the harness itself works without a locale.
+environment; the third additionally proves the harness itself works without a locale. Each reports
+53 cases: the unchanged 52 privacy cases plus the invalid-UTF-8 named-failure case.
 
 Then verify the production analyzer by effect in both process environments:
 
