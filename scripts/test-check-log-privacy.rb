@@ -13,6 +13,11 @@ require 'pathname'
 require 'tmpdir'
 
 SYSTEM_RUBY = '/usr/bin/ruby'
+ANALYZER_ENVIRONMENT = {
+  'LANG' => nil,
+  'LC_ALL' => nil,
+  'LC_CTYPE' => nil
+}.freeze
 REPO_ROOT = Pathname(__dir__).parent.freeze
 ANALYZER = REPO_ROOT.join('scripts/check-log-privacy.rb').freeze
 FIXTURE_ROOT = REPO_ROOT.join('scripts/fixtures/log-privacy').freeze
@@ -437,7 +442,13 @@ def with_fixture_root(fixture:, site_floor:, annotation_count:)
 end
 
 def run_analyzer(root)
-  Open3.capture3(SYSTEM_RUBY, ANALYZER.to_s, '--root', root.to_s)
+  Open3.capture3(
+    ANALYZER_ENVIRONMENT,
+    SYSTEM_RUBY,
+    ANALYZER.to_s,
+    '--root',
+    root.to_s
+  )
 end
 
 def result_matches?(
@@ -571,9 +582,22 @@ with_fixture_root(fixture: 'pass/roster_display_name.swift', site_floor: 0, anno
   end
 end
 
+with_fixture_root(fixture: 'pass/roster_display_name.swift', site_floor: 0, annotation_count: 0) do |root, destination|
+  File.binwrite(destination, [0xFF].pack('C'))
+  stdout, stderr, status = run_analyzer(root)
+  failures += 1 unless result_matches?(
+    name: 'invalid UTF-8 names the discovered file',
+    expected_status: 2,
+    diagnostic: 'Foqos/Fixture.swift:1: error: invalid byte sequence in UTF-8',
+    stdout: stdout,
+    stderr: stderr,
+    process_status: status
+  )
+end
+
 if failures.positive?
   warn "FAIL: #{failures} log privacy lint test(s) failed"
   exit 1
 end
 
-puts "PASS: #{CASES.length + 6} log privacy lint cases"
+puts "PASS: #{CASES.length + 7} log privacy lint cases"

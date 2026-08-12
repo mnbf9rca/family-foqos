@@ -431,7 +431,7 @@ module LogPrivacy
       files.each do |file|
         relative_path = file.relative_path_from(root).to_s
         begin
-          source = file.read
+          source = file.read(encoding: Encoding::UTF_8)
           lexer = SwiftLexer.new(file, source)
           calls = lexer.log_calls
           sites += calls.length
@@ -442,7 +442,7 @@ module LogPrivacy
             findings.concat(analyze_interpolations(call, lexer))
           end
           analyzed += 1
-        rescue AnalysisError, Errno::EACCES, Errno::ENOENT => e
+        rescue AnalysisError, ArgumentError, Errno::EACCES, Errno::ENOENT => e
           line = e.respond_to?(:line) ? e.line : nil
           errors << Finding.new(
             path: file,
@@ -505,7 +505,7 @@ module LogPrivacy
     end
 
     def read_nonnegative_integer(path, label)
-      value = path.read
+      value = path.read(encoding: Encoding::UTF_8)
       return Integer(value, 10) if value.match?(/\A\d+\n?\z/)
 
       raise AnalysisError.new("malformed #{label}: #{path}", path: path, line: 1)
