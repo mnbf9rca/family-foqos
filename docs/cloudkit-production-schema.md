@@ -38,6 +38,20 @@ same pull request. Maintainers do not need to run discovery searches by hand.
 Only a maintainer performs this workflow, after the final schema-touching pull request has merged
 and before the first dependent TestFlight or App Store build.
 
+### Verifying Process Changes Before Merge
+
+When a pull request changes the release process itself, a maintainer can verify the complete
+TestFlight path from a clean feature worktree before merge:
+
+```bash
+scripts/fastlane.sh check_asc_key
+FOQOS_PREFLIGHT_ALLOW_BRANCH="$(git branch --show-current)" scripts/fastlane.sh beta
+```
+
+The override must exactly match the current branch and prints a prominent verification-run banner.
+It bypasses only the `main` branch check; the clean-tree, release-blocker, and Production schema
+gates remain mandatory. Omit the override for ordinary releases, which continue to require `main`.
+
 1. Run repository preflight:
 
    ```bash
