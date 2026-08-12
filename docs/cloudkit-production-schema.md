@@ -14,6 +14,8 @@ Use this checklist whenever a code change adds or changes a CloudKit record type
 1. Make the record-type or field change in code.
 2. Run the manifest header searches to find every declared record type and field:
 
+   Prerequisite: install ripgrep with `brew install ripgrep`.
+
    ```bash
    rg -n 'static let recordType\s*=\s*"[^"]+"' Foqos FoqosDeviceMonitor FoqosShieldConfig FoqosWidget
    rg -n 'CKRecord\(recordType:\s*"[^"]+"' Foqos FoqosDeviceMonitor FoqosShieldConfig FoqosWidget

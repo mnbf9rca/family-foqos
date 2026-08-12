@@ -92,6 +92,11 @@ manifest requirement, CloudKit container setting, or Production deployment is ch
 The runbook continues to state that Production schema changes are additive-only: operators must not
 rename or remove deployed record types or fields.
 
+Repository scripts must not acquire an optional `ripgrep` dependency because missing script tools
+must fail closed rather than silently skip checks. The routine checklist may use its existing
+`rg`-flavored manifest searches because a human operator sees `command not found`; both `AGENTS.md`
+and the checklist document `brew install ripgrep` as the prerequisite.
+
 The expected-failure prefix is presentation only. It does not suppress fixture stderr, change any
 assertion, or turn an unexpected harness failure into a pass.
 
@@ -130,6 +135,7 @@ not Xcode build-phase tooling.
 Implementation changes are limited to:
 
 - `docs/cloudkit-production-schema.md`
+- `AGENTS.md` prerequisite documentation
 - `scripts/check-cloudkit-schema-export.sh`
 - `scripts/test-check-cloudkit-schema-export.sh`
 - `scripts/test-check-prod-schema.sh`

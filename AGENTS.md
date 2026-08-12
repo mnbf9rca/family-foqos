@@ -115,7 +115,7 @@ outside the wrapper.
 ### Code Formatting
 The project uses swift-format to maintain consistent code style. Configuration is in `.swift-format` at the repo root. A pre-commit hook auto-formats staged Swift files.
 
-**Prerequisite:** Install swift-format: `brew install swift-format`
+**Prerequisites:** Install swift-format and ripgrep: `brew install swift-format ripgrep`
 
 ```bash
 # Format all Swift files
