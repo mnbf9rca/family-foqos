@@ -29,8 +29,8 @@ in code.” It directs the operator to:
 2. reconcile that manifest with the code while preserving built-in and deprecated requirements;
 3. update `Foqos/CloudKit/cloudkit-schema.ckdb` from the CloudKit Development schema;
 4. run the checked-in schema checker and its harness; and
-5. include the code, manifest, schema export, and relevant verification evidence in the pull
-   request.
+5. include the code, manifest, schema export, and successful checker and harness outputs in the
+   pull request.
 
 The checklist does not hardcode the current record-type or field counts. Those counts are useful
 reconciliation notes in the manifest header, but procedural steps that repeat them would become
@@ -46,7 +46,8 @@ The second checklist directs the maintainer to:
 3. review the pending additive schema, choose **Deploy Schema Changes**, and confirm completion;
 4. run `bash scripts/check-prod-schema.sh` with authenticated `cktool` as postflight;
 5. close the release's schema tracking issue; and
-6. proceed to the applicable Fastlane beta or release lane only after postflight is green.
+6. run `scripts/fastlane.sh beta` for TestFlight or `scripts/fastlane.sh release` for App Store
+   submission only after postflight is green.
 
 The Console deployment remains maintainer-only. Agents can update, check, and review repository
 artifacts but cannot promote the Production schema.
