@@ -115,7 +115,7 @@ if [[ "$GATE_STATUS" -ne 42 ]]; then
 fi
 QUERY_FAILURE_STATUS=$GATE_STATUS
 
-echo "$EMPTY_OUTPUT"
-echo "empty-manifest exit: $EMPTY_STATUS"
-echo "forced-cktool exit: $QUERY_FAILURE_STATUS"
+echo "[expected-failure] $EMPTY_OUTPUT"
+echo "[expected-failure] empty-manifest exit: $EMPTY_STATUS"
+echo "[expected-failure] forced-cktool exit: $QUERY_FAILURE_STATUS"
 echo "PASS: production-schema gate cases"
