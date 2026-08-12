@@ -546,6 +546,7 @@
 			inputFileListPaths = (
 			);
 			inputPaths = (
+				"$(SRCROOT)/scripts/run-log-privacy-lint.sh",
 				"$(SRCROOT)/scripts/check-log-privacy.rb",
 				"$(SRCROOT)/scripts/log-privacy-baseline.txt",
 				"$(SRCROOT)/scripts/log-privacy-annotation-baseline.txt",
@@ -562,7 +563,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "[ -x /usr/bin/ruby ] || {\n  echo \"error: Log Privacy Lint requires macOS system Ruby at /usr/bin/ruby\" >&2\n  exit 2\n}\n/usr/bin/ruby \"${SRCROOT}/scripts/check-log-privacy.rb\" --root \"${SRCROOT}\"\n";
+			shellScript = "\"${SRCROOT}/scripts/run-log-privacy-lint.sh\" \"${SRCROOT}\"\n";
 		};
 		D472D4332F3200DE00AA3453 /* Concurrency Escape Hatch Lint */ = {
 			isa = PBXShellScriptBuildPhase;
