@@ -13,6 +13,11 @@ require 'pathname'
 require 'tmpdir'
 
 SYSTEM_RUBY = '/usr/bin/ruby'
+ANALYZER_ENVIRONMENT = {
+  'LANG' => nil,
+  'LC_ALL' => nil,
+  'LC_CTYPE' => nil
+}.freeze
 REPO_ROOT = Pathname(__dir__).parent.freeze
 ANALYZER = REPO_ROOT.join('scripts/check-log-privacy.rb').freeze
 FIXTURE_ROOT = REPO_ROOT.join('scripts/fixtures/log-privacy').freeze
@@ -437,7 +442,13 @@ def with_fixture_root(fixture:, site_floor:, annotation_count:)
 end
 
 def run_analyzer(root)
-  Open3.capture3(SYSTEM_RUBY, ANALYZER.to_s, '--root', root.to_s)
+  Open3.capture3(
+    ANALYZER_ENVIRONMENT,
+    SYSTEM_RUBY,
+    ANALYZER.to_s,
+    '--root',
+    root.to_s
+  )
 end
 
 def result_matches?(
