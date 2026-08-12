@@ -1,7 +1,8 @@
 #!/bin/bash
-# Release gate: verify every record type this build requires exists in the
+# Release gate: verify every record type and field name this build requires exists in the
 # DEPLOYED CloudKit PRODUCTION schema. Fails closed: any cktool error aborts.
-# This checks record-type existence only; it does not compare field definitions.
+# This checks required record-type and field-name existence; it does not compare data types,
+# indexes, or grants.
 set -euo pipefail
 
 # Keep this list in sync whenever the script starts invoking another external tool.
