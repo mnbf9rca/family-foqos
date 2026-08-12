@@ -74,6 +74,7 @@ vendor/bundle/
 .worktrees/
 docs/plans/
 docs/codebase-analysis/
+debug/
 
 /.direnv/
 
