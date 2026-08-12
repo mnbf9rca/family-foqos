@@ -44,8 +44,10 @@ printf '%s\n' \
   ');' \
   >"$TEST_ROOT/Foqos/CloudKit/cloudkit-schema.ckdb"
 run_check
-if [[ "$CHECK_STATUS" -ne 0 || "$CHECK_OUTPUT" != *"covers every required record type"* ]]; then
-  echo "FAIL: matching schema with compatibility extras must pass"
+if [[ "$CHECK_STATUS" -ne 0 ||
+  "$CHECK_OUTPUT" != *"Checked-in CloudKit schema covers every required record type and field."* ||
+  "$CHECK_OUTPUT" != *"Next: if preparing a release, promote via docs/cloudkit-production-schema.md"* ]]; then
+  echo "FAIL: matching schema with compatibility extras must pass and point to the runbook"
   echo "$CHECK_OUTPUT"
   exit 1
 fi

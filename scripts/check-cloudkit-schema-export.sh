@@ -69,3 +69,4 @@ if [[ "$missing" -ne 0 ]]; then
 fi
 
 echo "Checked-in CloudKit schema covers every required record type and field."
+echo "Next: if preparing a release, promote via docs/cloudkit-production-schema.md"
