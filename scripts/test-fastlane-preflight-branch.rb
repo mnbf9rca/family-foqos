@@ -3,6 +3,9 @@
 require File.expand_path('../fastlane/preflight_branch', __dir__)
 
 cases = [
+  { current: nil, allowed: nil, expected: :enforce_main },
+  { current: '', allowed: '', expected: :enforce_main },
+  { current: 'HEAD', allowed: 'HEAD', expected: :enforce_main },
   { current: 'main', allowed: nil, expected: :enforce_main },
   { current: 'feature/schema', allowed: nil, expected: :enforce_main },
   { current: 'feature/schema', allowed: 'other', expected: :enforce_main },

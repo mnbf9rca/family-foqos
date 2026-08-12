@@ -45,12 +45,14 @@ TestFlight path from a clean feature worktree before merge:
 
 ```bash
 scripts/fastlane.sh check_asc_key
-FOQOS_PREFLIGHT_ALLOW_BRANCH="$(git branch --show-current)" scripts/fastlane.sh beta
+verification_branch="$(git rev-parse --abbrev-ref HEAD)"
+FOQOS_PREFLIGHT_ALLOW_BRANCH="$verification_branch" scripts/fastlane.sh beta
 ```
 
-The override must exactly match the current branch and prints a prominent verification-run banner.
-It bypasses only the `main` branch check; the clean-tree, release-blocker, and Production schema
-gates remain mandatory. Omit the override for ordinary releases, which continue to require `main`.
+The override requires an attached, named feature branch, must exactly match the current branch, and
+prints a prominent verification-run banner. A missing branch or detached `HEAD` is rejected. It
+bypasses only the `main` branch check; the clean-tree, release-blocker, and Production schema gates
+remain mandatory. Omit the override for ordinary releases, which continue to require `main`.
 
 1. Run repository preflight:
 
