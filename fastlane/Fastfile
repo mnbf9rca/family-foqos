@@ -5,6 +5,7 @@ require 'json'
 require 'shellwords'
 require File.expand_path('archive_storage', __dir__)
 require File.expand_path('asc_credentials', __dir__)
+require File.expand_path('preflight_branch', __dir__)
 require File.expand_path('simulator_gate', __dir__)
 
 # Runs under Homebrew Ruby via Bundler: export PATH="$(brew --prefix ruby)/bin:$PATH" && bundle exec fastlane <lane>
@@ -19,7 +20,15 @@ RELEASE_BLOCKING_LABEL = 'release-blocking'
 platform :ios do
   private_lane :preflight do
     ensure_git_status_clean
-    ensure_git_branch(branch: 'main')
+    current_branch = git_branch
+    if PreflightBranch.mode(
+      current_branch: current_branch,
+      allowed_branch: ENV.fetch('FOQOS_PREFLIGHT_ALLOW_BRANCH', nil)
+    ) == :verification
+      UI.important("VERIFICATION RUN from branch #{current_branch} (maintainer override)")
+    else
+      ensure_git_branch(branch: 'main')
+    end
   end
 
   private_lane :asc_api_key do
@@ -38,6 +47,7 @@ platform :ios do
         project: XCODEPROJ,
         scheme: SCHEME,
         configuration: 'Release',
+        # Gym 2.237.0 rejects Xcode's app-store-connect spelling before archiving.
         export_method: 'app-store',
         xcargs: "CURRENT_PROJECT_VERSION=#{build} -allowProvisioningUpdates " \
                 "-authenticationKeyPath #{Shellwords.escape(key_path)} " \

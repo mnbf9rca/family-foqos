@@ -36,6 +36,18 @@ System Ruby is the runtime contract for the build guard.
 The build phase remains the effect-based enforcement point. Any future analyzer use of a runtime API
 missing from system Ruby will fail every build rather than passing under one developer's PATH.
 
+### Subsequent environment hardening
+
+PR #411 exposed a third runtime variant: Fastlane launches `gym` under Bundler, and Xcode build
+phases inherit `RUBYOPT`, `RUBYLIB`, and related Gem/Bundler variables. Those variables made the
+pinned system Ruby load Homebrew Ruby 4 Bundler code and crash before the analyzer started.
+
+The deterministic-runtime contract therefore owns the interpreter's entire environment, not only
+its binary path. The Xcode phase now calls `scripts/run-log-privacy-lint.sh`, which launches
+`/usr/bin/ruby` through `/usr/bin/env -i` with only explicit analyzer and repository arguments. A
+regression runs that wrapper under `bundle exec` and proves the real production-tree analyzer passes
+while the parent process carries Bundler's Ruby environment.
+
 ## Alternatives Rejected
 
 ### Pin Homebrew Ruby

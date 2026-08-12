@@ -153,3 +153,11 @@ Implementation changes are limited to:
 
 The build-phase command, Swift production sources, privacy rules, fixtures, baselines, and Fastlane
 runtime do not change.
+
+## Subsequent Environment Hardening
+
+PR #411 later changed the build-phase command after a Fastlane archive proved that pinning
+`/usr/bin/ruby` was insufficient when `RUBYOPT`, `RUBYLIB`, and Gem/Bundler variables were inherited
+from `bundle exec`. `scripts/run-log-privacy-lint.sh` now starts the same system Ruby through a clean
+environment. The analyzer continues to own UTF-8 decoding at its file-read boundary; the launcher
+now separately owns interpreter isolation.

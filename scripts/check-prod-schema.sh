@@ -1,11 +1,12 @@
 #!/bin/bash
-# Release gate: verify every record type this build requires exists in the
+# Release gate: verify every record type and field name this build requires exists in the
 # DEPLOYED CloudKit PRODUCTION schema. Fails closed: any cktool error aborts.
-# This checks record-type existence only; it does not compare field definitions.
+# This checks required record-type and field-name existence; it does not compare data types,
+# indexes, or grants.
 set -euo pipefail
 
 # Keep this list in sync whenever the script starts invoking another external tool.
-required_commands=(dirname grep xcrun)
+required_commands=(awk dirname grep xcrun)
 for required_command in "${required_commands[@]}"; do
   command -v "$required_command" >/dev/null || {
     echo "Required command not found: $required_command" >&2
@@ -44,10 +45,29 @@ SCHEMA=$(xcrun cktool export-schema \
   --container-id "$CONTAINER_ID" \
   --environment production)
 
+NORMALIZED_SCHEMA=$(awk '
+  /^[[:space:]]*RECORD TYPE / {
+    record_type=$0
+    sub(/^[[:space:]]*RECORD TYPE[[:space:]]+/, "", record_type)
+    sub(/[[:space:]]*\(.*/, "", record_type)
+    print "RECORD TYPE " record_type
+    in_record=1
+    next
+  }
+  in_record && /^[[:space:]]*\);/ { in_record=0; next }
+  in_record {
+    field=$0
+    sub(/^[[:space:]]*/, "", field)
+    if (field == "" || field ~ /^"/ || field ~ /^GRANT /) next
+    sub(/[[:space:]].*$/, "", field)
+    print "RECORD TYPE " record_type "." field
+  }
+' <<<"$SCHEMA")
+
 missing=0
 while IFS= read -r line; do
   [[ -z "$line" || "$line" == \#* ]] && continue
-  if ! grep -qF "$line (" <<<"$SCHEMA"; then
+  if ! grep -qxF "$line" <<<"$NORMALIZED_SCHEMA"; then
     echo "MISSING in production schema: $line"
     missing=1
   fi

@@ -11,7 +11,14 @@ for required_command in "${required_commands[@]}"; do
 done
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+REAL_EXPORT_FIXTURE="$REPO_ROOT/scripts/fixtures/cktool-production-schema.txt"
 TEST_ROOT=$(mktemp -d)
+
+[[ -r "$REAL_EXPORT_FIXTURE" ]] || {
+  echo "FAIL: real cktool export fixture is unreadable: $REAL_EXPORT_FIXTURE"
+  exit 1
+}
+REAL_EXPORT=$(cat "$REAL_EXPORT_FIXTURE")
 
 cleanup() {
   if [[ -n "${TEST_ROOT:-}" && -d "$TEST_ROOT" ]]; then
@@ -75,7 +82,7 @@ fi
 EMPTY_OUTPUT=$GATE_OUTPUT
 EMPTY_STATUS=$GATE_STATUS
 
-printf 'RECORD TYPE Present\n' >"$TEST_ROOT/fastlane/required-prod-schema.txt"
+printf 'RECORD TYPE FamilyCommand\n' >"$TEST_ROOT/fastlane/required-prod-schema.txt"
 : >"$TEST_ROOT/xcrun.log"
 FAKE_CKTOOL_AVAILABLE=0 run_gate
 if [[ "$GATE_STATUS" -ne 1 || "$GATE_OUTPUT" != *"cktool"* ]]; then
@@ -89,21 +96,31 @@ if grep -F 'cktool export-schema' "$TEST_ROOT/xcrun.log" >/dev/null; then
   exit 1
 fi
 
-FAKE_SCHEMA='RECORD TYPE Present (' run_gate
+printf '%s\n' \
+  'RECORD TYPE FamilyCommand' \
+  'RECORD TYPE FamilyCommand.id' \
+  'RECORD TYPE FamilyCommand.createdAt' \
+  >"$TEST_ROOT/fastlane/required-prod-schema.txt"
+FAKE_SCHEMA="$REAL_EXPORT" run_gate
 if [[ "$GATE_STATUS" -ne 0 || "$GATE_OUTPUT" != *"Production schema OK."* ]]; then
-  echo "FAIL: matching production schema must pass"
+  echo "FAIL: fields from a real cktool export must satisfy the manifest"
+  echo "actual exit: $GATE_STATUS"
+  echo "$GATE_OUTPUT"
   exit 1
 fi
 
-FAKE_SCHEMA='RECORD TYPE PresentExtra (' run_gate
+printf 'RECORD TYPE Family\n' >"$TEST_ROOT/fastlane/required-prod-schema.txt"
+FAKE_SCHEMA="$REAL_EXPORT" run_gate
 if [[ "$GATE_STATUS" -ne 1 ]]; then
   echo "FAIL: a prefixed record type must not satisfy the exact requirement"
   exit 1
 fi
 
-FAKE_SCHEMA='' run_gate
-if [[ "$GATE_STATUS" -ne 1 || "$GATE_OUTPUT" != *"MISSING in production schema: RECORD TYPE Present"* ]]; then
-  echo "FAIL: missing production record type must exit 1"
+printf 'RECORD TYPE FamilyCommand.notDeployed\n' >"$TEST_ROOT/fastlane/required-prod-schema.txt"
+FAKE_SCHEMA="$REAL_EXPORT" run_gate
+if [[ "$GATE_STATUS" -ne 1 ||
+  "$GATE_OUTPUT" != *"MISSING in production schema: RECORD TYPE FamilyCommand.notDeployed"* ]]; then
+  echo "FAIL: missing production field must exit 1"
   exit 1
 fi
 

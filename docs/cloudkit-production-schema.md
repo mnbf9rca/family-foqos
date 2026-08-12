@@ -7,75 +7,126 @@ Production environment, so promote the final Development schema before uploading
 that depends on it. Production schema changes are additive-only; never rename or remove a deployed
 record type or field.
 
-## 1. Routine Schema Change
+## 1. Routine Schema Change — Coding Agents
 
-Use this checklist whenever a code change adds or changes a CloudKit record type or field.
+The coding agent making a CloudKit record or field change normally completes this workflow in the
+same pull request. Maintainers do not need to run discovery searches by hand.
 
 1. Make the record-type or field change in code.
-2. Run the manifest header searches to find every declared record type and field:
-
-   Prerequisite: install ripgrep with `brew install ripgrep`.
+2. Run the drift reporter:
 
    ```bash
-   rg -n 'static let recordType\s*=\s*"[^"]+"' Foqos FoqosDeviceMonitor FoqosShieldConfig FoqosWidget
-   rg -n 'CKRecord\(recordType:\s*"[^"]+"' Foqos FoqosDeviceMonitor FoqosShieldConfig FoqosWidget
-   rg -n 'static let recordType|enum FieldKey: String|^[[:space:]]+case [[:alnum:]_]+( = "[^"]+")?$' Foqos/CloudKit/SyncModels.swift Foqos/CloudKit/ProfileSessionRecord.swift
-   rg -n 'static let recordType|enum RecordKey|^[[:space:]]+static let [[:alnum:]_]+ = "[^"]+"' Foqos/Models/DeviceHeartbeat.swift Foqos/Models/FamilyCommand.swift Foqos/Models/FamilyLockCode.swift Foqos/Models/FamilyMember.swift
-   rg -n 'rootRecord\["[^"]+"\]' Foqos/CloudKit/CloudKitNetworkService.swift Foqos/CloudKit/CloudKitNetworkService+Sharing.swift
+   bash scripts/report-cloudkit-schema-drift.sh
    ```
 
-3. Reconcile `fastlane/required-prod-schema.txt` with the search results. Preserve built-in and
-   deprecated requirements, and update the reconciliation date and descriptive counts in its
-   header.
-4. Reconcile `Foqos/CloudKit/cloudkit-schema.ckdb` with the CloudKit Development schema. Preserve
-   declarations already deployed to Production for compatibility.
-5. Run the checked-in schema checker and its harness:
+   Stop if it reports drift. Update the reported entries in
+   `fastlane/required-prod-schema.txt` and `Foqos/CloudKit/cloudkit-schema.ckdb`, preserving
+   declarations already deployed to Production, then rerun the reporter until it prints
+   `OK: no CloudKit schema drift.`.
+3. Run the checked-in schema checker and its harness:
 
    ```bash
    bash scripts/check-cloudkit-schema-export.sh
    bash scripts/test-check-cloudkit-schema-export.sh
    ```
 
-6. Include the code change, manifest, `.ckdb`, and successful checker and harness output in the pull
-   request.
+4. Include the code, manifest, and `.ckdb` changes plus successful reporter and checker output in
+   the pull request.
 
-## 2. Release Promotion
+## 2. Release Promotion — Maintainer Only
 
-Use this checklist after the final schema-touching pull request has merged and before the first
-TestFlight or App Store build that depends on it.
+Only a maintainer performs this workflow, after the final schema-touching pull request has merged
+and before the first dependent TestFlight or App Store build.
+
+### Verifying Process Changes Before Merge
+
+When a pull request changes the release process itself, a maintainer can verify the complete
+TestFlight path from a clean feature worktree before merge:
+
+```bash
+scripts/fastlane.sh check_asc_key
+verification_branch="$(git rev-parse --abbrev-ref HEAD)"
+FOQOS_PREFLIGHT_ALLOW_BRANCH="$verification_branch" scripts/fastlane.sh beta
+```
+
+The override requires an attached, named feature branch, must exactly match the current branch, and
+prints a prominent verification-run banner. A missing branch or detached `HEAD` is rejected. It
+bypasses only the `main` branch check; the clean-tree, release-blocker, and Production schema gates
+remain mandatory. Omit the override for ordinary releases, which continue to require `main`.
+
+### Signing Prerequisites
+
+The upload lanes use automatic signing with an App Store Connect API key. The `check_asc_key` lane
+proves only that the credential loads; it cannot verify the key's role or its access to
+cloud-managed distribution certificates. Before running `beta` or `release`, use an Admin team API
+key whose team has enabled cloud-managed distribution-certificate access. Apple restricts creating
+those certificates to Account Holder and Admin roles, so an App Manager key can upload builds but
+still fail this automatic-signing step.
+
+If export fails with `Cloud signing permission error` followed by `No profiles for ... were found`,
+stop instead of repeatedly rebuilding the archive. Either replace the credential with an Admin key
+that can use cloud-managed distribution certificates, or configure an active local Apple
+Distribution certificate and explicit App Store Connect provisioning profiles for the app and all
+three extensions. The current lanes implement only the automatic-signing path; the explicit-signing
+alternative requires a reviewed tooling change before it can be used.
 
 1. Run repository preflight:
 
    ```bash
+   bash scripts/report-cloudkit-schema-drift.sh
    bash scripts/check-cloudkit-schema-export.sh
    bash scripts/test-check-prod-schema.sh
    ```
 
-2. Sign in to [CloudKit Console](https://icloud.developer.apple.com/), select
-   `iCloud.com.cynexia.family-foqos`, choose its CloudKit Database, and select the Development
-   environment. Compare its schema with `Foqos/CloudKit/cloudkit-schema.ckdb`.
-3. Review the pending additive changes, choose **Deploy Schema Changes**, confirm the deployment,
-   and wait for completion.
+2. With `cktool` authenticated for the container, import the reviewed checked-in schema into the
+   Development environment:
+
+   ```bash
+   xcrun cktool import-schema \
+     --team-id BU7526J4QY \
+     --container-id iCloud.com.cynexia.family-foqos \
+     --environment development \
+     --validate \
+     --file Foqos/CloudKit/cloudkit-schema.ckdb
+   ```
+
+   Alternatively, in [CloudKit Console](https://icloud.developer.apple.com/), select the container's
+   Development environment, choose **Import Schema**, and select the same checked-in `.ckdb` file.
+
+   Treat the checked-in file as canonical. Import applies it to Development and may remove
+   Development-only experiments that are absent from the file. CloudKit rejects the update without
+   making changes if the required modifications could cause data loss relative to Production;
+   resolve any rejection before continuing.
+3. In CloudKit Console, choose **Deploy Schema Changes** and review the actual
+   Development-to-Production additive diff. If nothing is pending, record that the canonical schema
+   is already deployed and continue to postflight. Otherwise, confirm the deployment and wait for
+   completion.
 4. With `cktool` authenticated for the container, run Production postflight:
 
    ```bash
    bash scripts/check-prod-schema.sh
    ```
 
-   Do not continue unless the command exits `0` and prints `Production schema OK.`. Also confirm
-   newly promoted fields in CloudKit Console because this postflight checks required record types.
+   Do not continue unless the command verifies the required record types and fields, exits `0`, and
+   prints `Production schema OK.`.
 5. Close the release's schema tracking issue.
-6. Proceed with the appropriate upload only after postflight is green:
+6. Check the App Store Connect credential, then run exactly one upload lane after postflight is
+   green:
 
    ```bash
-   scripts/fastlane.sh beta     # TestFlight
-   scripts/fastlane.sh release  # App Store submission
+   scripts/fastlane.sh check_asc_key
+
+   # Choose exactly one:
+   scripts/fastlane.sh beta     # TestFlight only
+   scripts/fastlane.sh release  # App Store submission only
    ```
 
-The Console deployment is a maintainer-only action. Agents can update, check, and review repository
-artifacts, but they must not promote the Production schema.
+Agents can update, check, and review repository artifacts, but they must not promote the Production
+schema.
 
 ## Apple References
 
 - [Integrating a Text-Based Schema into Your Workflow](https://developer.apple.com/documentation/cloudkit/integrating-a-text-based-schema-into-your-workflow)
 - [Deploying an iCloud Container’s Schema](https://developer.apple.com/documentation/cloudkit/deploying-an-icloud-container-s-schema)
+- [Cloud-Managed Certificates](https://developer.apple.com/help/account/certificates/cloud-managed-certificates/)
+- [App Store Connect API](https://developer.apple.com/help/app-store-connect/get-started/app-store-connect-api/)

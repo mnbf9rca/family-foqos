@@ -92,10 +92,8 @@ manifest requirement, CloudKit container setting, or Production deployment is ch
 The runbook continues to state that Production schema changes are additive-only: operators must not
 rename or remove deployed record types or fields.
 
-Repository scripts must not acquire an optional `ripgrep` dependency because missing script tools
-must fail closed rather than silently skip checks. The routine checklist may use its existing
-`rg`-flavored manifest searches because a human operator sees `command not found`; both `AGENTS.md`
-and the checklist document `brew install ripgrep` as the prerequisite.
+Repository scripts may require `ripgrep` only when they preflight it and fail closed if it is
+missing. A missing script tool must never silently skip a check.
 
 The expected-failure prefix is presentation only. It does not suppress fixture stderr, change any
 assertion, or turn an unexpected harness failure into a pass.
