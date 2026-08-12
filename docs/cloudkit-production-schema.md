@@ -54,6 +54,20 @@ prints a prominent verification-run banner. A missing branch or detached `HEAD` 
 bypasses only the `main` branch check; the clean-tree, release-blocker, and Production schema gates
 remain mandatory. Omit the override for ordinary releases, which continue to require `main`.
 
+### Signing Prerequisites
+
+The upload lanes use automatic signing with an App Store Connect API key. The `check_asc_key` lane
+proves only that the credential loads; it cannot verify the key's role or its access to
+cloud-managed distribution certificates. Before running `beta` or `release`, use an Admin team API
+key whose team has enabled cloud-managed distribution-certificate access.
+
+If export fails with `Cloud signing permission error` followed by `No profiles for ... were found`,
+stop instead of repeatedly rebuilding the archive. Either replace the credential with an Admin key
+that can use cloud-managed distribution certificates, or configure an active local Apple
+Distribution certificate and explicit App Store Connect provisioning profiles for the app and all
+three extensions. The current lanes implement only the automatic-signing path; the explicit-signing
+alternative requires a reviewed tooling change before it can be used.
+
 1. Run repository preflight:
 
    ```bash
@@ -112,3 +126,5 @@ schema.
 
 - [Integrating a Text-Based Schema into Your Workflow](https://developer.apple.com/documentation/cloudkit/integrating-a-text-based-schema-into-your-workflow)
 - [Deploying an iCloud Container’s Schema](https://developer.apple.com/documentation/cloudkit/deploying-an-icloud-container-s-schema)
+- [Cloud-Managed Certificates](https://developer.apple.com/help/account/certificates/cloud-managed-certificates/)
+- [App Store Connect API](https://developer.apple.com/help/app-store-connect/get-started/app-store-connect-api/)

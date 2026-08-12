@@ -47,7 +47,7 @@ platform :ios do
         project: XCODEPROJ,
         scheme: SCHEME,
         configuration: 'Release',
-        export_method: 'app-store',
+        export_method: 'app-store-connect',
         xcargs: "CURRENT_PROJECT_VERSION=#{build} -allowProvisioningUpdates " \
                 "-authenticationKeyPath #{Shellwords.escape(key_path)} " \
                 "-authenticationKeyID #{api_key.fetch(:key_id)} " \
