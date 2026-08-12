@@ -75,14 +75,18 @@ and before the first dependent TestFlight or App Store build.
    bash scripts/check-prod-schema.sh
    ```
 
-   Do not continue unless the command exits `0` and prints `Production schema OK.`. Also confirm
-   newly promoted fields in CloudKit Console because this postflight checks required record types.
+   Do not continue unless the command verifies the required record types and fields, exits `0`, and
+   prints `Production schema OK.`.
 5. Close the release's schema tracking issue.
-6. Proceed with the appropriate upload only after postflight is green:
+6. Check the App Store Connect credential, then run exactly one upload lane after postflight is
+   green:
 
    ```bash
-   scripts/fastlane.sh beta     # TestFlight
-   scripts/fastlane.sh release  # App Store submission
+   scripts/fastlane.sh check_asc_key
+
+   # Choose exactly one:
+   scripts/fastlane.sh beta     # TestFlight only
+   scripts/fastlane.sh release  # App Store submission only
    ```
 
 Agents can update, check, and review repository artifacts, but they must not promote the Production
