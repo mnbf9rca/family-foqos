@@ -7,46 +7,41 @@ Production environment, so promote the final Development schema before uploading
 that depends on it. Production schema changes are additive-only; never rename or remove a deployed
 record type or field.
 
-## 1. Routine Schema Change
+## 1. Routine Schema Change — Coding Agents
 
-Use this checklist whenever a code change adds or changes a CloudKit record type or field.
+The coding agent making a CloudKit record or field change normally completes this workflow in the
+same pull request. Maintainers do not need to run discovery searches by hand.
 
 1. Make the record-type or field change in code.
-2. Run the manifest header searches to find every declared record type and field:
-
-   Prerequisite: install ripgrep with `brew install ripgrep`.
+2. Run the drift reporter:
 
    ```bash
-   rg -n 'static let recordType\s*=\s*"[^"]+"' Foqos FoqosDeviceMonitor FoqosShieldConfig FoqosWidget
-   rg -n 'CKRecord\(recordType:\s*"[^"]+"' Foqos FoqosDeviceMonitor FoqosShieldConfig FoqosWidget
-   rg -n 'static let recordType|enum FieldKey: String|^[[:space:]]+case [[:alnum:]_]+( = "[^"]+")?$' Foqos/CloudKit/SyncModels.swift Foqos/CloudKit/ProfileSessionRecord.swift
-   rg -n 'static let recordType|enum RecordKey|^[[:space:]]+static let [[:alnum:]_]+ = "[^"]+"' Foqos/Models/DeviceHeartbeat.swift Foqos/Models/FamilyCommand.swift Foqos/Models/FamilyLockCode.swift Foqos/Models/FamilyMember.swift
-   rg -n 'rootRecord\["[^"]+"\]' Foqos/CloudKit/CloudKitNetworkService.swift Foqos/CloudKit/CloudKitNetworkService+Sharing.swift
+   bash scripts/report-cloudkit-schema-drift.sh
    ```
 
-3. Reconcile `fastlane/required-prod-schema.txt` with the search results. Preserve built-in and
-   deprecated requirements, and update the reconciliation date and descriptive counts in its
-   header.
-4. Reconcile `Foqos/CloudKit/cloudkit-schema.ckdb` with the CloudKit Development schema. Preserve
-   declarations already deployed to Production for compatibility.
-5. Run the checked-in schema checker and its harness:
+   Stop if it reports drift. Update the reported entries in
+   `fastlane/required-prod-schema.txt` and `Foqos/CloudKit/cloudkit-schema.ckdb`, preserving
+   declarations already deployed to Production, then rerun the reporter until it prints
+   `OK: no CloudKit schema drift.`.
+3. Run the checked-in schema checker and its harness:
 
    ```bash
    bash scripts/check-cloudkit-schema-export.sh
    bash scripts/test-check-cloudkit-schema-export.sh
    ```
 
-6. Include the code change, manifest, `.ckdb`, and successful checker and harness output in the pull
-   request.
+4. Include the code, manifest, and `.ckdb` changes plus successful reporter and checker output in
+   the pull request.
 
-## 2. Release Promotion
+## 2. Release Promotion — Maintainer Only
 
-Use this checklist after the final schema-touching pull request has merged and before the first
-TestFlight or App Store build that depends on it.
+Only a maintainer performs this workflow, after the final schema-touching pull request has merged
+and before the first dependent TestFlight or App Store build.
 
 1. Run repository preflight:
 
    ```bash
+   bash scripts/report-cloudkit-schema-drift.sh
    bash scripts/check-cloudkit-schema-export.sh
    bash scripts/test-check-prod-schema.sh
    ```
@@ -72,8 +67,8 @@ TestFlight or App Store build that depends on it.
    scripts/fastlane.sh release  # App Store submission
    ```
 
-The Console deployment is a maintainer-only action. Agents can update, check, and review repository
-artifacts, but they must not promote the Production schema.
+Agents can update, check, and review repository artifacts, but they must not promote the Production
+schema.
 
 ## Apple References
 
