@@ -46,7 +46,7 @@ if [[ "${REF_LINES[*]}" != "${EXPECTED_REFS[*]}" ]]; then
 fi
 
 mkdir -p "$TEST_ROOT/bootstrap" "$TEST_ROOT/failing-brew" "$TEST_ROOT/ruby/bin" \
-  "$TEST_ROOT/no-op-ruby/bin"
+  "$TEST_ROOT/no-op-ruby/bin" "$TEST_ROOT/no-xcbeautify-ruby/bin"
 
 cat >"$TEST_ROOT/bootstrap/brew" <<EOF
 #!/bin/bash
@@ -76,9 +76,19 @@ printf '\t%s' "$@" >>"$COMMAND_LOG"
 printf '\n' >>"$COMMAND_LOG"
 EOF
 
+cat >"$TEST_ROOT/ruby/bin/xcbeautify" <<'EOF'
+#!/bin/bash
+[[ "${1:-}" == "--version" ]] || exit 64
+exit "${XCBEAUTIFY_PREFLIGHT_EXIT:-0}"
+EOF
+
 cp "$TEST_ROOT/ruby/bin/bundle" "$TEST_ROOT/no-op-ruby/bin/bundle"
+cp "$TEST_ROOT/ruby/bin/op" "$TEST_ROOT/no-xcbeautify-ruby/bin/op"
+cp "$TEST_ROOT/ruby/bin/bundle" "$TEST_ROOT/no-xcbeautify-ruby/bin/bundle"
 chmod +x "$TEST_ROOT/bootstrap/brew" "$TEST_ROOT/failing-brew/brew" "$TEST_ROOT/ruby/bin/op" \
-  "$TEST_ROOT/ruby/bin/bundle" "$TEST_ROOT/no-op-ruby/bin/bundle"
+  "$TEST_ROOT/ruby/bin/bundle" "$TEST_ROOT/ruby/bin/xcbeautify" \
+  "$TEST_ROOT/no-op-ruby/bin/bundle" "$TEST_ROOT/no-xcbeautify-ruby/bin/op" \
+  "$TEST_ROOT/no-xcbeautify-ruby/bin/bundle"
 
 assert_ruby_prerequisite_failure() {
   local test_name=$1
@@ -110,7 +120,7 @@ run_wrapper() {
     "$WRAPPER" "$@"
 }
 
-for lane in check_asc_key pull_metadata beta release; do
+for lane in check_asc_key pull_metadata beta release verify_export; do
   run_wrapper "$TEST_ROOT/ruby" "$lane" "argument with spaces"
   printf -v expected 'op\trun\t--env-file\t%s\t--\tbundle\texec\tfastlane\t%s\targument with spaces' \
     "$REPO_ROOT/scripts/../fastlane/asc.env" "$lane"
@@ -127,6 +137,38 @@ for lane in screenshots lanes gates build_number; do
   if [[ "$(<"$TEST_ROOT/command.log")" != "$expected" ]]; then
     echo "FAIL: non-credential lane $lane did not bypass op"
     printf 'actual: %s\n' "$(<"$TEST_ROOT/command.log")"
+    exit 1
+  fi
+done
+
+for lane in screenshots beta release verify_export; do
+  rm -f "$TEST_ROOT/command.log"
+  set +e
+  output=$(run_wrapper "$TEST_ROOT/no-xcbeautify-ruby" "$lane" 2>&1)
+  status=$?
+  set -e
+  if [[ "$status" -ne 127 || "$output" != *"xcbeautify"* ]]; then
+    echo "FAIL: formatter lane $lane must reject missing xcbeautify before credentials"
+    printf 'exit: %s\n%s\n' "$status" "$output"
+    exit 1
+  fi
+  if [[ -e "$TEST_ROOT/command.log" ]]; then
+    echo "FAIL: missing xcbeautify invoked op or bundle for $lane"
+    exit 1
+  fi
+
+  rm -f "$TEST_ROOT/command.log"
+  set +e
+  output=$(XCBEAUTIFY_PREFLIGHT_EXIT=19 run_wrapper "$TEST_ROOT/ruby" "$lane" 2>&1)
+  status=$?
+  set -e
+  if [[ "$status" -eq 0 || "$output" != *"xcbeautify"* ]]; then
+    echo "FAIL: formatter lane $lane must reject failed xcbeautify preflight"
+    printf 'exit: %s\n%s\n' "$status" "$output"
+    exit 1
+  fi
+  if [[ -e "$TEST_ROOT/command.log" ]]; then
+    echo "FAIL: unavailable xcbeautify invoked op or bundle for $lane"
     exit 1
   fi
 done

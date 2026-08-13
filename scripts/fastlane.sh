@@ -14,7 +14,20 @@ fi
 export PATH="$ruby_prefix/bin:$PATH"
 
 case "${1:-}" in
-  beta|release|pull_metadata|check_asc_key)
+  screenshots|beta|release|verify_export)
+    if ! command -v xcbeautify >/dev/null 2>&1; then
+      echo "xcbeautify is required. Install it with: brew install xcbeautify" >&2
+      exit 127
+    fi
+    if ! xcbeautify --version >/dev/null 2>&1; then
+      echo "xcbeautify is unavailable. Reinstall it with: brew install xcbeautify" >&2
+      exit 1
+    fi
+    ;;
+esac
+
+case "${1:-}" in
+  beta|release|verify_export|pull_metadata|check_asc_key)
     if ! command -v op >/dev/null 2>&1; then
       echo "1Password CLI 'op' is required for credential-using Fastlane lanes." >&2
       exit 127
