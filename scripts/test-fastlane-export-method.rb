@@ -8,6 +8,27 @@ Fastlane.load_actions
 repo_root = File.expand_path('..', __dir__)
 captured_options = nil
 
+unless Gem.loaded_specs.fetch('fastlane').version.to_s == '2.238.0'
+  warn 'FAIL: Fastlane is not pinned to 2.238.0'
+  exit 1
+end
+
+def gym_configuration(export_method)
+  FastlaneCore::Configuration.create(
+    Gym::Options.available_options,
+    { export_method: export_method }
+  )
+end
+
+gym_configuration('app-store')
+begin
+  gym_configuration('app-store-connect')
+  warn 'FAIL: shipped Gym unexpectedly accepted app-store-connect'
+  exit 1
+rescue FastlaneCore::Interface::FastlaneError
+  # Expected for Fastlane 2.238.0.
+end
+
 Fastlane::Actions::BuildAppAction.singleton_class.define_method(:run) do |options|
   captured_options = options
   nil
@@ -30,5 +51,9 @@ unless captured_options&.fetch(:export_method) == 'app-store'
   warn 'FAIL: archive lane did not configure Gym for an App Store export'
   exit 1
 end
+unless captured_options.fetch(:xcodebuild_formatter) == 'xcbeautify'
+  warn 'FAIL: archive lane did not configure Gym for xcbeautify'
+  exit 1
+end
 
-puts 'PASS: pinned Gym accepts the archive lane export method'
+puts 'PASS: pinned Gym validates the archive lane export method and formatter'
