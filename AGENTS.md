@@ -34,14 +34,14 @@ See [Multi-Agent Coordination](docs/multi-agent-coordination.md) for gate exampl
 
 ## Build, Test, and Format Commands
 
-- Build: `scripts/xcode-stream.sh --agent <agent> --session <session> --xcpretty -- xcodebuild -project FamilyFoqos.xcodeproj -scheme FamilyFoqos -configuration Debug build`
+- Build: `scripts/xcode-stream.sh --agent <agent> --session <session> --xcbeautify -- xcodebuild -project FamilyFoqos.xcodeproj -scheme FamilyFoqos -configuration Debug build`
 - Clean only the owner's DerivedData: `scripts/xcode-stream.sh --agent <agent> --session <session> -- scripts/clean-build.sh`
 - Test all: `scripts/xcode-stream.sh --agent <agent> --session <session> -- xcodebuild test -project FamilyFoqos.xcodeproj -scheme FamilyFoqos`
 - Test one class: append `-only-testing:FoqosTests/ClassName` to the test command.
 - Screenshots: `scripts/xcode-stream.sh --agent <agent> --session <session> -- scripts/fastlane.sh screenshots`
 - Archive and upload lanes do not boot simulators: run them through `scripts/fastlane.sh` without the simulator gate.
 - Put `xcodebuild` directly after the wrapper's `--`; never insert `xcrun`, `env`, `bundle`, a shell, your own destination, or your own DerivedData path.
-- Format: `swift-format --in-place --recursive .`; lint: `swift-format lint --recursive .` (install with `brew install swift-format ripgrep`).
+- Format: `swift-format --in-place --recursive .`; lint: `swift-format lint --recursive .` (install with `brew install swift-format ripgrep xcbeautify`).
 
 ## Swift and Test Invariants
 
