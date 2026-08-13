@@ -4,7 +4,7 @@
 
 **Goal:** Add the six field-tested coordination rules from issue #387 to the operator-facing developer guidelines.
 
-**Architecture:** Treat issue #387 as the authoritative specification and add one focused `Multi-agent coordination` section to `AGENTS.md`. Verify the rules by exact text audit, independent review, and a planner-led live walkthrough that includes both the safe path and a deliberately induced parked-gate failure.
+**Architecture:** Treat issue #387 as the authoritative specification and add one focused `Multi-Agent Coordination` section to `AGENTS.md`. Verify the rules by exact text audit, independent review, and a planner-led live walkthrough that includes both the safe path and a deliberately induced parked-gate failure.
 
 **Tech Stack:** Markdown, AMQ CLI, GitHub pull-request metadata, repository version gate.
 
@@ -31,7 +31,7 @@
 
 **Interfaces:**
 - Consumes: the six numbered requirements in GitHub issue #387.
-- Produces: one `## Multi-agent coordination` section and release 2.0.26 (45) in all configurations.
+- Produces: one `## Multi-Agent Coordination` section and release 2.0.26 (45) in all configurations.
 
 - [ ] **Step 1: Add the focused guideline section**
 
@@ -54,7 +54,7 @@ Change every `CURRENT_PROJECT_VERSION = 44;` to `45` and every
 Run:
 
 ```bash
-rg -n '^## Multi-agent coordination|blocked on human gate|30 minutes|inbox/new|notifier_live|waiting state|draft|future work|commit age|dirty files|CPU delta' AGENTS.md
+rg -n '^## Multi-Agent Coordination|blocked on human gate|30 minutes|inbox/new|notifier_live|waiting state|draft|future work|commit age|dirty files|CPU delta' AGENTS.md
 test "$(rg -c 'CURRENT_PROJECT_VERSION = 45;' FamilyFoqos.xcodeproj/project.pbxproj)" -eq 12
 test "$(rg -c 'MARKETING_VERSION = 2.0.26;' FamilyFoqos.xcodeproj/project.pbxproj)" -eq 12
 scripts/test-check-version-increment.sh
@@ -150,6 +150,8 @@ Without waiting 30 minutes, the planner runs the sequence on a live agent:
 5. ping the agent directly.
 
 Record that `notifier_live` was treated only as wake-process evidence, not progress evidence.
+The walkthrough transcript must state that this accelerated demonstration validates the five-step
+response sequence but does not validate detection of the 30-minute trigger itself.
 
 - [ ] **Step 5: Audit PR readiness and turn-ending text**
 

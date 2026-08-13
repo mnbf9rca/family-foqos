@@ -59,7 +59,7 @@ Scripts should be safe and deterministic. Any new or modified script must:
 - Keep guards in build phases or the scripts themselves, never only in Git hooks, because API
   commits bypass hooks.
 
-## Multi-agent coordination
+## Multi-Agent Coordination
 
 - **Human interaction routes via the planner.** The maintainer speaks through the planner session.
   Never post `gate/*` approval requests to the AMQ `user` mailbox and wait. On the agent's normal
@@ -78,6 +78,21 @@ Scripts should be safe and deterministic. Any new or modified script must:
 - **Never end a turn announcing future work.** If a turn must end mid-task, the final message states
   exactly what remains so the planner can re-prompt. The planner's heartbeat verifies work through
   commit age, dirty files, and CPU delta; message recency is not evidence of work.
+
+  To measure CPU delta, resolve the role's tmux pane through the managed fleet and sample its
+  cumulative CPU time twice. Set `target_role` to the quiet agent; if the terminal is not already
+  pinned to the fleet, set `fleet_session` to its `agentctl status --json` session name:
+
+  ```bash
+  fleet_session="${AGENTCTL_SESSION:?set the managed fleet session}"
+  target_role=build1
+  status_json=$(agentctl status --session "$fleet_session" --json)
+  pane_id=$(jq -r --arg role "$target_role" \
+    '.agents[] | select(.role == $role) | .pane_id' <<<"$status_json")
+  pane_pid=$(tmux display-message -p -t "$pane_id" '#{pane_pid}')
+  ps -o pid=,time= -p "$pane_pid"
+  # Repeat after a short interval and compare TIME; use this with commit age and dirty files.
+  ```
 
 ## Build & Test Commands
 
