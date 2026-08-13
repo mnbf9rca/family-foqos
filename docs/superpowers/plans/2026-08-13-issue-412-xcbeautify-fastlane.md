@@ -39,7 +39,7 @@ shell and Ruby regression harnesses.
 ### Task 1: Replace the wrapper-owned formatter without weakening status propagation
 
 **Files:**
-- Modify: `scripts/test-xcode-stream.sh:279-420,680-790,860-900`
+- Modify: `scripts/test-xcode-stream.sh:279-420,530-590,680-790`
 - Modify: `scripts/xcode-stream.sh:193-246,267-345,510-512`
 
 **Interfaces:**
@@ -128,8 +128,9 @@ fi
 ```
 
 Retain the existing assertions for gate status 29, child status 23, formatter status 17, merged
-stdout/stderr, immediate-child scope, and the unformatted path. Task 5 adds current-documentation
-assertions together with the documentation change.
+stdout/stderr, immediate-child scope, and the unformatted path. Do not add source-text assertions
+for human documentation; Task 5 updates and directly reviews current docs, and Task 6 scans active
+surfaces for missed callers.
 
 - [ ] **Step 4: Run the focused harness and confirm the production wrapper is still red**
 
@@ -603,38 +604,12 @@ git commit -S -m "build: stop duplicating Xcode archives"
 - Modify: `AGENTS.md:35-45`
 - Modify: `docs/development-workflow.md:55-105`
 - Modify: `FamilyFoqos.xcodeproj/project.pbxproj:707-1216`
-- Modify: `scripts/test-xcode-stream.sh:860-900`
 
 **Interfaces:**
 - Consumes: the supported `--xcbeautify` wrapper and `scripts/fastlane.sh verify_export` lane.
 - Produces: current setup/build/lane documentation and uniform version 2.0.29 (48).
 
-- [ ] **Step 1: Tighten current-documentation assertions before editing docs**
-
-In the policy block of `scripts/test-xcode-stream.sh`, require `--xcbeautify`,
-`brew install xcbeautify`, and `scripts/fastlane.sh verify_export`, and reject `--xcpretty` from
-`AGENTS.md` and `docs/development-workflow.md`:
-
-```bash
-WORKFLOW_FILE="$REPO_ROOT/docs/development-workflow.md"
-assert_contains "$POLICY_FILE" "--xcbeautify"
-assert_not_contains "$POLICY_FILE" "--xcpretty"
-assert_contains "$WORKFLOW_FILE" "brew install xcbeautify"
-assert_contains "$WORKFLOW_FILE" "scripts/fastlane.sh verify_export"
-assert_not_contains "$WORKFLOW_FILE" "--xcpretty"
-```
-
-- [ ] **Step 2: Run the wrapper suite and confirm only documentation assertions remain red**
-
-Run:
-
-```bash
-bash scripts/test-xcode-stream.sh
-```
-
-Expected: FAIL on the first missing current-documentation requirement, not on wrapper behavior.
-
-- [ ] **Step 3: Update the root command sheet and workflow runbook**
+- [ ] **Step 1: Update the root command sheet and workflow runbook**
 
 Change the canonical build command in `AGENTS.md` to `--xcbeautify`. Add xcbeautify to the install
 line without removing swift-format or ripgrep:
@@ -651,7 +626,14 @@ In `docs/development-workflow.md`:
 - list `scripts/fastlane.sh verify_export` as archive/export-only with no upload; and
 - keep beta/release documented as upload lanes outside the simulator gate.
 
-- [ ] **Step 4: Advance every project configuration to 2.0.29 (48)**
+- [ ] **Step 2: Review current documentation for complete caller migration**
+
+Read the edited `AGENTS.md` and `docs/development-workflow.md` end to end. Confirm they consistently
+name the standalone xcbeautify install, wrapper-owned formatted command, upload-free
+`verify_export`, and separate beta/release upload lanes. This is human-instruction review, not an
+automated source-text test.
+
+- [ ] **Step 3: Advance every project configuration to 2.0.29 (48)**
 
 Replace every project setting value:
 
@@ -669,14 +651,13 @@ rg -n 'CURRENT_PROJECT_VERSION = ' FamilyFoqos.xcodeproj/project.pbxproj
 
 Expected: all marketing-version entries are 2.0.29 and all build-version entries are 48.
 
-- [ ] **Step 5: Run documentation, version, and active-reference checks**
+- [ ] **Step 4: Run documentation, version, and active-reference checks**
 
 Run:
 
 ```bash
 bash scripts/test-xcode-stream.sh
-git add AGENTS.md docs/development-workflow.md FamilyFoqos.xcodeproj/project.pbxproj \
-  scripts/test-xcode-stream.sh
+git add AGENTS.md docs/development-workflow.md FamilyFoqos.xcodeproj/project.pbxproj
 candidate_tree=$(git write-tree)
 bash scripts/test-check-version-increment.sh origin/main "$candidate_tree"
 rg -n 'bundle exec xcpretty' AGENTS.md docs/development-workflow.md \
@@ -692,11 +673,10 @@ with no matches; the wrapper scan shows only its fail-closed removal diagnostic;
 scan may show only Fastlane's transitive xcpretty entries in `Gemfile.lock` and no direct Gemfile
 dependency.
 
-- [ ] **Step 6: Commit synchronized docs and version metadata**
+- [ ] **Step 5: Commit synchronized docs and version metadata**
 
 ```bash
-git add AGENTS.md docs/development-workflow.md FamilyFoqos.xcodeproj/project.pbxproj \
-  scripts/test-xcode-stream.sh
+git add AGENTS.md docs/development-workflow.md FamilyFoqos.xcodeproj/project.pbxproj
 git commit -S -m "docs: document xcbeautify export workflow"
 ```
 
