@@ -96,7 +96,10 @@ alternative requires a reviewed tooling change before it can be used.
    Treat the checked-in file as canonical. Import applies it to Development and may remove
    Development-only experiments that are absent from the file. CloudKit rejects the update without
    making changes if the required modifications could cause data loss relative to Production;
-   resolve any rejection before continuing.
+   resolve any rejection before continuing. The only known import-rejection candidate on this
+   container is the built-in `Users.roles` field (`LIST<INT64>`). If CloudKit rejects that field,
+   record the exact response and stop for maintainer resolution instead of changing reviewed
+   app-owned records.
 3. In CloudKit Console, choose **Deploy Schema Changes** and review the actual
    Development-to-Production additive diff. If nothing is pending, record that the canonical schema
    is already deployed and continue to postflight. Otherwise, confirm the deployment and wait for
@@ -129,4 +132,5 @@ schema.
 - [Integrating a Text-Based Schema into Your Workflow](https://developer.apple.com/documentation/cloudkit/integrating-a-text-based-schema-into-your-workflow)
 - [Deploying an iCloud Container’s Schema](https://developer.apple.com/documentation/cloudkit/deploying-an-icloud-container-s-schema)
 - [Cloud-Managed Certificates](https://developer.apple.com/help/account/certificates/cloud-managed-certificates/)
+- [Roles and Access](https://developer.apple.com/help/account/access/roles/)
 - [App Store Connect API](https://developer.apple.com/help/app-store-connect/get-started/app-store-connect-api/)

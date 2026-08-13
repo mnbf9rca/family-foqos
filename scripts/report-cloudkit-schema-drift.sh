@@ -117,9 +117,39 @@ awk '
 ' "$SCHEMA_FILE" | sort -u >"$TEMP_DIR/schema"
 
 # Built-in CloudKit sharing record intentionally exists in manifest/schema but not app declarations.
-MANIFEST_ONLY_EXCEPTION='RECORD TYPE "cloudkit.share"'
+BUILTIN_TYPE_ONLY_EXCEPTION='RECORD TYPE "cloudkit.share"'
+# Legacy SyncedSession is retained only so the app can delete old records; it owns no live fields.
+LEGACY_TYPE_ONLY_EXCEPTION='RECORD TYPE SyncedSession'
+MANIFEST_ONLY_EXCEPTION="$BUILTIN_TYPE_ONLY_EXCEPTION"
 # Deprecated FamilyPolicy intentionally remains in the additive-only checked-in schema.
 SCHEMA_ONLY_EXCEPTION_PREFIX='RECORD TYPE FamilyPolicy'
+
+awk \
+  -v builtin_exception="$BUILTIN_TYPE_ONLY_EXCEPTION" \
+  -v legacy_exception="$LEGACY_TYPE_ONLY_EXCEPTION" '
+  function record_type(entry, rest, quote, dot) {
+    rest=substr(entry, length("RECORD TYPE ") + 1)
+    if (substr(rest, 1, 1) == "\"") {
+      quote=index(substr(rest, 2), "\"") + 1
+      return "RECORD TYPE " substr(rest, 1, quote)
+    }
+    dot=index(rest, ".")
+    return dot ? "RECORD TYPE " substr(rest, 1, dot - 1) : entry
+  }
+  FILENAME == ARGV[1] { live_types[record_type($0)]=1; next }
+  {
+    type=record_type($0)
+    manifest_types[type]=1
+    if ($0 != type) has_fields[type]=1
+  }
+  END {
+    for (type in manifest_types) {
+      if (live_types[type] && !has_fields[type] && type != builtin_exception && type != legacy_exception) {
+        print type
+      }
+    }
+  }
+' "$TEMP_DIR/code" "$TEMP_DIR/manifest" | sort >"$TEMP_DIR/fieldless-live-manifest"
 
 comm -23 "$TEMP_DIR/code" "$TEMP_DIR/manifest" >"$TEMP_DIR/missing-manifest"
 comm -13 "$TEMP_DIR/code" "$TEMP_DIR/manifest" |
@@ -160,6 +190,7 @@ comm -13 "$TEMP_DIR/manifest" "$TEMP_DIR/schema" |
   ' "$TEMP_DIR/manifest" - >"$TEMP_DIR/extra-schema"
 
 drift=0
+while IFS= read -r line; do [[ -z "$line" ]] || { echo "FIELDLESS live manifest type: $line"; drift=1; }; done <"$TEMP_DIR/fieldless-live-manifest"
 while IFS= read -r line; do [[ -z "$line" ]] || { echo "MISSING from manifest: $line"; drift=1; }; done <"$TEMP_DIR/missing-manifest"
 while IFS= read -r line; do [[ -z "$line" ]] || { echo "EXTRA in manifest: $line"; drift=1; }; done <"$TEMP_DIR/extra-manifest"
 while IFS= read -r line; do [[ -z "$line" ]] || { echo "MISSING from checked-in schema: $line"; drift=1; }; done <"$TEMP_DIR/missing-schema"
