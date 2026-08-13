@@ -17,8 +17,9 @@ slot.
 
 ## Warm Git Credentials
 
-At session start, while the human is present, every implementation stream runs this in its clean
-assigned feature worktree:
+At fleet/session startup, while the human is present, the planner dispatches this warm-up to every
+implementation stream. Each stream runs it in its clean assigned feature worktree before taking
+implementation work:
 
 ```bash
 scripts/warm-git-credentials.sh

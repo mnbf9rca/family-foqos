@@ -4,6 +4,14 @@ The root `AGENTS.md` carries the six common-case rules. This runbook contains th
 procedure, rationale, and diagnostics a planner needs when a gate is blocked or an agent goes
 quiet.
 
+## Warm Git Credentials at Fleet Startup
+
+At fleet/session startup, while the human is present, the planner dispatches
+`scripts/warm-git-credentials.sh` to every implementation stream. Each stream runs it in its clean
+assigned feature worktree before taking implementation work. If signing or SSH approval expires
+mid-session, the planner dispatches a rerun only while the human is present; see Development
+Workflow for the AFK commit fallback.
+
 ## Route Human Gates Through the Planner
 
 The maintainer speaks through the planner session. Never post a real `gate/*` approval request to
