@@ -61,81 +61,14 @@ Scripts should be safe and deterministic. Any new or modified script must:
 
 ## Multi-Agent Coordination
 
-- **Human interaction routes via the planner.** The maintainer speaks through the planner session.
-  Never post `gate/*` approval requests to the AMQ `user` mailbox and wait. On the agent's normal
-  planner thread, immediately send an explicit `blocked on human gate: <what>` status instead. The
-  planner relays existing maintainer authority or obtains it.
-- **Planner heartbeat for quiet agents.** If an agent with in-flight work has sent nothing for
-  30 minutes, the planner must actively check it: drain the planner inbox, inspect the agent's
-  `inbox/new` to determine whether instructions were consumed, sweep the `user` mailbox for parked
-  gates, inspect work evidence, then ping the agent directly.
-- **Presence flags are not progress.** `notifier_live` proves only that the wake process is running;
-  never infer work or progress from it.
-- **Blockers are announced, never silent.** Any agent entering a waiting state for a gate, review,
-  or dependency sends a status message at the moment it starts waiting.
-- **Merge-ready means ready for review.** An agent reporting a PR as approved or merge-ready must
-  have already marked it ready for review; the PR must not be a draft.
-- **Never end a turn announcing future work.** If a turn must end mid-task, the final message states
-  exactly what remains so the planner can re-prompt. The planner's heartbeat verifies work through
-  commit age, dirty files, and CPU delta; message recency is not evidence of work.
+- **Route human gates through the planner.** Never park `gate/*` approvals in the AMQ `user` mailbox; send `blocked on human gate: <what>` on the normal planner thread.
+- **Heartbeat quiet agents.** After 30 minutes without a message from an agent with in-flight work, the planner runs the five-step heartbeat and pings the agent directly.
+- **Treat presence only as presence.** `notifier_live` proves only that the wake process is running; never treat it as work or progress evidence.
+- **Announce blockers immediately.** Send a status when any waiting state for a gate, review, or dependency begins.
+- **Make merge readiness literal.** A PR reported approved or merge-ready must already be ready for review and must not be a draft.
+- **End with evidence, not promises.** State exactly what remains; verify work using commit age, dirty files, and CPU delta, never message recency.
 
-  To measure CPU delta, use the ownership path that actually launched the target agent and sample
-  its cumulative CPU time twice. Never borrow a fleet session from another project merely because
-  it contains the same role name; that process is not this project's agent.
-
-  For an `agentctl`-managed agent, resolve the role's tmux pane through that project's managed
-  fleet. Set `target_role` to the quiet agent and `fleet_session` to the session that owns it:
-
-  ```bash
-  fleet_session="${AGENTCTL_SESSION:?set the managed fleet session}"
-  target_role=build1
-  status_json=$(agentctl status --session "$fleet_session" --json)
-  pane_id=$(jq -r --arg role "$target_role" \
-    '.agents[] | select(.role == $role) | .pane_id' <<<"$status_json")
-  [ -n "$pane_id" ] || { echo "no pane for role $target_role" >&2; exit 1; }
-  pane_pid=$(tmux display-message -p -t "$pane_id" '#{pane_pid}')
-  ps -o pid=,time= -p "$pane_pid"
-  # Repeat after a short interval and compare TIME; use this with commit age and dirty files.
-  ```
-
-  For an agent not managed by `agentctl`, match its main executable, `AM_ME` role, and this
-  project's exact `AM_ROOT`. Descendants inherit the AMQ environment, so set `agent_executable` to
-  the main process (`codex` or `claude`) rather than matching every inherited process:
-
-  ```bash
-  target_role=build1
-  agent_executable=codex
-  project_am_root="${AM_ROOT:?run inside the project AMQ session}"
-  ps eww -axo pid=,time=,comm=,command= | awk \
-    -v executable="$agent_executable" \
-    -v target="$target_role" \
-    -v role="AM_ME=$target_role" \
-    -v root="AM_ROOT=$project_am_root" '
-      {
-        executable_name = $3
-        sub(/^.*\//, "", executable_name)
-        if (executable_name != executable) next
-        has_role = has_root = 0
-        for (field = 4; field <= NF; field++) {
-          if ($field == role) has_role = 1
-          if ($field == root) has_root = 1
-        }
-        if (has_role && has_root) {
-          count++
-          agent_pid = $1
-          agent_time = $2
-        }
-      }
-      END {
-        if (count != 1) {
-          printf "expected exactly one %s agent process for role %s under %s; found %d\n", \
-            executable, target, root, count > "/dev/stderr"
-          exit 1
-        }
-        print agent_pid, agent_time
-      }'
-  # Repeat after a short interval and compare TIME; use this with commit age and dirty files.
-  ```
+See [Multi-Agent Coordination](docs/multi-agent-coordination.md) for the gate-routing examples, full heartbeat, and fail-closed CPU recipes.
 
 ## Build & Test Commands
 

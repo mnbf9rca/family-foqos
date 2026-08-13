@@ -4,7 +4,7 @@
 
 **Goal:** Add the six field-tested coordination rules from issue #387 to the operator-facing developer guidelines.
 
-**Architecture:** Treat issue #387 as the authoritative specification and add one focused `Multi-Agent Coordination` section to `AGENTS.md`. Verify the rules by exact text audit, independent review, and a planner-led live walkthrough that includes both the safe path and a deliberately induced parked-gate failure.
+**Architecture:** Treat issue #387 as the authoritative specification. Keep its six common-case actions as self-sufficient one-line rules in `AGENTS.md`, then link once to `docs/multi-agent-coordination.md` for rationale, examples, the full heartbeat, and executable CPU recipes. Verify the rules by exact text audit, independent review, and a planner-led live walkthrough that includes both the safe path and a deliberately induced parked-gate failure.
 
 **Tech Stack:** Markdown, AMQ CLI, GitHub pull-request metadata, repository version gate.
 
@@ -13,6 +13,8 @@
 - Work only on `docs/387-multi-agent-coordination`, forked from `main@4a4f512e198de0b50b5da695c11f9f25a7569a5e`.
 - Issue #387 is the authoritative spec; create no redundant design document.
 - Preserve all six issue rules and their operational details without weakening them.
+- Apply progressive disclosure: exactly six one-line rules and one detail reference in `AGENTS.md`;
+  durable procedure belongs in `docs/multi-agent-coordination.md`, not this historical plan.
 - Do not post real human approval requests to the AMQ `user` mailbox; the only exception is the explicitly authorized harmless walkthrough-test message, which the planner must detect and drain immediately.
 - Obtain independent reviewer approval before the operator walkthrough.
 - Mark the PR ready for review before reporting it merge-ready.
@@ -27,11 +29,13 @@
 
 **Files:**
 - Modify: `AGENTS.md`
+- Create: `docs/multi-agent-coordination.md`
 - Modify: `FamilyFoqos.xcodeproj/project.pbxproj`
 
 **Interfaces:**
 - Consumes: the six numbered requirements in GitHub issue #387.
-- Produces: one `## Multi-Agent Coordination` section and release 2.0.26 (45) in all configurations.
+- Produces: one concise `## Multi-Agent Coordination` index, one durable detail runbook, and
+  release 2.0.26 (45) in all configurations.
 
 - [ ] **Step 1: Add the focused guideline section**
 
@@ -169,3 +173,48 @@ read-along session. Do not hand off for merge until the planner reports the sign
 
 Send the PR URL, exact head/base SHAs, independent review decision, green checks, walkthrough
 evidence, and maintainer sign-off. The planner merges; build1 does not.
+
+### Task 4: Apply maintainer-requested progressive disclosure
+
+**Files:**
+- Modify: `AGENTS.md`
+- Create: `docs/multi-agent-coordination.md`
+- Modify: `docs/superpowers/plans/2026-08-13-issue-387-multi-agent-coordination.md`
+
+**Interfaces:**
+- Consumes: the six walkthrough-tested rules and both verified CPU-delta recipes at `2d22c5c`.
+- Produces: six common-case one-liners plus one resolvable detail link in `AGENTS.md`; a durable
+  runbook containing all relocated detail with no behavioral change.
+
+- [ ] **Step 1: Write and run a failing structure audit**
+
+The audit must require exactly six bullets between `## Multi-Agent Coordination` and the next
+level-two heading, exactly one reference to `docs/multi-agent-coordination.md`, no fenced code in
+that root section, all six common-case actions, and a present link target. It must fail against
+`2d22c5c` because the section contains multi-line procedures and no durable detail link.
+
+- [ ] **Step 2: Relocate detail without weakening the one-liners**
+
+Make each root bullet one physical Markdown line and independently actionable. Move the safe gate
+example, five-step heartbeat, progress-evidence rationale, fleet CPU recipe, standalone CPU recipe,
+foreign-fleet warning, wait announcement, non-draft check, and exact-remainder examples into
+`docs/multi-agent-coordination.md`. Add one reference line after the six bullets.
+
+- [ ] **Step 3: Verify the moved operator text**
+
+Run the structure/link audit. Extract and execute both Bash blocks from their new file: verify the
+managed-fleet block still fails closed for an unknown role, and verify the standalone block resolves
+this project's build1 process twice with a nondecreasing CPU time and exits 1 for a missing role.
+Run the repository version, C2, sync, privacy, and whitespace guards.
+
+- [ ] **Step 4: Commit and publish the relocation**
+
+Create one new signed commit; never amend. Push PR #415, update its walkthrough transcript to say
+the walkthrough-tested content moved without behavior change, and confirm the exact final head is
+OPEN, `isDraft=false`, MERGEABLE/CLEAN with green checks.
+
+- [ ] **Step 5: Repeat the operator-document gates**
+
+Obtain reviewer delta approval and a cheap re-read confirming the six one-liners and reference are
+followable. Then ask the maintainer to read the final diff and explicitly sign off. Only after that
+sign-off send the merge-ready packet to the planner; build1 does not merge.
