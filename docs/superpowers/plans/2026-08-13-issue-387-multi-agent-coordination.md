@@ -218,3 +218,81 @@ OPEN, `isDraft=false`, MERGEABLE/CLEAN with green checks.
 Obtain reviewer delta approval and a cheap re-read confirming the six one-liners and reference are
 followable. Then ask the maintainer to read the final diff and explicitly sign off. Only after that
 sign-off send the merge-ready packet to the planner; build1 does not merge.
+
+### Task 5: Rewrite the full developer guide as an invariant index
+
+**Files:**
+- Modify: `AGENTS.md`
+- Create: `docs/development-workflow.md`
+- Create: `docs/swift-style-guide.md`
+- Create: `docs/app-modes-and-locking.md`
+- Modify: `docs/multi-agent-coordination.md`
+- Create: `scripts/warm-git-credentials.sh`
+- Create: `scripts/test-warm-git-credentials.sh`
+
+**Interfaces:**
+- Consumes: every normative statement, table, example, and command in `AGENTS.md@669f202`.
+- Produces: a root invariant/index file of at most 100 physical lines, four focused durable docs,
+  and a tested `scripts/warm-git-credentials.sh` entrypoint.
+
+**Losslessness ledger:**
+
+| Current content | Root keeps | Detail destination |
+|---|---|---|
+| never amend/force; review before merge | both prohibitions | `docs/development-workflow.md` rationale |
+| biometric warm-up transaction/fallback | required script invocation | script + `docs/development-workflow.md` |
+| simulator ownership and concurrency | wrapper/UUID/direct-child prohibitions | `docs/development-workflow.md` |
+| five script-safety rules | all five terse rules | `docs/development-workflow.md` examples |
+| six coordination rules | all six one-liners | `docs/multi-agent-coordination.md` |
+| build/test/clean/screenshots/archive/format commands | one-line commands | `docs/development-workflow.md` explanations |
+| formatting/imports/naming/SwiftUI/SwiftData/SafeQuery/protocol/error/logging/control-flow/computed/closures/comments/previews/architecture/files | high-risk `@SafeQuery`, save, and Log/privacy invariants | `docs/swift-style-guide.md`, including every example |
+| testing best practices | one-Date-per-test invariant | `docs/swift-style-guide.md` |
+| app-mode matrix/promotion/lock checks/UI predicates | mode summary and exact predicates/guard | `docs/app-modes-and-locking.md` |
+| duplicated Build Output example | canonical wrapper command | `docs/development-workflow.md` |
+
+- [ ] **Step 1: Write the failing root inventory audit**
+
+Create an ad hoc Ruby audit that requires `AGENTS.md` to be at most 100 lines; contain the critical
+Git, credential, simulator, script-safety, coordination, SwiftData/logging/testing, and lock-mode
+invariants plus canonical one-line commands; link exactly once to each of the four durable docs;
+and contain none of the moved example headings, tables, or fenced code blocks. Run it against
+`669f202`; expect failure on line budget and missing three detail links.
+
+- [ ] **Step 2: Write the failing warm-up regression harness**
+
+Create `scripts/test-warm-git-credentials.sh` with isolated fake-Git cases for success, dirty tree,
+detached/unnamed branch, default branch, non-SSH push URL, signed-commit failure, dry-run failure,
+branch restoration, scratch deletion, final clean state, and exact child exit propagation. Run it;
+expect failure because `scripts/warm-git-credentials.sh` does not exist.
+
+- [ ] **Step 3: Implement the warm-up script minimally**
+
+Create a Bash entrypoint with `set -euo pipefail`, dependency/precondition diagnostics, unique
+scratch branch, cleanup trap, signed empty commit, SSH dry-run, and postcondition checks. Run the
+harness; expect every case to pass. Run `shellcheck` on both scripts.
+
+- [ ] **Step 4: Relocate all guide detail using the ledger**
+
+Rewrite root `AGENTS.md` as a self-sufficient invariant/index file of at most 100 lines. Create the
+three new focused docs, preserve the existing coordination runbook, and copy every ledger item to
+its root/detail destination without semantic deletion. Add the calibrated sign-off contract:
+`tiny` means prose-only with no new/changed flow step and no new command; planner classifies and
+reviewer may escalate; reviewer approval, green checks, and planner merge remain blocking; name the
+delta in the next maintainer report for retroactive veto/revert by new commit; all other operator
+changes keep full reviewer/walkthrough/maintainer gates.
+
+- [ ] **Step 5: Run relocation and executable verification**
+
+Run the root inventory/link audit, warm-up harness, shellcheck, `scripts/test-xcode-stream.sh`, both
+CPU recipes extracted from `docs/multi-agent-coordination.md`, version/C2/sync/privacy/whitespace
+guards, and verify all 12 version settings remain 2.0.26 (45). Compare the ledger with the final
+diff and record a destination for every row.
+
+- [ ] **Step 6: Commit, push, and run operator gates**
+
+Create new signed commits without amend, update PR #415 title/body for the full rewrite, and verify
+OPEN/non-draft/MERGEABLE-CLEAN exact-head checks. Obtain a full independent reviewer pass using the
+losslessness ledger. Ask the planner to stage the real warm-up walkthrough while the maintainer is
+physically present; verify the assigned branch/tree are restored. Exercise wrapper entrypoints via
+existing tests without launching unnecessary Xcode. Then obtain maintainer final read of the new
+root `AGENTS.md` and hand off to the planner for merge.
