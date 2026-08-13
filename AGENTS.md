@@ -62,11 +62,11 @@ Scripts should be safe and deterministic. Any new or modified script must:
 ## Multi-Agent Coordination
 
 - **Route human gates through the planner.** Never park `gate/*` approvals in the AMQ `user` mailbox; send `blocked on human gate: <what>` on the normal planner thread.
-- **Heartbeat quiet agents.** After 30 minutes without a message from an agent with in-flight work, the planner runs the five-step heartbeat and pings the agent directly.
+- **Heartbeat quiet agents.** After 30 minutes without a message from an agent with in-flight work, the planner drains the planner inbox, inspects the agent's `inbox/new`, sweeps the `user` mailbox for parked gates, inspects commit age, dirty files, and CPU delta, then pings the agent directly.
 - **Treat presence only as presence.** `notifier_live` proves only that the wake process is running; never treat it as work or progress evidence.
 - **Announce blockers immediately.** Send a status when any waiting state for a gate, review, or dependency begins.
 - **Make merge readiness literal.** A PR reported approved or merge-ready must already be ready for review and must not be a draft.
-- **End with evidence, not promises.** State exactly what remains; verify work using commit age, dirty files, and CPU delta, never message recency.
+- **End with evidence, not promises.** Never end a turn with only promised future work; state exactly what remains, and verify work using commit age, dirty files, and CPU delta, never message recency.
 
 See [Multi-Agent Coordination](docs/multi-agent-coordination.md) for the gate-routing examples, full heartbeat, and fail-closed CPU recipes.
 
