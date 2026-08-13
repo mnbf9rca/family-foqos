@@ -239,6 +239,7 @@ sign-off send the merge-ready packet to the planner; build1 does not merge.
 
 | Current content | Root keeps | Detail destination |
 |---|---|---|
+| maintainer-added implementation principle | DRY, KISS, and generally YAGNI | `docs/development-workflow.md` rationale |
 | never amend/force; review before merge | both prohibitions | `docs/development-workflow.md` rationale |
 | biometric warm-up transaction/fallback | required script invocation | script + `docs/development-workflow.md` |
 | simulator ownership and concurrency | wrapper/UUID/direct-child prohibitions | `docs/development-workflow.md` |
@@ -252,7 +253,8 @@ sign-off send the merge-ready packet to the planner; build1 does not merge.
 
 - [ ] **Step 1: Write the failing root inventory audit**
 
-Create an ad hoc Ruby audit that requires `AGENTS.md` to be at most 100 lines; contain the critical
+Create an ad hoc Ruby audit that requires `AGENTS.md` to be at most 100 lines; contain
+DRY/KISS/YAGNI and the critical
 Git, credential, simulator, script-safety, coordination, SwiftData/logging/testing, and lock-mode
 invariants plus canonical one-line commands; link exactly once to each of the four durable docs;
 and contain none of the moved example headings, tables, or fenced code blocks. Run it against

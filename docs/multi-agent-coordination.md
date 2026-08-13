@@ -114,6 +114,17 @@ Before reporting a PR approved or merge-ready, verify that it is already ready f
 draft. Include the exact head/base, check state, and independent review decision in the handoff.
 Only the role authorized by the current workflow performs the merge.
 
+### Calibrate Operator-Document Sign-Off
+
+New or restructured operator flows require blocking reviewer approval, an executable walkthrough
+where applicable, and a maintainer final read. A tiny delta does not make the maintainer a blocking
+gate: `tiny` means prose-only, with no new or changed flow step and no new command. The planner
+classifies the delta; the reviewer may escalate that classification to the full gates.
+
+Tiny deltas still require reviewer approval, green checks, and planner merge. Name the delta in the
+planner's next maintainer-facing report. That notice, plus a cheap revert by new commit, provides a
+retroactive veto; there is no wall-clock veto window.
+
 ## End Turns With the Exact Remainder
 
 Never end a turn merely announcing future work. If work remains, name the concrete remaining gate
