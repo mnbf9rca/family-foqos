@@ -79,9 +79,12 @@ Scripts should be safe and deterministic. Any new or modified script must:
   exactly what remains so the planner can re-prompt. The planner's heartbeat verifies work through
   commit age, dirty files, and CPU delta; message recency is not evidence of work.
 
-  To measure CPU delta, resolve the role's tmux pane through the managed fleet and sample its
-  cumulative CPU time twice. Set `target_role` to the quiet agent; if the terminal is not already
-  pinned to the fleet, set `fleet_session` to its `agentctl status --json` session name:
+  To measure CPU delta, use the ownership path that actually launched the target agent and sample
+  its cumulative CPU time twice. Never borrow a fleet session from another project merely because
+  it contains the same role name; that process is not this project's agent.
+
+  For an `agentctl`-managed agent, resolve the role's tmux pane through that project's managed
+  fleet. Set `target_role` to the quiet agent and `fleet_session` to the session that owns it:
 
   ```bash
   fleet_session="${AGENTCTL_SESSION:?set the managed fleet session}"
@@ -92,6 +95,45 @@ Scripts should be safe and deterministic. Any new or modified script must:
   [ -n "$pane_id" ] || { echo "no pane for role $target_role" >&2; exit 1; }
   pane_pid=$(tmux display-message -p -t "$pane_id" '#{pane_pid}')
   ps -o pid=,time= -p "$pane_pid"
+  # Repeat after a short interval and compare TIME; use this with commit age and dirty files.
+  ```
+
+  For an agent not managed by `agentctl`, match its main executable, `AM_ME` role, and this
+  project's exact `AM_ROOT`. Descendants inherit the AMQ environment, so set `agent_executable` to
+  the main process (`codex` or `claude`) rather than matching every inherited process:
+
+  ```bash
+  target_role=build1
+  agent_executable=codex
+  project_am_root="${AM_ROOT:?run inside the project AMQ session}"
+  ps eww -axo pid=,time=,comm=,command= | awk \
+    -v executable="$agent_executable" \
+    -v target="$target_role" \
+    -v role="AM_ME=$target_role" \
+    -v root="AM_ROOT=$project_am_root" '
+      {
+        executable_name = $3
+        sub(/^.*\//, "", executable_name)
+        if (executable_name != executable) next
+        has_role = has_root = 0
+        for (field = 4; field <= NF; field++) {
+          if ($field == role) has_role = 1
+          if ($field == root) has_root = 1
+        }
+        if (has_role && has_root) {
+          count++
+          agent_pid = $1
+          agent_time = $2
+        }
+      }
+      END {
+        if (count != 1) {
+          printf "expected exactly one %s agent process for role %s under %s; found %d\n", \
+            executable, target, root, count > "/dev/stderr"
+          exit 1
+        }
+        print agent_pid, agent_time
+      }'
   # Repeat after a short interval and compare TIME; use this with commit age and dirty files.
   ```
 
