@@ -59,6 +59,26 @@ Scripts should be safe and deterministic. Any new or modified script must:
 - Keep guards in build phases or the scripts themselves, never only in Git hooks, because API
   commits bypass hooks.
 
+## Multi-agent coordination
+
+- **Human interaction routes via the planner.** The maintainer speaks through the planner session.
+  Never post `gate/*` approval requests to the AMQ `user` mailbox and wait. On the agent's normal
+  planner thread, immediately send an explicit `blocked on human gate: <what>` status instead. The
+  planner relays existing maintainer authority or obtains it.
+- **Planner heartbeat for quiet agents.** If an agent with in-flight work has sent nothing for
+  30 minutes, the planner must actively check it: drain the planner inbox, inspect the agent's
+  `inbox/new` to determine whether instructions were consumed, sweep the `user` mailbox for parked
+  gates, inspect work evidence, then ping the agent directly.
+- **Presence flags are not progress.** `notifier_live` proves only that the wake process is running;
+  never infer work or progress from it.
+- **Blockers are announced, never silent.** Any agent entering a waiting state for a gate, review,
+  or dependency sends a status message at the moment it starts waiting.
+- **Merge-ready means ready for review.** An agent reporting a PR as approved or merge-ready must
+  have already marked it ready for review; the PR must not be a draft.
+- **Never end a turn announcing future work.** If a turn must end mid-task, the final message states
+  exactly what remains so the planner can re-prompt. The planner's heartbeat verifies work through
+  commit age, dirty files, and CPU delta; message recency is not evidence of work.
+
 ## Build & Test Commands
 
 ### Building
