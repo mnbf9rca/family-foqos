@@ -89,6 +89,7 @@ Scripts should be safe and deterministic. Any new or modified script must:
   status_json=$(agentctl status --session "$fleet_session" --json)
   pane_id=$(jq -r --arg role "$target_role" \
     '.agents[] | select(.role == $role) | .pane_id' <<<"$status_json")
+  [ -n "$pane_id" ] || { echo "no pane for role $target_role" >&2; exit 1; }
   pane_pid=$(tmux display-message -p -t "$pane_id" '#{pane_pid}')
   ps -o pid=,time= -p "$pane_pid"
   # Repeat after a short interval and compare TIME; use this with commit age and dirty files.
