@@ -247,6 +247,49 @@ final class ChildSharedRefreshTests: XCTestCase {
         mode: .child))
   }
 
+  func testGivenConfirmedRevocationDuringBackgroundRefresh_WhenRouting_ThenPublishesNoticeAndReportsNewData()
+    async
+  {
+    let manager = CloudKitManager.shared
+    let originalMessage = manager.familyRevocationMessage
+    defer { manager.familyRevocationMessage = originalMessage }
+    manager.familyRevocationMessage = nil
+    var didRefreshSharedData = false
+
+    let result = await AppDelegate.refreshChildSharedDataAfterMembershipVerification {
+      manager.handleConfirmedFamilyRevocation {}
+      return true
+    } refreshSharedData: {
+      didRefreshSharedData = true
+      return .failed
+    }
+
+    XCTAssertEqual(result, .newData)
+    XCTAssertFalse(didRefreshSharedData)
+    XCTAssertEqual(
+      manager.familyRevocationMessage,
+      CloudKitManager.familyRevocationAlertMessage)
+  }
+
+  func testGivenMembershipUnchangedDuringBackgroundRefresh_WhenRouting_ThenPreservesRefreshResult()
+    async
+  {
+    var didVerifyMembership = false
+    var didRefreshSharedData = false
+
+    let result = await AppDelegate.refreshChildSharedDataAfterMembershipVerification {
+      didVerifyMembership = true
+      return false
+    } refreshSharedData: {
+      didRefreshSharedData = true
+      return .noData
+    }
+
+    XCTAssertTrue(didVerifyMembership)
+    XCTAssertTrue(didRefreshSharedData)
+    XCTAssertEqual(result, .noData)
+  }
+
   func testGivenPrivatePushOrNonChildMode_WhenRouting_ThenDoesNotRefreshSharedData() {
     XCTAssertFalse(
       AppDelegate.shouldRefreshChildSharedData(

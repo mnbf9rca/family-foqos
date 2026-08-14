@@ -29,6 +29,9 @@ enum AccountAvailability: Equatable {
 @MainActor
 class CloudKitManager: ObservableObject {
   static let shared = CloudKitManager()
+  static let familyRevocationAlertTitle = "Family Connection Removed"
+  static let familyRevocationAlertMessage =
+    "This device is no longer connected to its Family Foqos family in iCloud, so it switched to Individual mode. To reconnect, ask a parent to send a new invitation."
 
   private let networkService = CloudKitNetworkService()
 
@@ -44,6 +47,7 @@ class CloudKitManager: ObservableObject {
   @Published var error: CloudKitError?
   @Published var shareAcceptedMessage: String?
   @Published var shareAcceptanceIsError = false
+  @Published var familyRevocationMessage: String?
   @Published var pendingParticipants: [CKShare.Participant] = []
   @Published var isShareOwner = false
 
@@ -252,24 +256,35 @@ class CloudKitManager: ObservableObject {
 
   // MARK: - Verification
 
-  nonisolated static func confirmedRevocationTrigger(
+  nonisolated static func isConfirmedRevocation(
     isConnected: Bool,
     isSignedIn: Bool,
     enforcedMode: AppMode?,
     currentMode: AppMode
-  ) -> ConfirmedCloudKitRevocationTrigger? {
-    guard !isConnected,
-      isSignedIn,
-      enforcedMode == .individual,
-      currentMode == .child
-    else {
-      return nil
-    }
-    return .confirmedCloudKitRevocation
+  ) -> Bool {
+    !isConnected
+      && isSignedIn
+      && enforcedMode == .individual
+      && currentMode == .child
   }
 
-  func verifySelfFamilyMemberRecord() async {
-    guard !ScreenshotDemoMode.isActive else { return }
+  func handleConfirmedFamilyRevocation(
+    cleanup: () -> Void = {
+      AuthorizationVerifier.shared.handleConfirmedCloudKitRevocation()
+    }
+  ) {
+    cleanup()
+    familyRevocationMessage = Self.familyRevocationAlertMessage
+  }
+
+  func dismissFamilyRevocationMessage() {
+    familyRevocationMessage = nil
+  }
+
+  /// Returns true only when this verification handled a confirmed Child-family revocation.
+  @discardableResult
+  func verifySelfFamilyMemberRecord() async -> Bool {
+    guard !ScreenshotDemoMode.isActive else { return false }
     let localMode = AppModeManager.shared.currentMode
     let accountIsSignedIn = self.isSignedIn
     let result = await networkService.verifySelfFamilyMember(
@@ -288,19 +303,21 @@ class CloudKitManager: ObservableObject {
     // In a disconnected result, enforced .individual is the confirmed-revocation signal. Only
     // CloudKitNetworkService+Verification may produce this overload, and only for Child mode.
     if !result.isConnected, result.enforcedMode == .individual {
-      if Self.confirmedRevocationTrigger(
+      if Self.isConfirmedRevocation(
         isConnected: result.isConnected,
         isSignedIn: self.isSignedIn,
         enforcedMode: result.enforcedMode,
         currentMode: AppModeManager.shared.currentMode
-      ) != nil {
-        _ = await AuthorizationVerifier.shared.handleConfirmedCloudKitRevocation()
+      ) {
+        handleConfirmedFamilyRevocation()
+        return true
       }
-      return
+      return false
     }
     if let mode = result.enforcedMode {
       AppModeManager.shared.selectMode(mode)
     }
+    return false
   }
 
   // MARK: - Share Participant Sync
