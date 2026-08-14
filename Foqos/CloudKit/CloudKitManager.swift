@@ -92,6 +92,14 @@ class CloudKitManager: ObservableObject {
     pendingNoticeStore.isPending ? familyRevocationAlertMessage : nil
   }
 
+  #if DEBUG
+    static func makeForTesting(
+      pendingNoticeStore: FamilyRevocationNoticeStore
+    ) -> CloudKitManager {
+      CloudKitManager(familyRevocationNoticeStore: pendingNoticeStore)
+    }
+  #endif
+
   // MARK: - Account Status
 
   func checkAccountStatus() async {

@@ -625,6 +625,20 @@ func acceptCloudKitShare(_ metadata: CKShare.Metadata) {
   }
 }
 
+@MainActor
+func applyAcceptedFamilyMode(
+  role: FamilyRole,
+  selectMode: (AppMode) -> Void = { AppModeManager.shared.selectMode($0) },
+  clearFamilyRevocationNotice: () -> Void = {
+    CloudKitManager.shared.dismissFamilyRevocationMessage()
+  }
+) -> AppMode {
+  let appMode: AppMode = role == .parent ? .parent : .child
+  selectMode(appMode)
+  clearFamilyRevocationNotice()
+  return appMode
+}
+
 /// Called from confirmation alert "Continue" — accepts share and sets up role
 func completeShareAcceptance(metadata: CKShare.Metadata, role: FamilyRole) {
   Task { @MainActor in
@@ -641,8 +655,7 @@ func completeShareAcceptance(metadata: CKShare.Metadata, role: FamilyRole) {
     }
 
     // 2. Switch app mode immediately after successful share acceptance
-    let appMode: AppMode = role == .parent ? .parent : .child
-    AppModeManager.shared.selectMode(appMode)
+    let appMode = applyAcceptedFamilyMode(role: role)
 
     // 3. Best-effort: register self as family member
     do {
