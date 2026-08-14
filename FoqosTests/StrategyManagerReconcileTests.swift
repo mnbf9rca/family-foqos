@@ -25,6 +25,53 @@ final class StrategyManagerReconcileTests: XCTestCase {
     try await super.tearDown()
   }
 
+  func testGivenDeferredProfileMigration_WhenLoadingWithoutActiveSession_ThenScheduleReconciled()
+    throws
+  {
+    let now = Date()
+    let profile = BlockedProfiles(
+      name: "School",
+      blockingStrategyId: ManualBlockingStrategy.id,
+      schedule: BlockedProfileSchedule(
+        days: [.monday],
+        startHour: 9,
+        startMinute: 0,
+        endHour: 15,
+        endMinute: 30,
+        updatedAt: now
+      )
+    )
+    profile.profileSchemaVersion = 1
+    context.insert(profile)
+    try context.save()
+
+    var registeredProfileIds: [UUID] = []
+    manager = StrategyManager(
+      scheduleReconciler: { context in
+        PreActivationReminderScheduler.reconcileScheduleRegistrations(
+          context: context,
+          notificationCenter: NotificationCenter(),
+          register: { registeredProfileIds.append($0.id) }
+        )
+      })
+
+    try manager.loadActiveSession(context: context)
+
+    XCTAssertFalse(profile.needsMigration)
+    XCTAssertEqual(registeredProfileIds, [profile.id])
+  }
+
+  func testGivenNoProfileMigration_WhenLoadingWithoutActiveSession_ThenScheduleNotReconciled()
+    throws
+  {
+    var reconciliationCount = 0
+    manager = StrategyManager(scheduleReconciler: { _ in reconciliationCount += 1 })
+
+    try manager.loadActiveSession(context: context)
+
+    XCTAssertEqual(reconciliationCount, 0)
+  }
+
   // #237 / Design Q1: tapping Stop while the shared active session was swapped by the extension
   // must NOT end the stale on-screen session -- it reloads and surfaces instead.
   func testGivenSharedSessionSwapped_WhenToggleStop_ThenStaleSessionNotEndedAndSurfaced() throws {
