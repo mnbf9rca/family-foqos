@@ -151,9 +151,16 @@ struct FoqosApp: App {
                 // Enforce CloudKit FamilyMember role as local app mode (must complete before auth check)
                 await CloudKitManager.shared.verifySelfFamilyMemberRecord()
                 // Verify child authorization when app becomes active
-                verifyChildAuthorizationIfNeeded()
+                await verifyChildAuthorizationIfNeeded()
                 if AppModeManager.shared.currentMode == .child {
-                  await LockCodeManager.shared.processPendingCommands()
+                  do {
+                    try await CloudKitManager.shared.ensureSharedDatabaseSubscription()
+                  } catch {
+                    Log.error(
+                      "Failed to establish shared database subscription: \(redactedErrorForLog(error))",
+                      category: .cloudKit)
+                  }
+                  await LockCodeManager.shared.refreshSharedLockCodesForVerification()
                 }
               }
               // #201: re-drive persisted session-stop retries so a remote device doesn't see a
@@ -393,6 +400,13 @@ class AppDelegate: NSObject, UIApplicationDelegate {
 
   // MARK: - Remote Notification Handling
 
+  static func shouldRefreshChildSharedData(
+    databaseScope: CKDatabase.Scope?,
+    mode: AppMode
+  ) -> Bool {
+    mode == .child && databaseScope == .shared
+  }
+
   func application(
     _: UIApplication,
     didRegisterForRemoteNotificationsWithDeviceToken _: Data
@@ -418,9 +432,22 @@ class AppDelegate: NSObject, UIApplicationDelegate {
     if let ckNotification = CKNotification(fromRemoteNotificationDictionary: userInfo) {
       Log.info("CloudKit notification received - type: \(ckNotification.notificationType.rawValue)", category: .cloudKit)
 
+      let databaseScope = (ckNotification as? CKDatabaseNotification)?.databaseScope
+      let shouldRefreshChildSharedData = Self.shouldRefreshChildSharedData(
+        databaseScope: databaseScope,
+        mode: AppModeManager.shared.currentMode)
+
       // Route the CloudKit push to the engine (schedules a fetch+send); the engine
       // also owns its own database subscription. Preserve heartbeat refresh (#190).
       Task { @MainActor in
+        let childRefreshResult: UIBackgroundFetchResult?
+        if shouldRefreshChildSharedData {
+          childRefreshResult =
+            await LockCodeManager.shared.refreshSharedLockCodesForVerification()
+            .backgroundFetchResult
+        } else {
+          childRefreshResult = nil
+        }
         if ProfileSyncManager.shared.isEnabled {
           do {
             try ProfileSyncManager.shared.syncNow()
@@ -431,10 +458,23 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         if AppModeManager.shared.currentMode == .parent {
           await HeartbeatManager.shared.refreshHeartbeats()
         }
-        completionHandler(.newData)
+        completionHandler(childRefreshResult ?? .newData)
       }
     } else {
       completionHandler(.noData)
+    }
+  }
+}
+
+extension ChildSharedDataRefreshResult {
+  var backgroundFetchResult: UIBackgroundFetchResult {
+    switch self {
+    case .newData:
+      return .newData
+    case .noData:
+      return .noData
+    case .failed:
+      return .failed
     }
   }
 }
@@ -586,6 +626,13 @@ func completeShareAcceptance(metadata: CKShare.Metadata, role: FamilyRole) {
 
     // 4. Best-effort: fetch shared lock codes
     if appMode == .child {
+      do {
+        try await CloudKitManager.shared.ensureSharedDatabaseSubscription()
+      } catch {
+        Log.error(
+          "Failed to establish shared database subscription after share acceptance: \(redactedErrorForLog(error))",
+          category: .cloudKit)
+      }
       await LockCodeManager.shared.refreshSharedLockCodesForVerification()
     }
 
@@ -606,11 +653,10 @@ func completeShareAcceptance(metadata: CKShare.Metadata, role: FamilyRole) {
 
 /// Verify child authorization when app becomes active (if in child mode)
 /// If authorization is lost, clear shared data and switch to individual mode
-func verifyChildAuthorizationIfNeeded() {
-  Task { @MainActor in
-    if let message = await AuthorizationVerifier.shared.verifyIfNeeded() {
-      CloudKitManager.shared.shareAcceptanceIsError = true
-      CloudKitManager.shared.shareAcceptedMessage = message
-    }
+@MainActor
+func verifyChildAuthorizationIfNeeded() async {
+  if let message = await AuthorizationVerifier.shared.verifyIfNeeded() {
+    CloudKitManager.shared.shareAcceptanceIsError = true
+    CloudKitManager.shared.shareAcceptedMessage = message
   }
 }

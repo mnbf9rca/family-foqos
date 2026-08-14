@@ -3,6 +3,25 @@ import FamilyControls
 import Foundation
 import SwiftUI
 
+enum ChildSharedDataRefreshResult: Equatable {
+  case newData
+  case noData
+  case failed
+
+  static func combine(
+    _ lockCodes: ChildSharedDataRefreshResult,
+    _ commands: ChildSharedDataRefreshResult
+  ) -> ChildSharedDataRefreshResult {
+    if lockCodes == .failed || commands == .failed {
+      return .failed
+    }
+    if lockCodes == .newData || commands == .newData {
+      return .newData
+    }
+    return .noData
+  }
+}
+
 /// Manages lock codes for parent-controlled (managed) profiles.
 /// - Parents: Can create, view, and update lock codes
 /// - Children: Can only verify codes (cannot see them)
@@ -189,26 +208,47 @@ class LockCodeManager: ObservableObject {
 
   // MARK: - Child Operations
 
-  /// Fetch shared lock codes for verification (child operation)
-  /// Verifies child authorization before fetching to ensure security
-  func refreshSharedLockCodesForVerification() async {
-    guard !ScreenshotDemoMode.isActive else { return }
-    guard appModeManager.currentMode == .child else { return }
+  /// Fetch shared lock codes for verification (child operation).
+  /// Reuses persisted child authorization, verifying once only when bootstrap state is absent.
+  @discardableResult
+  func refreshSharedLockCodesForVerification() async -> ChildSharedDataRefreshResult {
+    guard !ScreenshotDemoMode.isActive else { return .noData }
+    guard appModeManager.currentMode == .child else { return .noData }
 
     isLoading = true
     defer { isLoading = false }
 
-    // Use centralized authorization verification
-    let result = await AuthorizationVerifier.shared.verifyChildAuthorization()
-    guard result.isAuthorized else {
-      // Let the centralized handler deal with authorization loss
-      if let message = await AuthorizationVerifier.shared.verifyIfNeeded() {
-        self.cachedLockCodes = []
-        self.error = message
-      }
-      return
+    let authorizationDisposition = await Self.sharedRefreshAuthorizationDisposition(
+      persisted: AuthorizationVerifier.shared.currentAuthorizationType
+    ) {
+      await AuthorizationVerifier.shared.verifyChildAuthorization()
+    }
+    switch authorizationDisposition {
+    case .authorized:
+      break
+    case .confirmedLoss:
+      self.cachedLockCodes = []
+      self.error = await AuthorizationVerifier.shared.handleAuthorizationLoss()
+      return .failed
+    case .indeterminate:
+      self.error = "Child authorization has not been verified."
+      return .failed
     }
 
+    let lockCodeResult = await refreshSharedLockCodes()
+    let commandResult = await processPendingCommands()
+    return ChildSharedDataRefreshResult.combine(lockCodeResult, commandResult)
+  }
+
+  static func sharedRefreshAuthorizationDisposition(
+    persisted authorizationType: AuthorizationVerifier.AuthorizationType,
+    verify: () async -> AuthorizationVerifier.VerificationResult
+  ) async -> AuthorizationVerifier.VerificationDisposition {
+    guard authorizationType != .child else { return .authorized }
+    return AuthorizationVerifier.verificationDisposition(for: await verify())
+  }
+
+  private func refreshSharedLockCodes() async -> ChildSharedDataRefreshResult {
     do {
       let result = try await cloudKitManager.fetchSharedLockCodes()
       // Fail-closed-with-cache (#197): trust a CONNECTED result (even empty = parent cleared)
@@ -219,18 +259,41 @@ class LockCodeManager: ObservableObject {
         isConnected: result.isConnected,
         persisted: loadPersistedLockCodes()
       )
+      let refreshResult = Self.lockCodeRefreshResult(
+        previous: cachedLockCodes,
+        refreshed: resolved.cache,
+        isConnected: result.isConnected)
       self.cachedLockCodes = resolved.cache
       persistLockCodes(resolved.persist)
       self.error = nil
-
-      // Also check for pending commands from parent
-      await processPendingCommands()
+      return refreshResult
     } catch {
       // Defensive: the network layer returns empty without throwing for offline/CKError, but
       // if it ever does throw, keep the last-synced codes rather than falling back to empty.
       self.cachedLockCodes = loadPersistedLockCodes()
       self.error = error.localizedDescription
+      return .failed
     }
+  }
+
+  nonisolated static func lockCodeRefreshResult(
+    previous: [FamilyLockCode],
+    refreshed: [FamilyLockCode],
+    isConnected: Bool
+  ) -> ChildSharedDataRefreshResult {
+    guard isConnected else { return .failed }
+    let previousByID = previous.sorted { $0.id.uuidString < $1.id.uuidString }
+    let refreshedByID = refreshed.sorted { $0.id.uuidString < $1.id.uuidString }
+    return previousByID == refreshedByID ? .noData : .newData
+  }
+
+  nonisolated static func commandRefreshResult(
+    didApplyCommand: Bool,
+    isConnected: Bool,
+    hasProcessingFailures: Bool = false
+  ) -> ChildSharedDataRefreshResult {
+    guard isConnected, !hasProcessingFailures else { return .failed }
+    return didApplyCommand ? .newData : .noData
   }
 
   /// Resolve the verification cache and the persisted store after a fetch (#197).
@@ -325,10 +388,13 @@ class LockCodeManager: ObservableObject {
 
   /// Check for and process any pending commands from parent.
   /// Called from child lock-code refresh, the PIN-dialog poll, and child foreground.
-  func processPendingCommands(cleanupStale: Bool = true) async {
-    guard !ScreenshotDemoMode.isActive else { return }
+  @discardableResult
+  func processPendingCommands(
+    cleanupStale: Bool = true
+  ) async -> ChildSharedDataRefreshResult {
+    guard !ScreenshotDemoMode.isActive else { return .noData }
     guard appModeManager.currentMode == .child else {
-      return
+      return .noData
     }
 
     if cleanupStale {
@@ -337,13 +403,22 @@ class LockCodeManager: ObservableObject {
     }
 
     do {
-      let commands = try await cloudKitManager.fetchPendingCommands()
+      let result = try await cloudKitManager.fetchPendingCommands()
+      var didApplyCommand = false
+      var hasProcessingFailures = false
 
-      for command in commands {
-        await processCommand(command)
+      for command in result.commands {
+        let outcome = await processCommand(command)
+        didApplyCommand = outcome.didApply || didApplyCommand
+        hasProcessingFailures = outcome.didFail || hasProcessingFailures
       }
+      return Self.commandRefreshResult(
+        didApplyCommand: didApplyCommand,
+        isConnected: result.isConnected,
+        hasProcessingFailures: hasProcessingFailures)
     } catch {
       Log.error("Failed to fetch pending commands: \(redactedErrorForLog(error))", category: .cloudKit)
+      return .failed
     }
   }
 
@@ -379,7 +454,9 @@ class LockCodeManager: ObservableObject {
     return true
   }
 
-  private func processCommand(_ command: FamilyCommand) async {
+  private func processCommand(_ command: FamilyCommand) async -> (
+    didApply: Bool, didFail: Bool
+  ) {
     let didApply = applyCommandIfNeeded(command)
     if !didApply {
       Log.info("Skipping already processed command: \(command.commandType.rawValue)", category: .cloudKit)
@@ -388,8 +465,10 @@ class LockCodeManager: ObservableObject {
     // Delete the command after processing
     do {
       try await cloudKitManager.deleteCommand(command)
+      return (didApply: didApply, didFail: false)
     } catch {
       Log.error("Failed to delete processed command: \(redactedErrorForLog(error))", category: .cloudKit)
+      return (didApply: didApply, didFail: true)
     }
   }
 

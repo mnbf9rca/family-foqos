@@ -16,6 +16,14 @@ extension CloudKitNetworkService {
     return .failed
   }
 
+  static func resolvePendingCommandFetch(
+    commands: [FamilyCommand],
+    hasFailures: Bool,
+    hasUserRecordID: Bool = true
+  ) -> (commands: [FamilyCommand], isConnected: Bool) {
+    (commands: commands, isConnected: hasUserRecordID && !hasFailures)
+  }
+
   func sendCommand(_ command: FamilyCommand) async throws {
     Log.info("Sending command: \(command.commandType.rawValue) to child", category: .cloudKit)
 
@@ -61,14 +69,20 @@ extension CloudKitNetworkService {
     }
   }
 
-  func fetchPendingCommands(currentUserRecordID: CKRecord.ID?) async throws -> [FamilyCommand] {
+  func fetchPendingCommands(
+    currentUserRecordID: CKRecord.ID?
+  ) async throws -> (commands: [FamilyCommand], isConnected: Bool) {
     let zones = try await sharedDatabase.allRecordZones()
 
     var allCommands: [FamilyCommand] = []
+    var hasFailures = false
 
     guard let userRecordID = currentUserRecordID else {
-      Log.debug("No user record ID, skipping command fetch", category: .cloudKit)
-      return []
+      Log.error("No user record ID available for command fetch", category: .cloudKit)
+      return Self.resolvePendingCommandFetch(
+        commands: [],
+        hasFailures: false,
+        hasUserRecordID: false)
     }
     let currentUserRecordName = userRecordID.recordName
 
@@ -85,19 +99,31 @@ extension CloudKitNetworkService {
         )
 
         for (_, result) in results {
-          if case .success(let record) = result,
-            let command = FamilyCommand(from: record)
-          {
+          switch result {
+          case .success(let record):
+            guard let command = FamilyCommand(from: record) else {
+              hasFailures = true
+              Log.error("Failed to decode pending command", category: .cloudKit)
+              continue
+            }
             allCommands.append(command)
+          case .failure(let error):
+            hasFailures = true
+            Log.error(
+              "Failed to fetch pending command: \(redactedErrorForLog(error))",
+              category: .cloudKit)
           }
         }
       } catch {
+        hasFailures = true
         Log.error(
           "Failed to fetch commands from zone \(zone.zoneID): \(redactedErrorForLog(error))", category: .cloudKit)
       }
     }
 
-    return allCommands
+    return Self.resolvePendingCommandFetch(
+      commands: allCommands,
+      hasFailures: hasFailures)
   }
 
   func deleteCommand(_ command: FamilyCommand) async throws {
