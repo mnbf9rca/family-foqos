@@ -619,6 +619,138 @@ final class SyncEngineControllerTests: XCTestCase {
       "relaunch enqueues no zone save")
   }
 
+  func testGivenPostAdoptionEqualEstablishmentConflict_WhenRelaunched_ThenSeedDoesNotRecur()
+    async throws
+  {
+    store.engineState = nil
+    store.establishmentGeneration = 1
+
+    let controller = makeController()
+    controller.start()
+    await controller.startupTask?.value
+
+    let batch = try XCTUnwrap(controller.nextRecordZoneChangeBatch(scope: nil))
+    let sentEstablishment = try XCTUnwrap(
+      batch.first { $0.recordID.recordName == SyncedEstablishment.recordName })
+    let savedRecords = batch.filter {
+      $0.recordID.recordName != SyncedEstablishment.recordName
+    }
+    let serverEstablishment = SyncedEstablishment(generation: 1, establishedAt: Date())
+      .toCKRecord(in: zoneID)
+    let conflict = makeCKError(
+      .serverRecordChanged,
+      userInfo: [CKRecordChangedErrorServerRecordKey: serverEstablishment])
+
+    controller.handle(
+      .sentRecordZoneChanges(
+        savedRecords: savedRecords,
+        failedRecordSaves: [(record: sentEstablishment, error: conflict)],
+        deletedRecordIDs: [],
+        failedRecordDeletes: []))
+    controller.handle(
+      .sentDatabaseChanges(
+        savedZones: [zoneID], failedZoneSaves: [], deletedZoneIDs: [], failedZoneDeletes: []))
+
+    XCTAssertNotNil(
+      store.systemFields(for: SyncedEstablishment.recordName),
+      "equal-generation server metadata must become the fixed record's change-tag base")
+    XCTAssertFalse(
+      store.pendingSeedIntent,
+      "equal-generation conflict is a terminal seed outcome after adoption")
+
+    controller.handle(.stateUpdate(serialization: Data([0x01])))
+    let relaunchDriver = MockSyncEngineDriver()
+    let relaunchController = SyncEngineController(
+      modelContext: context,
+      store: store,
+      driverFactory: { _ in relaunchDriver },
+      apply: apply,
+      provider: provider,
+      sessionSync: sessionSync,
+      deviceId: deviceId)
+    relaunchController.start()
+    await relaunchController.startupTask?.value
+
+    XCTAssertFalse(
+      relaunchDriver.pendingRecordZoneChanges.contains {
+        if case .saveRecord(let id) = $0 {
+          return id.recordName == SyncedEstablishment.recordName
+        }
+        return false
+      },
+      "ordinary relaunch must not repeat the establishment seed")
+  }
+
+  func testGivenLowerServerEstablishmentConflict_WhenRetrySucceeds_ThenSeedResolves()
+    async throws
+  {
+    store.engineState = nil
+    store.establishmentGeneration = 2
+
+    let controller = makeController()
+    controller.start()
+    await controller.startupTask?.value
+
+    let batch = try XCTUnwrap(controller.nextRecordZoneChangeBatch(scope: nil))
+    let sentEstablishment = try XCTUnwrap(
+      batch.first { $0.recordID.recordName == SyncedEstablishment.recordName })
+    let savedRecords = batch.filter {
+      $0.recordID.recordName != SyncedEstablishment.recordName
+    }
+    driver.setPendingRecordZoneChangesForTest([])
+    let serverEstablishment = SyncedEstablishment(generation: 1, establishedAt: Date())
+      .toCKRecord(in: zoneID)
+    let conflict = makeCKError(
+      .serverRecordChanged,
+      userInfo: [CKRecordChangedErrorServerRecordKey: serverEstablishment])
+
+    controller.handle(
+      .sentRecordZoneChanges(
+        savedRecords: savedRecords,
+        failedRecordSaves: [(record: sentEstablishment, error: conflict)],
+        deletedRecordIDs: [],
+        failedRecordDeletes: []))
+    controller.handle(
+      .sentDatabaseChanges(
+        savedZones: [zoneID], failedZoneSaves: [], deletedZoneIDs: [], failedZoneDeletes: []))
+
+    XCTAssertNotNil(store.systemFields(for: SyncedEstablishment.recordName))
+    XCTAssertEqual(countPendingSaves(named: SyncedEstablishment.recordName), 1)
+    XCTAssertTrue(store.pendingSeedIntent, "local winner remains pending until retry succeeds")
+
+    let retry = try XCTUnwrap(provider.record(forRecordName: SyncedEstablishment.recordName))
+    controller.handle(
+      .sentRecordZoneChanges(
+        savedRecords: [retry], failedRecordSaves: [], deletedRecordIDs: [],
+        failedRecordDeletes: []))
+
+    XCTAssertFalse(store.pendingSeedIntent, "successful local-winner retry resolves the seed")
+  }
+
+  func testGivenHigherServerEstablishmentConflictWithoutReset_WhenHandled_ThenAdoptsOnce() {
+    store.engineState = Data([0x01])
+    store.establishmentGeneration = 1
+    let controller = makeController()
+    controller.start()
+    controller.startupTask?.cancel()
+    let sent = SyncedEstablishment(generation: 1, establishedAt: Date()).toCKRecord(in: zoneID)
+    let server = SyncedEstablishment(generation: 2, establishedAt: Date()).toCKRecord(in: zoneID)
+    let conflict = makeCKError(
+      .serverRecordChanged, userInfo: [CKRecordChangedErrorServerRecordKey: server])
+    var adoptedRecords: [CKRecord] = []
+    controller.onFetchedEstablishment = { adoptedRecords.append($0) }
+
+    controller.handle(
+      .sentRecordZoneChanges(
+        savedRecords: [], failedRecordSaves: [(record: sent, error: conflict)],
+        deletedRecordIDs: [], failedRecordDeletes: []))
+
+    XCTAssertEqual(adoptedRecords.count, 1)
+    XCTAssertEqual(
+      adoptedRecords.first?[SyncedEstablishment.FieldKey.generation.rawValue] as? Int,
+      2)
+  }
+
   // MARK: - I12 delete-intent recovery (S-29, S-33, CRA-5)
 
   func testGivenTombstoneEntityPresent_WhenRecover_ThenAbortAndClear() async {

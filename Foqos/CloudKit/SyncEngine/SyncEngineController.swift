@@ -256,8 +256,8 @@ final class SyncEngineController: SyncEngineDriverDelegate {
       if !saved.isEmpty { self?.reset?.handleZoneSaveConfirmed() }
     }
     resetCommandSaveDidSucceed = { [weak self] _ in self?.reset?.handleCommandSaveResult(.saved) }
-    resetEstablishmentSaveDidSucceed = { [weak self] _ in
-      self?.reset?.handleEstablishmentSaveResult(.saved)
+    resetEstablishmentSaveDidSucceed = { [weak self] record in
+      self?.handleEstablishmentSaveSucceeded(record)
     }
     // Fix 2 (§8.1 step 5): forward the SERVER record, not the device's own failed record —
     // the local record always carries the device's own requestId (fixed name), so
@@ -274,12 +274,7 @@ final class SyncEngineController: SyncEngineDriverDelegate {
       // else transient/other: keep the intent — do NOT clear or abandon.
     }
     resetEstablishmentSaveDidFail = { [weak self] _, error in
-      guard let self, let reset = self.reset else { return }
-      if error.code == .serverRecordChanged, let server = error.serverRecord {
-        if let winningRecord = reset.handleEstablishmentSaveResult(.serverRecordChanged(server)) {
-          self.onFetchedEstablishment?(winningRecord)
-        }
-      }
+      self?.handleEstablishmentSaveFailed(error)
     }
     onResumeReset = { [weak self] _ in
       self?.resetTask = Task { [weak self] in
@@ -804,6 +799,43 @@ final class SyncEngineController: SyncEngineDriverDelegate {
         resolveSeedName(name)  // I11 observable-clear (Fix 5): terminal, dropped
       }
     }
+  }
+
+  /// Reconciles the fixed-name establishment record after CloudKit accepts a save. A wipe reset
+  /// still owns its intent transition; the controller owns change-tag caching and I11 seed
+  /// completion for both reset and ordinary seed traffic.
+  private func handleEstablishmentSaveSucceeded(_ record: CKRecord) {
+    reset?.handleEstablishmentSaveResult(.saved)
+    store.setSystemFields(
+      CKRecordSystemFieldsCodec.encode(record), for: SyncedEstablishment.recordName)
+    resolveSeedName(SyncedEstablishment.recordName)
+  }
+
+  /// Resolves fixed-name establishment CAS conflicts by generation. The existing reset machine
+  /// gets first refusal so a live wiping intent retains its established semantics. Outside that
+  /// path, a higher server generation enters adoption, an equal generation accepts the server's
+  /// metadata as terminal, and a lower generation retries the local winner with the server tag.
+  private func handleEstablishmentSaveFailed(_ error: CKError) {
+    guard error.code == .serverRecordChanged, let server = error.serverRecord else { return }
+    if let winningRecord = reset?.handleEstablishmentSaveResult(.serverRecordChanged(server)) {
+      onFetchedEstablishment?(winningRecord)
+      return
+    }
+    guard let serverEstablishment = SyncedEstablishment(from: server) else { return }
+    if serverEstablishment.generation > store.establishmentGeneration {
+      onFetchedEstablishment?(server)
+      return
+    }
+
+    store.setSystemFields(
+      CKRecordSystemFieldsCodec.encode(server), for: SyncedEstablishment.recordName)
+    if serverEstablishment.generation == store.establishmentGeneration {
+      resolveSeedName(SyncedEstablishment.recordName)
+      return
+    }
+
+    markQueueDrainNeeded(after: error)
+    driver.add(pendingRecordZoneChanges: [.saveRecord(recordID(SyncedEstablishment.recordName))])
   }
 
   /// §5.3 failed-delete branches: U-delete (`.unknownItem`, done), Z (recreate + re-add),
