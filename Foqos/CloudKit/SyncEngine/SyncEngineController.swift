@@ -817,11 +817,18 @@ final class SyncEngineController: SyncEngineDriverDelegate {
   /// metadata as terminal, and a lower generation retries the local winner with the server tag.
   private func handleEstablishmentSaveFailed(_ error: CKError) {
     guard error.code == .serverRecordChanged, let server = error.serverRecord else { return }
+    let hadLiveWipingIntent = store.resetIntent?.stage == .wiping
     if let winningRecord = reset?.handleEstablishmentSaveResult(.serverRecordChanged(server)) {
       onFetchedEstablishment?(winningRecord)
       return
     }
-    guard let serverEstablishment = SyncedEstablishment(from: server) else { return }
+    guard !hadLiveWipingIntent else { return }
+    guard let serverEstablishment = SyncedEstablishment(from: server) else {
+      Log.warning(
+        "Establishment save conflict returned an undecodable server record; seed retained",
+        category: .sync)
+      return
+    }
     if serverEstablishment.generation > store.establishmentGeneration {
       onFetchedEstablishment?(server)
       return

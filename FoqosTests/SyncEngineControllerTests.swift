@@ -751,6 +751,40 @@ final class SyncEngineControllerTests: XCTestCase {
       2)
   }
 
+  func testGivenLiveWipingResetAndNonHigherEstablishmentConflict_WhenHandled_ThenDoesNotFallThrough() {
+    store.engineState = Data([0x01])
+    store.establishmentGeneration = 2
+    let controller = makeController()
+    controller.start()
+    controller.startupTask?.cancel()
+    let sent = SyncedEstablishment(generation: 2, establishedAt: Date()).toCKRecord(in: zoneID)
+
+    for serverGeneration in [2, 1] {
+      store.resetIntent = ResetIntent(
+        id: UUID(), clear: false, wipe: true, stage: .wiping, priorCommandId: nil)
+      store.setSystemFields(nil, for: SyncedEstablishment.recordName)
+      driver.setPendingRecordZoneChangesForTest([])
+      let server = SyncedEstablishment(
+        generation: serverGeneration, establishedAt: Date()
+      ).toCKRecord(in: zoneID)
+      let conflict = makeCKError(
+        .serverRecordChanged, userInfo: [CKRecordChangedErrorServerRecordKey: server])
+
+      controller.handle(
+        .sentRecordZoneChanges(
+          savedRecords: [], failedRecordSaves: [(record: sent, error: conflict)],
+          deletedRecordIDs: [], failedRecordDeletes: []))
+
+      XCTAssertNil(store.resetIntent, "live wiping intent is consumed")
+      XCTAssertNil(
+        store.systemFields(for: SyncedEstablishment.recordName),
+        "live reset keeps its existing no-cache conflict semantics")
+      XCTAssertEqual(
+        countPendingSaves(named: SyncedEstablishment.recordName), 0,
+        "consumed live reset must not trigger an unowned follow-on write")
+    }
+  }
+
   // MARK: - I12 delete-intent recovery (S-29, S-33, CRA-5)
 
   func testGivenTombstoneEntityPresent_WhenRecover_ThenAbortAndClear() async {
