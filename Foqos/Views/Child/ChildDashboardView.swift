@@ -642,6 +642,7 @@ struct ChildSettingsView: View {
               isOn: Binding(
                 get: { emergencyManager.isEmergencySettingsLocked() },
                 set: { newValue in
+                  // Keep the stored setting unchanged until parent-code verification succeeds.
                   emergencySettingsLockChangeGate.request(newValue)
                   showEmergencyLockCodeEntry = true
                 }
@@ -649,7 +650,7 @@ struct ChildSettingsView: View {
             ) {
               VStack(alignment: .leading, spacing: 4) {
                 Text("Lock Emergency Reset-Period Changes")
-                Text("Requires the parent lock code to change this setting on this device")
+                Text("Requires the parent lock code to change the emergency reset period on this device")
                   .font(.caption)
                   .foregroundColor(.secondary)
               }
@@ -707,10 +708,11 @@ struct ChildSettingsView: View {
       ) {
         LockCodeEntrySheet(
           onSuccess: {
-            showEmergencyLockCodeEntry = false
-            if let newValue = emergencySettingsLockChangeGate.resolve(
+            let newValue = emergencySettingsLockChangeGate.resolve(
               verificationSucceeded: true
-            ) {
+            )
+            showEmergencyLockCodeEntry = false
+            if let newValue {
               emergencyManager.setEmergencySettingsLocked(newValue)
             }
           },
