@@ -74,13 +74,26 @@ Existing connected verification behavior remains unchanged.
 - confirmed absent in Parent or Individual mode: report disconnected without changing mode; and
 - indeterminate in every mode: preserve local mode and shared authority.
 
+The `CloudKitManager` branch that interprets disconnected plus enforced `.individual` will carry
+an inline comment documenting the field's dual meaning and the invariant that only
+`CloudKitNetworkService+Verification.swift` may produce this revocation signal.
+
 The Child-only gate is mandatory. A parent owns its policy zone in the private database, so an
 empty shared database is not evidence that Parent mode should be removed.
 
 `LockCodeManager` will gain one focused cleanup operation that clears both `cachedLockCodes` and
-the persisted `family_foqos_child_lock_codes` value. `AuthorizationVerifier.handleAuthorizationLoss()`
-will call it alongside the existing CloudKit and authorization cleanup before selecting Individual
-mode. The operation performs no network I/O and does not clear parent/individual lock-code state.
+the persisted `family_foqos_child_lock_codes` value. A distinct confirmed-CloudKit-revocation
+cleanup entry point in `AuthorizationVerifier` will call that operation and then compose with the
+existing `handleAuthorizationLoss()` cleanup before selecting Individual mode. Existing Family
+Controls-driven callers continue to call `handleAuthorizationLoss()` and must not erase either PIN
+cache. The cache operation performs no network I/O and does not clear parent/individual lock-code
+state.
+
+This separation is also a compatibility boundary for issue #431. Family Controls error code 4 can
+currently reach `handleAuthorizationLoss()` after a transient authorization failure. Until #431
+corrects that classification, the ordinary authorization-loss path must preserve the fail-closed
+PIN cache. Only a successful CloudKit zone-list lookup proving the shared policy zone absent may
+call the confirmed-revocation entry point.
 
 No lock-code fetch semantics change. In particular, `LockCodeManager.resolveLockCodes` continues
 to preserve the persisted cache whenever `isConnected` is false. Only the separate authoritative
@@ -94,9 +107,11 @@ revocation signal may erase it.
 3. A present zone continues through FamilyMember verification.
 4. A thrown lookup produces an indeterminate result; no mode or PIN cache changes occur.
 5. A successful lookup without the exact policy zone produces confirmed absence.
-6. If and only if local mode is Child, centralized authorization-loss cleanup clears published
-   shared state, authorization state, the in-memory child PIN cache, and its persisted copy, then
-   selects Individual mode.
+6. If and only if local mode is Child, the confirmed-revocation cleanup clears the in-memory child
+   PIN cache and its persisted copy, composes with the existing cleanup of published shared and
+   authorization state, then selects Individual mode.
+7. Family Controls-driven authorization loss continues through the existing cleanup path without
+   erasing either child PIN cache.
 
 ## Error handling and privacy
 
@@ -116,7 +131,9 @@ Use TDD and first demonstrate failures for:
   classifying as confirmed absence;
 - only Child mode turning confirmed absence into authorization-loss handling;
 - Parent and Individual modes preserving their modes for the same shared-database absence;
-- child PIN cleanup removing both the in-memory verification cache and persisted value; and
+- child PIN cleanup removing both the in-memory verification cache and persisted value;
+- a Family Controls-driven authorization loss preserving both PIN caches while the confirmed
+  CloudKit-revocation path erases them; and
 - the existing offline `resolveLockCodes` test continuing to preserve the cached PIN.
 
 Run focused tests through
