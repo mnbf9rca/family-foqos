@@ -1,19 +1,10 @@
 import CloudKit
 import SwiftUI
 
-/// Main dashboard view for parents to manage lock codes and family members
+/// Dashboard for setting up and administering a family.
 ///
-/// ## Child Mode Access Model (ADR 2026-02-22)
-///
-/// When a child opens this dashboard, controls follow a two-tier model:
-///
-/// | Tier | Interactivity | Computed property | Examples |
-/// |------|---------------|-------------------|----------|
-/// | 1. Read-only | Never interactive | N/A (always visible) | Info cards, member lists |
-/// | 2. CloudKit ops | Never interactive | `parentOperationsEnabled` | Set lock code, add/remove members |
-///
-/// The child sees the full dashboard — nothing is hidden. Only interactivity differs.
-/// CloudKit parent operations require parent authorization and cannot be performed by a child.
+/// Child navigation to this owner-oriented dashboard is hidden. Refresh also fails closed for
+/// Child mode in case an already-presented view survives a mode change.
 struct ParentDashboardView: View {
   @ObservedObject private var cloudKitManager = CloudKitManager.shared
   @ObservedObject private var appModeManager = AppModeManager.shared
@@ -34,6 +25,10 @@ struct ParentDashboardView: View {
   @State private var isResettingFamily = false
   // Share coordinator for direct sharing
   @StateObject private var shareCoordinator = ShareCoordinator()
+
+  nonisolated static func allowsOwnerRefresh(mode: AppMode) -> Bool {
+    mode != .child
+  }
 
   /// Whether the page is functional (iCloud signed in and available)
   private var isPageFunctional: Bool {
@@ -662,6 +657,8 @@ struct ParentDashboardView: View {
   // MARK: - Actions
 
   private func refreshData() async {
+    guard Self.allowsOwnerRefresh(mode: appModeManager.currentMode) else { return }
+
     do {
       // Refresh share participants to show pending invitations
       await cloudKitManager.refreshShareParticipants()
