@@ -191,7 +191,7 @@ require_internal_gate_contract() {
 }
 
 execute_internal() {
-  local use_xcpretty=$1
+  local use_xcbeautify=$1
   shift
   [[ "${1:-}" == "--" ]] || die "internal execution requires -- before the command"
   shift
@@ -234,7 +234,7 @@ execute_internal() {
     esac
   done
 
-  if [[ "$use_xcpretty" == true ]]; then
+  if [[ "$use_xcbeautify" == true ]]; then
     local -a pipeline_statuses
     set +e
     "$@" \
@@ -242,7 +242,7 @@ execute_internal() {
       -derivedDataPath "$IOS_SIM_GATE_DERIVED_DATA_PATH" \
       -parallel-testing-enabled NO \
       -disable-concurrent-destination-testing \
-      2>&1 | bundle exec xcpretty
+      2>&1 | xcbeautify
     pipeline_statuses=("${PIPESTATUS[@]}")
     set -e
     ((pipeline_statuses[0] == 0)) || exit "${pipeline_statuses[0]}"
@@ -268,12 +268,12 @@ delete_internal() {
 case "${1:-}" in
   __execute)
     shift
-    use_xcpretty=false
-    if [[ "${1:-}" == "--xcpretty" ]]; then
-      use_xcpretty=true
+    use_xcbeautify=false
+    if [[ "${1:-}" == "--xcbeautify" ]]; then
+      use_xcbeautify=true
       shift
     fi
-    execute_internal "$use_xcpretty" "$@"
+    execute_internal "$use_xcbeautify" "$@"
     ;;
   __delete)
     shift
@@ -284,14 +284,14 @@ esac
 
 usage() {
   cat >&2 <<'EOF'
-Usage: scripts/xcode-stream.sh --agent NAME [--session NAME] [--xcpretty] -- COMMAND [ARG ...]
+Usage: scripts/xcode-stream.sh --agent NAME [--session NAME] [--xcbeautify] -- COMMAND [ARG ...]
 EOF
   exit 2
 }
 
 agent=""
 session=""
-use_xcpretty=false
+use_xcbeautify=false
 while (($#)); do
   case "$1" in
     --agent)
@@ -304,9 +304,12 @@ while (($#)); do
       session=$2
       shift 2
       ;;
-    --xcpretty)
-      use_xcpretty=true
+    --xcbeautify)
+      use_xcbeautify=true
       shift
+      ;;
+    --xcpretty)
+      die "--xcpretty was removed; use --xcbeautify"
       ;;
     --)
       shift
@@ -333,15 +336,15 @@ fi
 
 command=("$@")
 reject_shell_mediated_xcodebuild "${command[@]}"
-[[ "$use_xcpretty" != true || "${command[0]##*/}" == "xcodebuild" ]] ||
-  die "--xcpretty requires xcodebuild immediately after --"
-if [[ "$use_xcpretty" == true ]]; then
-  command -v bundle >/dev/null || {
-    echo "xcode-stream: bundle not found; --xcpretty requires bundle exec xcpretty" >&2
+[[ "$use_xcbeautify" != true || "${command[0]##*/}" == "xcodebuild" ]] ||
+  die "--xcbeautify requires xcodebuild immediately after --"
+if [[ "$use_xcbeautify" == true ]]; then
+  command -v xcbeautify >/dev/null || {
+    echo "xcode-stream: xcbeautify not found; install it with: brew install xcbeautify" >&2
     exit 127
   }
-  bundle exec xcpretty --version >/dev/null 2>&1 ||
-    die "xcpretty unavailable; run bundle install before using --xcpretty"
+  xcbeautify --version >/dev/null 2>&1 ||
+    die "xcbeautify unavailable; reinstall it with: brew install xcbeautify"
 fi
 owner_args=(--project "$PROJECT" --agent "$agent")
 if [[ -n "$session" ]]; then
@@ -508,7 +511,7 @@ IFS=$'\t' read -r IOS_SIM_GATE_DEVICE_NAME IOS_SIM_GATE_RUNTIME_VERSION <<<"$met
 export IOS_SIM_GATE_DEVICE_NAME IOS_SIM_GATE_RUNTIME_VERSION
 
 internal_command=("$BASH4_BIN" "$SELF" __execute)
-[[ "$use_xcpretty" != true ]] || internal_command+=(--xcpretty)
+[[ "$use_xcbeautify" != true ]] || internal_command+=(--xcbeautify)
 internal_command+=(-- "${command[@]}")
 
 if ! xctest_devices_before=$(xctest_devices_census); then

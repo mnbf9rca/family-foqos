@@ -276,18 +276,17 @@ EOF
   chmod +x "$TEST_ROOT/bin/xcodebuild"
 }
 
-write_fake_xcpretty() {
-  cat >"$TEST_ROOT/bin/bundle" <<'EOF'
+write_fake_xcbeautify() {
+  cat >"$TEST_ROOT/bin/xcbeautify" <<'EOF'
 #!/opt/homebrew/bin/bash
 set -euo pipefail
-if [[ "$*" == "exec xcpretty --version" ]]; then
-  exit "${XCPRETTY_PREFLIGHT_EXIT:-0}"
+if [[ "${1:-}" == "--version" ]]; then
+  exit "${XCBEAUTIFY_PREFLIGHT_EXIT:-0}"
 fi
-[[ "$*" == "exec xcpretty" ]] || exit 64
-cat >"$XCPRETTY_INPUT_LOG"
-exit "${XCPRETTY_EXIT:-0}"
+cat >"$XCBEAUTIFY_INPUT_LOG"
+exit "${XCBEAUTIFY_EXIT:-0}"
 EOF
-  chmod +x "$TEST_ROOT/bin/bundle"
+  chmod +x "$TEST_ROOT/bin/xcbeautify"
 }
 
 write_fake_fastlane_dependencies() {
@@ -346,7 +345,7 @@ reset_case() {
   : >"$CASE_ROOT/gate.log"
   : >"$CASE_ROOT/simctl.log"
   : >"$CASE_ROOT/xcodebuild.log"
-  : >"$CASE_ROOT/xcpretty-input.log"
+  : >"$CASE_ROOT/xcbeautify-input.log"
 
   export IOS_SIM_GATE_HOME="$CASE_ROOT/state"
   export IOS_SIM_GATE_CACHE_HOME="$CASE_ROOT/cache"
@@ -358,7 +357,7 @@ reset_case() {
   export GATE_LOG="$CASE_ROOT/gate.log"
   export SIMCTL_LOG="$CASE_ROOT/simctl.log"
   export XCODEBUILD_LOG="$CASE_ROOT/xcodebuild.log"
-  export XCPRETTY_INPUT_LOG="$CASE_ROOT/xcpretty-input.log"
+  export XCBEAUTIFY_INPUT_LOG="$CASE_ROOT/xcbeautify-input.log"
   export DEVICES_JSON="$CASE_ROOT/devices.json"
   export DEVICE_TYPES_JSON="$TEST_ROOT/device-types.json"
   export RUNTIMES_JSON="$TEST_ROOT/runtimes.json"
@@ -368,8 +367,8 @@ reset_case() {
   export JQ_BIN WINNER_UUID
   unset IOS_SIM_GATE_DEVICE_TYPE IOS_SIM_GATE_RUNTIME SIMULATE_REGISTER_RACE XCODEBUILD_EXIT \
     XCODEBUILD_STDOUT XCODEBUILD_STDERR XCODEBUILD_XCTEST_DEVICE_NAME \
-    XCODEBUILD_XCTEST_DEVICE_UUID XCODEBUILD_INTERRUPT_CENSUS_PARENT XCPRETTY_EXIT \
-    XCPRETTY_PREFLIGHT_EXIT GATE_STATUS_EXIT INCOMPATIBLE_RUNTIME XCTEST_CENSUS_FAIL_CALL
+    XCODEBUILD_XCTEST_DEVICE_UUID XCODEBUILD_INTERRUPT_CENSUS_PARENT XCBEAUTIFY_EXIT \
+    XCBEAUTIFY_PREFLIGHT_EXIT GATE_STATUS_EXIT INCOMPATIBLE_RUNTIME XCTEST_CENSUS_FAIL_CALL
 }
 
 add_device() {
@@ -416,7 +415,7 @@ run_wrapper() {
 write_fake_gate
 write_fake_simctl
 write_fake_xcodebuild
-write_fake_xcpretty
+write_fake_xcbeautify
 write_fake_fastlane_dependencies
 write_inventory_files
 
@@ -566,7 +565,7 @@ assert_shell_xcodebuild_rejected() {
 }
 
 assert_shell_xcodebuild_rejected bash -o pipefail -c \
-  'xcodebuild test -project FamilyFoqos.xcodeproj -scheme FamilyFoqos -destination "platform=iOS Simulator,id=11111111-1111-1111-1111-111111111111" 2>&1 | bundle exec xcpretty'
+  'xcodebuild test -project FamilyFoqos.xcodeproj -scheme FamilyFoqos -destination "platform=iOS Simulator,id=11111111-1111-1111-1111-111111111111" 2>&1 | xcbeautify'
 assert_shell_xcodebuild_rejected sh -lc 'exec xcodebuild test'
 assert_shell_xcodebuild_rejected zsh -c 'command xcodebuild test'
 assert_shell_xcodebuild_rejected env TEST_MODE=1 bash -c 'xcodebuild test'
@@ -674,33 +673,38 @@ status=$?
 set -e
 [[ "$status" -eq 23 ]] || fail "expected xcodebuild exit 23, got $status"
 
-reset_case rejected-missing-bundle
-mkdir -p "$CASE_ROOT/no-bundle-bin"
-cat >"$CASE_ROOT/no-bundle-bin/dirname" <<'EOF'
-#!/opt/homebrew/bin/bash
-exec /usr/bin/dirname "$@"
-EOF
-chmod +x "$CASE_ROOT/no-bundle-bin/dirname"
+reset_case rejected-missing-xcbeautify
+mkdir -p "$CASE_ROOT/no-xcbeautify-bin"
 set +e
-output=$(PATH="$CASE_ROOT/no-bundle-bin" "$WRAPPER" \
-  --agent build2 --session collab --xcpretty -- xcodebuild test 2>&1)
+output=$(PATH="$CASE_ROOT/no-xcbeautify-bin:/usr/bin:/bin" "$WRAPPER" \
+  --agent build2 --session collab --xcbeautify -- xcodebuild test 2>&1)
 status=$?
 set -e
-if [[ "$status" -ne 127 || "$output" != *"bundle"* ]]; then
-  fail "missing bundle must exit 127 and name bundle: exit=$status output=$output"
+if [[ "$status" -ne 127 || "$output" != *"xcbeautify"* ]]; then
+  fail "missing xcbeautify must exit 127 and name xcbeautify: exit=$status output=$output"
 fi
-[[ ! -s "$GATE_LOG" ]] || fail "missing bundle reached the gate"
+[[ ! -s "$GATE_LOG" ]] || fail "missing xcbeautify reached the gate"
 
-reset_case rejected-xcpretty-unavailable
+reset_case rejected-xcpretty-option
 set +e
-output=$(XCPRETTY_PREFLIGHT_EXIT=19 run_wrapper \
-  --agent build2 --session collab --xcpretty -- xcodebuild test 2>&1)
+output=$(run_wrapper --agent build2 --session collab --xcpretty -- xcodebuild test 2>&1)
 status=$?
 set -e
-if [[ "$status" -eq 0 || "$output" != *"xcpretty"* ]]; then
-  fail "unavailable xcpretty must be named and rejected: $output"
+if [[ "$status" -eq 0 || "$output" != *"use --xcbeautify"* ]]; then
+  fail "stale --xcpretty usage must name --xcbeautify: exit=$status output=$output"
 fi
-[[ ! -s "$GATE_LOG" ]] || fail "unavailable xcpretty reached the gate"
+[[ ! -s "$GATE_LOG" ]] || fail "stale --xcpretty usage reached the gate"
+
+reset_case rejected-xcbeautify-unavailable
+set +e
+output=$(XCBEAUTIFY_PREFLIGHT_EXIT=19 run_wrapper \
+  --agent build2 --session collab --xcbeautify -- xcodebuild test 2>&1)
+status=$?
+set -e
+if [[ "$status" -eq 0 || "$output" != *"xcbeautify"* ]]; then
+  fail "unavailable xcbeautify must be named and rejected: $output"
+fi
+[[ ! -s "$GATE_LOG" ]] || fail "unavailable xcbeautify reached the gate"
 
 reset_case missing-xctestdevices-root
 add_device "$REUSE_UUID" "Family Foqos build2" com.apple.CoreSimulator.SimRuntime.iOS-26-0
@@ -743,19 +747,19 @@ reset_case formatted-preflight-status
 set +e
 GATE_STATUS_EXIT=29 zsh -f -c '
   export PATH="$1:$PATH"
-  "$2" --agent build2 --session collab --xcpretty -- xcodebuild test
+  "$2" --agent build2 --session collab --xcbeautify -- xcodebuild test
 ' _ "$TEST_ROOT/bin" "$WRAPPER"
 status=$?
 set -e
 [[ "$status" -eq 29 ]] || fail "expected formatted preflight exit 29, got $status"
-[[ ! -s "$XCPRETTY_INPUT_LOG" ]] || fail "formatter ran before gate preflight completed"
+[[ ! -s "$XCBEAUTIFY_INPUT_LOG" ]] || fail "formatter ran before gate preflight completed"
 
 reset_case formatted-child-status
 add_device "$REUSE_UUID" "Family Foqos build2" com.apple.CoreSimulator.SimRuntime.iOS-26-0
 set_owner "$REUSE_UUID" build2 collab
 set +e
-XCODEBUILD_EXIT=23 XCPRETTY_EXIT=0 \
-  run_wrapper --agent build2 --session collab --xcpretty -- xcodebuild test
+XCODEBUILD_EXIT=23 XCBEAUTIFY_EXIT=0 \
+  run_wrapper --agent build2 --session collab --xcbeautify -- xcodebuild test
 status=$?
 set -e
 [[ "$status" -eq 23 ]] || fail "expected formatted xcodebuild exit 23, got $status"
@@ -764,29 +768,29 @@ reset_case formatted-formatter-status
 add_device "$REUSE_UUID" "Family Foqos build2" com.apple.CoreSimulator.SimRuntime.iOS-26-0
 set_owner "$REUSE_UUID" build2 collab
 set +e
-XCODEBUILD_EXIT=0 XCPRETTY_EXIT=17 \
-  run_wrapper --agent build2 --session collab --xcpretty -- xcodebuild test
+XCODEBUILD_EXIT=0 XCBEAUTIFY_EXIT=17 \
+  run_wrapper --agent build2 --session collab --xcbeautify -- xcodebuild test
 status=$?
 set -e
-[[ "$status" -eq 17 ]] || fail "expected xcpretty exit 17 after xcodebuild success, got $status"
+[[ "$status" -eq 17 ]] || fail "expected xcbeautify exit 17 after xcodebuild success, got $status"
 
 reset_case formatted-merged-output
 add_device "$REUSE_UUID" "Family Foqos build2" com.apple.CoreSimulator.SimRuntime.iOS-26-0
 set_owner "$REUSE_UUID" build2 collab
 XCODEBUILD_STDOUT="stdout marker" XCODEBUILD_STDERR="stderr marker" \
-  run_wrapper --agent build2 --session collab --xcpretty -- xcodebuild test
-assert_contains "$XCPRETTY_INPUT_LOG" "stdout marker"
-assert_contains "$XCPRETTY_INPUT_LOG" "stderr marker"
+  run_wrapper --agent build2 --session collab --xcbeautify -- xcodebuild test
+assert_contains "$XCBEAUTIFY_INPUT_LOG" "stdout marker"
+assert_contains "$XCBEAUTIFY_INPUT_LOG" "stderr marker"
 
-reset_case rejected-xcpretty-scope
+reset_case rejected-xcbeautify-scope
 set +e
-output=$(run_wrapper --agent build2 --session collab --xcpretty -- /usr/bin/true 2>&1)
+output=$(run_wrapper --agent build2 --session collab --xcbeautify -- /usr/bin/true 2>&1)
 status=$?
 set -e
-if [[ "$status" -eq 0 || "$output" != *"--xcpretty requires xcodebuild immediately after --"* ]]; then
-  fail "--xcpretty must reject a non-xcodebuild child before gate mutation"
+if [[ "$status" -eq 0 || "$output" != *"--xcbeautify requires xcodebuild immediately after --"* ]]; then
+  fail "--xcbeautify must reject a non-xcodebuild child before gate mutation"
 fi
-[[ ! -s "$GATE_LOG" ]] || fail "invalid --xcpretty use reached the gate"
+[[ ! -s "$GATE_LOG" ]] || fail "invalid --xcbeautify use reached the gate"
 
 if [[ ! -x "$ADAPTER" ]]; then
   fail "scripts/ios-sim-gate-bin/xcrun is missing or not executable"

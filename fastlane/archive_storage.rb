@@ -1,40 +1,17 @@
 # frozen_string_literal: true
 
 require 'fileutils'
-require 'securerandom'
 
 module ArchiveStorage
-  def self.replace_directory(source:, destination:, logger: ->(message) { warn(message) })
-    Dir.glob("#{destination}.tmp-*").each { |path| FileUtils.rm_rf(path) }
-    stale_backups = Dir.glob("#{destination}.backup-*")
-    if !File.exist?(destination) && !stale_backups.empty?
-      recovery = stale_backups.max_by { |path| [File.mtime(path), path] }
-      File.rename(recovery, destination)
-      logger.call("Archive backup recovered: #{recovery}")
-    end
-    stale_backups.each { |path| FileUtils.rm_rf(path) } if File.exist?(destination)
+  def self.create_dsym_zip(archive:, destination:)
+    source = File.join(archive, 'dSYMs')
+    raise ArgumentError, "Archive dSYMs not found: #{source}" unless File.directory?(source)
 
-    suffix = "#{Process.pid}-#{SecureRandom.hex(6)}"
-    temporary = "#{destination}.tmp-#{suffix}"
-    backup = "#{destination}.backup-#{suffix}"
+    FileUtils.rm_f(destination)
+    yield(source, destination)
+    raise "dSYM zip was not created: #{destination}" unless File.file?(destination)
 
-    begin
-      FileUtils.cp_r(source, temporary)
-      if File.exist?(destination)
-        File.rename(destination, backup)
-        logger.call("Archive backup created: #{backup}")
-      end
-      File.rename(temporary, destination)
-      FileUtils.rm_rf(backup)
-    rescue Exception # rubocop:disable Lint/RescueException -- Archive recovery must also run for Interrupt.
-      if File.exist?(backup) && !File.exist?(destination)
-        File.rename(backup, destination)
-        logger.call("Archive backup restored: #{backup}")
-      end
-      raise
-    ensure
-      FileUtils.rm_rf(temporary)
-    end
+    destination
   end
 
   def self.upload_dsyms(tag:, prerelease:, title:, notes:, asset:)
