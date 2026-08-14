@@ -60,8 +60,14 @@ final class RecordProvider {
   }
 
   func establishmentRecord() -> CKRecord {
-    SyncedEstablishment(generation: store.establishmentGeneration, establishedAt: Date())
-      .toCKRecord(in: zoneID)
+    let synced = SyncedEstablishment(
+      generation: store.establishmentGeneration, establishedAt: Date())
+    let record = materialize(
+      recordName: SyncedEstablishment.recordName,
+      recordType: SyncedEstablishment.recordType,
+      freshRecordID: CKRecord.ID(recordName: SyncedEstablishment.recordName, zoneID: zoneID))
+    synced.updateCKRecord(record)
+    return record
   }
 
   private func profileRecord(_ profile: BlockedProfiles) -> CKRecord? {
