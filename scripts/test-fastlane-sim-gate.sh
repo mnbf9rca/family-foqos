@@ -93,6 +93,9 @@ unless captured.fetch(:derived_data_path) == config.fetch(:derived_data_path)
   raise 'Snapfile DerivedData mismatch'
 end
 raise 'Snapfile xcargs mismatch' unless captured.fetch(:xcargs) == expected_xcargs
+unless captured.fetch(:xcodebuild_formatter) == 'xcbeautify'
+  raise 'Snapfile formatter mismatch'
+end
 
 puts 'PASS: Fastlane simulator gate environment and exact UUID lookup'
 RUBY

@@ -46,7 +46,7 @@ if [[ "${REF_LINES[*]}" != "${EXPECTED_REFS[*]}" ]]; then
 fi
 
 mkdir -p "$TEST_ROOT/bootstrap" "$TEST_ROOT/failing-brew" "$TEST_ROOT/ruby/bin" \
-  "$TEST_ROOT/no-op-ruby/bin"
+  "$TEST_ROOT/no-op-ruby/bin" "$TEST_ROOT/no-xcbeautify-ruby/bin"
 
 cat >"$TEST_ROOT/bootstrap/brew" <<EOF
 #!/bin/bash
@@ -64,21 +64,50 @@ EOF
 
 cat >"$TEST_ROOT/ruby/bin/op" <<'EOF'
 #!/bin/bash
-printf 'op' >"$COMMAND_LOG"
+printf 'op' >>"$COMMAND_LOG"
 printf '\t%s' "$@" >>"$COMMAND_LOG"
 printf '\n' >>"$COMMAND_LOG"
+printf 'op\t%s\t%s\n' "${BUNDLE_PATH-}" "${BUNDLE_FROZEN-}" >>"$ENV_LOG"
 EOF
 
 cat >"$TEST_ROOT/ruby/bin/bundle" <<'EOF'
 #!/bin/bash
-printf 'bundle' >"$COMMAND_LOG"
+printf 'bundle' >>"$COMMAND_LOG"
 printf '\t%s' "$@" >>"$COMMAND_LOG"
 printf '\n' >>"$COMMAND_LOG"
+printf 'bundle\t%s\t%s\n' "${BUNDLE_PATH-}" "${BUNDLE_FROZEN-}" >>"$ENV_LOG"
+case "${1:-}" in
+  --version)
+    exit "${BUNDLE_VERSION_EXIT:-0}"
+    ;;
+  check)
+    exit "${BUNDLE_CHECK_EXIT:-0}"
+    ;;
+  install)
+    exit "${BUNDLE_INSTALL_EXIT:-0}"
+    ;;
+  exec)
+    exit 0
+    ;;
+  *)
+    exit 64
+    ;;
+esac
+EOF
+
+cat >"$TEST_ROOT/ruby/bin/xcbeautify" <<'EOF'
+#!/bin/bash
+[[ "${1:-}" == "--version" ]] || exit 64
+exit "${XCBEAUTIFY_PREFLIGHT_EXIT:-0}"
 EOF
 
 cp "$TEST_ROOT/ruby/bin/bundle" "$TEST_ROOT/no-op-ruby/bin/bundle"
+cp "$TEST_ROOT/ruby/bin/op" "$TEST_ROOT/no-xcbeautify-ruby/bin/op"
+cp "$TEST_ROOT/ruby/bin/bundle" "$TEST_ROOT/no-xcbeautify-ruby/bin/bundle"
 chmod +x "$TEST_ROOT/bootstrap/brew" "$TEST_ROOT/failing-brew/brew" "$TEST_ROOT/ruby/bin/op" \
-  "$TEST_ROOT/ruby/bin/bundle" "$TEST_ROOT/no-op-ruby/bin/bundle"
+  "$TEST_ROOT/ruby/bin/bundle" "$TEST_ROOT/ruby/bin/xcbeautify" \
+  "$TEST_ROOT/no-op-ruby/bin/bundle" "$TEST_ROOT/no-xcbeautify-ruby/bin/op" \
+  "$TEST_ROOT/no-xcbeautify-ruby/bin/bundle"
 
 assert_ruby_prerequisite_failure() {
   local test_name=$1
@@ -104,34 +133,134 @@ assert_ruby_prerequisite_failure \
 run_wrapper() {
   local ruby_prefix=$1
   shift
+  rm -f "$TEST_ROOT/command.log" "$TEST_ROOT/env.log"
   COMMAND_LOG="$TEST_ROOT/command.log" \
+    ENV_LOG="$TEST_ROOT/env.log" \
     FAKE_RUBY_PREFIX="$ruby_prefix" \
+    BUNDLE_PATH="/must/not/use/inherited/bundle/path" \
+    BUNDLE_FROZEN=false \
     PATH="$TEST_ROOT/bootstrap:/usr/bin:/bin" \
     "$WRAPPER" "$@"
 }
 
-for lane in check_asc_key pull_metadata beta release; do
+assert_local_bundle_environment() {
+  local expected_path="$REPO_ROOT/vendor/bundle"
+  local tool
+  local path
+  local frozen
+  local count=0
+
+  while IFS=$'\t' read -r tool path frozen; do
+    count=$((count + 1))
+    if [[ "$path" != "$expected_path" || "$frozen" != true ]]; then
+      echo "FAIL: $tool escaped the frozen repo-local bundle environment"
+      printf 'path: %s\nfrozen: %s\n' "$path" "$frozen"
+      exit 1
+    fi
+  done <"$TEST_ROOT/env.log"
+  if [[ "$count" -eq 0 ]]; then
+    echo "FAIL: wrapper crossed no observable bundle boundary"
+    exit 1
+  fi
+}
+
+for lane in check_asc_key pull_metadata beta release verify_export; do
   run_wrapper "$TEST_ROOT/ruby" "$lane" "argument with spaces"
-  printf -v expected 'op\trun\t--env-file\t%s\t--\tbundle\texec\tfastlane\t%s\targument with spaces' \
+  printf -v expected 'bundle\t--version\nbundle\tcheck\nop\trun\t--env-file\t%s\t--\tbundle\texec\tfastlane\t%s\targument with spaces' \
     "$REPO_ROOT/scripts/../fastlane/asc.env" "$lane"
   if [[ "$(<"$TEST_ROOT/command.log")" != "$expected" ]]; then
     echo "FAIL: credential lane $lane was not routed through op run"
     printf 'actual: %s\n' "$(<"$TEST_ROOT/command.log")"
     exit 1
   fi
+  assert_local_bundle_environment
 done
 
 for lane in screenshots lanes gates build_number; do
   run_wrapper "$TEST_ROOT/ruby" "$lane" "argument with spaces"
-  printf -v expected 'bundle\texec\tfastlane\t%s\targument with spaces' "$lane"
+  printf -v expected 'bundle\t--version\nbundle\tcheck\nbundle\texec\tfastlane\t%s\targument with spaces' \
+    "$lane"
   if [[ "$(<"$TEST_ROOT/command.log")" != "$expected" ]]; then
     echo "FAIL: non-credential lane $lane did not bypass op"
     printf 'actual: %s\n' "$(<"$TEST_ROOT/command.log")"
     exit 1
   fi
+  assert_local_bundle_environment
 done
 
-rm -f "$TEST_ROOT/command.log"
+BUNDLE_CHECK_EXIT=1 run_wrapper "$TEST_ROOT/ruby" lanes
+expected=$'bundle\t--version\nbundle\tcheck\nbundle\tinstall\nbundle\texec\tfastlane\tlanes'
+if [[ "$(<"$TEST_ROOT/command.log")" != "$expected" ]]; then
+  echo "FAIL: missing dependencies were not installed before lane execution"
+  printf 'actual: %s\n' "$(<"$TEST_ROOT/command.log")"
+  exit 1
+fi
+assert_local_bundle_environment
+
+set +e
+output=$(BUNDLE_CHECK_EXIT=1 BUNDLE_INSTALL_EXIT=23 \
+  run_wrapper "$TEST_ROOT/ruby" verify_export 2>&1)
+status=$?
+set -e
+expected=$'bundle\t--version\nbundle\tcheck\nbundle\tinstall'
+if [[ "$status" -eq 0 || "$output" != *"Fastlane dependencies could not be installed"* ]]; then
+  echo "FAIL: dependency installation failure must be named and nonzero"
+  printf 'exit: %s\n%s\n' "$status" "$output"
+  exit 1
+fi
+if [[ "$(<"$TEST_ROOT/command.log")" != "$expected" ]]; then
+  echo "FAIL: dependency installation failure reached credentials or a lane"
+  printf 'actual: %s\n' "$(<"$TEST_ROOT/command.log")"
+  exit 1
+fi
+assert_local_bundle_environment
+
+set +e
+output=$(BUNDLE_VERSION_EXIT=19 run_wrapper "$TEST_ROOT/ruby" lanes 2>&1)
+status=$?
+set -e
+if [[ "$status" -eq 0 || "$output" != *"Bundler is unavailable"* ]]; then
+  echo "FAIL: unavailable Bundler must be named and rejected"
+  printf 'exit: %s\n%s\n' "$status" "$output"
+  exit 1
+fi
+if [[ "$(<"$TEST_ROOT/command.log")" != $'bundle\t--version' ]]; then
+  echo "FAIL: unavailable Bundler reached dependency or lane execution"
+  printf 'actual: %s\n' "$(<"$TEST_ROOT/command.log")"
+  exit 1
+fi
+assert_local_bundle_environment
+
+for lane in screenshots beta release verify_export; do
+  set +e
+  output=$(run_wrapper "$TEST_ROOT/no-xcbeautify-ruby" "$lane" 2>&1)
+  status=$?
+  set -e
+  if [[ "$status" -ne 127 || "$output" != *"xcbeautify"* ]]; then
+    echo "FAIL: formatter lane $lane must reject missing xcbeautify before credentials"
+    printf 'exit: %s\n%s\n' "$status" "$output"
+    exit 1
+  fi
+  if [[ -e "$TEST_ROOT/command.log" ]]; then
+    echo "FAIL: missing xcbeautify invoked op or bundle for $lane"
+    exit 1
+  fi
+
+  set +e
+  output=$(XCBEAUTIFY_PREFLIGHT_EXIT=19 run_wrapper "$TEST_ROOT/ruby" "$lane" 2>&1)
+  status=$?
+  set -e
+  if [[ "$status" -eq 0 || "$output" != *"xcbeautify"* ]]; then
+    echo "FAIL: formatter lane $lane must reject failed xcbeautify preflight"
+    printf 'exit: %s\n%s\n' "$status" "$output"
+    exit 1
+  fi
+  if [[ -e "$TEST_ROOT/command.log" ]]; then
+    echo "FAIL: unavailable xcbeautify invoked op or bundle for $lane"
+    exit 1
+  fi
+done
+
 set +e
 MISSING_OP_OUTPUT=$(run_wrapper "$TEST_ROOT/no-op-ruby" check_asc_key 2>&1)
 MISSING_OP_STATUS=$?

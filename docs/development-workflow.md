@@ -52,12 +52,14 @@ simulator outside the wrapper. The wrapper injects `-parallel-testing-enabled NO
 Set `IOS_SIM_GATE_DEVICE_TYPE` or `IOS_SIM_GATE_RUNTIME` only when the task requires an override.
 Always put `xcodebuild` directly after the wrapper's `--`; do not mediate it through `xcrun`, `env`,
 `bundle`, or a shell command. Wrapper-owned formatting preserves the exact child status without
-depending on caller shell options.
+depending on caller shell options. Pass `--xcbeautify` to select formatting; the wrapper checks the
+standalone `xcbeautify` binary before acquiring the gate and owns the internal
+`xcodebuild 2>&1 | xcbeautify` pipeline.
 
 ## Build and Clean
 
 ```bash
-scripts/xcode-stream.sh --agent <agent> --session <session> --xcpretty -- \
+scripts/xcode-stream.sh --agent <agent> --session <session> --xcbeautify -- \
   xcodebuild -project FamilyFoqos.xcodeproj -scheme FamilyFoqos \
   -configuration Debug build
 
@@ -91,14 +93,27 @@ scripts/xcode-stream.sh --agent <agent> --session <session> -- \
 ```
 
 Archive and upload lanes do not boot simulators. Run them through `scripts/fastlane.sh` without the
-simulator gate.
+simulator gate:
+
+```bash
+# Archive and export only; performs no TestFlight, App Store, or GitHub upload.
+scripts/fastlane.sh verify_export
+
+# Upload lanes.
+scripts/fastlane.sh beta
+scripts/fastlane.sh release
+```
+
+`verify_export`, `beta`, and `release` preflight the standalone xcbeautify binary. The beta lane
+uploads to TestFlight and then publishes dSYMs; the release lane uploads metadata, screenshots,
+and the binary, confirms submission for review, and then publishes dSYMs.
 
 ## Format Swift
 
 Configuration lives in `.swift-format`; the pre-commit hook formats staged Swift files.
 
 ```bash
-brew install swift-format ripgrep
+brew install swift-format ripgrep xcbeautify
 swift-format --in-place --recursive .
 swift-format lint --recursive .
 ```
