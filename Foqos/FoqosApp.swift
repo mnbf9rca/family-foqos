@@ -583,9 +583,10 @@ func acceptCloudKitShare(_ metadata: CKShare.Metadata) {
       CloudKitManager.shared.shareAcceptedMessage =
         "Unable to verify device type: \(error.localizedDescription)"
       return
-    case .notAuthorized:
-      // Not authorized but not a FamilyControls error — treat as parent
-      detectedRole = .parent
+    case .notAuthorized, .authorizationConflict, .authorizationCanceled:
+      CloudKitManager.shared.shareAcceptanceIsError = true
+      CloudKitManager.shared.shareAcceptedMessage = verificationResult.errorMessage
+      return
     }
 
     Log.info("Detected role: \(detectedRole.rawValue)", category: .cloudKit)

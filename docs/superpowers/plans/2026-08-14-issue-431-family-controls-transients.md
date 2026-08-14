@@ -100,6 +100,8 @@ static func verificationResult(for error: NSError) -> VerificationResult {
     return .authorizationCanceled
   case .networkError:
     return .networkError(error)
+  case .unauthorized:
+    return .notAuthorized
   case .restricted, .unavailable, .invalidArgument, .authenticationMethodUnavailable:
     return .unknownError(error)
   @unknown default:
@@ -108,8 +110,9 @@ static func verificationResult(for error: NSError) -> VerificationResult {
 }
 ```
 
-Keep the availability-gated equality check ahead of the switch so deployment targets below iOS
-26.4 compile while `@unknown default` still protects future SDK cases. Make
+Keep the availability-gated equality check ahead of the switch for deployment targets below iOS
+26.4, and retain the exhaustive case required by the Swift compiler; `@unknown default` still
+protects future SDK cases. Make
 `verifyChildAuthorization()` delegate its catch to this mapper. Map `.authorized` to
 `.authorized` and every other result to `.indeterminate`; `verifyIfNeeded()` logs indeterminate
 results and never invokes destructive cleanup.

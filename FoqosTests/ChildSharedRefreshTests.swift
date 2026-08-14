@@ -22,13 +22,13 @@ final class ChildSharedRefreshTests: XCTestCase {
       .indeterminate)
   }
 
-  func testGivenDefinitiveAuthorizationFailure_WhenClassifying_ThenLossIsConfirmed() {
+  func testGivenFamilyControlsAuthorizationFailure_WhenClassifying_ThenResultIsIndeterminate() {
     XCTAssertEqual(
       AuthorizationVerifier.verificationDisposition(for: .notChildDevice),
-      .confirmedLoss)
+      .indeterminate)
     XCTAssertEqual(
       AuthorizationVerifier.verificationDisposition(for: .notAuthorized),
-      .confirmedLoss)
+      .indeterminate)
   }
 
   func testGivenPersistedChildAuthorization_WhenResolvingSharedRefresh_ThenSkipsVerification()

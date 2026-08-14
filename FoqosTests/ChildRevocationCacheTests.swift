@@ -33,19 +33,10 @@ final class ChildRevocationCacheTests: XCTestCase {
     super.tearDown()
   }
 
-  func testGivenFamilyControlsLoss_WhenHandlingCache_ThenPINRemainsAvailable() {
-    XCTAssertTrue(LockCodeManager.shared.canVerifyCode)
-
-    LockCodeManager.shared.handleFamilyAuthorizationLoss(.familyControls)
-
-    XCTAssertTrue(LockCodeManager.shared.canVerifyCode)
-    XCTAssertNotNil(defaults.data(forKey: Self.cacheKey))
-  }
-
   func testGivenConfirmedCloudKitRevocation_WhenHandlingCache_ThenPINErased() {
     XCTAssertTrue(LockCodeManager.shared.canVerifyCode)
 
-    LockCodeManager.shared.handleFamilyAuthorizationLoss(.confirmedCloudKitRevocation)
+    LockCodeManager.shared.handleConfirmedCloudKitRevocation()
 
     XCTAssertFalse(LockCodeManager.shared.canVerifyCode)
     XCTAssertNil(defaults.data(forKey: Self.cacheKey))

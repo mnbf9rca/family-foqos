@@ -21,7 +21,6 @@ struct ChildDashboardView: View {
   @State private var enteredCode = ""
   @State private var codeError: String?
   @State private var isFetchingLockCodes = false
-  @State private var showAuthorizationLostAlert = false
   @State private var isVerifyingAuthorization = false
 
   /// Profiles that are locked (require code to edit)
@@ -111,20 +110,6 @@ struct ChildDashboardView: View {
         // Verify child authorization when view appears
         await verifyChildAuthorization()
       }
-      .alert("Authorization Lost", isPresented: $showAuthorizationLostAlert) {
-        Button("Switch to Individual Mode", role: .destructive) {
-          handleAuthorizationLost()
-        }
-        Button("Try Again", role: .cancel) {
-          Task {
-            await verifyChildAuthorization()
-          }
-        }
-      } message: {
-        Text(
-          "This device is no longer authorized as a child in Apple Family Sharing. Ask a parent to check Settings > Family > Screen Time, or switch to individual mode to manage your own screen time."
-        )
-      }
     }
   }
 
@@ -139,17 +124,10 @@ struct ChildDashboardView: View {
 
     let result = await AuthorizationVerifier.shared.verifyChildAuthorization()
 
-    if AuthorizationVerifier.verificationDisposition(for: result) == .confirmedLoss {
-      showAuthorizationLostAlert = true
-    }
-  }
-
-  /// Handle when authorization is lost
-  @MainActor
-  private func handleAuthorizationLost() {
-    Task {
-      _ = await AuthorizationVerifier.shared.handleAuthorizationLoss()
-      dismiss()
+    if AuthorizationVerifier.verificationDisposition(for: result) == .indeterminate {
+      Log.warning(
+        "Child authorization verification was indeterminate; preserving family state",
+        category: .authorization)
     }
   }
 

@@ -226,10 +226,6 @@ class LockCodeManager: ObservableObject {
     switch authorizationDisposition {
     case .authorized:
       break
-    case .confirmedLoss:
-      self.cachedLockCodes = []
-      self.error = await AuthorizationVerifier.shared.handleAuthorizationLoss()
-      return .failed
     case .indeterminate:
       self.error = "Child authorization has not been verified."
       return .failed
@@ -310,8 +306,7 @@ class LockCodeManager: ObservableObject {
     isConnected ? (cache: fetched, persist: fetched) : (cache: persisted, persist: persisted)
   }
 
-  func handleFamilyAuthorizationLoss(_ trigger: FamilyAuthorizationLossTrigger) {
-    guard trigger == .confirmedCloudKitRevocation else { return }
+  func handleConfirmedCloudKitRevocation() {
     cachedLockCodes = []
     throttleDefaults.removeObject(forKey: CacheKey.childLockCodes)
   }
