@@ -91,6 +91,12 @@ class AppModeManager: ObservableObject {
     currentMode == .individual ? .parent : nil
   }
 
+  /// Returns whether a mode may create the private records used for family policies.
+  /// Individual creates them during first lock-code setup; Child must never create them.
+  nonisolated static func allowsFamilyPolicyCreation(mode: AppMode) -> Bool {
+    mode != .child
+  }
+
   /// Returns true if the current mode allows creating/editing personal profiles
   var canCreateProfiles: Bool {
     currentMode == .individual || currentMode == .parent
@@ -101,8 +107,8 @@ class AppModeManager: ObservableObject {
     currentMode == .child
   }
 
-  /// Returns true if the current mode can create policies for others
+  /// Returns true if the current mode may create private family-policy storage.
   var canCreateFamilyPolicies: Bool {
-    currentMode == .parent
+    Self.allowsFamilyPolicyCreation(mode: currentMode)
   }
 }

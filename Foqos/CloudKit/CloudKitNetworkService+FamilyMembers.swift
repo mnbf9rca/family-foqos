@@ -107,8 +107,6 @@ extension CloudKitNetworkService {
   }
 
   func fetchFamilyMembers() async throws -> [FamilyMember] {
-    try await createPolicyZoneIfNeeded()
-
     let query = CKQuery(
       recordType: FamilyMember.recordType,
       predicate: NSPredicate(value: true)
