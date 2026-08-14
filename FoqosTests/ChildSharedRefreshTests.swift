@@ -10,11 +10,11 @@ final class ChildSharedRefreshTests: XCTestCase {
     FamilyLockCode(id: id, code: code, scope: .allChildren)
   }
 
-  func testGivenColdBackgroundCommandFetch_WhenResolvingIdentity_ThenFetchesUserRecordID() async throws {
+  func testGivenColdBackgroundCommandFetch_WhenResolvingIdentity_ThenFetchesUserRecordID() async {
     let expected = CKRecord.ID(recordName: "child")
     var didResolve = false
 
-    let resolved = try await CloudKitManager.resolvePendingCommandUserRecordID(cached: nil) {
+    let resolved = await CloudKitManager.resolvePendingCommandUserRecordID(cached: nil) {
       didResolve = true
       return expected
     }
