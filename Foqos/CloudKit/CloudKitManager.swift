@@ -23,6 +23,28 @@ enum AccountAvailability: Equatable {
   }
 }
 
+struct FamilyRevocationNoticeStore {
+  private static let pendingKey = "family_foqos_pending_family_revocation_notice"
+
+  private let defaults: UserDefaults
+
+  init(defaults: UserDefaults = .standard) {
+    self.defaults = defaults
+  }
+
+  var isPending: Bool {
+    defaults.bool(forKey: Self.pendingKey)
+  }
+
+  func markPending() {
+    defaults.set(true, forKey: Self.pendingKey)
+  }
+
+  func clearPending() {
+    defaults.removeObject(forKey: Self.pendingKey)
+  }
+}
+
 /// Thin @MainActor state layer for CloudKit operations.
 /// All network I/O is delegated to CloudKitNetworkService (a background actor, not @MainActor),
 /// keeping the main thread free from CloudKit IPC.
@@ -34,6 +56,7 @@ class CloudKitManager: ObservableObject {
     "This device is no longer connected to its Family Foqos family in iCloud, so it switched to Individual mode. To reconnect, ask a parent to send a new invitation."
 
   private let networkService = CloudKitNetworkService()
+  private let familyRevocationNoticeStore: FamilyRevocationNoticeStore
 
   // Published state
   @Published var currentUserRecordID: CKRecord.ID?
@@ -53,10 +76,29 @@ class CloudKitManager: ObservableObject {
 
   // MARK: - Initialization
 
-  private init() {
+  private init(
+    familyRevocationNoticeStore: FamilyRevocationNoticeStore = FamilyRevocationNoticeStore()
+  ) {
+    self.familyRevocationNoticeStore = familyRevocationNoticeStore
+    self.familyRevocationMessage = Self.initialFamilyRevocationMessage(
+      pendingNoticeStore: familyRevocationNoticeStore)
     // Account status is checked lazily when needed (e.g., first ensureUserRecordID call),
     // not eagerly at init time. This avoids blocking the main actor during app startup.
   }
+
+  static func initialFamilyRevocationMessage(
+    pendingNoticeStore: FamilyRevocationNoticeStore
+  ) -> String? {
+    pendingNoticeStore.isPending ? familyRevocationAlertMessage : nil
+  }
+
+  #if DEBUG
+    static func makeForTesting(
+      pendingNoticeStore: FamilyRevocationNoticeStore
+    ) -> CloudKitManager {
+      CloudKitManager(familyRevocationNoticeStore: pendingNoticeStore)
+    }
+  #endif
 
   // MARK: - Account Status
 
@@ -271,13 +313,26 @@ class CloudKitManager: ObservableObject {
   func handleConfirmedFamilyRevocation(
     cleanup: () -> Void = {
       AuthorizationVerifier.shared.handleConfirmedCloudKitRevocation()
-    }
+    },
+    markNoticePending: (() -> Void)? = nil
   ) {
     cleanup()
+    if let markNoticePending {
+      markNoticePending()
+    } else {
+      familyRevocationNoticeStore.markPending()
+    }
     familyRevocationMessage = Self.familyRevocationAlertMessage
   }
 
-  func dismissFamilyRevocationMessage() {
+  func dismissFamilyRevocationMessage(
+    clearPending: (() -> Void)? = nil
+  ) {
+    if let clearPending {
+      clearPending()
+    } else {
+      familyRevocationNoticeStore.clearPending()
+    }
     familyRevocationMessage = nil
   }
 

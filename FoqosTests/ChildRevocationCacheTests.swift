@@ -18,9 +18,11 @@ final class ChildRevocationCacheTests: XCTestCase {
       defaults.removePersistentDomain(forName: suiteName)
     }
     XCTAssertNotNil(defaults.data(forKey: Self.cacheKey))
+    XCTAssertEqual(LockCodeManager.shared.cachedChildLockCodeCount, 1)
 
     LockCodeManager.shared.handleConfirmedCloudKitRevocation()
 
     XCTAssertNil(defaults.data(forKey: Self.cacheKey))
+    XCTAssertEqual(LockCodeManager.shared.cachedChildLockCodeCount, 0)
   }
 }

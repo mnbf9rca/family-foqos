@@ -264,7 +264,9 @@ final class ChildSharedRefreshTests: XCTestCase {
       verifyMembership: {
         XCTAssertEqual(steps, ["account"])
         steps.append("membership")
-        manager.handleConfirmedFamilyRevocation {}
+        manager.handleConfirmedFamilyRevocation(
+          cleanup: {},
+          markNoticePending: {})
         return true
       },
       refreshSharedData: {
