@@ -268,14 +268,17 @@ class LockCodeManager: ObservableObject {
     isConnected: Bool
   ) -> ChildSharedDataRefreshResult {
     guard isConnected else { return .failed }
-    return previous == refreshed ? .noData : .newData
+    let previousByID = previous.sorted { $0.id.uuidString < $1.id.uuidString }
+    let refreshedByID = refreshed.sorted { $0.id.uuidString < $1.id.uuidString }
+    return previousByID == refreshedByID ? .noData : .newData
   }
 
   nonisolated static func commandRefreshResult(
     didApplyCommand: Bool,
-    isConnected: Bool
+    isConnected: Bool,
+    hasProcessingFailures: Bool = false
   ) -> ChildSharedDataRefreshResult {
-    guard isConnected else { return .failed }
+    guard isConnected, !hasProcessingFailures else { return .failed }
     return didApplyCommand ? .newData : .noData
   }
 
@@ -388,13 +391,17 @@ class LockCodeManager: ObservableObject {
     do {
       let result = try await cloudKitManager.fetchPendingCommands()
       var didApplyCommand = false
+      var hasProcessingFailures = false
 
       for command in result.commands {
-        didApplyCommand = await processCommand(command) || didApplyCommand
+        let outcome = await processCommand(command)
+        didApplyCommand = outcome.didApply || didApplyCommand
+        hasProcessingFailures = outcome.didFail || hasProcessingFailures
       }
       return Self.commandRefreshResult(
         didApplyCommand: didApplyCommand,
-        isConnected: result.isConnected)
+        isConnected: result.isConnected,
+        hasProcessingFailures: hasProcessingFailures)
     } catch {
       Log.error("Failed to fetch pending commands: \(redactedErrorForLog(error))", category: .cloudKit)
       return .failed
@@ -433,7 +440,9 @@ class LockCodeManager: ObservableObject {
     return true
   }
 
-  private func processCommand(_ command: FamilyCommand) async -> Bool {
+  private func processCommand(_ command: FamilyCommand) async -> (
+    didApply: Bool, didFail: Bool
+  ) {
     let didApply = applyCommandIfNeeded(command)
     if !didApply {
       Log.info("Skipping already processed command: \(command.commandType.rawValue)", category: .cloudKit)
@@ -442,10 +451,11 @@ class LockCodeManager: ObservableObject {
     // Delete the command after processing
     do {
       try await cloudKitManager.deleteCommand(command)
+      return (didApply: didApply, didFail: false)
     } catch {
       Log.error("Failed to delete processed command: \(redactedErrorForLog(error))", category: .cloudKit)
+      return (didApply: didApply, didFail: true)
     }
-    return didApply
   }
 
   // MARK: - Temporary Unlock Session

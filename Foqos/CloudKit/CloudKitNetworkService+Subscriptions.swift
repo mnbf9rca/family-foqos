@@ -31,8 +31,21 @@ extension CloudKitNetworkService {
       notificationInfo.shouldSendContentAvailable,
       notificationInfo.alertBody == nil,
       notificationInfo.alertLocalizationKey == nil,
+      notificationInfo.alertLocalizationArgs == nil,
+      notificationInfo.title == nil,
+      notificationInfo.titleLocalizationKey == nil,
+      notificationInfo.titleLocalizationArgs == nil,
+      notificationInfo.subtitle == nil,
+      notificationInfo.subtitleLocalizationKey == nil,
+      notificationInfo.subtitleLocalizationArgs == nil,
+      notificationInfo.alertActionLocalizationKey == nil,
+      notificationInfo.alertLaunchImage == nil,
       notificationInfo.soundName == nil,
-      !notificationInfo.shouldBadge
+      notificationInfo.desiredKeys == nil,
+      !notificationInfo.shouldBadge,
+      !notificationInfo.shouldSendMutableContent,
+      notificationInfo.category == nil,
+      notificationInfo.collapseIDKey == nil
     else {
       return .replace
     }

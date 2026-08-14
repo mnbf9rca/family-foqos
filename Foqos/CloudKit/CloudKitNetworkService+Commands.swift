@@ -18,9 +18,10 @@ extension CloudKitNetworkService {
 
   static func resolvePendingCommandFetch(
     commands: [FamilyCommand],
-    hasFailures: Bool
+    hasFailures: Bool,
+    hasUserRecordID: Bool = true
   ) -> (commands: [FamilyCommand], isConnected: Bool) {
-    (commands: commands, isConnected: !hasFailures)
+    (commands: commands, isConnected: hasUserRecordID && !hasFailures)
   }
 
   func sendCommand(_ command: FamilyCommand) async throws {
@@ -77,8 +78,11 @@ extension CloudKitNetworkService {
     var hasFailures = false
 
     guard let userRecordID = currentUserRecordID else {
-      Log.debug("No user record ID, skipping command fetch", category: .cloudKit)
-      return Self.resolvePendingCommandFetch(commands: [], hasFailures: false)
+      Log.error("No user record ID available for command fetch", category: .cloudKit)
+      return Self.resolvePendingCommandFetch(
+        commands: [],
+        hasFailures: false,
+        hasUserRecordID: false)
     }
     let currentUserRecordName = userRecordID.recordName
 

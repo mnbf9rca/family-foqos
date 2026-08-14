@@ -10,6 +10,28 @@ final class ChildSharedRefreshTests: XCTestCase {
     FamilyLockCode(id: id, code: code, scope: .allChildren)
   }
 
+  func testGivenColdBackgroundCommandFetch_WhenResolvingIdentity_ThenFetchesUserRecordID() async throws {
+    let expected = CKRecord.ID(recordName: "child")
+    var didResolve = false
+
+    let resolved = try await CloudKitManager.resolvePendingCommandUserRecordID(cached: nil) {
+      didResolve = true
+      return expected
+    }
+
+    XCTAssertTrue(didResolve)
+    XCTAssertEqual(resolved, expected)
+  }
+
+  func testGivenMissingCommandIdentity_WhenResolvingFetch_ThenReportsDisconnected() {
+    let result = CloudKitNetworkService.resolvePendingCommandFetch(
+      commands: [],
+      hasFailures: false,
+      hasUserRecordID: false)
+
+    XCTAssertFalse(result.isConnected)
+  }
+
   func testGivenConnectedChangedLockCodes_WhenClassifying_ThenReportsNewData() {
     XCTAssertEqual(
       LockCodeManager.lockCodeRefreshResult(
@@ -26,6 +48,18 @@ final class ChildSharedRefreshTests: XCTestCase {
       LockCodeManager.lockCodeRefreshResult(
         previous: [code],
         refreshed: [code],
+        isConnected: true),
+      .noData)
+  }
+
+  func testGivenConnectedReorderedLockCodes_WhenClassifying_ThenReportsNoData() {
+    let first = makeCode()
+    let second = makeCode()
+
+    XCTAssertEqual(
+      LockCodeManager.lockCodeRefreshResult(
+        previous: [first, second],
+        refreshed: [second, first],
         isConnected: true),
       .noData)
   }
@@ -60,6 +94,15 @@ final class ChildSharedRefreshTests: XCTestCase {
       LockCodeManager.commandRefreshResult(
         didApplyCommand: true,
         isConnected: false),
+      .failed)
+  }
+
+  func testGivenCommandDeletionFailure_WhenClassifying_ThenReportsFailure() {
+    XCTAssertEqual(
+      LockCodeManager.commandRefreshResult(
+        didApplyCommand: true,
+        isConnected: true,
+        hasProcessingFailures: true),
       .failed)
   }
 
