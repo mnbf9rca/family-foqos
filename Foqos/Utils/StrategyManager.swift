@@ -32,6 +32,7 @@ class StrategyManager: ObservableObject {
   private let timersUtil: TimersUtilScheduling
   private let appBlocker: RestrictionApplying
   private let backstopRegistrar: BackstopRegistering
+  private let scheduleReconciler: @MainActor (ModelContext) -> Void
 
   init(
     geofenceEvaluator: GeofenceEvaluator = .shared,
@@ -43,7 +44,10 @@ class StrategyManager: ObservableObject {
     appBlocker: RestrictionApplying = AppBlockerUtil(),
     backstopRegistrar: BackstopRegistering = DeviceActivityBackstopRegistrar(),
     timersUtil: TimersUtilScheduling = TimersUtil(),
-    remoteActiveDefaults: UserDefaults = .standard
+    remoteActiveDefaults: UserDefaults = .standard,
+    scheduleReconciler: @escaping @MainActor (ModelContext) -> Void = {
+      PreActivationReminderScheduler.reconcileScheduleRegistrations(context: $0)
+    }
   ) {
     self.geofenceEvaluator = geofenceEvaluator
     self.emergencyUnblockManager = emergencyUnblockManager
@@ -55,6 +59,7 @@ class StrategyManager: ObservableObject {
     self.appBlocker = appBlocker
     self.backstopRegistrar = backstopRegistrar
     self.timersUtil = timersUtil
+    self.scheduleReconciler = scheduleReconciler
     self.remotelyActiveProfileIds = RemotelyActiveStore.load(defaults: remoteActiveDefaults)
   }
 
@@ -139,7 +144,9 @@ class StrategyManager: ObservableObject {
       // Close live activity if no session is active and a scheduled session might have ended
       liveActivityManager.endSessionActivity()
       // Re-attempt migration for profiles deferred due to active sessions
-      ProfileMigrationUtil.migrateProfilesIfNeeded(context: context)
+      if ProfileMigrationUtil.migrateProfilesIfNeeded(context: context) > 0 {
+        scheduleReconciler(context)
+      }
     }
   }
 

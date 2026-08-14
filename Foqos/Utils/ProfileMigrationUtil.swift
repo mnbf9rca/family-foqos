@@ -3,7 +3,8 @@ import SwiftData
 enum ProfileMigrationUtil {
   /// Migrates V1 profiles to V2 trigger system if needed.
   /// Defers profiles with active sessions. Safe to call as a no-op when nothing needs migration.
-  static func migrateProfilesIfNeeded(context: ModelContext) {
+  @discardableResult
+  static func migrateProfilesIfNeeded(context: ModelContext) -> Int {
     do {
       let profiles = try BlockedProfiles.fetchProfiles(in: context)
 
@@ -40,8 +41,10 @@ enum ProfileMigrationUtil {
           category: .app
         )
       }
+      return migratedCount
     } catch {
       Log.error("Failed to migrate profiles: \(error.localizedDescription)", category: .app)
+      return 0
     }
   }
 }
