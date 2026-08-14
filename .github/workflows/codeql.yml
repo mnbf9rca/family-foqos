@@ -40,7 +40,8 @@ jobs:
 
   analyze-swift:
     name: Analyze (swift)
-    if: github.event_name != 'pull_request'
+    # Swift must run on pull requests because protect-main requires every CodeQL
+    # configuration already present on main, including /language:swift.
     runs-on: macos-latest
     permissions:
       contents: read
