@@ -204,6 +204,11 @@ class LockCodeManager: ObservableObject {
     func seedForScreenshots(_ codes: [FamilyLockCode]) {
       lockCodes = codes
     }
+
+    /// Test assertion seam for the private child verification cache.
+    var cachedChildLockCodeCount: Int {
+      cachedLockCodes.count
+    }
   #endif
 
   // MARK: - Child Operations
