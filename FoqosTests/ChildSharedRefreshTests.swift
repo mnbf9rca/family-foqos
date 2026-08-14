@@ -10,6 +10,57 @@ final class ChildSharedRefreshTests: XCTestCase {
     FamilyLockCode(id: id, code: code, scope: .allChildren)
   }
 
+  func testGivenTransientAuthorizationFailure_WhenClassifying_ThenResultIsIndeterminate() {
+    let networkError = NSError(domain: NSURLErrorDomain, code: NSURLErrorTimedOut)
+    let unknownError = NSError(domain: "test", code: 1)
+
+    XCTAssertEqual(
+      AuthorizationVerifier.verificationDisposition(for: .networkError(networkError)),
+      .indeterminate)
+    XCTAssertEqual(
+      AuthorizationVerifier.verificationDisposition(for: .unknownError(unknownError)),
+      .indeterminate)
+  }
+
+  func testGivenDefinitiveAuthorizationFailure_WhenClassifying_ThenLossIsConfirmed() {
+    XCTAssertEqual(
+      AuthorizationVerifier.verificationDisposition(for: .notChildDevice),
+      .confirmedLoss)
+    XCTAssertEqual(
+      AuthorizationVerifier.verificationDisposition(for: .notAuthorized),
+      .confirmedLoss)
+  }
+
+  func testGivenPersistedChildAuthorization_WhenResolvingSharedRefresh_ThenSkipsVerification()
+    async
+  {
+    var didVerify = false
+
+    let disposition = await LockCodeManager.sharedRefreshAuthorizationDisposition(
+      persisted: .child
+    ) {
+      didVerify = true
+      return .notAuthorized
+    }
+
+    XCTAssertFalse(didVerify)
+    XCTAssertEqual(disposition, .authorized)
+  }
+
+  func testGivenMissingPersistedAuthorization_WhenResolvingSharedRefresh_ThenVerifiesOnce() async {
+    var verificationCount = 0
+
+    let disposition = await LockCodeManager.sharedRefreshAuthorizationDisposition(
+      persisted: .none
+    ) {
+      verificationCount += 1
+      return .authorized
+    }
+
+    XCTAssertEqual(verificationCount, 1)
+    XCTAssertEqual(disposition, .authorized)
+  }
+
   func testGivenColdBackgroundCommandFetch_WhenResolvingIdentity_ThenFetchesUserRecordID() async {
     let expected = CKRecord.ID(recordName: "child")
     var didResolve = false

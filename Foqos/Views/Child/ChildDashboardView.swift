@@ -139,7 +139,7 @@ struct ChildDashboardView: View {
 
     let result = await AuthorizationVerifier.shared.verifyChildAuthorization()
 
-    if !result.isAuthorized {
+    if AuthorizationVerifier.verificationDisposition(for: result) == .confirmedLoss {
       showAuthorizationLostAlert = true
     }
   }

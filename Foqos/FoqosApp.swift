@@ -151,7 +151,7 @@ struct FoqosApp: App {
                 // Enforce CloudKit FamilyMember role as local app mode (must complete before auth check)
                 await CloudKitManager.shared.verifySelfFamilyMemberRecord()
                 // Verify child authorization when app becomes active
-                verifyChildAuthorizationIfNeeded()
+                await verifyChildAuthorizationIfNeeded()
                 if AppModeManager.shared.currentMode == .child {
                   do {
                     try await CloudKitManager.shared.ensureSharedDatabaseSubscription()
@@ -653,11 +653,10 @@ func completeShareAcceptance(metadata: CKShare.Metadata, role: FamilyRole) {
 
 /// Verify child authorization when app becomes active (if in child mode)
 /// If authorization is lost, clear shared data and switch to individual mode
-func verifyChildAuthorizationIfNeeded() {
-  Task { @MainActor in
-    if let message = await AuthorizationVerifier.shared.verifyIfNeeded() {
-      CloudKitManager.shared.shareAcceptanceIsError = true
-      CloudKitManager.shared.shareAcceptedMessage = message
-    }
+@MainActor
+func verifyChildAuthorizationIfNeeded() async {
+  if let message = await AuthorizationVerifier.shared.verifyIfNeeded() {
+    CloudKitManager.shared.shareAcceptanceIsError = true
+    CloudKitManager.shared.shareAcceptedMessage = message
   }
 }

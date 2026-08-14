@@ -208,8 +208,8 @@ class LockCodeManager: ObservableObject {
 
   // MARK: - Child Operations
 
-  /// Fetch shared lock codes for verification (child operation)
-  /// Verifies child authorization before fetching to ensure security
+  /// Fetch shared lock codes for verification (child operation).
+  /// Reuses persisted child authorization, verifying once only when bootstrap state is absent.
   @discardableResult
   func refreshSharedLockCodesForVerification() async -> ChildSharedDataRefreshResult {
     guard !ScreenshotDemoMode.isActive else { return .noData }
@@ -218,20 +218,34 @@ class LockCodeManager: ObservableObject {
     isLoading = true
     defer { isLoading = false }
 
-    // Use centralized authorization verification
-    let result = await AuthorizationVerifier.shared.verifyChildAuthorization()
-    guard result.isAuthorized else {
-      // Let the centralized handler deal with authorization loss
-      if let message = await AuthorizationVerifier.shared.verifyIfNeeded() {
-        self.cachedLockCodes = []
-        self.error = message
-      }
+    let authorizationDisposition = await Self.sharedRefreshAuthorizationDisposition(
+      persisted: AuthorizationVerifier.shared.currentAuthorizationType
+    ) {
+      await AuthorizationVerifier.shared.verifyChildAuthorization()
+    }
+    switch authorizationDisposition {
+    case .authorized:
+      break
+    case .confirmedLoss:
+      self.cachedLockCodes = []
+      self.error = await AuthorizationVerifier.shared.handleAuthorizationLoss()
+      return .failed
+    case .indeterminate:
+      self.error = "Child authorization has not been verified."
       return .failed
     }
 
     let lockCodeResult = await refreshSharedLockCodes()
     let commandResult = await processPendingCommands()
     return ChildSharedDataRefreshResult.combine(lockCodeResult, commandResult)
+  }
+
+  static func sharedRefreshAuthorizationDisposition(
+    persisted authorizationType: AuthorizationVerifier.AuthorizationType,
+    verify: () async -> AuthorizationVerifier.VerificationResult
+  ) async -> AuthorizationVerifier.VerificationDisposition {
+    guard authorizationType != .child else { return .authorized }
+    return AuthorizationVerifier.verificationDisposition(for: await verify())
   }
 
   private func refreshSharedLockCodes() async -> ChildSharedDataRefreshResult {
