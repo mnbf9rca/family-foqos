@@ -63,6 +63,25 @@ class AuthorizationVerifier: ObservableObject {
     }
   }
 
+  enum VerificationDisposition: Equatable {
+    case authorized
+    case confirmedLoss
+    case indeterminate
+  }
+
+  static func verificationDisposition(
+    for result: VerificationResult
+  ) -> VerificationDisposition {
+    switch result {
+    case .authorized:
+      return .authorized
+    case .notChildDevice, .notAuthorized:
+      return .confirmedLoss
+    case .networkError, .unknownError:
+      return .indeterminate
+    }
+  }
+
   @Published private(set) var lastVerificationDate: Date?
   @Published private(set) var currentAuthorizationType: AuthorizationType = .none
 
@@ -183,11 +202,16 @@ class AuthorizationVerifier: ObservableObject {
     }
 
     let result = await verifyChildAuthorization()
-
-    if !result.isAuthorized {
+    switch Self.verificationDisposition(for: result) {
+    case .authorized:
+      return nil
+    case .confirmedLoss:
       return await handleAuthorizationLoss()
+    case .indeterminate:
+      Log.warning(
+        "Child authorization verification was indeterminate; preserving family state",
+        category: .authorization)
+      return nil
     }
-
-    return nil
   }
 }

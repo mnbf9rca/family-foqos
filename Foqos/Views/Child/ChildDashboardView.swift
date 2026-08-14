@@ -72,11 +72,6 @@ struct ChildDashboardView: View {
       .refreshable {
         await fetchLockCodesIfNeeded()
       }
-      .onAppear {
-        Task {
-          await fetchLockCodesIfNeeded()
-        }
-      }
       .sheet(isPresented: $showSettings) {
         ChildSettingsView()
       }
@@ -144,7 +139,7 @@ struct ChildDashboardView: View {
 
     let result = await AuthorizationVerifier.shared.verifyChildAuthorization()
 
-    if !result.isAuthorized {
+    if AuthorizationVerifier.verificationDisposition(for: result) == .confirmedLoss {
       showAuthorizationLostAlert = true
     }
   }
