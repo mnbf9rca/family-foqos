@@ -42,6 +42,10 @@ struct SettingsView: View {
     mode == .child ? canVerifyCode : true
   }
 
+  nonisolated static func showsFamilyControlsDashboard(mode: AppMode) -> Bool {
+    mode == .child ? false : true
+  }
+
   nonisolated static func wipeConfirmationAction(
     isAllowed: Bool,
     requiresLockVerification: Bool
@@ -298,19 +302,21 @@ struct SettingsView: View {
           }
           .padding(.vertical, 4)
 
-          // Family Dashboard access (all modes)
-          Button {
-            showParentDashboard = true
-          } label: {
-            HStack {
-              Image(systemName: "person.2.fill")
-                .foregroundColor(themeManager.themeColor)
-              Text("Family Controls Dashboard")
-                .foregroundColor(.primary)
-              Spacer()
-              Image(systemName: "chevron.right")
-                .foregroundColor(.secondary)
-                .font(.caption)
+          // Family Dashboard access (Individual and Parent modes)
+          if Self.showsFamilyControlsDashboard(mode: appModeManager.currentMode) {
+            Button {
+              showParentDashboard = true
+            } label: {
+              HStack {
+                Image(systemName: "person.2.fill")
+                  .foregroundColor(themeManager.themeColor)
+                Text("Family Controls Dashboard")
+                  .foregroundColor(.primary)
+                Spacer()
+                Image(systemName: "chevron.right")
+                  .foregroundColor(.secondary)
+                  .font(.caption)
+              }
             }
           }
 
@@ -340,7 +346,7 @@ struct SettingsView: View {
           } else if appModeManager.currentMode == .parent {
             Text("You can still use personal profiles in Parent Mode via the Family Controls Dashboard.")
           } else {
-            Text("Your screen time is managed by your parent. Access the Family Controls Dashboard to view family settings.")
+            Text("Your screen time is managed by your parent. Use Parental Controls to view and manage locked profiles on this device.")
           }
         }
 
