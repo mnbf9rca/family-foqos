@@ -4,6 +4,19 @@ import XCTest
 
 @MainActor
 final class ChildDashboardCopyTests: XCTestCase {
+  func testGivenRecoverableAuthorizationFailure_WhenPresentingAlert_ThenCopyOffersRetryOnly() {
+    XCTAssertEqual(
+      ChildDashboardView.authorizationVerificationAlertTitle,
+      "Unable to Verify Screen Time")
+    XCTAssertEqual(ChildDashboardView.authorizationVerificationRetryTitle, "Try Again")
+    XCTAssertEqual(ChildDashboardView.authorizationVerificationCancelTitle, "Cancel")
+    let actions = [
+      ChildDashboardView.authorizationVerificationRetryTitle,
+      ChildDashboardView.authorizationVerificationCancelTitle,
+    ]
+    XCTAssertFalse(actions.contains("Switch to Individual Mode"))
+  }
+
   func testGivenLockedProfilesFooter_WhenRead_ThenPromisesEditOrDeleteNotStop() {
     let footer = EditLockedProfilesSheet.lockedProfilesFooter
     XCTAssertEqual(footer, "Locked profiles require the lock code to edit or delete.")

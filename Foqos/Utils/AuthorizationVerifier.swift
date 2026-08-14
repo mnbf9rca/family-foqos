@@ -51,7 +51,7 @@ class AuthorizationVerifier: ObservableObject {
         return nil
       case .notChildDevice:
         return
-          "This device must be set up as a child in Apple Family Sharing to accept this invitation. Please ask a parent to add this Apple ID as a child in Settings > Family, then enable Screen Time for this child."
+          "We couldn't verify Screen Time authorization on this device. Please try again."
       case .notAuthorized:
         return
           "Screen Time authorization is required. Please enable Screen Time in Settings and try again."
@@ -84,6 +84,18 @@ class AuthorizationVerifier: ObservableObject {
     case .notChildDevice, .notAuthorized, .authorizationConflict, .authorizationCanceled,
       .networkError, .unknownError:
       return .indeterminate
+    }
+  }
+
+  static func detectedFamilyRole(for result: VerificationResult) -> FamilyRole? {
+    switch result {
+    case .authorized:
+      return .child
+    case .notChildDevice:
+      return .parent
+    case .notAuthorized, .authorizationConflict, .authorizationCanceled, .networkError,
+      .unknownError:
+      return nil
     }
   }
 
@@ -209,7 +221,7 @@ class AuthorizationVerifier: ObservableObject {
   }
 
   /// Verify child authorization if in child mode and connected to family.
-  /// Returns nil if authorized or not applicable, returns error message if authorization lost.
+  /// Family Controls failures are recoverable here and never imply family revocation.
   func verifyIfNeeded() async -> String? {
     let appModeManager = AppModeManager.shared
     let cloudKitManager = CloudKitManager.shared

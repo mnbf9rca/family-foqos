@@ -6,6 +6,10 @@ import SwiftUI
 /// Main dashboard view for children subject to parent lock codes.
 /// Shows locked profiles and provides access to personal profiles.
 struct ChildDashboardView: View {
+  static let authorizationVerificationAlertTitle = "Unable to Verify Screen Time"
+  static let authorizationVerificationRetryTitle = "Try Again"
+  static let authorizationVerificationCancelTitle = "Cancel"
+
   @Environment(\.modelContext) private var modelContext
   @Environment(\.dismiss) private var dismiss
   @SafeQuery(sort: \BlockedProfiles.order) private var allProfiles: [BlockedProfiles]
@@ -21,6 +25,7 @@ struct ChildDashboardView: View {
   @State private var enteredCode = ""
   @State private var codeError: String?
   @State private var isFetchingLockCodes = false
+  @State private var authorizationVerificationMessage: String?
   @State private var isVerifyingAuthorization = false
 
   /// Profiles that are locked (require code to edit)
@@ -110,6 +115,22 @@ struct ChildDashboardView: View {
         // Verify child authorization when view appears
         await verifyChildAuthorization()
       }
+      .alert(
+        Self.authorizationVerificationAlertTitle,
+        isPresented: isShowingAuthorizationVerificationAlert
+      ) {
+        Button(Self.authorizationVerificationRetryTitle) {
+          authorizationVerificationMessage = nil
+          Task {
+            await verifyChildAuthorization()
+          }
+        }
+        Button(Self.authorizationVerificationCancelTitle, role: .cancel) {
+          authorizationVerificationMessage = nil
+        }
+      } message: {
+        Text(authorizationVerificationMessage ?? "")
+      }
     }
   }
 
@@ -124,11 +145,27 @@ struct ChildDashboardView: View {
 
     let result = await AuthorizationVerifier.shared.verifyChildAuthorization()
 
-    if AuthorizationVerifier.verificationDisposition(for: result) == .indeterminate {
+    switch AuthorizationVerifier.verificationDisposition(for: result) {
+    case .authorized:
+      authorizationVerificationMessage = nil
+    case .indeterminate:
       Log.warning(
         "Child authorization verification was indeterminate; preserving family state",
         category: .authorization)
+      authorizationVerificationMessage =
+        result.errorMessage
+        ?? "Unable to verify Screen Time authorization. Please try again."
     }
+  }
+
+  private var isShowingAuthorizationVerificationAlert: Binding<Bool> {
+    Binding(
+      get: { authorizationVerificationMessage != nil },
+      set: { isPresented in
+        if !isPresented {
+          authorizationVerificationMessage = nil
+        }
+      })
   }
 
   // MARK: - Data Fetching

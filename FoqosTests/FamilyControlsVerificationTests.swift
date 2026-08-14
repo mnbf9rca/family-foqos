@@ -84,6 +84,51 @@ final class FamilyControlsVerificationTests: XCTestCase {
     }
   }
 
+  func testGivenVerificationResult_WhenDetectingPreShareRole_ThenOnlyTypedRolesAreReturned() {
+    XCTAssertEqual(AuthorizationVerifier.detectedFamilyRole(for: .authorized), .child)
+    XCTAssertEqual(AuthorizationVerifier.detectedFamilyRole(for: .notChildDevice), .parent)
+    XCTAssertNil(AuthorizationVerifier.detectedFamilyRole(for: .notAuthorized))
+    XCTAssertNil(AuthorizationVerifier.detectedFamilyRole(for: .authorizationConflict))
+    XCTAssertNil(AuthorizationVerifier.detectedFamilyRole(for: .authorizationCanceled))
+  }
+
+  func testGivenConflictThenApproval_WhenRetryingEnrolledChild_ThenStateNeverLeavesChild() {
+    let results: [AuthorizationVerifier.VerificationResult] = [
+      .authorizationConflict,
+      .authorized,
+    ]
+
+    XCTAssertEqual(
+      results.map(AuthorizationVerifier.verificationDisposition(for:)),
+      [.indeterminate, .authorized])
+    XCTAssertNil(AuthorizationVerifier.detectedFamilyRole(for: results[0]))
+    XCTAssertEqual(AuthorizationVerifier.detectedFamilyRole(for: results[1]), .child)
+  }
+
+  func testGivenAuthorizationConflict_WhenReadingGuidance_ThenCopyIsRecoverableAndAccurate() {
+    let message = AuthorizationVerifier.VerificationResult.authorizationConflict.errorMessage?
+      .lowercased()
+
+    XCTAssertNotNil(message)
+    XCTAssertTrue(message?.contains("couldn't check") == true)
+    XCTAssertTrue(message?.contains("try again") == true)
+    for forbiddenWord in ["removed", "revoked", "invitation", "leave"] {
+      XCTAssertFalse(message?.contains(forbiddenWord) == true)
+    }
+  }
+
+  func testGivenInvalidAccountType_WhenReadingEnrolledChildGuidance_ThenNoInvitationIsClaimed() {
+    let message = AuthorizationVerifier.VerificationResult.notChildDevice.errorMessage?
+      .lowercased()
+
+    XCTAssertNotNil(message)
+    XCTAssertTrue(message?.contains("couldn't verify") == true)
+    XCTAssertTrue(message?.contains("try again") == true)
+    for forbiddenWord in ["removed", "revoked", "invitation", "leave"] {
+      XCTAssertFalse(message?.contains(forbiddenWord) == true)
+    }
+  }
+
   private enum ExpectedResult {
     case notChildDevice
     case authorizationConflict

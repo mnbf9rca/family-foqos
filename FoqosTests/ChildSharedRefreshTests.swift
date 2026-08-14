@@ -36,7 +36,7 @@ final class ChildSharedRefreshTests: XCTestCase {
   {
     var didVerify = false
 
-    let disposition = await LockCodeManager.sharedRefreshAuthorizationDisposition(
+    let result = await LockCodeManager.sharedRefreshAuthorizationResult(
       persisted: .child
     ) {
       didVerify = true
@@ -44,13 +44,15 @@ final class ChildSharedRefreshTests: XCTestCase {
     }
 
     XCTAssertFalse(didVerify)
-    XCTAssertEqual(disposition, .authorized)
+    guard case .authorized = result else {
+      return XCTFail("Persisted Child authorization must skip verification")
+    }
   }
 
   func testGivenMissingPersistedAuthorization_WhenResolvingSharedRefresh_ThenVerifiesOnce() async {
     var verificationCount = 0
 
-    let disposition = await LockCodeManager.sharedRefreshAuthorizationDisposition(
+    let result = await LockCodeManager.sharedRefreshAuthorizationResult(
       persisted: .none
     ) {
       verificationCount += 1
@@ -58,7 +60,24 @@ final class ChildSharedRefreshTests: XCTestCase {
     }
 
     XCTAssertEqual(verificationCount, 1)
-    XCTAssertEqual(disposition, .authorized)
+    guard case .authorized = result else {
+      return XCTFail("Successful bootstrap verification must authorize refresh")
+    }
+  }
+
+  func testGivenConflictDuringBootstrap_WhenResolvingSharedRefresh_ThenReturnsRecoverableFailure()
+    async
+  {
+    let result = await LockCodeManager.sharedRefreshAuthorizationResult(
+      persisted: .none
+    ) {
+      .authorizationConflict
+    }
+
+    guard case .authorizationConflict = result else {
+      return XCTFail("Refresh bootstrap must retain the recoverable conflict result")
+    }
+    XCTAssertTrue(result.errorMessage?.lowercased().contains("try again") == true)
   }
 
   func testGivenColdBackgroundCommandFetch_WhenResolvingIdentity_ThenFetchesUserRecordID() async {
