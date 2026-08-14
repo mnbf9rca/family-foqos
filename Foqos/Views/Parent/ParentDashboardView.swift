@@ -5,23 +5,20 @@ import SwiftUI
 ///
 /// ## Child Mode Access Model (ADR 2026-02-22)
 ///
-/// When a child opens this dashboard, controls follow a three-tier model:
+/// When a child opens this dashboard, controls follow a two-tier model:
 ///
 /// | Tier | Interactivity | Computed property | Examples |
 /// |------|---------------|-------------------|----------|
 /// | 1. Read-only | Never interactive | N/A (always visible) | Info cards, member lists |
-/// | 2. Device-local | Enabled after PIN | `deviceSettingsEnabled` | Emergency settings toggle |
-/// | 3. CloudKit ops | Never interactive | `parentOperationsEnabled` | Set lock code, add/remove members |
+/// | 2. CloudKit ops | Never interactive | `parentOperationsEnabled` | Set lock code, add/remove members |
 ///
 /// The child sees the full dashboard — nothing is hidden. Only interactivity differs.
-/// Principle: device-local settings (tier 2) can be changed with PIN; CloudKit parent
-/// operations (tier 3) require parent authorization and cannot be performed by a child.
+/// CloudKit parent operations require parent authorization and cannot be performed by a child.
 struct ParentDashboardView: View {
   @ObservedObject private var cloudKitManager = CloudKitManager.shared
   @ObservedObject private var appModeManager = AppModeManager.shared
   @ObservedObject private var lockCodeManager = LockCodeManager.shared
   @ObservedObject private var strategyManager = StrategyManager.shared
-  @ObservedObject private var emergencyManager = EmergencyUnblockManager.shared
   @ObservedObject private var heartbeatManager = HeartbeatManager.shared
 
   @Environment(\.dismiss) private var dismiss
@@ -29,8 +26,6 @@ struct ParentDashboardView: View {
   @State private var showLockCodeSetup = false
   @State private var showError = false
   @State private var errorMessage = ""
-  @State private var isDashboardUnlocked = false
-  @State private var showLockCodeEntry = false
   @State private var showLeaveConfirmation = false
   @State private var showLeaveLockCodeEntry = false
   @State private var showClearLockCodeAlert = false
@@ -50,14 +45,7 @@ struct ParentDashboardView: View {
     appModeManager.currentMode == .child
   }
 
-  /// Tier 2: device-local settings enabled after PIN unlock
-  /// Controls like emergency settings toggle that are configured on this device
-  /// Independent of iCloud — PIN verification uses the last-synced lock codes cached on-device
-  private var deviceSettingsEnabled: Bool {
-    !isChildMode || isDashboardUnlocked
-  }
-
-  /// Tier 3: CloudKit parent operations — always disabled for child
+  /// Tier 2: CloudKit parent operations — always disabled for child
   /// Controls like set/change lock code, add/remove family members
   private var parentOperationsEnabled: Bool {
     isPageFunctional && !isChildMode
@@ -88,11 +76,6 @@ struct ParentDashboardView: View {
           // Header
           headerSection
 
-          // Child mode unlock banner
-          if isChildMode {
-            childUnlockBanner
-          }
-
           // iCloud status
           if !cloudKitManager.isSignedIn {
             iCloudWarning
@@ -102,13 +85,6 @@ struct ParentDashboardView: View {
           lockCodeSection
             .disabled(!parentOperationsEnabled)
             .opacity(parentOperationsEnabled ? 1.0 : 0.5)
-
-          // Emergency settings lock (only when lock code is set)
-          if lockCodeManager.hasAnyLockCode || lockCodeManager.canVerifyCode {
-            emergencyLockSection
-              .disabled(!deviceSettingsEnabled)
-              .opacity(deviceSettingsEnabled ? 1.0 : 0.5)
-          }
 
           // Co-parents section
           coParentsSection
@@ -176,18 +152,6 @@ struct ParentDashboardView: View {
                 }
               }
             }
-          }
-        )
-      }
-      .sheet(isPresented: $showLockCodeEntry) {
-        LockCodeEntryView(
-          title: "Enter Lock Code",
-          subtitle: "Enter the parent lock code to change device settings",
-          onVerify: { code in
-            lockCodeManager.validateCode(code)
-          },
-          onSuccess: {
-            isDashboardUnlocked = true
           }
         )
       }
@@ -264,54 +228,6 @@ struct ParentDashboardView: View {
         .font(.subheadline)
         .foregroundColor(.secondary)
     }
-  }
-
-  private var childUnlockBanner: some View {
-    VStack(spacing: 12) {
-      HStack(spacing: 12) {
-        Image(systemName: isDashboardUnlocked ? "lock.open.fill" : "lock.fill")
-          .font(.title2)
-          .foregroundColor(isDashboardUnlocked ? .green : .accentColor)
-
-        VStack(alignment: .leading, spacing: 4) {
-          Text(isDashboardUnlocked ? "Dashboard Unlocked" : "Dashboard Locked")
-            .font(.headline)
-          Text(
-            isDashboardUnlocked
-              ? "You can now change device settings."
-              : "Enter the lock code to change device settings."
-          )
-          .font(.caption)
-          .foregroundColor(.secondary)
-        }
-
-        Spacer()
-      }
-
-      if !isDashboardUnlocked {
-        Button {
-          showLockCodeEntry = true
-        } label: {
-          HStack {
-            Image(systemName: "lock.open")
-            Text("Unlock")
-          }
-          .font(.subheadline)
-          .fontWeight(.medium)
-        }
-        .buttonStyle(.bordered)
-        .tint(.accentColor)
-      }
-    }
-    .padding()
-    .background(
-      RoundedRectangle(cornerRadius: 12)
-        .fill(Color.accentColor.opacity(0.1))
-        .overlay(
-          RoundedRectangle(cornerRadius: 12)
-            .stroke(Color.accentColor.opacity(0.2), lineWidth: 1)
-        )
-    )
   }
 
   private var iCloudWarning: some View {
@@ -401,45 +317,6 @@ struct ParentDashboardView: View {
       }
     } message: {
       Text("Children will be able to freely edit all profiles without entering a code.")
-    }
-  }
-
-  private var emergencyLockSection: some View {
-    VStack(alignment: .leading, spacing: 12) {
-      Text("Emergency Settings")
-        .font(.headline)
-
-      HStack(spacing: 16) {
-        Image(systemName: emergencyManager.isEmergencySettingsLocked() ? "lock.fill" : "lock.open")
-          .font(.title2)
-          .foregroundColor(emergencyManager.isEmergencySettingsLocked() ? .orange : .secondary)
-
-        VStack(alignment: .leading, spacing: 4) {
-          Text("Lock Emergency Settings")
-            .font(.subheadline)
-            .fontWeight(.medium)
-
-          Text("Requires lock code to change reset period on children's devices")
-            .font(.caption)
-            .foregroundColor(.secondary)
-        }
-
-        Spacer()
-
-        Toggle(
-          "",
-          isOn: Binding(
-            get: { emergencyManager.isEmergencySettingsLocked() },
-            set: { emergencyManager.setEmergencySettingsLocked($0) }
-          )
-        )
-        .labelsHidden()
-      }
-      .padding()
-      .background(
-        RoundedRectangle(cornerRadius: 12)
-          .fill(Color(.tertiarySystemBackground))
-      )
     }
   }
 
