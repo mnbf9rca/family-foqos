@@ -92,17 +92,57 @@ final class FamilyControlsVerificationTests: XCTestCase {
     XCTAssertNil(AuthorizationVerifier.detectedFamilyRole(for: .authorizationCanceled))
   }
 
-  func testGivenConflictThenApproval_WhenRetryingEnrolledChild_ThenStateNeverLeavesChild() {
+  func testGivenConflictThenApproval_WhenForegroundRetries_ThenChildStateIsPreserved() async {
+    let appModeManager = AppModeManager.shared
+    let cloudKitManager = CloudKitManager.shared
+    let pendingAcceptance = PendingShareAcceptance.shared
+    let originalMode = appModeManager.currentMode
+    let originalConnected = cloudKitManager.isConnectedToFamily
+    let originalMessage = cloudKitManager.shareAcceptedMessage
+    let originalShareAcceptanceIsError = cloudKitManager.shareAcceptanceIsError
+    let originalShowConfirmation = pendingAcceptance.showConfirmation
+    let suiteName = "FamilyControlsVerificationTests-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defaults.set(
+      try! JSONEncoder().encode([FamilyLockCode(code: "test-code", scope: .allChildren)]),
+      forKey: "family_foqos_child_lock_codes")
+    LockCodeManager.shared.overrideDefaults(defaults)
+    defer {
+      LockCodeManager.shared.overrideDefaults(nil)
+      defaults.removePersistentDomain(forName: suiteName)
+      appModeManager.selectMode(originalMode)
+      cloudKitManager.isConnectedToFamily = originalConnected
+      cloudKitManager.shareAcceptedMessage = originalMessage
+      cloudKitManager.shareAcceptanceIsError = originalShareAcceptanceIsError
+      pendingAcceptance.showConfirmation = originalShowConfirmation
+    }
+
+    appModeManager.selectMode(.child)
+    cloudKitManager.isConnectedToFamily = true
+    cloudKitManager.shareAcceptedMessage = nil
+    cloudKitManager.shareAcceptanceIsError = false
+    pendingAcceptance.showConfirmation = false
     let results: [AuthorizationVerifier.VerificationResult] = [
       .authorizationConflict,
       .authorized,
     ]
+    var verificationIndex = 0
 
-    XCTAssertEqual(
-      results.map(AuthorizationVerifier.verificationDisposition(for:)),
-      [.indeterminate, .authorized])
-    XCTAssertNil(AuthorizationVerifier.detectedFamilyRole(for: results[0]))
-    XCTAssertEqual(AuthorizationVerifier.detectedFamilyRole(for: results[1]), .child)
+    for expectedVerificationCount in 1...2 {
+      await verifyChildAuthorizationIfNeeded {
+        defer { verificationIndex += 1 }
+        return results[verificationIndex]
+      }
+
+      XCTAssertEqual(verificationIndex, expectedVerificationCount)
+      XCTAssertEqual(appModeManager.currentMode, .child)
+      XCTAssertTrue(cloudKitManager.isConnectedToFamily)
+      XCTAssertTrue(LockCodeManager.shared.canVerifyCode)
+      XCTAssertNotNil(defaults.data(forKey: "family_foqos_child_lock_codes"))
+      XCTAssertNil(cloudKitManager.shareAcceptedMessage)
+      XCTAssertFalse(cloudKitManager.shareAcceptanceIsError)
+      XCTAssertFalse(pendingAcceptance.showConfirmation)
+    }
   }
 
   func testGivenAuthorizationConflict_WhenReadingGuidance_ThenCopyIsRecoverableAndAccurate() {

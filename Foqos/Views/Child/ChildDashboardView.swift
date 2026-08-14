@@ -6,9 +6,26 @@ import SwiftUI
 /// Main dashboard view for children subject to parent lock codes.
 /// Shows locked profiles and provides access to personal profiles.
 struct ChildDashboardView: View {
+  enum AuthorizationVerificationAction: CaseIterable {
+    case retry
+    case cancel
+
+    var title: String {
+      switch self {
+      case .retry:
+        return "Try Again"
+      case .cancel:
+        return "Cancel"
+      }
+    }
+
+    var role: ButtonRole? {
+      self == .cancel ? .cancel : nil
+    }
+  }
+
   static let authorizationVerificationAlertTitle = "Unable to Verify Screen Time"
-  static let authorizationVerificationRetryTitle = "Try Again"
-  static let authorizationVerificationCancelTitle = "Cancel"
+  static let authorizationVerificationActions = AuthorizationVerificationAction.allCases
 
   @Environment(\.modelContext) private var modelContext
   @Environment(\.dismiss) private var dismiss
@@ -119,14 +136,10 @@ struct ChildDashboardView: View {
         Self.authorizationVerificationAlertTitle,
         isPresented: isShowingAuthorizationVerificationAlert
       ) {
-        Button(Self.authorizationVerificationRetryTitle) {
-          authorizationVerificationMessage = nil
-          Task {
-            await verifyChildAuthorization()
+        ForEach(Self.authorizationVerificationActions, id: \.self) { action in
+          Button(action.title, role: action.role) {
+            handleAuthorizationVerificationAction(action)
           }
-        }
-        Button(Self.authorizationVerificationCancelTitle, role: .cancel) {
-          authorizationVerificationMessage = nil
         }
       } message: {
         Text(authorizationVerificationMessage ?? "")
@@ -166,6 +179,17 @@ struct ChildDashboardView: View {
           authorizationVerificationMessage = nil
         }
       })
+  }
+
+  private func handleAuthorizationVerificationAction(
+    _ action: AuthorizationVerificationAction
+  ) {
+    authorizationVerificationMessage = nil
+    if action == .retry {
+      Task {
+        await verifyChildAuthorization()
+      }
+    }
   }
 
   // MARK: - Data Fetching

@@ -223,6 +223,14 @@ class AuthorizationVerifier: ObservableObject {
   /// Verify child authorization if in child mode and connected to family.
   /// Family Controls failures are recoverable here and never imply family revocation.
   func verifyIfNeeded() async -> String? {
+    await verifyIfNeeded {
+      await self.verifyChildAuthorization()
+    }
+  }
+
+  func verifyIfNeeded(
+    verify: () async -> VerificationResult
+  ) async -> String? {
     let appModeManager = AppModeManager.shared
     let cloudKitManager = CloudKitManager.shared
 
@@ -233,7 +241,7 @@ class AuthorizationVerifier: ObservableObject {
       return nil
     }
 
-    let result = await verifyChildAuthorization()
+    let result = await verify()
     switch Self.verificationDisposition(for: result) {
     case .authorized:
       return nil

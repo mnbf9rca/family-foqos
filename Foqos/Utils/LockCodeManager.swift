@@ -212,6 +212,18 @@ class LockCodeManager: ObservableObject {
   /// Reuses persisted child authorization, verifying once only when bootstrap state is absent.
   @discardableResult
   func refreshSharedLockCodesForVerification() async -> ChildSharedDataRefreshResult {
+    await refreshSharedLockCodesForVerification(
+      authorizationType: AuthorizationVerifier.shared.currentAuthorizationType
+    ) {
+      await AuthorizationVerifier.shared.verifyChildAuthorization()
+    }
+  }
+
+  @discardableResult
+  func refreshSharedLockCodesForVerification(
+    authorizationType: AuthorizationVerifier.AuthorizationType,
+    verify: () async -> AuthorizationVerifier.VerificationResult
+  ) async -> ChildSharedDataRefreshResult {
     guard !ScreenshotDemoMode.isActive else { return .noData }
     guard appModeManager.currentMode == .child else { return .noData }
 
@@ -219,10 +231,8 @@ class LockCodeManager: ObservableObject {
     defer { isLoading = false }
 
     let authorizationResult = await Self.sharedRefreshAuthorizationResult(
-      persisted: AuthorizationVerifier.shared.currentAuthorizationType
-    ) {
-      await AuthorizationVerifier.shared.verifyChildAuthorization()
-    }
+      persisted: authorizationType,
+      verify: verify)
     switch AuthorizationVerifier.verificationDisposition(for: authorizationResult) {
     case .authorized:
       break

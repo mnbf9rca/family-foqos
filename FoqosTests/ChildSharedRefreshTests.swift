@@ -65,19 +65,48 @@ final class ChildSharedRefreshTests: XCTestCase {
     }
   }
 
-  func testGivenConflictDuringBootstrap_WhenResolvingSharedRefresh_ThenReturnsRecoverableFailure()
+  func testGivenConflictDuringBootstrap_WhenRefreshingSharedData_ThenStateAndCacheArePreserved()
     async
   {
-    let result = await LockCodeManager.sharedRefreshAuthorizationResult(
-      persisted: .none
+    let appModeManager = AppModeManager.shared
+    let cloudKitManager = CloudKitManager.shared
+    let pendingAcceptance = PendingShareAcceptance.shared
+    let originalMode = appModeManager.currentMode
+    let originalConnected = cloudKitManager.isConnectedToFamily
+    let originalShowConfirmation = pendingAcceptance.showConfirmation
+    let originalError = LockCodeManager.shared.error
+    let suiteName = "ChildSharedRefreshTests-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defaults.set(
+      try! JSONEncoder().encode([FamilyLockCode(code: "test-code", scope: .allChildren)]),
+      forKey: "family_foqos_child_lock_codes")
+    LockCodeManager.shared.overrideDefaults(defaults)
+    defer {
+      LockCodeManager.shared.overrideDefaults(nil)
+      defaults.removePersistentDomain(forName: suiteName)
+      appModeManager.selectMode(originalMode)
+      cloudKitManager.isConnectedToFamily = originalConnected
+      pendingAcceptance.showConfirmation = originalShowConfirmation
+      LockCodeManager.shared.error = originalError
+    }
+
+    appModeManager.selectMode(.child)
+    cloudKitManager.isConnectedToFamily = true
+    pendingAcceptance.showConfirmation = false
+
+    let result = await LockCodeManager.shared.refreshSharedLockCodesForVerification(
+      authorizationType: .none
     ) {
       .authorizationConflict
     }
 
-    guard case .authorizationConflict = result else {
-      return XCTFail("Refresh bootstrap must retain the recoverable conflict result")
-    }
-    XCTAssertTrue(result.errorMessage?.lowercased().contains("try again") == true)
+    XCTAssertEqual(result, .failed)
+    XCTAssertEqual(appModeManager.currentMode, .child)
+    XCTAssertTrue(cloudKitManager.isConnectedToFamily)
+    XCTAssertTrue(LockCodeManager.shared.canVerifyCode)
+    XCTAssertNotNil(defaults.data(forKey: "family_foqos_child_lock_codes"))
+    XCTAssertTrue(LockCodeManager.shared.error?.lowercased().contains("try again") == true)
+    XCTAssertFalse(pendingAcceptance.showConfirmation)
   }
 
   func testGivenColdBackgroundCommandFetch_WhenResolvingIdentity_ThenFetchesUserRecordID() async {

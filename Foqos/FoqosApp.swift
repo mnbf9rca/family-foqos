@@ -644,7 +644,16 @@ func completeShareAcceptance(metadata: CKShare.Metadata, role: FamilyRole) {
 /// Family Controls failures are recoverable and preserve the current family mode.
 @MainActor
 func verifyChildAuthorizationIfNeeded() async {
-  if let message = await AuthorizationVerifier.shared.verifyIfNeeded() {
+  await verifyChildAuthorizationIfNeeded {
+    await AuthorizationVerifier.shared.verifyChildAuthorization()
+  }
+}
+
+@MainActor
+func verifyChildAuthorizationIfNeeded(
+  verify: () async -> AuthorizationVerifier.VerificationResult
+) async {
+  if let message = await AuthorizationVerifier.shared.verifyIfNeeded(verify: verify) {
     CloudKitManager.shared.shareAcceptanceIsError = true
     CloudKitManager.shared.shareAcceptedMessage = message
   }

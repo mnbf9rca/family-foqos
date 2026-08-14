@@ -8,13 +8,9 @@ final class ChildDashboardCopyTests: XCTestCase {
     XCTAssertEqual(
       ChildDashboardView.authorizationVerificationAlertTitle,
       "Unable to Verify Screen Time")
-    XCTAssertEqual(ChildDashboardView.authorizationVerificationRetryTitle, "Try Again")
-    XCTAssertEqual(ChildDashboardView.authorizationVerificationCancelTitle, "Cancel")
-    let actions = [
-      ChildDashboardView.authorizationVerificationRetryTitle,
-      ChildDashboardView.authorizationVerificationCancelTitle,
-    ]
-    XCTAssertFalse(actions.contains("Switch to Individual Mode"))
+    XCTAssertEqual(
+      ChildDashboardView.authorizationVerificationActions.map(\.title),
+      ["Try Again", "Cancel"])
   }
 
   func testGivenLockedProfilesFooter_WhenRead_ThenPromisesEditOrDeleteNotStop() {
