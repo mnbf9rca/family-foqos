@@ -92,9 +92,8 @@ struct FoqosApp: App {
   /// Sync upgrade notice (shown when legacy session records are cleaned up)
   @State private var showSyncUpgradeAlert = false
 
-  /// Tracks whether .onAppear has run, to skip duplicate schedule work
-  /// when scenePhase fires .active on initial launch.
-  @State private var hasPerformedInitialSetup = false
+  /// Coalesces cold-launch and warm-foreground schedule refreshes.
+  @State private var scheduleRefreshState = AppScheduleRefreshState()
 
   /// CloudKit share acceptance
   @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
@@ -143,6 +142,7 @@ struct FoqosApp: App {
         }
         .onChange(of: scenePhase) { oldPhase, newPhase in
           Log.debug("scenePhase changed", category: .app)
+          let shouldRefreshSchedules = scheduleRefreshState.shouldRefresh(for: newPhase)
           if newPhase == .active {
             if !ScreenshotDemoMode.isActive {
               Task {
@@ -175,15 +175,8 @@ struct FoqosApp: App {
                 }
               }
             }
-            // Only reschedule on warm returns — .onAppear handles cold launch
-            if hasPerformedInitialSetup && !ScreenshotDemoMode.isActive {
-              PreActivationReminderScheduler.mergeExtensionScheduleSuppression(
-                context: container.mainContext)
-              PreActivationReminderScheduler.reconcileMissingSnapshots(
-                context: container.mainContext)
-              PreActivationReminderScheduler.reconcileScheduleRegistrations(
-                context: container.mainContext)
-              PreActivationReminderScheduler.catchUpMissedScheduleStarts(context: container.mainContext)
+            if shouldRefreshSchedules && !ScreenshotDemoMode.isActive {
+              reconcileSchedulesForCurrentState()
             }
           }
         }
@@ -293,8 +286,11 @@ struct FoqosApp: App {
         .environmentObject(cloudKitManager)
         .environmentObject(profileSyncManager)
         .onAppear {
-          // Migrate profiles to V2 trigger system if needed
-          ProfileMigrationUtil.migrateProfilesIfNeeded(context: container.mainContext)
+          let shouldPerformInitialRefresh = scheduleRefreshState.shouldPerformInitialRefresh()
+          if shouldPerformInitialRefresh {
+            // Migration must precede the single coalesced cold-launch refresh.
+            ProfileMigrationUtil.migrateProfilesIfNeeded(context: container.mainContext)
+          }
           // Construct + wire the sync engine with the live ModelContext (I10).
           // Skipped under the XCTest host so hosted unit tests own `attachEngine`'s
           // one-shot idempotency guard themselves.
@@ -305,18 +301,9 @@ struct FoqosApp: App {
                 emergencyManager: emergencyManager)
             }
           }
-          if !ScreenshotDemoMode.isActive {
-            // Reschedule pre-activation reminders for today
-            PreActivationReminderScheduler.mergeExtensionScheduleSuppression(
-              context: container.mainContext)
-            PreActivationReminderScheduler.reconcileMissingSnapshots(
-              context: container.mainContext)
-            PreActivationReminderScheduler.reconcileScheduleRegistrations(
-              context: container.mainContext)
-            // Catch up any missed schedule starts
-            PreActivationReminderScheduler.catchUpMissedScheduleStarts(context: container.mainContext)
+          if shouldPerformInitialRefresh && !ScreenshotDemoMode.isActive {
+            reconcileSchedulesForCurrentState()
           }
-          hasPerformedInitialSetup = true
         }
     }
     .handlesExternalEvents(matching: ["*"])  // Handle all external events including CloudKit shares
@@ -329,6 +316,16 @@ struct FoqosApp: App {
     // Parent dashboard is accessible from settings (parent mode)
     // Child parental controls info is accessible from settings (child mode)
     HomeView()
+  }
+
+  private func reconcileSchedulesForCurrentState() {
+    PreActivationReminderScheduler.mergeExtensionScheduleSuppression(
+      context: container.mainContext)
+    PreActivationReminderScheduler.reconcileMissingSnapshots(
+      context: container.mainContext)
+    PreActivationReminderScheduler.reconcileScheduleRegistrations(
+      context: container.mainContext)
+    PreActivationReminderScheduler.catchUpMissedScheduleStarts(context: container.mainContext)
   }
 
   // MARK: - Share Acceptance Alerts
