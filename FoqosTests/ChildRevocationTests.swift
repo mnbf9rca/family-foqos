@@ -8,6 +8,13 @@ final class ChildRevocationTests: XCTestCase {
     CKRecordZone.ID(zoneName: name, ownerName: "test-owner")
   }
 
+  func testPolicyZoneNameMatchesShippedWireValue() {
+    XCTAssertEqual(
+      CloudKitConstants.policyZoneName,
+      "FamilyPolicies",
+      "Live CloudKit data contract; renaming orphans existing shared zones")
+  }
+
   func testGivenSuccessfulEmptyLookup_WhenResolvingZone_ThenRevocationIsConfirmed() {
     XCTAssertEqual(
       CloudKitNetworkService.resolveSharedPolicyZoneLookup(
