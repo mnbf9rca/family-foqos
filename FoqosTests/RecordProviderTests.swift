@@ -180,6 +180,21 @@ final class RecordProviderTests: XCTestCase {
     XCTAssertEqual(record?[SyncedEstablishment.FieldKey.generation.rawValue] as? Int, 4)
   }
 
+  func testGivenCachedEstablishmentFields_WhenMaterialized_ThenReusesServerRecordID() throws {
+    let sentinelZone = CKRecordZone.ID(zoneName: "DeviceSync", ownerName: "sentinel-owner")
+    let cached = SyncedEstablishment(generation: 1, establishedAt: Date())
+      .toCKRecord(in: sentinelZone)
+    store.setSystemFields(
+      CKRecordSystemFieldsCodec.encode(cached), for: SyncedEstablishment.recordName)
+    store.establishmentGeneration = 2
+
+    let record = try XCTUnwrap(
+      makeProvider().record(forRecordName: SyncedEstablishment.recordName))
+
+    XCTAssertEqual(record.recordID.zoneID.ownerName, "sentinel-owner")
+    XCTAssertEqual(record[SyncedEstablishment.FieldKey.generation.rawValue] as? Int, 2)
+  }
+
   func testGivenEmergencyUnblockEventRecordName_WhenMaterialized_ThenBuildsEventRecord() {
     let now = Date()
     emergencyManager.seedForTesting(epoch: 2)
