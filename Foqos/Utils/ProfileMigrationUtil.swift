@@ -28,9 +28,9 @@ enum ProfileMigrationUtil {
       if migratedCount > 0 {
         try context.save()
         Log.info("Migrated \(migratedCount) profiles to schema V2", category: .app)
-        // Register schedules with DeviceActivityCenter for migrated profiles
+        // Refresh shared snapshots before the centralized launch reconciliation registers
+        // DeviceActivity schedules. Registering here would duplicate the launch refresh.
         for profile in migratedProfiles {
-          DeviceActivityCenterUtil.scheduleTimerActivity(for: profile)
           BlockedProfiles.updateSnapshot(for: profile)
         }
       }
