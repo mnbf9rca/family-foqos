@@ -121,6 +121,6 @@ and independent exact-head review.
 ## Delivery
 
 Work in `.worktrees/build1-431` on `fix/431-family-controls-transients`, based on current main
-`2f707c1` at version 2.0.37 (56). Set every target configuration to reserved version 2.0.38 (57).
+`e6bed91` at version 2.0.39 (58). Set every target configuration to reserved version 2.0.40 (59).
 Use only new signed commits, publish a ready-for-review PR closing #431, and leave merge ownership
 with the planner.
