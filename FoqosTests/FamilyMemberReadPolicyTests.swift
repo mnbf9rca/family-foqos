@@ -10,6 +10,11 @@ final class FamilyMemberReadPolicyTests: XCTestCase {
     let source = try familyMemberSource()
     let body = try functionBody(named: "fetchFamilyMembers", in: source)
 
+    XCTAssertFalse(body.isEmpty, "Family-member read extraction must not be empty")
+    XCTAssertTrue(
+      body.contains("privateDatabase.records("),
+      "Family-member read extraction must include the CloudKit query"
+    )
     XCTAssertFalse(
       body.contains("createPolicyZoneIfNeeded"),
       "Family-member reads must never create participant-owned private CloudKit state"
@@ -22,6 +27,11 @@ final class FamilyMemberReadPolicyTests: XCTestCase {
     let source = try familyMemberSource()
     let body = try functionBody(named: "saveFamilyMember", in: source)
 
+    XCTAssertFalse(body.isEmpty, "Family-member write extraction must not be empty")
+    XCTAssertTrue(
+      body.contains("policyZoneID"),
+      "Family-member write extraction must include the policy-zone write path"
+    )
     XCTAssertTrue(
       body.contains("createPolicyZoneIfNeeded"),
       "Family-member writes must retain policy-zone setup"
