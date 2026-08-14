@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - Work only in `.worktrees/build1-431` on `fix/431-family-controls-transients`.
-- Base is main `e6bed91`, version 2.0.39 (58); publish reserved version 2.0.40 (59).
+- Base is main `4d9bd9d`, version 2.0.41 (60); publish reserved version 2.0.42 (61).
 - Use typed `FamilyControlsError` cases and `@unknown default`; do not restore domain-string classification.
 - No Family Controls result may clear shared state, erase the child PIN cache, or select Individual.
 - Only `CloudKitManager.confirmedRevocationTrigger` may reach destructive confirmed-revocation cleanup.
@@ -241,13 +241,13 @@ git commit -S -m "fix: recover from Family Controls contention"
 - Modify: PR body only after publishing
 
 **Interfaces:**
-- Produces: every target/configuration at marketing version 2.0.40 and build 59.
+- Produces: every target/configuration at marketing version 2.0.42 and build 61.
 - Consumes: all Task 1 and Task 2 tests and the project delivery workflow.
 
 - [ ] **Step 1: Bump every target configuration**
 
-Change every `MARKETING_VERSION = 2.0.39;` to `2.0.40` and every
-`CURRENT_PROJECT_VERSION = 58;` to `59`. Verify the project contains only the reserved pair.
+Change every `MARKETING_VERSION = 2.0.41;` to `2.0.42` and every
+`CURRENT_PROJECT_VERSION = 60;` to `61`. Verify the project contains only the reserved pair.
 
 - [ ] **Step 2: Run complete verification**
 
@@ -265,7 +265,7 @@ Read each exit status and test count before claiming success.
 Create a new signed commit without amending:
 
 ```bash
-git commit -S -m "chore: bump version to 2.0.40"
+git commit -S -m "chore: bump version to 2.0.42"
 ```
 
 Verify every branch commit reports a good signature and the worktree is clean.
