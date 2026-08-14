@@ -81,13 +81,13 @@ an inline comment documenting the field's dual meaning and the invariant that on
 The Child-only gate is mandatory. A parent owns its policy zone in the private database, so an
 empty shared database is not evidence that Parent mode should be removed.
 
-`LockCodeManager` will gain one focused cleanup operation that clears both `cachedLockCodes` and
-the persisted `family_foqos_child_lock_codes` value. A distinct confirmed-CloudKit-revocation
-cleanup entry point in `AuthorizationVerifier` will call that operation and then compose with the
-existing `handleAuthorizationLoss()` cleanup before selecting Individual mode. Existing Family
-Controls-driven callers continue to call `handleAuthorizationLoss()` and must not erase either PIN
-cache. The cache operation performs no network I/O and does not clear parent/individual lock-code
-state.
+`LockCodeManager` will gain one focused cleanup operation keyed by an authorization-loss trigger.
+It clears both `cachedLockCodes` and the persisted `family_foqos_child_lock_codes` value only for
+confirmed CloudKit revocation. `AuthorizationVerifier.handleAuthorizationLoss(trigger:)` will pass
+that trigger through before performing its existing cleanup and selecting Individual mode.
+Existing Family Controls-driven callers use the non-revocation trigger and must not erase either
+PIN cache. The cache operation performs no network I/O and does not clear parent/individual
+lock-code state.
 
 This separation is also a compatibility boundary for issue #431. Family Controls error code 4 can
 currently reach `handleAuthorizationLoss()` after a transient authorization failure. Until #431
