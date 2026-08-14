@@ -1,6 +1,11 @@
 import FamilyControls
 import Foundation
 
+enum FamilyAuthorizationLossTrigger: Equatable {
+  case familyControls
+  case confirmedCloudKitRevocation
+}
+
 /// Centralized service for verifying Apple Family Sharing authorization.
 /// Used to ensure children accepting CloudKit shares are actually set up as
 /// children in Apple Family Sharing (not just adults pretending to be children).
@@ -141,11 +146,15 @@ class AuthorizationVerifier: ObservableObject {
   /// Handle authorization loss for a child device.
   /// This is the single entry point for all authorization loss scenarios.
   /// Clears shared state, switches to individual mode, and returns a user message.
-  func handleAuthorizationLoss() async -> String {
+  func handleAuthorizationLoss(
+    trigger: FamilyAuthorizationLossTrigger = .familyControls
+  ) async -> String {
     let cloudKitManager = CloudKitManager.shared
     let appModeManager = AppModeManager.shared
 
     Log.info("Handling authorization loss", category: .authorization)
+
+    LockCodeManager.shared.handleFamilyAuthorizationLoss(trigger)
 
     // Clear CloudKit shared state first
     cloudKitManager.clearSharedState()

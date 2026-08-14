@@ -247,6 +247,12 @@ class LockCodeManager: ObservableObject {
     isConnected ? (cache: fetched, persist: fetched) : (cache: persisted, persist: persisted)
   }
 
+  func handleFamilyAuthorizationLoss(_ trigger: FamilyAuthorizationLossTrigger) {
+    guard trigger == .confirmedCloudKitRevocation else { return }
+    cachedLockCodes = []
+    throttleDefaults.removeObject(forKey: CacheKey.childLockCodes)
+  }
+
   /// Pure verification logic - all inputs explicit, no instance state.
   /// Used directly by tests; the instance method below is a thin wrapper.
   static func verifyCode(

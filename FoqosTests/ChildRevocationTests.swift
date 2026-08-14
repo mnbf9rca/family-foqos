@@ -58,4 +58,34 @@ final class ChildRevocationTests: XCTestCase {
     XCTAssertNil(
       CloudKitNetworkService.enforcedMode(for: .indeterminate, localMode: .child))
   }
+
+  func testGivenDisconnectedIndividualSignalInChildMode_WhenResolvingTrigger_ThenRevocationIsConfirmed() {
+    XCTAssertEqual(
+      CloudKitManager.confirmedRevocationTrigger(
+        isConnected: false,
+        enforcedMode: .individual,
+        currentMode: .child),
+      .confirmedCloudKitRevocation)
+  }
+
+  func testGivenDisconnectedIndividualSignalOutsideChildMode_WhenResolvingTrigger_ThenNoRevocation() {
+    XCTAssertNil(
+      CloudKitManager.confirmedRevocationTrigger(
+        isConnected: false,
+        enforcedMode: .individual,
+        currentMode: .parent))
+    XCTAssertNil(
+      CloudKitManager.confirmedRevocationTrigger(
+        isConnected: false,
+        enforcedMode: .individual,
+        currentMode: .individual))
+  }
+
+  func testGivenConnectedIndividualSignalInChildMode_WhenResolvingTrigger_ThenNoRevocation() {
+    XCTAssertNil(
+      CloudKitManager.confirmedRevocationTrigger(
+        isConnected: true,
+        enforcedMode: .individual,
+        currentMode: .child))
+  }
 }
