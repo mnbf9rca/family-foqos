@@ -31,11 +31,13 @@ The root view presents that state in its own alert titled **Family Connection Re
 OK action that clears the optional message. Do not reuse `shareAcceptedMessage` or
 `shareAcceptanceIsError`.
 
-Foreground activation continues to call `verifySelfFamilyMemberRecord()`. For a child shared-
-database notification, the background handler calls that same verifier before refreshing shared
-lock codes and commands. A confirmed removal reports new data and skips the now-inapplicable child
-refresh; an ambiguous/offline lookup remains non-destructive under #431 and proceeds with the
-existing fail-closed refresh.
+Foreground activation continues to refresh account status and call
+`verifySelfFamilyMemberRecord()`. For a child shared-database notification, the background handler
+first refreshes account status, then calls that same verifier before refreshing shared lock codes
+and commands. This ordering prevents a cold-launched singleton's default `isSignedIn == false`
+from suppressing confirmed revocation. A confirmed removal reports new data and skips the
+now-inapplicable child refresh; an ambiguous/offline lookup remains non-destructive under #431 and
+proceeds with the existing fail-closed refresh.
 
 Make the confirmation predicate a named `Bool` (`isConfirmedRevocation`) rather than a single-case
 optional enum. Make `AuthorizationVerifier.handleConfirmedCloudKitRevocation()` return `Void`, and

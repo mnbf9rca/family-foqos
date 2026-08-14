@@ -37,8 +37,9 @@ Family Controls failures independent.
 - [ ] Rename trigger assertions to the missing Bool API and keep every positive/negative case.
 - [ ] Add tests for exact alert title/copy, forbidden `Screen Time` and `Family Sharing` wording,
       cleanup-before-publication, and one-shot dismissal state.
-- [ ] Add background routing tests: child shared push verifies first; confirmed revocation skips
-      child refresh and reports `.newData`; unchanged membership retains the current refresh result.
+- [ ] Add background routing tests: a cold child shared push refreshes account status before
+      membership verification; confirmed revocation skips child refresh and reports `.newData`;
+      unchanged membership retains the current refresh result.
 - [ ] Remove the cache test's `originalMode`, `selectMode(.child)`, and restoration.
 - [ ] Add/retain typed-mapping coverage proving `.unauthorized` and unknown cases are non-destructive.
 - [ ] Run selected tests and confirm RED from missing production APIs:
@@ -62,8 +63,9 @@ scripts/xcode-stream.sh --agent build1 --session issue_435 --xcbeautify -- xcode
 - [ ] Replace the optional single-case trigger with `isConfirmedRevocation(...) -> Bool`.
 - [ ] Have membership verification return whether it handled confirmed revocation so foreground can
       ignore the result and background can skip child refresh/report `.newData` after demotion.
-- [ ] Extract the background child-refresh sequence behind injected verifier/refresh closures, use
-      it from `AppDelegate`, and preserve existing `.noData`/`.failed` results without revocation.
+- [ ] Extract the background child-refresh sequence behind injected account-status/verifier/refresh
+      closures, use it from `AppDelegate`, and preserve existing `.noData`/`.failed` results without
+      revocation.
 - [ ] Present dedicated `Family Connection Removed` root alert and clear its state on dismissal.
 - [ ] Remove the redundant iOS 26.4 pre-check; retain `.unauthorized` and `@unknown default`.
 - [ ] Run the focused command until GREEN, then format changed Swift files and run `git diff --check`.

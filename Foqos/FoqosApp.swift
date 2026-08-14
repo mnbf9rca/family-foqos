@@ -426,9 +426,11 @@ class AppDelegate: NSObject, UIApplicationDelegate {
 
   @MainActor
   static func refreshChildSharedDataAfterMembershipVerification(
+    refreshAccountStatus: () async -> Void,
     verifyMembership: () async -> Bool,
     refreshSharedData: () async -> ChildSharedDataRefreshResult
   ) async -> ChildSharedDataRefreshResult {
+    await refreshAccountStatus()
     let didHandleConfirmedRevocation = await verifyMembership()
     guard !didHandleConfirmedRevocation else { return .newData }
     return await refreshSharedData()
@@ -471,6 +473,9 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         if shouldRefreshChildSharedData {
           childRefreshResult =
             await Self.refreshChildSharedDataAfterMembershipVerification(
+              refreshAccountStatus: {
+                await CloudKitManager.shared.checkAccountStatus()
+              },
               verifyMembership: {
                 await CloudKitManager.shared.verifySelfFamilyMemberRecord()
               },
