@@ -1,12 +1,12 @@
 name: CodeQL
 
+# Advisory-only comprehensive scan: GitHub rulesets gate CodeQL per tool,
+# so requiring it would force every configured language onto every pull request.
+# The maintainer chose weekly/manual background analysis instead.
 on:
-  pull_request:
-    branches: [main]
-  push:
-    branches: [main]
   schedule:
     - cron: "23 3 * * 1"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -40,7 +40,6 @@ jobs:
 
   analyze-swift:
     name: Analyze (swift)
-    if: github.event_name != 'pull_request'
     runs-on: macos-latest
     permissions:
       contents: read
