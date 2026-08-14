@@ -6,6 +6,27 @@ import SwiftUI
 /// Main dashboard view for children subject to parent lock codes.
 /// Shows locked profiles and provides access to personal profiles.
 struct ChildDashboardView: View {
+  enum AuthorizationVerificationAction: CaseIterable {
+    case retry
+    case cancel
+
+    var title: String {
+      switch self {
+      case .retry:
+        return "Try Again"
+      case .cancel:
+        return "Cancel"
+      }
+    }
+
+    var role: ButtonRole? {
+      self == .cancel ? .cancel : nil
+    }
+  }
+
+  static let authorizationVerificationAlertTitle = "Unable to Verify Screen Time"
+  static let authorizationVerificationActions = AuthorizationVerificationAction.allCases
+
   @Environment(\.modelContext) private var modelContext
   @Environment(\.dismiss) private var dismiss
   @SafeQuery(sort: \BlockedProfiles.order) private var allProfiles: [BlockedProfiles]
@@ -21,7 +42,7 @@ struct ChildDashboardView: View {
   @State private var enteredCode = ""
   @State private var codeError: String?
   @State private var isFetchingLockCodes = false
-  @State private var showAuthorizationLostAlert = false
+  @State private var authorizationVerificationMessage: String?
   @State private var isVerifyingAuthorization = false
 
   /// Profiles that are locked (require code to edit)
@@ -111,19 +132,17 @@ struct ChildDashboardView: View {
         // Verify child authorization when view appears
         await verifyChildAuthorization()
       }
-      .alert("Authorization Lost", isPresented: $showAuthorizationLostAlert) {
-        Button("Switch to Individual Mode", role: .destructive) {
-          handleAuthorizationLost()
-        }
-        Button("Try Again", role: .cancel) {
-          Task {
-            await verifyChildAuthorization()
+      .alert(
+        Self.authorizationVerificationAlertTitle,
+        isPresented: isShowingAuthorizationVerificationAlert
+      ) {
+        ForEach(Self.authorizationVerificationActions, id: \.self) { action in
+          Button(action.title, role: action.role) {
+            handleAuthorizationVerificationAction(action)
           }
         }
       } message: {
-        Text(
-          "This device is no longer authorized as a child in Apple Family Sharing. Ask a parent to check Settings > Family > Screen Time, or switch to individual mode to manage your own screen time."
-        )
+        Text(authorizationVerificationMessage ?? "")
       }
     }
   }
@@ -139,17 +158,37 @@ struct ChildDashboardView: View {
 
     let result = await AuthorizationVerifier.shared.verifyChildAuthorization()
 
-    if AuthorizationVerifier.verificationDisposition(for: result) == .confirmedLoss {
-      showAuthorizationLostAlert = true
+    switch AuthorizationVerifier.verificationDisposition(for: result) {
+    case .authorized:
+      authorizationVerificationMessage = nil
+    case .indeterminate:
+      Log.warning(
+        "Child authorization verification was indeterminate; preserving family state",
+        category: .authorization)
+      authorizationVerificationMessage =
+        result.errorMessage
+        ?? "Unable to verify Screen Time authorization. Please try again."
     }
   }
 
-  /// Handle when authorization is lost
-  @MainActor
-  private func handleAuthorizationLost() {
-    Task {
-      _ = await AuthorizationVerifier.shared.handleAuthorizationLoss()
-      dismiss()
+  private var isShowingAuthorizationVerificationAlert: Binding<Bool> {
+    Binding(
+      get: { authorizationVerificationMessage != nil },
+      set: { isPresented in
+        if !isPresented {
+          authorizationVerificationMessage = nil
+        }
+      })
+  }
+
+  private func handleAuthorizationVerificationAction(
+    _ action: AuthorizationVerificationAction
+  ) {
+    authorizationVerificationMessage = nil
+    if action == .retry {
+      Task {
+        await verifyChildAuthorization()
+      }
     }
   }
 

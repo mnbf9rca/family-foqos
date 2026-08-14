@@ -1,8 +1,7 @@
 import FamilyControls
 import Foundation
 
-enum FamilyAuthorizationLossTrigger: Equatable {
-  case familyControls
+enum ConfirmedCloudKitRevocationTrigger: Equatable {
   case confirmedCloudKitRevocation
 }
 
@@ -34,6 +33,8 @@ class AuthorizationVerifier: ObservableObject {
     case authorized
     case notChildDevice
     case notAuthorized
+    case authorizationConflict
+    case authorizationCanceled
     case networkError(Error)
     case unknownError(Error)
 
@@ -50,10 +51,16 @@ class AuthorizationVerifier: ObservableObject {
         return nil
       case .notChildDevice:
         return
-          "This device must be set up as a child in Apple Family Sharing to accept this invitation. Please ask a parent to add this Apple ID as a child in Settings > Family, then enable Screen Time for this child."
+          "We couldn't verify Screen Time authorization on this device. Please try again."
       case .notAuthorized:
         return
           "Screen Time authorization is required. Please enable Screen Time in Settings and try again."
+      case .authorizationConflict:
+        return
+          "We couldn't check Screen Time authorization because Family Controls is currently in use. Please try again."
+      case .authorizationCanceled:
+        return
+          "Screen Time authorization wasn't completed. Please try again."
       case .networkError:
         return
           "Unable to verify authorization. Please check your internet connection and try again."
@@ -65,7 +72,6 @@ class AuthorizationVerifier: ObservableObject {
 
   enum VerificationDisposition: Equatable {
     case authorized
-    case confirmedLoss
     case indeterminate
   }
 
@@ -75,10 +81,50 @@ class AuthorizationVerifier: ObservableObject {
     switch result {
     case .authorized:
       return .authorized
-    case .notChildDevice, .notAuthorized:
-      return .confirmedLoss
-    case .networkError, .unknownError:
+    case .notChildDevice, .notAuthorized, .authorizationConflict, .authorizationCanceled,
+      .networkError, .unknownError:
       return .indeterminate
+    }
+  }
+
+  static func detectedFamilyRole(for result: VerificationResult) -> FamilyRole? {
+    switch result {
+    case .authorized:
+      return .child
+    case .notChildDevice:
+      return .parent
+    case .notAuthorized, .authorizationConflict, .authorizationCanceled, .networkError,
+      .unknownError:
+      return nil
+    }
+  }
+
+  static func verificationResult(for error: NSError) -> VerificationResult {
+    guard error.domain == FamilyControlsError.errorDomain,
+      let familyControlsError = FamilyControlsError(rawValue: error.code)
+    else {
+      return error.domain == NSURLErrorDomain ? .networkError(error) : .unknownError(error)
+    }
+
+    if #available(iOS 26.4, *), familyControlsError == .unauthorized {
+      return .notAuthorized
+    }
+
+    switch familyControlsError {
+    case .invalidAccountType:
+      return .notChildDevice
+    case .authorizationConflict:
+      return .authorizationConflict
+    case .authorizationCanceled:
+      return .authorizationCanceled
+    case .networkError:
+      return .networkError(error)
+    case .unauthorized:
+      return .notAuthorized
+    case .restricted, .unavailable, .invalidArgument, .authenticationMethodUnavailable:
+      return .unknownError(error)
+    @unknown default:
+      return .unknownError(error)
     }
   }
 
@@ -122,19 +168,7 @@ class AuthorizationVerifier: ObservableObject {
       return .authorized
     } catch let error as NSError {
       Log.info("AuthorizationVerifier: Child authorization failed - domain: \(error.domain), code: \(error.code)", category: .authorization)
-
-      // FamilyControls errors indicating this isn't a child device
-      if error.domain == "FamilyControls" || error.domain == "com.apple.FamilyControls" {
-        return .notChildDevice
-      }
-
-      // Check for network-related errors
-      if error.domain == NSURLErrorDomain {
-        return .networkError(error)
-      }
-
-      // Generic authorization failure
-      return .unknownError(error)
+      return Self.verificationResult(for: error)
     }
   }
 
@@ -162,18 +196,16 @@ class AuthorizationVerifier: ObservableObject {
 
   // MARK: - Centralized Authorization Loss Handling
 
-  /// Handle authorization loss for a child device.
-  /// This is the single entry point for all authorization loss scenarios.
+  /// Handle a CloudKit-confirmed family revocation for a child device.
+  /// Family Controls errors must never reach this destructive path.
   /// Clears shared state, switches to individual mode, and returns a user message.
-  func handleAuthorizationLoss(
-    trigger: FamilyAuthorizationLossTrigger = .familyControls
-  ) async -> String {
+  func handleConfirmedCloudKitRevocation() async -> String {
     let cloudKitManager = CloudKitManager.shared
     let appModeManager = AppModeManager.shared
 
-    Log.info("Handling authorization loss", category: .authorization)
+    Log.info("Handling confirmed CloudKit family revocation", category: .authorization)
 
-    LockCodeManager.shared.handleFamilyAuthorizationLoss(trigger)
+    LockCodeManager.shared.handleConfirmedCloudKitRevocation()
 
     // Clear CloudKit shared state first
     cloudKitManager.clearSharedState()
@@ -189,8 +221,16 @@ class AuthorizationVerifier: ObservableObject {
   }
 
   /// Verify child authorization if in child mode and connected to family.
-  /// Returns nil if authorized or not applicable, returns error message if authorization lost.
+  /// Family Controls failures are recoverable here and never imply family revocation.
   func verifyIfNeeded() async -> String? {
+    await verifyIfNeeded {
+      await self.verifyChildAuthorization()
+    }
+  }
+
+  func verifyIfNeeded(
+    verify: () async -> VerificationResult
+  ) async -> String? {
     let appModeManager = AppModeManager.shared
     let cloudKitManager = CloudKitManager.shared
 
@@ -201,12 +241,10 @@ class AuthorizationVerifier: ObservableObject {
       return nil
     }
 
-    let result = await verifyChildAuthorization()
+    let result = await verify()
     switch Self.verificationDisposition(for: result) {
     case .authorized:
       return nil
-    case .confirmedLoss:
-      return await handleAuthorizationLoss()
     case .indeterminate:
       Log.warning(
         "Child authorization verification was indeterminate; preserving family state",

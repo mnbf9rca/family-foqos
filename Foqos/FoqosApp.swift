@@ -565,27 +565,16 @@ func acceptCloudKitShare(_ metadata: CKShare.Metadata) {
     // 2. Detect role via AuthorizationVerifier
     let verificationResult = await AuthorizationVerifier.shared.verifyChildAuthorization()
 
-    let detectedRole: FamilyRole
-    switch verificationResult {
-    case .authorized:
-      detectedRole = .child
-    case .notChildDevice:
-      detectedRole = .parent
-    case .networkError(let error):
-      Log.error("Network error during role detection: \(redactedErrorForLog(error))", category: .cloudKit)
+    guard let detectedRole = AuthorizationVerifier.detectedFamilyRole(for: verificationResult)
+    else {
+      Log.warning(
+        "Unable to detect a family role from Screen Time authorization",
+        category: .cloudKit)
       CloudKitManager.shared.shareAcceptanceIsError = true
       CloudKitManager.shared.shareAcceptedMessage =
-        "Unable to verify device type. Please check your internet connection and try again."
+        verificationResult.errorMessage
+        ?? "Unable to verify device type. Please try again."
       return
-    case .unknownError(let error):
-      Log.error("Unknown error during role detection: \(redactedErrorForLog(error))", category: .cloudKit)
-      CloudKitManager.shared.shareAcceptanceIsError = true
-      CloudKitManager.shared.shareAcceptedMessage =
-        "Unable to verify device type: \(error.localizedDescription)"
-      return
-    case .notAuthorized:
-      // Not authorized but not a FamilyControls error — treat as parent
-      detectedRole = .parent
     }
 
     Log.info("Detected role: \(detectedRole.rawValue)", category: .cloudKit)
@@ -652,10 +641,19 @@ func completeShareAcceptance(metadata: CKShare.Metadata, role: FamilyRole) {
 // MARK: - Authorization Verification
 
 /// Verify child authorization when app becomes active (if in child mode)
-/// If authorization is lost, clear shared data and switch to individual mode
+/// Family Controls failures are recoverable and preserve the current family mode.
 @MainActor
 func verifyChildAuthorizationIfNeeded() async {
-  if let message = await AuthorizationVerifier.shared.verifyIfNeeded() {
+  await verifyChildAuthorizationIfNeeded {
+    await AuthorizationVerifier.shared.verifyChildAuthorization()
+  }
+}
+
+@MainActor
+func verifyChildAuthorizationIfNeeded(
+  verify: () async -> AuthorizationVerifier.VerificationResult
+) async {
+  if let message = await AuthorizationVerifier.shared.verifyIfNeeded(verify: verify) {
     CloudKitManager.shared.shareAcceptanceIsError = true
     CloudKitManager.shared.shareAcceptedMessage = message
   }

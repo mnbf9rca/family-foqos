@@ -257,7 +257,7 @@ class CloudKitManager: ObservableObject {
     isSignedIn: Bool,
     enforcedMode: AppMode?,
     currentMode: AppMode
-  ) -> FamilyAuthorizationLossTrigger? {
+  ) -> ConfirmedCloudKitRevocationTrigger? {
     guard !isConnected,
       isSignedIn,
       enforcedMode == .individual,
@@ -288,13 +288,13 @@ class CloudKitManager: ObservableObject {
     // In a disconnected result, enforced .individual is the confirmed-revocation signal. Only
     // CloudKitNetworkService+Verification may produce this overload, and only for Child mode.
     if !result.isConnected, result.enforcedMode == .individual {
-      if let trigger = Self.confirmedRevocationTrigger(
+      if Self.confirmedRevocationTrigger(
         isConnected: result.isConnected,
         isSignedIn: self.isSignedIn,
         enforcedMode: result.enforcedMode,
         currentMode: AppModeManager.shared.currentMode
-      ) {
-        _ = await AuthorizationVerifier.shared.handleAuthorizationLoss(trigger: trigger)
+      ) != nil {
+        _ = await AuthorizationVerifier.shared.handleConfirmedCloudKitRevocation()
       }
       return
     }

@@ -22,13 +22,13 @@ final class ChildSharedRefreshTests: XCTestCase {
       .indeterminate)
   }
 
-  func testGivenDefinitiveAuthorizationFailure_WhenClassifying_ThenLossIsConfirmed() {
+  func testGivenFamilyControlsAuthorizationFailure_WhenClassifying_ThenResultIsIndeterminate() {
     XCTAssertEqual(
       AuthorizationVerifier.verificationDisposition(for: .notChildDevice),
-      .confirmedLoss)
+      .indeterminate)
     XCTAssertEqual(
       AuthorizationVerifier.verificationDisposition(for: .notAuthorized),
-      .confirmedLoss)
+      .indeterminate)
   }
 
   func testGivenPersistedChildAuthorization_WhenResolvingSharedRefresh_ThenSkipsVerification()
@@ -36,7 +36,7 @@ final class ChildSharedRefreshTests: XCTestCase {
   {
     var didVerify = false
 
-    let disposition = await LockCodeManager.sharedRefreshAuthorizationDisposition(
+    let result = await LockCodeManager.sharedRefreshAuthorizationResult(
       persisted: .child
     ) {
       didVerify = true
@@ -44,13 +44,15 @@ final class ChildSharedRefreshTests: XCTestCase {
     }
 
     XCTAssertFalse(didVerify)
-    XCTAssertEqual(disposition, .authorized)
+    guard case .authorized = result else {
+      return XCTFail("Persisted Child authorization must skip verification")
+    }
   }
 
   func testGivenMissingPersistedAuthorization_WhenResolvingSharedRefresh_ThenVerifiesOnce() async {
     var verificationCount = 0
 
-    let disposition = await LockCodeManager.sharedRefreshAuthorizationDisposition(
+    let result = await LockCodeManager.sharedRefreshAuthorizationResult(
       persisted: .none
     ) {
       verificationCount += 1
@@ -58,7 +60,53 @@ final class ChildSharedRefreshTests: XCTestCase {
     }
 
     XCTAssertEqual(verificationCount, 1)
-    XCTAssertEqual(disposition, .authorized)
+    guard case .authorized = result else {
+      return XCTFail("Successful bootstrap verification must authorize refresh")
+    }
+  }
+
+  func testGivenConflictDuringBootstrap_WhenRefreshingSharedData_ThenStateAndCacheArePreserved()
+    async
+  {
+    let appModeManager = AppModeManager.shared
+    let cloudKitManager = CloudKitManager.shared
+    let pendingAcceptance = PendingShareAcceptance.shared
+    let originalMode = appModeManager.currentMode
+    let originalConnected = cloudKitManager.isConnectedToFamily
+    let originalShowConfirmation = pendingAcceptance.showConfirmation
+    let originalError = LockCodeManager.shared.error
+    let suiteName = "ChildSharedRefreshTests-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defaults.set(
+      try! JSONEncoder().encode([FamilyLockCode(code: "test-code", scope: .allChildren)]),
+      forKey: "family_foqos_child_lock_codes")
+    LockCodeManager.shared.overrideDefaults(defaults)
+    defer {
+      LockCodeManager.shared.overrideDefaults(nil)
+      defaults.removePersistentDomain(forName: suiteName)
+      appModeManager.selectMode(originalMode)
+      cloudKitManager.isConnectedToFamily = originalConnected
+      pendingAcceptance.showConfirmation = originalShowConfirmation
+      LockCodeManager.shared.error = originalError
+    }
+
+    appModeManager.selectMode(.child)
+    cloudKitManager.isConnectedToFamily = true
+    pendingAcceptance.showConfirmation = false
+
+    let result = await LockCodeManager.shared.refreshSharedLockCodesForVerification(
+      authorizationType: .none
+    ) {
+      .authorizationConflict
+    }
+
+    XCTAssertEqual(result, .failed)
+    XCTAssertEqual(appModeManager.currentMode, .child)
+    XCTAssertTrue(cloudKitManager.isConnectedToFamily)
+    XCTAssertTrue(LockCodeManager.shared.canVerifyCode)
+    XCTAssertNotNil(defaults.data(forKey: "family_foqos_child_lock_codes"))
+    XCTAssertTrue(LockCodeManager.shared.error?.lowercased().contains("try again") == true)
+    XCTAssertFalse(pendingAcceptance.showConfirmation)
   }
 
   func testGivenColdBackgroundCommandFetch_WhenResolvingIdentity_ThenFetchesUserRecordID() async {

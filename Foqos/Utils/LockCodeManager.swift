@@ -212,26 +212,34 @@ class LockCodeManager: ObservableObject {
   /// Reuses persisted child authorization, verifying once only when bootstrap state is absent.
   @discardableResult
   func refreshSharedLockCodesForVerification() async -> ChildSharedDataRefreshResult {
+    await refreshSharedLockCodesForVerification(
+      authorizationType: AuthorizationVerifier.shared.currentAuthorizationType
+    ) {
+      await AuthorizationVerifier.shared.verifyChildAuthorization()
+    }
+  }
+
+  @discardableResult
+  func refreshSharedLockCodesForVerification(
+    authorizationType: AuthorizationVerifier.AuthorizationType,
+    verify: () async -> AuthorizationVerifier.VerificationResult
+  ) async -> ChildSharedDataRefreshResult {
     guard !ScreenshotDemoMode.isActive else { return .noData }
     guard appModeManager.currentMode == .child else { return .noData }
 
     isLoading = true
     defer { isLoading = false }
 
-    let authorizationDisposition = await Self.sharedRefreshAuthorizationDisposition(
-      persisted: AuthorizationVerifier.shared.currentAuthorizationType
-    ) {
-      await AuthorizationVerifier.shared.verifyChildAuthorization()
-    }
-    switch authorizationDisposition {
+    let authorizationResult = await Self.sharedRefreshAuthorizationResult(
+      persisted: authorizationType,
+      verify: verify)
+    switch AuthorizationVerifier.verificationDisposition(for: authorizationResult) {
     case .authorized:
       break
-    case .confirmedLoss:
-      self.cachedLockCodes = []
-      self.error = await AuthorizationVerifier.shared.handleAuthorizationLoss()
-      return .failed
     case .indeterminate:
-      self.error = "Child authorization has not been verified."
+      self.error =
+        authorizationResult.errorMessage
+        ?? "Unable to verify Screen Time authorization. Please try again."
       return .failed
     }
 
@@ -240,12 +248,12 @@ class LockCodeManager: ObservableObject {
     return ChildSharedDataRefreshResult.combine(lockCodeResult, commandResult)
   }
 
-  static func sharedRefreshAuthorizationDisposition(
+  static func sharedRefreshAuthorizationResult(
     persisted authorizationType: AuthorizationVerifier.AuthorizationType,
     verify: () async -> AuthorizationVerifier.VerificationResult
-  ) async -> AuthorizationVerifier.VerificationDisposition {
+  ) async -> AuthorizationVerifier.VerificationResult {
     guard authorizationType != .child else { return .authorized }
-    return AuthorizationVerifier.verificationDisposition(for: await verify())
+    return await verify()
   }
 
   private func refreshSharedLockCodes() async -> ChildSharedDataRefreshResult {
@@ -310,8 +318,7 @@ class LockCodeManager: ObservableObject {
     isConnected ? (cache: fetched, persist: fetched) : (cache: persisted, persist: persisted)
   }
 
-  func handleFamilyAuthorizationLoss(_ trigger: FamilyAuthorizationLossTrigger) {
-    guard trigger == .confirmedCloudKitRevocation else { return }
+  func handleConfirmedCloudKitRevocation() {
     cachedLockCodes = []
     throttleDefaults.removeObject(forKey: CacheKey.childLockCodes)
   }
