@@ -3,6 +3,53 @@ import Foundation
 
 extension CloudKitNetworkService {
 
+  enum SharedPolicyZoneLookup: Equatable, Sendable {
+    case present(CKRecordZone.ID)
+    case confirmedAbsent
+    case indeterminate
+  }
+
+  static func resolveSharedPolicyZoneLookup(
+    zoneIDsFromSuccessfulLookup zoneIDs: [CKRecordZone.ID]?
+  ) -> SharedPolicyZoneLookup {
+    guard let zoneIDs else { return .indeterminate }
+    guard
+      let policyZoneID = zoneIDs.first(where: {
+        $0.zoneName == CloudKitConstants.policyZoneName
+      })
+    else {
+      return .confirmedAbsent
+    }
+    return .present(policyZoneID)
+  }
+
+  static func enforcedMode(
+    for lookup: SharedPolicyZoneLookup,
+    localMode: AppMode,
+    accountIsSignedIn: Bool
+  ) -> AppMode? {
+    guard case .confirmedAbsent = lookup,
+      localMode == .child,
+      accountIsSignedIn
+    else {
+      return nil
+    }
+    return .individual
+  }
+
+  private func lookupSharedPolicyZoneForVerification() async -> SharedPolicyZoneLookup {
+    do {
+      let zones = try await sharedDatabase.allRecordZones()
+      return Self.resolveSharedPolicyZoneLookup(
+        zoneIDsFromSuccessfulLookup: zones.map(\.zoneID))
+    } catch {
+      Log.error(
+        "Failed to fetch shared zones during verification: \(redactedErrorForLog(error))",
+        category: .cloudKit)
+      return .indeterminate
+    }
+  }
+
   // MARK: - Self Registration
 
   func registerSelfAsFamilyMember(role: FamilyRole, userRecordID: CKRecord.ID) async {
@@ -59,17 +106,32 @@ extension CloudKitNetworkService {
 
   func verifySelfFamilyMember(
     cachedUserRecordID: CKRecord.ID?,
-    localMode: AppMode
+    localMode: AppMode,
+    accountIsSignedIn: Bool
   ) async -> VerificationResult {
     let start = CFAbsoluteTimeGetCurrent()
     Log.info("verifySelfFamilyMember: starting", category: .cloudKit)
 
-    guard let zone = await findSharedZoneByName() else {
-      Log.info(
-        "verifySelfFamilyMember: no shared zone (\(String(format: "%.2f", CFAbsoluteTimeGetCurrent() - start))s)",
-        category: .cloudKit)
+    let zoneLookup = await lookupSharedPolicyZoneForVerification()
+    guard case .present(let zoneID) = zoneLookup else {
+      let enforcedMode = Self.enforcedMode(
+        for: zoneLookup,
+        localMode: localMode,
+        accountIsSignedIn: accountIsSignedIn)
+      if enforcedMode == .individual {
+        Log.info(
+          "verifySelfFamilyMember: shared zone revocation confirmed",
+          category: .cloudKit)
+      } else {
+        Log.info(
+          "verifySelfFamilyMember: shared zone unavailable",
+          category: .cloudKit)
+      }
       return VerificationResult(
-        isConnected: false, userRecordID: cachedUserRecordID, isSignedIn: nil, enforcedMode: nil)
+        isConnected: false,
+        userRecordID: cachedUserRecordID,
+        isSignedIn: nil,
+        enforcedMode: enforcedMode)
     }
     Log.info(
       "verifySelfFamilyMember: found zone (\(String(format: "%.2f", CFAbsoluteTimeGetCurrent() - start))s)",
@@ -106,7 +168,7 @@ extension CloudKitNetworkService {
     do {
       let (results, _) = try await sharedDatabase.records(
         matching: query,
-        inZoneWith: zone.zoneID
+        inZoneWith: zoneID
       )
       Log.info(
         "verifySelfFamilyMember: queried FamilyMember (\(String(format: "%.2f", CFAbsoluteTimeGetCurrent() - start))s)",

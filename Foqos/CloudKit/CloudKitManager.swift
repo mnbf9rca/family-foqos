@@ -233,11 +233,30 @@ class CloudKitManager: ObservableObject {
 
   // MARK: - Verification
 
+  nonisolated static func confirmedRevocationTrigger(
+    isConnected: Bool,
+    isSignedIn: Bool,
+    enforcedMode: AppMode?,
+    currentMode: AppMode
+  ) -> FamilyAuthorizationLossTrigger? {
+    guard !isConnected,
+      isSignedIn,
+      enforcedMode == .individual,
+      currentMode == .child
+    else {
+      return nil
+    }
+    return .confirmedCloudKitRevocation
+  }
+
   func verifySelfFamilyMemberRecord() async {
     guard !ScreenshotDemoMode.isActive else { return }
+    let localMode = AppModeManager.shared.currentMode
+    let accountIsSignedIn = self.isSignedIn
     let result = await networkService.verifySelfFamilyMember(
       cachedUserRecordID: currentUserRecordID,
-      localMode: AppModeManager.shared.currentMode
+      localMode: localMode,
+      accountIsSignedIn: accountIsSignedIn
     )
 
     self.isConnectedToFamily = result.isConnected
@@ -246,6 +265,19 @@ class CloudKitManager: ObservableObject {
     }
     if let isSignedIn = result.isSignedIn {
       self.isSignedIn = isSignedIn
+    }
+    // In a disconnected result, enforced .individual is the confirmed-revocation signal. Only
+    // CloudKitNetworkService+Verification may produce this overload, and only for Child mode.
+    if !result.isConnected, result.enforcedMode == .individual {
+      if let trigger = Self.confirmedRevocationTrigger(
+        isConnected: result.isConnected,
+        isSignedIn: self.isSignedIn,
+        enforcedMode: result.enforcedMode,
+        currentMode: AppModeManager.shared.currentMode
+      ) {
+        _ = await AuthorizationVerifier.shared.handleAuthorizationLoss(trigger: trigger)
+      }
+      return
     }
     if let mode = result.enforcedMode {
       AppModeManager.shared.selectMode(mode)
