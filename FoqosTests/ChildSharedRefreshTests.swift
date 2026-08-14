@@ -247,6 +247,61 @@ final class ChildSharedRefreshTests: XCTestCase {
         mode: .child))
   }
 
+  func testGivenColdLaunchConfirmedRevocationDuringBackgroundRefresh_WhenRouting_ThenRefreshesAccountAndPublishesNotice()
+    async
+  {
+    let manager = CloudKitManager.shared
+    let originalMessage = manager.familyRevocationMessage
+    defer { manager.familyRevocationMessage = originalMessage }
+    manager.familyRevocationMessage = nil
+    var steps: [String] = []
+    var didRefreshSharedData = false
+
+    let result = await AppDelegate.refreshChildSharedDataAfterMembershipVerification(
+      refreshAccountStatus: {
+        steps.append("account")
+      },
+      verifyMembership: {
+        XCTAssertEqual(steps, ["account"])
+        steps.append("membership")
+        manager.handleConfirmedFamilyRevocation {}
+        return true
+      },
+      refreshSharedData: {
+        didRefreshSharedData = true
+        return .failed
+      })
+
+    XCTAssertEqual(result, .newData)
+    XCTAssertEqual(steps, ["account", "membership"])
+    XCTAssertFalse(didRefreshSharedData)
+    XCTAssertEqual(
+      manager.familyRevocationMessage,
+      CloudKitManager.familyRevocationAlertMessage)
+  }
+
+  func testGivenMembershipUnchangedDuringBackgroundRefresh_WhenRouting_ThenPreservesRefreshResult()
+    async
+  {
+    var steps: [String] = []
+
+    let result = await AppDelegate.refreshChildSharedDataAfterMembershipVerification(
+      refreshAccountStatus: {
+        steps.append("account")
+      },
+      verifyMembership: {
+        steps.append("membership")
+        return false
+      },
+      refreshSharedData: {
+        steps.append("shared-data")
+        return .noData
+      })
+
+    XCTAssertEqual(steps, ["account", "membership", "shared-data"])
+    XCTAssertEqual(result, .noData)
+  }
+
   func testGivenPrivatePushOrNonChildMode_WhenRouting_ThenDoesNotRefreshSharedData() {
     XCTAssertFalse(
       AppDelegate.shouldRefreshChildSharedData(

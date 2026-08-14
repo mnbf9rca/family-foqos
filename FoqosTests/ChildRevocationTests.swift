@@ -3,6 +3,7 @@ import XCTest
 
 @testable import FamilyFoqos
 
+@MainActor
 final class ChildRevocationTests: XCTestCase {
   private func zoneID(_ name: String) -> CKRecordZone.ID {
     CKRecordZone.ID(zoneName: name, ownerName: "test-owner")
@@ -94,24 +95,23 @@ final class ChildRevocationTests: XCTestCase {
   }
 
   func testGivenDisconnectedIndividualSignalInChildMode_WhenResolvingTrigger_ThenRevocationIsConfirmed() {
-    XCTAssertEqual(
-      CloudKitManager.confirmedRevocationTrigger(
+    XCTAssertTrue(
+      CloudKitManager.isConfirmedRevocation(
         isConnected: false,
         isSignedIn: true,
         enforcedMode: .individual,
-        currentMode: .child),
-      .confirmedCloudKitRevocation)
+        currentMode: .child))
   }
 
   func testGivenDisconnectedIndividualSignalOutsideChildMode_WhenResolvingTrigger_ThenNoRevocation() {
-    XCTAssertNil(
-      CloudKitManager.confirmedRevocationTrigger(
+    XCTAssertFalse(
+      CloudKitManager.isConfirmedRevocation(
         isConnected: false,
         isSignedIn: true,
         enforcedMode: .individual,
         currentMode: .parent))
-    XCTAssertNil(
-      CloudKitManager.confirmedRevocationTrigger(
+    XCTAssertFalse(
+      CloudKitManager.isConfirmedRevocation(
         isConnected: false,
         isSignedIn: true,
         enforcedMode: .individual,
@@ -119,8 +119,8 @@ final class ChildRevocationTests: XCTestCase {
   }
 
   func testGivenConnectedIndividualSignalInChildMode_WhenResolvingTrigger_ThenNoRevocation() {
-    XCTAssertNil(
-      CloudKitManager.confirmedRevocationTrigger(
+    XCTAssertFalse(
+      CloudKitManager.isConfirmedRevocation(
         isConnected: true,
         isSignedIn: true,
         enforcedMode: .individual,
@@ -128,11 +128,52 @@ final class ChildRevocationTests: XCTestCase {
   }
 
   func testGivenSignedOutIndividualSignalInChildMode_WhenResolvingTrigger_ThenNoRevocation() {
-    XCTAssertNil(
-      CloudKitManager.confirmedRevocationTrigger(
+    XCTAssertFalse(
+      CloudKitManager.isConfirmedRevocation(
         isConnected: false,
         isSignedIn: false,
         enforcedMode: .individual,
         currentMode: .child))
+  }
+
+  func testGivenForegroundVerifierConfirmsRevocation_WhenHandlingTransition_ThenPublishesDedicatedNoticeAfterCleanup() {
+    let manager = CloudKitManager.shared
+    let originalRevocationMessage = manager.familyRevocationMessage
+    let originalShareMessage = manager.shareAcceptedMessage
+    let originalShareError = manager.shareAcceptanceIsError
+    defer {
+      manager.familyRevocationMessage = originalRevocationMessage
+      manager.shareAcceptedMessage = originalShareMessage
+      manager.shareAcceptanceIsError = originalShareError
+    }
+
+    manager.familyRevocationMessage = nil
+    manager.shareAcceptedMessage = "existing share state"
+    manager.shareAcceptanceIsError = true
+    var didCleanup = false
+
+    manager.handleConfirmedFamilyRevocation {
+      XCTAssertNil(manager.familyRevocationMessage)
+      didCleanup = true
+    }
+
+    XCTAssertTrue(didCleanup)
+    XCTAssertEqual(CloudKitManager.familyRevocationAlertTitle, "Family Connection Removed")
+    XCTAssertEqual(
+      manager.familyRevocationMessage,
+      "This device is no longer connected to its Family Foqos family in iCloud, so it switched to Individual mode. To reconnect, ask a parent to send a new invitation."
+    )
+    XCTAssertEqual(manager.shareAcceptedMessage, "existing share state")
+    XCTAssertTrue(manager.shareAcceptanceIsError)
+
+    let message = manager.familyRevocationMessage ?? ""
+    XCTAssertTrue(message.contains("iCloud"))
+    XCTAssertTrue(message.contains("Individual"))
+    XCTAssertTrue(message.contains("new invitation"))
+    XCTAssertFalse(message.contains("Screen Time"))
+    XCTAssertFalse(message.contains("Family Sharing"))
+
+    manager.dismissFamilyRevocationMessage()
+    XCTAssertNil(manager.familyRevocationMessage)
   }
 }

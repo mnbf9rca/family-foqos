@@ -191,6 +191,23 @@ struct FoqosApp: App {
           }
           handleURL(url)
         }
+        .alert(
+          CloudKitManager.familyRevocationAlertTitle,
+          isPresented: Binding(
+            get: { cloudKitManager.familyRevocationMessage != nil },
+            set: {
+              if !$0 {
+                cloudKitManager.dismissFamilyRevocationMessage()
+              }
+            }
+          )
+        ) {
+          Button("OK") {
+            cloudKitManager.dismissFamilyRevocationMessage()
+          }
+        } message: {
+          Text(cloudKitManager.familyRevocationMessage ?? "")
+        }
         // Share acceptance result alert (success or error)
         .alert(
           cloudKitManager.shareAcceptanceIsError ? "Unable to Join Family" : shareAcceptanceTitle,
@@ -407,6 +424,18 @@ class AppDelegate: NSObject, UIApplicationDelegate {
     mode == .child && databaseScope == .shared
   }
 
+  @MainActor
+  static func refreshChildSharedDataAfterMembershipVerification(
+    refreshAccountStatus: () async -> Void,
+    verifyMembership: () async -> Bool,
+    refreshSharedData: () async -> ChildSharedDataRefreshResult
+  ) async -> ChildSharedDataRefreshResult {
+    await refreshAccountStatus()
+    let didHandleConfirmedRevocation = await verifyMembership()
+    guard !didHandleConfirmedRevocation else { return .newData }
+    return await refreshSharedData()
+  }
+
   func application(
     _: UIApplication,
     didRegisterForRemoteNotificationsWithDeviceToken _: Data
@@ -443,7 +472,17 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         let childRefreshResult: UIBackgroundFetchResult?
         if shouldRefreshChildSharedData {
           childRefreshResult =
-            await LockCodeManager.shared.refreshSharedLockCodesForVerification()
+            await Self.refreshChildSharedDataAfterMembershipVerification(
+              refreshAccountStatus: {
+                await CloudKitManager.shared.checkAccountStatus()
+              },
+              verifyMembership: {
+                await CloudKitManager.shared.verifySelfFamilyMemberRecord()
+              },
+              refreshSharedData: {
+                await LockCodeManager.shared.refreshSharedLockCodesForVerification()
+              }
+            )
             .backgroundFetchResult
         } else {
           childRefreshResult = nil

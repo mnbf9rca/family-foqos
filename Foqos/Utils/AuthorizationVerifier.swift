@@ -1,10 +1,6 @@
 import FamilyControls
 import Foundation
 
-enum ConfirmedCloudKitRevocationTrigger: Equatable {
-  case confirmedCloudKitRevocation
-}
-
 /// Centralized service for verifying Apple Family Sharing authorization.
 /// Used to ensure children accepting CloudKit shares are actually set up as
 /// children in Apple Family Sharing (not just adults pretending to be children).
@@ -106,10 +102,6 @@ class AuthorizationVerifier: ObservableObject {
       return error.domain == NSURLErrorDomain ? .networkError(error) : .unknownError(error)
     }
 
-    if #available(iOS 26.4, *), familyControlsError == .unauthorized {
-      return .notAuthorized
-    }
-
     switch familyControlsError {
     case .invalidAccountType:
       return .notChildDevice
@@ -198,8 +190,8 @@ class AuthorizationVerifier: ObservableObject {
 
   /// Handle a CloudKit-confirmed family revocation for a child device.
   /// Family Controls errors must never reach this destructive path.
-  /// Clears shared state, switches to individual mode, and returns a user message.
-  func handleConfirmedCloudKitRevocation() async -> String {
+  /// Clears shared state and switches to individual mode.
+  func handleConfirmedCloudKitRevocation() {
     let cloudKitManager = CloudKitManager.shared
     let appModeManager = AppModeManager.shared
 
@@ -216,8 +208,6 @@ class AuthorizationVerifier: ObservableObject {
     // Switch to individual mode
     appModeManager.selectMode(.individual)
 
-    return
-      "Your child account authorization was revoked (the device may have been removed from Apple Family Sharing). You've been switched to individual mode. To reconnect, ask a parent to re-add this device and send a new invitation."
   }
 
   /// Verify child authorization if in child mode and connected to family.
