@@ -72,11 +72,6 @@ struct ChildDashboardView: View {
       .refreshable {
         await fetchLockCodesIfNeeded()
       }
-      .onAppear {
-        Task {
-          await fetchLockCodesIfNeeded()
-        }
-      }
       .sheet(isPresented: $showSettings) {
         ChildSettingsView()
       }

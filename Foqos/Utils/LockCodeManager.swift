@@ -3,6 +3,25 @@ import FamilyControls
 import Foundation
 import SwiftUI
 
+enum ChildSharedDataRefreshResult: Equatable {
+  case newData
+  case noData
+  case failed
+
+  static func combine(
+    _ lockCodes: ChildSharedDataRefreshResult,
+    _ commands: ChildSharedDataRefreshResult
+  ) -> ChildSharedDataRefreshResult {
+    if lockCodes == .failed || commands == .failed {
+      return .failed
+    }
+    if lockCodes == .newData || commands == .newData {
+      return .newData
+    }
+    return .noData
+  }
+}
+
 /// Manages lock codes for parent-controlled (managed) profiles.
 /// - Parents: Can create, view, and update lock codes
 /// - Children: Can only verify codes (cannot see them)
@@ -191,9 +210,10 @@ class LockCodeManager: ObservableObject {
 
   /// Fetch shared lock codes for verification (child operation)
   /// Verifies child authorization before fetching to ensure security
-  func refreshSharedLockCodesForVerification() async {
-    guard !ScreenshotDemoMode.isActive else { return }
-    guard appModeManager.currentMode == .child else { return }
+  @discardableResult
+  func refreshSharedLockCodesForVerification() async -> ChildSharedDataRefreshResult {
+    guard !ScreenshotDemoMode.isActive else { return .noData }
+    guard appModeManager.currentMode == .child else { return .noData }
 
     isLoading = true
     defer { isLoading = false }
@@ -206,9 +226,15 @@ class LockCodeManager: ObservableObject {
         self.cachedLockCodes = []
         self.error = message
       }
-      return
+      return .failed
     }
 
+    let lockCodeResult = await refreshSharedLockCodes()
+    let commandResult = await processPendingCommands()
+    return ChildSharedDataRefreshResult.combine(lockCodeResult, commandResult)
+  }
+
+  private func refreshSharedLockCodes() async -> ChildSharedDataRefreshResult {
     do {
       let result = try await cloudKitManager.fetchSharedLockCodes()
       // Fail-closed-with-cache (#197): trust a CONNECTED result (even empty = parent cleared)
@@ -219,18 +245,38 @@ class LockCodeManager: ObservableObject {
         isConnected: result.isConnected,
         persisted: loadPersistedLockCodes()
       )
+      let refreshResult = Self.lockCodeRefreshResult(
+        previous: cachedLockCodes,
+        refreshed: resolved.cache,
+        isConnected: result.isConnected)
       self.cachedLockCodes = resolved.cache
       persistLockCodes(resolved.persist)
       self.error = nil
-
-      // Also check for pending commands from parent
-      await processPendingCommands()
+      return refreshResult
     } catch {
       // Defensive: the network layer returns empty without throwing for offline/CKError, but
       // if it ever does throw, keep the last-synced codes rather than falling back to empty.
       self.cachedLockCodes = loadPersistedLockCodes()
       self.error = error.localizedDescription
+      return .failed
     }
+  }
+
+  nonisolated static func lockCodeRefreshResult(
+    previous: [FamilyLockCode],
+    refreshed: [FamilyLockCode],
+    isConnected: Bool
+  ) -> ChildSharedDataRefreshResult {
+    guard isConnected else { return .failed }
+    return previous == refreshed ? .noData : .newData
+  }
+
+  nonisolated static func commandRefreshResult(
+    didApplyCommand: Bool,
+    isConnected: Bool
+  ) -> ChildSharedDataRefreshResult {
+    guard isConnected else { return .failed }
+    return didApplyCommand ? .newData : .noData
   }
 
   /// Resolve the verification cache and the persisted store after a fetch (#197).
@@ -325,10 +371,13 @@ class LockCodeManager: ObservableObject {
 
   /// Check for and process any pending commands from parent.
   /// Called from child lock-code refresh, the PIN-dialog poll, and child foreground.
-  func processPendingCommands(cleanupStale: Bool = true) async {
-    guard !ScreenshotDemoMode.isActive else { return }
+  @discardableResult
+  func processPendingCommands(
+    cleanupStale: Bool = true
+  ) async -> ChildSharedDataRefreshResult {
+    guard !ScreenshotDemoMode.isActive else { return .noData }
     guard appModeManager.currentMode == .child else {
-      return
+      return .noData
     }
 
     if cleanupStale {
@@ -337,13 +386,18 @@ class LockCodeManager: ObservableObject {
     }
 
     do {
-      let commands = try await cloudKitManager.fetchPendingCommands()
+      let result = try await cloudKitManager.fetchPendingCommands()
+      var didApplyCommand = false
 
-      for command in commands {
-        await processCommand(command)
+      for command in result.commands {
+        didApplyCommand = await processCommand(command) || didApplyCommand
       }
+      return Self.commandRefreshResult(
+        didApplyCommand: didApplyCommand,
+        isConnected: result.isConnected)
     } catch {
       Log.error("Failed to fetch pending commands: \(redactedErrorForLog(error))", category: .cloudKit)
+      return .failed
     }
   }
 
@@ -379,7 +433,7 @@ class LockCodeManager: ObservableObject {
     return true
   }
 
-  private func processCommand(_ command: FamilyCommand) async {
+  private func processCommand(_ command: FamilyCommand) async -> Bool {
     let didApply = applyCommandIfNeeded(command)
     if !didApply {
       Log.info("Skipping already processed command: \(command.commandType.rawValue)", category: .cloudKit)
@@ -391,6 +445,7 @@ class LockCodeManager: ObservableObject {
     } catch {
       Log.error("Failed to delete processed command: \(redactedErrorForLog(error))", category: .cloudKit)
     }
+    return didApply
   }
 
   // MARK: - Temporary Unlock Session

@@ -101,6 +101,10 @@ class CloudKitManager: ObservableObject {
     try await networkService.createPolicyZoneIfNeeded()
   }
 
+  func ensureSharedDatabaseSubscription() async throws {
+    try await networkService.ensureSharedDatabaseSubscription()
+  }
+
   // MARK: - Family Member Management
 
   func saveFamilyMember(_ member: FamilyMember) async throws {
@@ -169,7 +173,9 @@ class CloudKitManager: ObservableObject {
     try await networkService.commandIsPending(command)
   }
 
-  func fetchPendingCommands() async throws -> [FamilyCommand] {
+  func fetchPendingCommands() async throws -> (
+    commands: [FamilyCommand], isConnected: Bool
+  ) {
     return try await networkService.fetchPendingCommands(currentUserRecordID: currentUserRecordID)
   }
 
