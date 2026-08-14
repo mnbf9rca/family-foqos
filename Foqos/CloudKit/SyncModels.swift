@@ -7,6 +7,7 @@ import Foundation
 /// Shared CloudKit configuration used across all sync services
 enum CloudKitConstants {
   static let containerIdentifier = "iCloud.com.cynexia.family-foqos"
+  static let policyZoneName = "FamilyPolicies"
   static let syncZoneName = "DeviceSync"
   static let defaultUserRecordName = "__default_user__"
 }

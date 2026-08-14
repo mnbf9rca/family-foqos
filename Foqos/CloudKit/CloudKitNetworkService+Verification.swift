@@ -9,15 +9,13 @@ extension CloudKitNetworkService {
     case indeterminate
   }
 
-  private static let verificationPolicyZoneName = "FamilyPolicies"
-
   static func resolveSharedPolicyZoneLookup(
     zoneIDsFromSuccessfulLookup zoneIDs: [CKRecordZone.ID]?
   ) -> SharedPolicyZoneLookup {
     guard let zoneIDs else { return .indeterminate }
     guard
       let policyZoneID = zoneIDs.first(where: {
-        $0.zoneName == verificationPolicyZoneName
+        $0.zoneName == CloudKitConstants.policyZoneName
       })
     else {
       return .confirmedAbsent
@@ -27,9 +25,15 @@ extension CloudKitNetworkService {
 
   static func enforcedMode(
     for lookup: SharedPolicyZoneLookup,
-    localMode: AppMode
+    localMode: AppMode,
+    accountIsSignedIn: Bool
   ) -> AppMode? {
-    guard case .confirmedAbsent = lookup, localMode == .child else { return nil }
+    guard case .confirmedAbsent = lookup,
+      localMode == .child,
+      accountIsSignedIn
+    else {
+      return nil
+    }
     return .individual
   }
 
@@ -102,14 +106,18 @@ extension CloudKitNetworkService {
 
   func verifySelfFamilyMember(
     cachedUserRecordID: CKRecord.ID?,
-    localMode: AppMode
+    localMode: AppMode,
+    accountIsSignedIn: Bool
   ) async -> VerificationResult {
     let start = CFAbsoluteTimeGetCurrent()
     Log.info("verifySelfFamilyMember: starting", category: .cloudKit)
 
     let zoneLookup = await lookupSharedPolicyZoneForVerification()
     guard case .present(let zoneID) = zoneLookup else {
-      let enforcedMode = Self.enforcedMode(for: zoneLookup, localMode: localMode)
+      let enforcedMode = Self.enforcedMode(
+        for: zoneLookup,
+        localMode: localMode,
+        accountIsSignedIn: accountIsSignedIn)
       if enforcedMode == .individual {
         Log.info(
           "verifySelfFamilyMember: shared zone revocation confirmed",

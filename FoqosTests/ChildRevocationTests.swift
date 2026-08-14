@@ -23,8 +23,12 @@ final class ChildRevocationTests: XCTestCase {
   }
 
   func testGivenExactPolicyZoneAmongOtherZones_WhenResolving_ThenExactZoneIsPresent() {
-    let exact = zoneID("FamilyPolicies")
-    let fixture = [zoneID("OtherZone"), zoneID("FamilyPolicies-Renamed"), exact]
+    let exact = zoneID(CloudKitConstants.policyZoneName)
+    let fixture = [
+      zoneID("OtherZone"),
+      zoneID("\(CloudKitConstants.policyZoneName)-Renamed"),
+      exact,
+    ]
 
     XCTAssertEqual(
       CloudKitNetworkService.resolveSharedPolicyZoneLookup(
@@ -33,7 +37,10 @@ final class ChildRevocationTests: XCTestCase {
   }
 
   func testGivenOnlyMutatedPolicyName_WhenResolving_ThenRevocationIsConfirmed() {
-    let mutatedFixture = [zoneID("FamilyPolicies-Renamed"), zoneID("OtherZone")]
+    let mutatedFixture = [
+      zoneID("\(CloudKitConstants.policyZoneName)-Renamed"),
+      zoneID("OtherZone"),
+    ]
 
     XCTAssertEqual(
       CloudKitNetworkService.resolveSharedPolicyZoneLookup(
@@ -43,26 +50,47 @@ final class ChildRevocationTests: XCTestCase {
 
   func testGivenConfirmedAbsenceInChildMode_WhenResolvingMode_ThenEnforcesIndividual() {
     XCTAssertEqual(
-      CloudKitNetworkService.enforcedMode(for: .confirmedAbsent, localMode: .child),
+      CloudKitNetworkService.enforcedMode(
+        for: .confirmedAbsent,
+        localMode: .child,
+        accountIsSignedIn: true),
       .individual)
   }
 
   func testGivenConfirmedAbsenceOutsideChildMode_WhenResolvingMode_ThenDoesNotChangeMode() {
     XCTAssertNil(
-      CloudKitNetworkService.enforcedMode(for: .confirmedAbsent, localMode: .parent))
+      CloudKitNetworkService.enforcedMode(
+        for: .confirmedAbsent,
+        localMode: .parent,
+        accountIsSignedIn: true))
     XCTAssertNil(
-      CloudKitNetworkService.enforcedMode(for: .confirmedAbsent, localMode: .individual))
+      CloudKitNetworkService.enforcedMode(
+        for: .confirmedAbsent,
+        localMode: .individual,
+        accountIsSignedIn: true))
   }
 
   func testGivenIndeterminateLookupInChildMode_WhenResolvingMode_ThenDoesNotChangeMode() {
     XCTAssertNil(
-      CloudKitNetworkService.enforcedMode(for: .indeterminate, localMode: .child))
+      CloudKitNetworkService.enforcedMode(
+        for: .indeterminate,
+        localMode: .child,
+        accountIsSignedIn: true))
+  }
+
+  func testGivenConfirmedAbsenceWhileSignedOut_WhenResolvingMode_ThenDoesNotChangeMode() {
+    XCTAssertNil(
+      CloudKitNetworkService.enforcedMode(
+        for: .confirmedAbsent,
+        localMode: .child,
+        accountIsSignedIn: false))
   }
 
   func testGivenDisconnectedIndividualSignalInChildMode_WhenResolvingTrigger_ThenRevocationIsConfirmed() {
     XCTAssertEqual(
       CloudKitManager.confirmedRevocationTrigger(
         isConnected: false,
+        isSignedIn: true,
         enforcedMode: .individual,
         currentMode: .child),
       .confirmedCloudKitRevocation)
@@ -72,11 +100,13 @@ final class ChildRevocationTests: XCTestCase {
     XCTAssertNil(
       CloudKitManager.confirmedRevocationTrigger(
         isConnected: false,
+        isSignedIn: true,
         enforcedMode: .individual,
         currentMode: .parent))
     XCTAssertNil(
       CloudKitManager.confirmedRevocationTrigger(
         isConnected: false,
+        isSignedIn: true,
         enforcedMode: .individual,
         currentMode: .individual))
   }
@@ -85,6 +115,16 @@ final class ChildRevocationTests: XCTestCase {
     XCTAssertNil(
       CloudKitManager.confirmedRevocationTrigger(
         isConnected: true,
+        isSignedIn: true,
+        enforcedMode: .individual,
+        currentMode: .child))
+  }
+
+  func testGivenSignedOutIndividualSignalInChildMode_WhenResolvingTrigger_ThenNoRevocation() {
+    XCTAssertNil(
+      CloudKitManager.confirmedRevocationTrigger(
+        isConnected: false,
+        isSignedIn: false,
         enforcedMode: .individual,
         currentMode: .child))
   }

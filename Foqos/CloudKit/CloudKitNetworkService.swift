@@ -34,10 +34,10 @@ actor CloudKitNetworkService {
     container.sharedCloudDatabase
   }
 
-  private let policyZoneName = "FamilyPolicies"
-
   var policyZoneID: CKRecordZone.ID {
-    CKRecordZone.ID(zoneName: policyZoneName, ownerName: CKCurrentUserDefaultName)
+    CKRecordZone.ID(
+      zoneName: CloudKitConstants.policyZoneName,
+      ownerName: CKCurrentUserDefaultName)
   }
 
   var policyZoneVerified = false
@@ -52,7 +52,7 @@ actor CloudKitNetworkService {
   func findSharedZoneByName() async -> CKRecordZone? {
     do {
       let zones = try await sharedDatabase.allRecordZones()
-      return zones.first { $0.zoneID.zoneName == policyZoneName }
+      return zones.first { $0.zoneID.zoneName == CloudKitConstants.policyZoneName }
     } catch {
       Log.error("Failed to fetch shared zones: \(redactedErrorForLog(error))", category: .cloudKit)
       return nil
