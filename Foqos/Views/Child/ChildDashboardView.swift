@@ -588,14 +588,30 @@ struct EditLockedProfilesSheet: View {
 
 // MARK: - Child Settings View
 
+struct EmergencySettingsLockChangeGate {
+  private var pendingValue: Bool?
+
+  mutating func request(_ newValue: Bool) {
+    pendingValue = newValue
+  }
+
+  mutating func resolve(verificationSucceeded: Bool) -> Bool? {
+    defer { pendingValue = nil }
+    return verificationSucceeded ? pendingValue : nil
+  }
+}
+
 struct ChildSettingsView: View {
   @Environment(\.dismiss) private var dismiss
   @ObservedObject private var appModeManager = AppModeManager.shared
   @ObservedObject private var cloudKitManager = CloudKitManager.shared
+  @ObservedObject private var emergencyManager = EmergencyUnblockManager.shared
   @ObservedObject private var lockCodeManager = LockCodeManager.shared
 
   @StateObject private var shareCoordinator = ShareCoordinator()
   @State private var showCodeEntry = false
+  @State private var showEmergencyLockCodeEntry = false
+  @State private var emergencySettingsLockChangeGate = EmergencySettingsLockChangeGate()
 
   private var hasLockCode: Bool {
     lockCodeManager.canVerifyCode
@@ -617,6 +633,28 @@ struct ChildSettingsView: View {
             Spacer()
             Text(cloudKitManager.isSignedIn ? "Connected" : "Not Connected")
               .foregroundColor(cloudKitManager.isSignedIn ? .green : .red)
+          }
+        }
+
+        if hasLockCode {
+          Section("Emergency Access") {
+            Toggle(
+              isOn: Binding(
+                get: { emergencyManager.isEmergencySettingsLocked() },
+                set: { newValue in
+                  // Keep the stored setting unchanged until parent-code verification succeeds.
+                  emergencySettingsLockChangeGate.request(newValue)
+                  showEmergencyLockCodeEntry = true
+                }
+              )
+            ) {
+              VStack(alignment: .leading, spacing: 4) {
+                Text("Lock Emergency Reset-Period Changes")
+                Text("Requires the parent lock code to change the emergency reset period on this device")
+                  .font(.caption)
+                  .foregroundColor(.secondary)
+              }
+            }
           }
         }
 
@@ -659,6 +697,28 @@ struct ChildSettingsView: View {
           },
           onCancel: {
             showCodeEntry = false
+          }
+        )
+      }
+      .sheet(
+        isPresented: $showEmergencyLockCodeEntry,
+        onDismiss: {
+          _ = emergencySettingsLockChangeGate.resolve(verificationSucceeded: false)
+        }
+      ) {
+        LockCodeEntrySheet(
+          onSuccess: {
+            let newValue = emergencySettingsLockChangeGate.resolve(
+              verificationSucceeded: true
+            )
+            showEmergencyLockCodeEntry = false
+            if let newValue {
+              emergencyManager.setEmergencySettingsLocked(newValue)
+            }
+          },
+          onCancel: {
+            showEmergencyLockCodeEntry = false
+            _ = emergencySettingsLockChangeGate.resolve(verificationSucceeded: false)
           }
         )
       }

@@ -12,4 +12,24 @@ final class ChildDashboardCopyTests: XCTestCase {
       "Footer must not promise that stopping is lock-gated (stopping is un-gated by design, deviation #7)"
     )
   }
+
+  func testGivenDisableRequested_WhenVerificationHasNotSucceeded_ThenChangeCannotBeApplied() {
+    var gate = EmergencySettingsLockChangeGate()
+
+    gate.request(false)
+
+    XCTAssertNil(gate.resolve(verificationSucceeded: false))
+  }
+
+  func testGivenDisableRequested_WhenVerificationSucceeds_ThenPendingValueCanBeApplied() {
+    var gate = EmergencySettingsLockChangeGate()
+
+    gate.request(false)
+
+    XCTAssertEqual(gate.resolve(verificationSucceeded: true), false)
+    XCTAssertNil(
+      gate.resolve(verificationSucceeded: true),
+      "A verified change must be consumed exactly once"
+    )
+  }
 }
