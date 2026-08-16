@@ -3,8 +3,9 @@
 ## Status and scope
 
 This design's engineering received final independent adversarial approval on 2026-08-16. It is
-not implementation-ready until the two maintainer decisions marked **OPEN-M1** and **OPEN-M2** are
-resolved. Production implementation remains frozen in the meantime.
+implementation-ready after the maintainer resolved both product decisions directly on 2026-08-16.
+Implementation is unfrozen; the recovery notice must inherit the corrected pattern from #449
+after the planner supplies its exact merged head.
 
 The recovery guard handles a device whose local family setup may have disappeared while the
 current iCloud account still has a `FamilyMember` record. It restores family authority
@@ -15,30 +16,31 @@ local and remote profiles remain out of scope.
 
 The planned release target is version 2.0.49 build 67, after version 2.0.48 build 66 lands first.
 
-## Open maintainer decisions
+## Maintainer decisions resolved on 2026-08-16
 
-### OPEN-M1: bounded offline escape
+### M1: unbounded offline escape
 
-The product must choose the bound applied after repeated indeterminate CloudKit checks: a single
-grace session, an elapsed-time or launch-count cap, or provisional capability restrictions. The
-current unbounded Continue Setup behavior is rejected because a wiped Child device could remain
-unrestricted forever by staying offline.
+The maintainer ruled that startup recovery is a recovery mechanic, not a security boundary, and
+that new-user experience wins. After an indeterminate result, the UI offers Retry. After the
+explicit retry also fails, it offers Continue Setup into normal onboarding. The guard re-arms on
+later foreground and connectivity recovery until CloudKit returns a confirmed answer.
 
-Whichever bound is chosen must be enforced by durable state that survives force-quit. That state
-must store the owning iCloud user record ID, be revalidated before every surface or enforcement
-decision, and be invalidated when restored onto another device or account. A backup transfer must
-not carry a spent or unspent grace period into a different account/device context. No
-offline-escape UI or enforcement implementation may proceed until this choice is settled.
+There is no grace-session counter, elapsed or launch cap, capability withholding, or durable bound
+record. The previously specified bound-enforcement machinery is deleted rather than implemented.
+Only the existing durable `recheckPending` signal survives termination so a later confirmed
+membership still enters recovery. The maintainer explicitly accepted the possibility that a wiped
+Child reinstall kept offline indefinitely remains in normal new-user behavior.
 
-### OPEN-M2: partial-wipe trigger breadth
+### M2: inconsistency trigger ignores app-group vetoes
 
-The product must decide whether any app-group value suppresses recovery, or whether an empty
-profile store plus missing onboarding may still qualify when app-group crumbs remain. No trigger
-broadening may be implemented until this choice is settled.
+The maintainer ruled that the local signals are indications, not cryptographic proof. Missing
+onboarding completion plus an empty or absent profile store classifies as `fresh` regardless of
+surviving app-group values. CloudKit membership confirmation still gates every recovery surface.
 
-The architecture does not depend on this ruling. `membership confirmed + local state present` is
-a first-class outcome below. OPEN-M2 changes only which local inputs are routed into membership
-checking; it does not add a new state-machine branch.
+App-group state remains captured and informs recovery. In particular, a surviving Device Sync
+consent crumb must be disabled before any role-only release so it cannot cause an automatic merge.
+It never vetoes the initial inconsistency check. `membership confirmed + local state present`
+remains a first-class outcome for re-arm after onboarding/local writes.
 
 ## Design choice
 
@@ -71,15 +73,17 @@ The capture is read-only:
   absent, table absent, and count zero are empty; a positive count is local state present; a read
   failure is indeterminate.
 - The app-group preferences domain is copied with Core Foundation preferences without
-  constructing `UserDefaults(suiteName:)`. The treatment of app-group values is OPEN-M2.
+  constructing `UserDefaults(suiteName:)`. Its values inform recovery handling but do not veto a
+  `fresh` classification.
 
 No capture path creates a preferences suite, the main store, or its WAL. A read-only SQLite SHM
 artifact is acceptable only if the WAL-aware reader requires it; creation of the main store or WAL
 is a hard failure.
 
-The pure local classifier returns `fresh`, `localStatePresent`, or `indeterminate`. Under the
-current narrow trigger, any onboarding, positive-profile, or app-group sentinel produces
-`localStatePresent`; OPEN-M2 may change only the app-group part of that routing rule.
+The pure local classifier returns `fresh`, `localStatePresent`, or `indeterminate`. Missing
+onboarding completion plus an absent, table-missing, or zero-profile store is `fresh`, regardless
+of app-group values. Persisted onboarding completion or a positive profile count is
+`localStatePresent`; unreadable local evidence is `indeterminate`.
 
 ## Process-wide startup and silent-push gate
 
@@ -212,10 +216,10 @@ Local classification and confirmed membership combine into two explicit recovery
 | `fresh` | confirmed member | `freshMember(role, owner)` |
 | `localStatePresent` | confirmed member | `localStatePresentMember(role, owner)` |
 | either | confirmed none | release the normal new-user path |
-| `indeterminate` or membership indeterminate | retry/OPEN-M1 bounded state |
+| `indeterminate` or membership indeterminate | Retry, then unbounded Continue Setup/re-arm |
 
-`localStatePresentMember` is not a re-arm special case. Re-arm and any future OPEN-M2 partial-wipe
-route converge on this same state and copy.
+`localStatePresentMember` is not a re-arm special case. Every membership-confirmed input with
+local state present converges on this same state and copy.
 
 Every async entry point—cold start, Retry, connectivity recovery, foreground re-arm, count
 refresh, and user action—coalesces into one coordinator-owned task. The coordinator uses a
@@ -226,8 +230,9 @@ and gate release are idempotent.
 
 ## Re-arm must reclassify local state
 
-After the bounded OPEN-M1 escape releases setup, every later membership re-arm first captures and
-classifies local evidence again. It must not reuse the cold-launch `fresh` result.
+After Continue Setup releases normal onboarding without a bound, every later membership re-arm
+first captures and classifies local evidence again. It must not reuse the cold-launch `fresh`
+result.
 
 If membership is later confirmed and local state is now present, route to
 `localStatePresentMember`. Restore only family role/authority. Do not enumerate remote profiles,
@@ -307,8 +312,8 @@ After current-account membership and profile count are confirmed, show:
 
 > **We found your family**
 >
-> This device no longer has its previous local data, but this iCloud account is still part of a
-> Family Foqos family. Your family role has been restored.
+> This device doesn't have local Family Foqos data, but this iCloud account is part of a Family
+> Foqos family. Your family role has been restored.
 
 The view also states that Family Foqos checked the account's Device Sync storage without enabling
 Device Sync.
@@ -340,17 +345,20 @@ Migration, schedule refresh, account verification, authorization verification, l
 and sync composition run once after an allowed release point. The process-wide gate is released
 only after the applicable durable transition and account validation finish.
 
-The selected OPEN-M1 policy will define the bounded indeterminate release point. Existing local
-state that is outside the OPEN-M2 trigger releases normal startup immediately. Confirmed
-membership with local state present goes through the role-only notice and sync-disabled release,
-never the fresh-member restoration offer.
+After one explicit Retry also returns indeterminate, Continue Setup is the unbounded indeterminate
+release point and durably re-arms the check. Existing local state that does not meet the concrete
+M2 trigger releases normal startup immediately. Confirmed membership with local state present
+goes through the role-only notice and sync-disabled release, never the fresh-member restoration
+offer.
 
 ## Testing and verification
 
 Implementation resumes with strict RED-GREEN-REFACTOR cycles only after maintainer rulings and
 reviewer approval. Tests must cover:
 
-1. The full local classifier matrix and both OPEN-M2 outcomes without changing the state machine.
+1. The full local classifier matrix, including app-group-only crumbs remaining `fresh`, persisted
+   onboarding or positive profiles producing `localStatePresent`, and read failure remaining
+   indeterminate.
 2. Read-only physical effects: no defaults suite, main store, or WAL creation; WAL visibility and
    SHM classification.
 3. A consumer-first gate proof: an `AppDelegate`-representing consumer accesses the static before
@@ -365,8 +373,7 @@ reviewer approval. Tests must cover:
    exact durable state; and successful mode application atomically invalidating intent and
    releasing exactly once.
 7. Exact #427 absence mapping, including every failed missing-zone form remaining indeterminate.
-8. `freshMember` and first-class `localStatePresentMember` outcomes from cold start, re-arm, and
-   both possible OPEN-M2 trigger policies.
+8. `freshMember` and first-class `localStatePresentMember` outcomes from cold start and re-arm.
 9. Re-arm reclassification after local writes, role-only copy, Device Sync forced off, no profile
    count, no engine attach, and no merge.
 10. Single-flight coalescing, stale-generation suppression, and idempotent durable transitions
@@ -376,11 +383,12 @@ reviewer approval. Tests must cover:
 12. Count re-confirmation before every surface and action, including changed-count retap.
 13. Private-zone counting across pages and deletions, read-before-consent disclosure, and zero
     confirmed only by successful evidence.
-14. Child fail-closed ordering, exact copy, privacy logging, and the complete OPEN-M1 durable,
-    account/device-scoped enforcement selected by the maintainer.
+14. Child fail-closed ordering, exact copy, privacy logging, unbounded Continue Setup, durable
+    re-arm across termination, and absence of grace/cap/capability-bound state.
 15. All 12 target configurations at marketing version 2.0.49 and build 67.
 
 Final verification includes focused tests, the full suite through build2's stable simulator
 stream, Debug build, recursive Swift formatting lint, log privacy lint, sync guards, version
 checks, and `git diff --check`. An independent reviewer must approve the exact signed head before
-the planner merges. The attended beta upload occurs only after merge and after 2.0.48 build 66.
+the planner merges. The release is one attended beta upload of v2.0.49 build 67 from verified
+merged main; there is no V1 or diagnostic-experiment upload leg.
