@@ -153,7 +153,7 @@ final class StartupRecoveryCoordinator: ObservableObject {
     }
 
     switch classification {
-    case .existing:
+    case .localStatePresent:
       showNormal(recheckArmed: false)
     case .fresh:
       await checkMembership(
@@ -216,6 +216,14 @@ final class StartupRecoveryCoordinator: ObservableObject {
     store.pendingOffer = nil
     store.clearRecheckPending()
     showNormal(recheckArmed: false)
+  }
+
+  func dismissRoleRestoredNotice() {
+    guard case .roleRestored = state,
+      store.pendingOffer?.path == .localStatePresentMember
+    else { return }
+    store.pendingOffer = nil
+    state = .normal(recheckArmed: false)
   }
 
   func recheckIfNeeded() async {
@@ -314,7 +322,7 @@ final class StartupRecoveryCoordinator: ObservableObject {
     switch classification {
     case .fresh:
       path = .freshMember
-    case .existing:
+    case .localStatePresent:
       path = .localStatePresentMember
     case .indeterminate:
       state = .retryMembership(canContinueSetup: true)

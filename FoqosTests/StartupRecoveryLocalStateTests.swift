@@ -33,7 +33,7 @@ final class StartupRecoveryLocalStateTests: XCTestCase {
     ]
 
     for snapshot in snapshots {
-      XCTAssertEqual(StartupRecoveryLocalState.classify(snapshot), .existing)
+      XCTAssertEqual(StartupRecoveryLocalState.classify(snapshot), .localStatePresent)
     }
   }
 

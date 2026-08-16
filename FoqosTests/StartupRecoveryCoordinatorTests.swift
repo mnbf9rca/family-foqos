@@ -85,7 +85,7 @@ final class StartupRecoveryCoordinatorTests: XCTestCase {
       profileCount: { _ in .confirmed(0) },
       restoreRole: { restoredRole = $0 })
 
-    await coordinator.start(classification: .existing)
+    await coordinator.start(classification: .localStatePresent)
     XCTAssertEqual(coordinator.state, .normal(recheckArmed: true))
 
     membership = .member(role: .parent, ownerUserRecordName: "owner-A")
@@ -105,7 +105,7 @@ final class StartupRecoveryCoordinatorTests: XCTestCase {
       store: store,
       membership: { .confirmedNone(ownerUserRecordName: "owner-A") })
 
-    await coordinator.start(classification: .existing)
+    await coordinator.start(classification: .localStatePresent)
     await coordinator.recheckIfNeeded()
 
     XCTAssertFalse(store.recheckPending)
@@ -138,7 +138,7 @@ final class StartupRecoveryCoordinatorTests: XCTestCase {
       restoreRole: { _ in XCTFail("Durable role restoration must be idempotent") },
       refreshLocks: { XCTFail("Durable role restoration must not repeat lock refresh") })
 
-    await coordinator.start(classification: .existing)
+    await coordinator.start(classification: .localStatePresent)
 
     XCTAssertEqual(steps, ["membership", "profiles"])
     XCTAssertEqual(coordinator.state, .offer(role: .child, profileCount: 1))
@@ -162,7 +162,7 @@ final class StartupRecoveryCoordinatorTests: XCTestCase {
       },
       profileCount: { _ in .confirmed(3) })
 
-    await coordinator.start(classification: .existing)
+    await coordinator.start(classification: .localStatePresent)
 
     XCTAssertEqual(coordinator.state, .offer(role: .parent, profileCount: 3))
   }
@@ -333,7 +333,7 @@ final class StartupRecoveryCoordinatorTests: XCTestCase {
     var syncValues: [Bool] = []
     let coordinator = StartupRecoveryCoordinator(
       store: store,
-      captureLocalClassification: { .existing },
+      captureLocalClassification: { .localStatePresent },
       lookupMembership: {
         .member(role: .child, ownerUserRecordName: "owner-A")
       },
@@ -345,7 +345,7 @@ final class StartupRecoveryCoordinatorTests: XCTestCase {
       refreshChildLockCodes: {},
       setSyncEnabled: { syncValues.append($0) },
       releaseStartup: {})
-    await coordinator.start(classification: .existing)
+    await coordinator.start(classification: .localStatePresent)
 
     await coordinator.recheckIfNeeded()
 
@@ -379,6 +379,29 @@ final class StartupRecoveryCoordinatorTests: XCTestCase {
     }
     await first.value
     await second.value
+  }
+
+  func testGivenRoleOnlyNotice_WhenDismissed_ThenOwnerBoundPayloadClears() async {
+    let (defaults, suiteName) = makeDefaults()
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let store = StartupRecoveryStore(defaults: defaults)
+    store.pendingOffer = .init(
+      ownerUserRecordName: "owner-A",
+      role: .parent,
+      path: .localStatePresentMember,
+      profileCountHint: nil,
+      profileCountConfirmedAt: nil,
+      origin: emptyOrigin())
+    let coordinator = makeAccountScopedCoordinator(
+      store: store,
+      membership: { .member(role: .parent, ownerUserRecordName: "owner-A") })
+    await coordinator.start(classification: .localStatePresent)
+    XCTAssertEqual(coordinator.state, .roleRestored(role: .parent))
+
+    coordinator.dismissRoleRestoredNotice()
+
+    XCTAssertNil(store.pendingOffer)
+    XCTAssertEqual(coordinator.state, .normal(recheckArmed: false))
   }
 
   private func makeAccountScopedCoordinator(

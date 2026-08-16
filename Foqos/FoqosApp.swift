@@ -201,6 +201,26 @@ struct FoqosApp: App {
         } message: {
           Text(cloudKitManager.familyRevocationMessage ?? "")
         }
+        .alert(
+          StartupRecoveryCopy.roleRestoredTitle,
+          isPresented: Binding(
+            get: {
+              if case .roleRestored = startupRecoveryCoordinator.state { return true }
+              return false
+            },
+            set: { isPresented in
+              if !isPresented {
+                startupRecoveryCoordinator.dismissRoleRestoredNotice()
+              }
+            }
+          )
+        ) {
+          Button("OK") {
+            startupRecoveryCoordinator.dismissRoleRestoredNotice()
+          }
+        } message: {
+          Text(StartupRecoveryCopy.roleRestoredMessage)
+        }
         // Share acceptance result alert (success or error)
         .alert(
           cloudKitManager.shareAcceptanceIsError ? "Unable to Join Family" : shareAcceptanceTitle,
@@ -298,7 +318,7 @@ struct FoqosApp: App {
         .task {
           let classification =
             isRunningUnitTests || ScreenshotDemoMode.isActive
-            ? StartupRecoveryLocalClassification.existing
+            ? StartupRecoveryLocalClassification.localStatePresent
             : StartupRecoveryLocalState.classify(startupRecoverySnapshot)
           await startupRecoveryCoordinator.start(classification: classification)
           handleRecoveryState(startupRecoveryCoordinator.state)

@@ -3,7 +3,12 @@ import SwiftUI
 enum StartupRecoveryCopy {
   static let title = "We found your family"
   static let introduction =
-    "This device no longer has its previous local data, but this iCloud account is still part of a Family Foqos family. Your family role has been restored."
+    "This device doesn't have local Family Foqos data, but this iCloud account is part of a Family Foqos family. Your family role has been restored."
+  static let availabilityDisclosure =
+    "Family Foqos checked this iCloud account's Device Sync storage only to see whether synced profiles are available. Device Sync is still off."
+  static let roleRestoredTitle = "Your family role was restored"
+  static let roleRestoredMessage =
+    "This device already has local setup or profiles, so Family Foqos restored only its family role. Device Sync is off to avoid merging profiles automatically. You can review Device Sync in Settings."
   static let noProfiles =
     "We couldn't find any profiles saved with Device Sync. Profiles that existed only on this device can't be recovered."
 
@@ -107,6 +112,10 @@ struct StartupRecoveryView: View {
         .font(.title.bold())
         .multilineTextAlignment(.center)
       Text(StartupRecoveryCopy.introduction)
+        .multilineTextAlignment(.center)
+        .foregroundStyle(.secondary)
+      Text(StartupRecoveryCopy.availabilityDisclosure)
+        .font(.footnote)
         .multilineTextAlignment(.center)
         .foregroundStyle(.secondary)
       Text(

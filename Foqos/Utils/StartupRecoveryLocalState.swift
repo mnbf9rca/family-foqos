@@ -16,7 +16,7 @@ struct StartupRecoveryLocalSnapshot: Equatable {
 }
 
 enum StartupRecoveryLocalClassification: Equatable {
-  case existing
+  case localStatePresent
   case fresh
   case indeterminate
 }
@@ -37,14 +37,14 @@ enum StartupRecoveryLocalState {
     _ snapshot: StartupRecoveryLocalSnapshot
   ) -> StartupRecoveryLocalClassification {
     if snapshot.onboardingValuePresent {
-      return .existing
+      return .localStatePresent
     }
 
     switch snapshot.store {
     case .storeAbsent, .tableMissing, .profileCount(0):
       return .fresh
     case .profileCount:
-      return .existing
+      return .localStatePresent
     case .readFailed:
       return .indeterminate
     }
