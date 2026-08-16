@@ -252,7 +252,11 @@ final class ChildSharedRefreshTests: XCTestCase {
   {
     let manager = CloudKitManager.shared
     let originalMessage = manager.familyRevocationMessage
-    defer { manager.familyRevocationMessage = originalMessage }
+    let originalRecordID = manager.currentUserRecordID
+    defer {
+      manager.currentUserRecordID = originalRecordID
+      manager.familyRevocationMessage = originalMessage
+    }
     manager.familyRevocationMessage = nil
     var steps: [String] = []
     var didRefreshSharedData = false
@@ -260,13 +264,14 @@ final class ChildSharedRefreshTests: XCTestCase {
     let result = await AppDelegate.refreshChildSharedDataAfterMembershipVerification(
       refreshAccountStatus: {
         steps.append("account")
+        manager.currentUserRecordID = CKRecord.ID(recordName: "background-account")
       },
       verifyMembership: {
         XCTAssertEqual(steps, ["account"])
         steps.append("membership")
         manager.handleConfirmedFamilyRevocation(
           cleanup: {},
-          markNoticePending: {})
+          markNoticePending: { _ in })
         return true
       },
       refreshSharedData: {

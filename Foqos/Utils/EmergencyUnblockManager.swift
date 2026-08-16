@@ -260,6 +260,7 @@ class EmergencyUnblockManager: ObservableObject {
   }
 
   func resetAllStateForAccountSwitch() {
+    CloudKitManager.shared.dismissFamilyRevocationMessage()
     emergencyUnblocksResetPeriodInDays = 28
     lastEmergencyUnblocksResetDateTimestamp = 0
     emergencySettingsLockedStorage = false
