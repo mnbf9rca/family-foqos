@@ -25,6 +25,8 @@ enum AccountAvailability: Equatable {
 
 struct FamilyRevocationNoticeStore {
   private static let pendingKey = "family_foqos_pending_family_revocation_notice"
+  private static let accountRecordNameKey =
+    "family_foqos_pending_family_revocation_notice_account_record_name"
 
   private let defaults: UserDefaults
 
@@ -36,12 +38,27 @@ struct FamilyRevocationNoticeStore {
     defaults.bool(forKey: Self.pendingKey)
   }
 
-  func markPending() {
+  func markPending(for accountRecordID: CKRecord.ID) {
+    defaults.set(accountRecordID.recordName, forKey: Self.accountRecordNameKey)
     defaults.set(true, forKey: Self.pendingKey)
+  }
+
+  func shouldSurface(for currentUserRecordID: CKRecord.ID?) -> Bool {
+    guard isPending else { return false }
+    guard
+      let currentRecordName = currentUserRecordID?.recordName,
+      let pendingRecordName = defaults.string(forKey: Self.accountRecordNameKey),
+      currentRecordName == pendingRecordName
+    else {
+      clearPending()
+      return false
+    }
+    return true
   }
 
   func clearPending() {
     defaults.removeObject(forKey: Self.pendingKey)
+    defaults.removeObject(forKey: Self.accountRecordNameKey)
   }
 }
 
@@ -53,13 +70,19 @@ class CloudKitManager: ObservableObject {
   static let shared = CloudKitManager()
   static let familyRevocationAlertTitle = "Family Connection Removed"
   static let familyRevocationAlertMessage =
-    "This device is no longer connected to its Family Foqos family in iCloud, so it switched to Individual mode. To reconnect, ask a parent to send a new invitation."
+    "This device is no longer connected to its Family Foqos family in iCloud. To reconnect, ask a parent to send a new invitation."
 
   private let networkService = CloudKitNetworkService()
   private let familyRevocationNoticeStore: FamilyRevocationNoticeStore
 
   // Published state
-  @Published var currentUserRecordID: CKRecord.ID?
+  @Published var currentUserRecordID: CKRecord.ID? {
+    didSet {
+      familyRevocationMessage = Self.initialFamilyRevocationMessage(
+        pendingNoticeStore: familyRevocationNoticeStore,
+        currentUserRecordID: currentUserRecordID)
+    }
+  }
   @Published var isSignedIn = false
   @Published var familyMembers: [FamilyMember] = []
   @Published var lockCodes: [FamilyLockCode] = []
@@ -80,23 +103,27 @@ class CloudKitManager: ObservableObject {
     familyRevocationNoticeStore: FamilyRevocationNoticeStore = FamilyRevocationNoticeStore()
   ) {
     self.familyRevocationNoticeStore = familyRevocationNoticeStore
-    self.familyRevocationMessage = Self.initialFamilyRevocationMessage(
-      pendingNoticeStore: familyRevocationNoticeStore)
+    self.familyRevocationMessage = nil
     // Account status is checked lazily when needed (e.g., first ensureUserRecordID call),
     // not eagerly at init time. This avoids blocking the main actor during app startup.
   }
 
   static func initialFamilyRevocationMessage(
-    pendingNoticeStore: FamilyRevocationNoticeStore
+    pendingNoticeStore: FamilyRevocationNoticeStore,
+    currentUserRecordID: CKRecord.ID?
   ) -> String? {
-    pendingNoticeStore.isPending ? familyRevocationAlertMessage : nil
+    pendingNoticeStore.shouldSurface(for: currentUserRecordID)
+      ? familyRevocationAlertMessage : nil
   }
 
   #if DEBUG
     static func makeForTesting(
-      pendingNoticeStore: FamilyRevocationNoticeStore
+      pendingNoticeStore: FamilyRevocationNoticeStore,
+      currentUserRecordID: CKRecord.ID?
     ) -> CloudKitManager {
-      CloudKitManager(familyRevocationNoticeStore: pendingNoticeStore)
+      let manager = CloudKitManager(familyRevocationNoticeStore: pendingNoticeStore)
+      manager.currentUserRecordID = currentUserRecordID
+      return manager
     }
   #endif
 
@@ -314,13 +341,20 @@ class CloudKitManager: ObservableObject {
     cleanup: () -> Void = {
       AuthorizationVerifier.shared.handleConfirmedCloudKitRevocation()
     },
-    markNoticePending: (() -> Void)? = nil
+    markNoticePending: ((CKRecord.ID) -> Void)? = nil
   ) {
+    let revokingAccountID = currentUserRecordID
+    // Cleanup intentionally precedes persistence: a crash between them loses the notice instead
+    // of replaying a revocation claim whose state transition never completed.
     cleanup()
+    guard let revokingAccountID else {
+      familyRevocationMessage = nil
+      return
+    }
     if let markNoticePending {
-      markNoticePending()
+      markNoticePending(revokingAccountID)
     } else {
-      familyRevocationNoticeStore.markPending()
+      familyRevocationNoticeStore.markPending(for: revokingAccountID)
     }
     familyRevocationMessage = Self.familyRevocationAlertMessage
   }
