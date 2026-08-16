@@ -15,6 +15,18 @@ final class StartupRecoveryRuntime: ObservableObject {
     guard isHeld else { return }
     isHeld = false
   }
+
+  func beginShareAcceptance() {
+    coordinator?.beginShareAcceptance()
+  }
+
+  func failShareAcceptance() {
+    coordinator?.failShareAcceptance()
+  }
+
+  func completeShareAcceptanceAfterModeApplied() {
+    coordinator?.completeShareAcceptanceAfterModeApplied()
+  }
 }
 
 enum StartupRecoveryPushRouter {

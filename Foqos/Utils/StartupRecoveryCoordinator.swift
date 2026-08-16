@@ -99,6 +99,7 @@ final class StartupRecoveryCoordinator: ObservableObject {
   private var membershipClassification = StartupRecoveryLocalClassification.fresh
   private var inFlightTask: Task<Void, Never>?
   private var inFlightID = 0
+  private var acceptanceInFlight = false
 
   init(
     store: StartupRecoveryStore,
@@ -196,6 +197,27 @@ final class StartupRecoveryCoordinator: ObservableObject {
     showNormal(recheckArmed: true)
   }
 
+  func beginShareAcceptance() {
+    guard !acceptanceInFlight else { return }
+    acceptanceInFlight = true
+    inFlightID += 1
+    inFlightTask?.cancel()
+    inFlightTask = nil
+  }
+
+  func failShareAcceptance() {
+    guard acceptanceInFlight else { return }
+    acceptanceInFlight = false
+  }
+
+  func completeShareAcceptanceAfterModeApplied() {
+    guard acceptanceInFlight else { return }
+    acceptanceInFlight = false
+    store.pendingOffer = nil
+    store.clearRecheckPending()
+    showNormal(recheckArmed: false)
+  }
+
   func recheckIfNeeded() async {
     await performSingleFlight { [weak self] in
       await self?.recheckWorkIfNeeded()
@@ -208,7 +230,9 @@ final class StartupRecoveryCoordinator: ObservableObject {
     membershipClassification = classification
     guard classification != .indeterminate else { return }
 
-    switch await lookupMembership() {
+    let membership = await lookupMembership()
+    guard recoveryWorkMayCommit else { return }
+    switch membership {
     case .member(let role, let ownerUserRecordName):
       await beginRecovery(
         role: role,
@@ -264,7 +288,9 @@ final class StartupRecoveryCoordinator: ObservableObject {
     canContinueAfterFailure: Bool,
     releasesStartup: Bool
   ) async {
-    switch await lookupMembership() {
+    let membership = await lookupMembership()
+    guard recoveryWorkMayCommit else { return }
+    switch membership {
     case .member(let role, let ownerUserRecordName):
       await beginRecovery(
         role: role,
@@ -307,6 +333,7 @@ final class StartupRecoveryCoordinator: ObservableObject {
     restoreFamilyRole(role)
     if role == .child {
       await refreshChildLockCodes()
+      guard recoveryWorkMayCommit else { return }
     }
     switch path {
     case .freshMember:
@@ -319,7 +346,9 @@ final class StartupRecoveryCoordinator: ObservableObject {
   }
 
   private func resume(_ pendingOffer: StartupRecoveryPendingOffer) async {
-    switch await lookupMembership() {
+    let membership = await lookupMembership()
+    guard recoveryWorkMayCommit else { return }
+    switch membership {
     case .member(let role, let ownerUserRecordName):
       guard ownerUserRecordName == pendingOffer.ownerUserRecordName, role == pendingOffer.role else {
         rollback(pendingOffer)
@@ -347,7 +376,9 @@ final class StartupRecoveryCoordinator: ObservableObject {
 
   private func checkProfiles(for pendingOffer: StartupRecoveryPendingOffer) async {
     state = .checkingProfiles(role: pendingOffer.role)
-    switch await lookupSyncedProfileCount(pendingOffer.ownerUserRecordName) {
+    let countResult = await lookupSyncedProfileCount(pendingOffer.ownerUserRecordName)
+    guard recoveryWorkMayCommit else { return }
+    switch countResult {
     case .confirmed(let profileCount):
       let confirmedCount = max(profileCount, 0)
       store.pendingOffer = StartupRecoveryPendingOffer(
@@ -369,7 +400,9 @@ final class StartupRecoveryCoordinator: ObservableObject {
     }
     state = .checkingProfiles(role: pendingOffer.role)
 
-    switch await lookupMembership() {
+    let membership = await lookupMembership()
+    guard recoveryWorkMayCommit else { return false }
+    switch membership {
     case .member(let role, let ownerUserRecordName):
       guard ownerUserRecordName == pendingOffer.ownerUserRecordName, role == pendingOffer.role else {
         rollback(pendingOffer)
@@ -388,7 +421,9 @@ final class StartupRecoveryCoordinator: ObservableObject {
       return false
     }
 
-    switch await lookupSyncedProfileCount(pendingOffer.ownerUserRecordName) {
+    let countResult = await lookupSyncedProfileCount(pendingOffer.ownerUserRecordName)
+    guard recoveryWorkMayCommit else { return false }
+    switch countResult {
     case .confirmed(let count):
       let confirmedCount = max(count, 0)
       let refreshedOffer = StartupRecoveryPendingOffer(
@@ -435,6 +470,7 @@ final class StartupRecoveryCoordinator: ObservableObject {
   private func performSingleFlight(
     _ operation: @escaping @MainActor () async -> Void
   ) async {
+    guard !acceptanceInFlight else { return }
     if let inFlightTask {
       await inFlightTask.value
       return
@@ -450,5 +486,9 @@ final class StartupRecoveryCoordinator: ObservableObject {
     if inFlightID == operationID {
       inFlightTask = nil
     }
+  }
+
+  private var recoveryWorkMayCommit: Bool {
+    !acceptanceInFlight && !Task.isCancelled
   }
 }

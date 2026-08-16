@@ -792,6 +792,8 @@ func applyAcceptedFamilyMode(
 /// Called from confirmation alert "Continue" — accepts share and sets up role
 func completeShareAcceptance(metadata: CKShare.Metadata, role: FamilyRole) {
   Task { @MainActor in
+    StartupRecoveryRuntime.shared.beginShareAcceptance()
+
     // 1. Accept CloudKit share (no auth gate)
     do {
       try await CloudKitManager.shared.acceptShareDirect(metadata: metadata)
@@ -801,11 +803,13 @@ func completeShareAcceptance(metadata: CKShare.Metadata, role: FamilyRole) {
       CloudKitManager.shared.shareAcceptanceIsError = true
       CloudKitManager.shared.shareAcceptedMessage =
         "Failed to accept invitation: \(error.localizedDescription)"
+      StartupRecoveryRuntime.shared.failShareAcceptance()
       return
     }
 
     // 2. Switch app mode immediately after successful share acceptance
     let appMode = applyAcceptedFamilyMode(role: role)
+    StartupRecoveryRuntime.shared.completeShareAcceptanceAfterModeApplied()
 
     // 3. Best-effort: register self as family member
     do {
