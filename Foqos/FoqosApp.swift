@@ -61,6 +61,9 @@ class PendingShareAcceptance: ObservableObject {
 
 @main
 struct FoqosApp: App {
+  private let startupRecoverySnapshot = StartupRecoveryLocalState.capture()
+  @StateObject private var startupRecoveryRuntime = StartupRecoveryRuntime.shared
+  @StateObject private var startupRecoveryCoordinator: StartupRecoveryCoordinator
   @StateObject private var requestAuthorizer = RequestAuthorizer()
   @StateObject private var navigationManager = NavigationManager.shared
   @StateObject private var nfcWriter = NFCWriter()
@@ -80,6 +83,7 @@ struct FoqosApp: App {
 
   // Device sync for same-user multi-device sync
   @StateObject private var profileSyncManager = ProfileSyncManager.shared
+  @StateObject private var startupRecoveryReachability = NetworkReachabilityMonitor()
 
   /// Sync upgrade notice (shown when legacy session records are cleaned up)
   @State private var showSyncUpgradeAlert = false
@@ -93,6 +97,32 @@ struct FoqosApp: App {
   @Environment(\.scenePhase) private var scenePhase
 
   init() {
+    let cloudService = StartupRecoveryCloudService()
+    let recoveryDefaults =
+      isRunningUnitTests || ScreenshotDemoMode.isActive
+      ? UserDefaults(suiteName: "StartupRecoveryBypass-\(UUID().uuidString)")!
+      : UserDefaults.standard
+    let recoveryCoordinator = StartupRecoveryCoordinator(
+      store: StartupRecoveryStore(defaults: recoveryDefaults),
+      captureLocalClassification: {
+        StartupRecoveryLocalState.classify(StartupRecoveryLocalState.capture())
+      },
+      captureOrigin: captureStartupRecoveryOrigin,
+      restoreOrigin: restoreStartupRecoveryOrigin,
+      lookupMembership: { await cloudService.lookupMembership() },
+      lookupSyncedProfileCount: { ownerUserRecordName in
+        await cloudService.fetchSyncedProfileCount(
+          expectedOwnerUserRecordName: ownerUserRecordName)
+      },
+      restoreFamilyRole: restoreRecoveredFamilyRole,
+      refreshChildLockCodes: {
+        _ = await LockCodeManager.shared.refreshSharedLockCodesForVerification()
+      },
+      setSyncEnabled: { ProfileSyncManager.shared.isEnabled = $0 },
+      releaseStartup: { StartupRecoveryRuntime.shared.release() })
+    _startupRecoveryCoordinator = StateObject(wrappedValue: recoveryCoordinator)
+    StartupRecoveryRuntime.shared.register(coordinator: recoveryCoordinator)
+
     // Migrate UserDefaults keys BEFORE any @AppStorage reads.
     // Must run here (not in .onAppear) because SwiftUI reads @AppStorage
     // when building the view hierarchy, which happens before .onAppear fires.
@@ -134,42 +164,13 @@ struct FoqosApp: App {
         }
         .onChange(of: scenePhase) { oldPhase, newPhase in
           Log.debug("scenePhase changed", category: .app)
+          guard !startupRecoveryRuntime.isHeld else {
+            return
+          }
           let shouldRefreshSchedules = scheduleRefreshState.shouldRefresh(for: newPhase)
-          if newPhase == .active {
-            if !ScreenshotDemoMode.isActive {
-              Task {
-                // Determine iCloud sign-in status (independent of family sharing)
-                await CloudKitManager.shared.checkAccountStatus()
-                // Enforce CloudKit FamilyMember role as local app mode (must complete before auth check)
-                await CloudKitManager.shared.verifySelfFamilyMemberRecord()
-                // Verify child authorization when app becomes active
-                await verifyChildAuthorizationIfNeeded()
-                if AppModeManager.shared.currentMode == .child {
-                  do {
-                    try await CloudKitManager.shared.ensureSharedDatabaseSubscription()
-                  } catch {
-                    Log.error(
-                      "Failed to establish shared database subscription: \(redactedErrorForLog(error))",
-                      category: .cloudKit)
-                  }
-                  await LockCodeManager.shared.refreshSharedLockCodesForVerification()
-                }
-              }
-              // #201: re-drive persisted session-stop retries so a remote device doesn't see a
-              // stopped session as perpetually active
-              Task { await StrategyManager.shared.drainSessionStopOutbox() }
-              // #200: pull/push on foreground instead of the deleted notification throttle
-              if profileSyncManager.isEnabled {
-                do {
-                  try profileSyncManager.syncNow()
-                } catch {
-                  Log.warning("syncNow skipped: \(error.localizedDescription)", category: .sync)
-                }
-              }
-            }
-            if shouldRefreshSchedules && !ScreenshotDemoMode.isActive {
-              reconcileSchedulesForCurrentState()
-            }
+          guard newPhase == .active else { return }
+          Task {
+            await handleActiveScene(shouldRefreshSchedules: shouldRefreshSchedules)
           }
         }
         .onOpenURL { url in
@@ -294,25 +295,25 @@ struct FoqosApp: App {
         .environmentObject(appModeManager)
         .environmentObject(cloudKitManager)
         .environmentObject(profileSyncManager)
+        .task {
+          let classification =
+            isRunningUnitTests || ScreenshotDemoMode.isActive
+            ? StartupRecoveryLocalClassification.existing
+            : StartupRecoveryLocalState.classify(startupRecoverySnapshot)
+          await startupRecoveryCoordinator.start(classification: classification)
+          handleRecoveryState(startupRecoveryCoordinator.state)
+        }
+        .onChange(of: startupRecoveryCoordinator.state) { _, state in
+          handleRecoveryState(state)
+        }
+        .onChange(of: startupRecoveryReachability.isOnline) { wasOnline, isOnline in
+          guard !wasOnline, isOnline else { return }
+          Task {
+            await startupRecoveryCoordinator.recheckIfNeeded()
+          }
+        }
         .onAppear {
-          let shouldPerformInitialRefresh = scheduleRefreshState.shouldPerformInitialRefresh()
-          if shouldPerformInitialRefresh {
-            // Migration must precede the single coalesced cold-launch refresh.
-            ProfileMigrationUtil.migrateProfilesIfNeeded(context: container.mainContext)
-          }
-          // Construct + wire the sync engine with the live ModelContext (I10).
-          // Skipped under the XCTest host so hosted unit tests own `attachEngine`'s
-          // one-shot idempotency guard themselves.
-          if !isRunningUnitTests && !ScreenshotDemoMode.isActive {
-            Task {
-              await profileSyncManager.attachEngine(
-                modelContext: container.mainContext,
-                emergencyManager: emergencyManager)
-            }
-          }
-          if shouldPerformInitialRefresh && !ScreenshotDemoMode.isActive {
-            reconcileSchedulesForCurrentState()
-          }
+          handleRecoveryState(startupRecoveryCoordinator.state)
         }
     }
     .handlesExternalEvents(matching: ["*"])  // Handle all external events including CloudKit shares
@@ -320,11 +321,84 @@ struct FoqosApp: App {
   }
 
   /// Root view that routes based on app mode
+  @ViewBuilder
   private var rootView: some View {
-    // All modes use HomeView as the default landing page
-    // Parent dashboard is accessible from settings (parent mode)
-    // Child parental controls info is accessible from settings (child mode)
-    HomeView()
+    if !startupRecoveryRuntime.isHeld {
+      // All modes use HomeView as the default landing page.
+      HomeView()
+    } else {
+      StartupRecoveryView(coordinator: startupRecoveryCoordinator)
+    }
+  }
+
+  private func handleRecoveryState(_ state: StartupRecoveryState) {
+    if case .normal(let recheckArmed) = state, recheckArmed {
+      startupRecoveryReachability.start()
+    } else {
+      startupRecoveryReachability.stop()
+    }
+
+    guard !startupRecoveryRuntime.isHeld else { return }
+
+    let shouldPerformInitialRefresh = scheduleRefreshState.shouldPerformInitialRefresh()
+    if shouldPerformInitialRefresh {
+      ProfileMigrationUtil.migrateProfilesIfNeeded(context: container.mainContext)
+    }
+    // Construct + wire the sync engine only after recovery releases startup (I10).
+    // Hosted unit tests own the one-shot idempotency guard themselves.
+    if !isRunningUnitTests && !ScreenshotDemoMode.isActive {
+      Task {
+        await profileSyncManager.attachEngine(
+          modelContext: container.mainContext,
+          emergencyManager: emergencyManager)
+      }
+    }
+    if shouldPerformInitialRefresh && !ScreenshotDemoMode.isActive {
+      reconcileSchedulesForCurrentState()
+    }
+    if scenePhase == .active {
+      Task { await handleActiveScene(shouldRefreshSchedules: false) }
+    }
+  }
+
+  @MainActor
+  private func handleActiveScene(shouldRefreshSchedules: Bool) async {
+    guard !startupRecoveryRuntime.isHeld else { return }
+    if case .normal(let recheckArmed) = startupRecoveryCoordinator.state, recheckArmed {
+      await startupRecoveryCoordinator.recheckIfNeeded()
+      guard !startupRecoveryRuntime.isHeld else { return }
+    }
+
+    if !ScreenshotDemoMode.isActive {
+      await CloudKitManager.shared.checkAccountStatus()
+      await CloudKitManager.shared.verifySelfFamilyMemberRecord()
+      await verifyChildAuthorizationIfNeeded()
+      if AppModeManager.shared.currentMode == .child {
+        do {
+          try await CloudKitManager.shared.ensureSharedDatabaseSubscription()
+        } catch {
+          Log.error(
+            "Failed to establish shared database subscription: \(redactedErrorForLog(error))",
+            category: .cloudKit)
+        }
+        await LockCodeManager.shared.refreshSharedLockCodesForVerification()
+      }
+
+      // #201: re-drive persisted session-stop retries so a remote device doesn't see a
+      // stopped session as perpetually active.
+      await StrategyManager.shared.drainSessionStopOutbox()
+      // #200: pull/push on foreground instead of the deleted notification throttle.
+      if profileSyncManager.isEnabled {
+        do {
+          try profileSyncManager.syncNow()
+        } catch {
+          Log.warning("syncNow skipped: \(error.localizedDescription)", category: .sync)
+        }
+      }
+    }
+    if shouldRefreshSchedules && !ScreenshotDemoMode.isActive {
+      reconcileSchedulesForCurrentState()
+    }
   }
 
   private func reconcileSchedulesForCurrentState() {
@@ -377,6 +451,83 @@ struct FoqosApp: App {
     // Handle as universal link for our app
     navigationManager.handleLink(url)
   }
+}
+
+@MainActor
+private func captureStartupRecoveryOrigin() -> StartupRecoveryOriginState {
+  let defaults = UserDefaults.standard
+  return StartupRecoveryOriginState(
+    modeRawValue: defaults.string(forKey: "family_foqos_app_mode"),
+    hasSelectedMode: optionalBool(
+      in: defaults,
+      forKey: "family_foqos_has_selected_mode"),
+    onboardingCompleted: optionalBool(
+      in: defaults,
+      forKey: "family_foqos_has_completed_onboarding"),
+    showIntro: optionalBool(
+      in: defaults,
+      forKey: "family_foqos_show_intro_screen"),
+    showModeSelection: optionalBool(
+      in: defaults,
+      forKey: "family_foqos_show_mode_selection"),
+    deviceSyncEnabled: ProfileSyncManager.shared.isEnabled)
+}
+
+@MainActor
+private func restoreStartupRecoveryOrigin(_ origin: StartupRecoveryOriginState) {
+  let defaults = UserDefaults.standard
+  let appModeManager = AppModeManager.shared
+
+  if let rawValue = origin.modeRawValue, let mode = AppMode(rawValue: rawValue) {
+    appModeManager.currentMode = mode
+  } else {
+    appModeManager.currentMode = .individual
+    defaults.removeObject(forKey: "family_foqos_app_mode")
+  }
+
+  appModeManager.hasSelectedMode = origin.hasSelectedMode ?? false
+  restoreOptionalBool(
+    origin.hasSelectedMode,
+    in: defaults,
+    forKey: "family_foqos_has_selected_mode")
+  restoreOptionalBool(
+    origin.onboardingCompleted,
+    in: defaults,
+    forKey: "family_foqos_has_completed_onboarding")
+  restoreOptionalBool(
+    origin.showIntro,
+    in: defaults,
+    forKey: "family_foqos_show_intro_screen")
+  restoreOptionalBool(
+    origin.showModeSelection,
+    in: defaults,
+    forKey: "family_foqos_show_mode_selection")
+  ProfileSyncManager.shared.isEnabled = origin.deviceSyncEnabled ?? false
+}
+
+private func optionalBool(in defaults: UserDefaults, forKey key: String) -> Bool? {
+  guard defaults.object(forKey: key) != nil else { return nil }
+  return defaults.bool(forKey: key)
+}
+
+private func restoreOptionalBool(
+  _ value: Bool?,
+  in defaults: UserDefaults,
+  forKey key: String
+) {
+  guard let value else {
+    defaults.removeObject(forKey: key)
+    return
+  }
+  defaults.set(value, forKey: key)
+}
+
+@MainActor
+private func restoreRecoveredFamilyRole(_ role: FamilyRole) {
+  AppModeManager.shared.selectMode(role == .parent ? .parent : .child)
+  UserDefaults.standard.set(true, forKey: "family_foqos_has_completed_onboarding")
+  UserDefaults.standard.set(false, forKey: "family_foqos_show_intro_screen")
+  UserDefaults.standard.set(false, forKey: "family_foqos_show_mode_selection")
 }
 
 // MARK: - App Delegate for CloudKit Share Handling
@@ -448,51 +599,58 @@ class AppDelegate: NSObject, UIApplicationDelegate {
     fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
   ) {
     Log.info("Received remote notification", category: .cloudKit)
-
-    // Check if this is a CloudKit notification
-    if let ckNotification = CKNotification(fromRemoteNotificationDictionary: userInfo) {
-      Log.info("CloudKit notification received - type: \(ckNotification.notificationType.rawValue)", category: .cloudKit)
-
-      let databaseScope = (ckNotification as? CKDatabaseNotification)?.databaseScope
-      let shouldRefreshChildSharedData = Self.shouldRefreshChildSharedData(
-        databaseScope: databaseScope,
-        mode: AppModeManager.shared.currentMode)
-
-      // Route the CloudKit push to the engine (schedules a fetch+send); the engine
-      // also owns its own database subscription. Preserve heartbeat refresh (#190).
-      Task { @MainActor in
-        let childRefreshResult: UIBackgroundFetchResult?
-        if shouldRefreshChildSharedData {
-          childRefreshResult =
-            await Self.refreshChildSharedDataAfterMembershipVerification(
-              refreshAccountStatus: {
-                await CloudKitManager.shared.checkAccountStatus()
-              },
-              verifyMembership: {
-                await CloudKitManager.shared.verifySelfFamilyMemberRecord()
-              },
-              refreshSharedData: {
-                await LockCodeManager.shared.refreshSharedLockCodesForVerification()
-              }
-            )
-            .backgroundFetchResult
-        } else {
-          childRefreshResult = nil
-        }
-        if ProfileSyncManager.shared.isEnabled {
-          do {
-            try ProfileSyncManager.shared.syncNow()
-          } catch {
-            Log.warning("syncNow skipped: \(error.localizedDescription)", category: .sync)
+    Task { @MainActor in
+      await StartupRecoveryPushRouter.route(
+        isHeld: StartupRecoveryRuntime.shared.isHeld,
+        onHeld: { completionHandler(.noData) },
+        onReleased: {
+          // Check if this is a CloudKit notification only after recovery releases startup.
+          guard let ckNotification = CKNotification(fromRemoteNotificationDictionary: userInfo)
+          else {
+            completionHandler(.noData)
+            return
           }
-        }
-        if AppModeManager.shared.currentMode == .parent {
-          await HeartbeatManager.shared.refreshHeartbeats()
-        }
-        completionHandler(childRefreshResult ?? .newData)
-      }
-    } else {
-      completionHandler(.noData)
+          Log.info(
+            "CloudKit notification received - type: \(ckNotification.notificationType.rawValue)",
+            category: .cloudKit)
+
+          let databaseScope = (ckNotification as? CKDatabaseNotification)?.databaseScope
+          let shouldRefreshChildSharedData = Self.shouldRefreshChildSharedData(
+            databaseScope: databaseScope,
+            mode: AppModeManager.shared.currentMode)
+
+          // Route the CloudKit push to the engine (schedules a fetch+send); the engine
+          // also owns its own database subscription. Preserve heartbeat refresh (#190).
+          let childRefreshResult: UIBackgroundFetchResult?
+          if shouldRefreshChildSharedData {
+            childRefreshResult =
+              await Self.refreshChildSharedDataAfterMembershipVerification(
+                refreshAccountStatus: {
+                  await CloudKitManager.shared.checkAccountStatus()
+                },
+                verifyMembership: {
+                  await CloudKitManager.shared.verifySelfFamilyMemberRecord()
+                },
+                refreshSharedData: {
+                  await LockCodeManager.shared.refreshSharedLockCodesForVerification()
+                }
+              )
+              .backgroundFetchResult
+          } else {
+            childRefreshResult = nil
+          }
+          if ProfileSyncManager.shared.isEnabled {
+            do {
+              try ProfileSyncManager.shared.syncNow()
+            } catch {
+              Log.warning("syncNow skipped: \(error.localizedDescription)", category: .sync)
+            }
+          }
+          if AppModeManager.shared.currentMode == .parent {
+            await HeartbeatManager.shared.refreshHeartbeats()
+          }
+          completionHandler(childRefreshResult ?? .newData)
+        })
     }
   }
 }
