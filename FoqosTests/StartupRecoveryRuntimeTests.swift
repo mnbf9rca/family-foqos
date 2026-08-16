@@ -50,4 +50,19 @@ final class StartupRecoveryRuntimeTests: XCTestCase {
     XCTAssertEqual(heldCompletions, 0)
     XCTAssertEqual(releasedCalls, 1)
   }
+
+  func testShareArbitrationSourceMakesMissingCoordinatorObservable() throws {
+    let repositoryRoot = URL(fileURLWithPath: #filePath)
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+    let sourceURL = repositoryRoot.appendingPathComponent(
+      "Foqos/Utils/StartupRecoveryRuntime.swift")
+    let source = try String(contentsOf: sourceURL, encoding: .utf8)
+
+    XCTAssertTrue(source.contains("assertionFailure("))
+    XCTAssertTrue(source.contains("Log.error("))
+    XCTAssertFalse(source.contains("coordinator?.beginShareAcceptance()"))
+    XCTAssertFalse(source.contains("coordinator?.failShareAcceptance()"))
+    XCTAssertFalse(source.contains("coordinator?.completeShareAcceptanceAfterModeApplied()"))
+  }
 }

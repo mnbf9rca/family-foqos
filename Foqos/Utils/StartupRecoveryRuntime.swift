@@ -17,15 +17,29 @@ final class StartupRecoveryRuntime: ObservableObject {
   }
 
   func beginShareAcceptance() {
-    coordinator?.beginShareAcceptance()
+    guard let coordinator = coordinatorForArbitration() else { return }
+    coordinator.beginShareAcceptance()
   }
 
   func failShareAcceptance() {
-    coordinator?.failShareAcceptance()
+    guard let coordinator = coordinatorForArbitration() else { return }
+    coordinator.failShareAcceptance()
   }
 
   func completeShareAcceptanceAfterModeApplied() {
-    coordinator?.completeShareAcceptanceAfterModeApplied()
+    guard let coordinator = coordinatorForArbitration() else { return }
+    coordinator.completeShareAcceptanceAfterModeApplied()
+  }
+
+  private func coordinatorForArbitration() -> StartupRecoveryCoordinator? {
+    guard let coordinator else {
+      assertionFailure("Startup recovery coordinator is not registered")
+      Log.error(
+        "Startup recovery arbitration unavailable because the coordinator is not registered",
+        category: .app)
+      return nil
+    }
+    return coordinator
   }
 }
 
