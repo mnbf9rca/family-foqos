@@ -181,6 +181,41 @@ final class ChildRevocationTests: XCTestCase {
     XCTAssertFalse(restoredStore.isPending)
   }
 
+  func testGivenPendingNoticeWhileCurrentAccountIsUnknown_WhenResolvingStartupMessage_ThenNoticeIsDeferredWithoutClearing() {
+    let suiteName = "ChildRevocationTests-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let store = FamilyRevocationNoticeStore(defaults: defaults)
+    store.markPending(for: CKRecord.ID(recordName: "pending-account"))
+
+    let manager = CloudKitManager.makeForTesting(
+      pendingNoticeStore: store,
+      currentUserRecordID: nil)
+
+    XCTAssertNil(manager.familyRevocationMessage)
+    XCTAssertTrue(store.isPending)
+  }
+
+  func testGivenOwnerlessPendingNoticeWhenCurrentAccountBecomesKnown_WhenResolvingStartupMessage_ThenNoticeSurfacesOnceAndClears() {
+    let suiteName = "ChildRevocationTests-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let store = FamilyRevocationNoticeStore(defaults: defaults)
+    store.markPending(for: nil)
+    let currentAccountID = CKRecord.ID(recordName: "resolved-account")
+
+    XCTAssertEqual(
+      CloudKitManager.initialFamilyRevocationMessage(
+        pendingNoticeStore: store,
+        currentUserRecordID: currentAccountID),
+      CloudKitManager.familyRevocationAlertMessage)
+    XCTAssertFalse(store.isPending)
+    XCTAssertNil(
+      CloudKitManager.initialFamilyRevocationMessage(
+        pendingNoticeStore: store,
+        currentUserRecordID: currentAccountID))
+  }
+
   func testGivenMatchingPendingNoticeAfterModeChanged_WhenResolvingStartupMessage_ThenCopyDoesNotClaimIndividualMode() {
     let suiteName = "ChildRevocationTests-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suiteName)!
@@ -281,6 +316,28 @@ final class ChildRevocationTests: XCTestCase {
 
     XCTAssertFalse(store.isPending)
     XCTAssertNil(manager.familyRevocationMessage)
+  }
+
+  func testGivenConfirmedRevocationWhileAccountIDIsUnresolved_WhenHandlingTransition_ThenOwnerlessNoticeIsPersistedAndPublished() {
+    let manager = CloudKitManager.shared
+    let store = FamilyRevocationNoticeStore()
+    let originalRecordID = manager.currentUserRecordID
+    let originalMessage = manager.familyRevocationMessage
+    store.clearPending()
+    defer {
+      store.clearPending()
+      manager.currentUserRecordID = originalRecordID
+      manager.familyRevocationMessage = originalMessage
+    }
+    manager.currentUserRecordID = nil
+    manager.familyRevocationMessage = nil
+
+    manager.handleConfirmedFamilyRevocation(cleanup: {})
+
+    XCTAssertTrue(store.isPending)
+    XCTAssertEqual(
+      manager.familyRevocationMessage,
+      CloudKitManager.familyRevocationAlertMessage)
   }
 
   func testGivenForegroundVerifierConfirmsRevocation_WhenHandlingTransition_ThenPublishesDedicatedNoticeAfterCleanup() {
