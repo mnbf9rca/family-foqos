@@ -18,7 +18,7 @@ The alternatives do not preserve the required ordering. A check launched from `H
 
 The capture is read-only:
 
-- The standard defaults domain is read with Core Foundation preferences. The onboarding sentinel is present when `family_foqos_has_completed_onboarding` has a persisted value.
+- The standard defaults domain is read with Core Foundation preferences. The onboarding sentinel is present when either the current `family_foqos_has_completed_onboarding` key or its pre-migration `hasCompletedOnboarding` predecessor has a persisted value, preventing an older installed build from being mistaken for a fresh user before migration runs.
 - The production SwiftData URL comes from one extracted `AppModelStore` configuration shared by the app and inspector. If `default.store` is absent, the profile store is empty. If it exists, a WAL-aware read-only SQLite connection checks for `ZBLOCKEDPROFILES` and counts rows. Store absent, table absent, and count zero are empty; a positive count is existing state; a read failure is indeterminate.
 - The app-group preferences domain is copied with Core Foundation preferences without constructing `UserDefaults(suiteName:)`. Any persisted app-group value counts as existing state, including Device Sync consent, device identity, snapshots, or schedule/session data.
 
