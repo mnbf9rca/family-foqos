@@ -36,7 +36,7 @@ enum StartupRecoveryLocalState {
   static func classify(
     _ snapshot: StartupRecoveryLocalSnapshot
   ) -> StartupRecoveryLocalClassification {
-    if snapshot.onboardingValuePresent || snapshot.appGroupStatePresent {
+    if snapshot.onboardingValuePresent {
       return .existing
     }
 

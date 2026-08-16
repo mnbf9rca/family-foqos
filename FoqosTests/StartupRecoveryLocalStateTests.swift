@@ -20,15 +20,11 @@ final class StartupRecoveryLocalStateTests: XCTestCase {
     }
   }
 
-  func testGivenAnyPersistedLocalSentinel_WhenClassifying_ThenNormalStartupIsPreserved() {
+  func testGivenPersistedOnboardingOrProfiles_WhenClassifying_ThenNormalStartupIsPreserved() {
     let snapshots = [
       StartupRecoveryLocalSnapshot(
         onboardingValuePresent: true,
         appGroupStatePresent: false,
-        store: .storeAbsent),
-      StartupRecoveryLocalSnapshot(
-        onboardingValuePresent: false,
-        appGroupStatePresent: true,
         store: .storeAbsent),
       StartupRecoveryLocalSnapshot(
         onboardingValuePresent: false,
@@ -39,6 +35,16 @@ final class StartupRecoveryLocalStateTests: XCTestCase {
     for snapshot in snapshots {
       XCTAssertEqual(StartupRecoveryLocalState.classify(snapshot), .existing)
     }
+  }
+
+  func testGivenOnlyAppGroupState_WhenOnboardingAndProfilesAreEmpty_ThenRecoveryCheckIsRequired() {
+    XCTAssertEqual(
+      StartupRecoveryLocalState.classify(
+        StartupRecoveryLocalSnapshot(
+          onboardingValuePresent: false,
+          appGroupStatePresent: true,
+          store: .profileCount(0))),
+      .fresh)
   }
 
   func testGivenUnreadableStore_WhenClassifying_ThenFreshStateIsNotAssumed() {
