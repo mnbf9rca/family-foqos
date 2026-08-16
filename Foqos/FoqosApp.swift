@@ -35,15 +35,7 @@ private func redactedURLString(_ url: URL) -> String {
 
 private let container: ModelContainer = {
   do {
-    // Configure SwiftData to use local storage only (not CloudKit sync)
-    // We handle CloudKit manually for FamilyPolicy via CloudKitManager
-    let schema = Schema([BlockedProfileSession.self, BlockedProfiles.self, SavedLocation.self])
-    let modelConfiguration = ModelConfiguration(
-      schema: schema,
-      isStoredInMemoryOnly: ScreenshotDemoMode.isActive,
-      cloudKitDatabase: .none  // Disable automatic CloudKit sync for these models
-    )
-    return try ModelContainer(for: schema, configurations: [modelConfiguration])
+    return try AppModelStore.makeContainer()
   } catch {
     fatalError("Couldn't create ModelContainer: \(error)")
   }
