@@ -2,8 +2,8 @@ import Combine
 import Foundation
 
 enum StartupRecoveryMembershipResult: Equatable {
-  case member(FamilyRole)
-  case confirmedNone
+  case member(role: FamilyRole, ownerUserRecordName: String)
+  case confirmedNone(ownerUserRecordName: String)
   case indeterminate
 }
 
@@ -13,6 +13,7 @@ enum StartupRecoveryProfileCountResult: Equatable {
 }
 
 struct StartupRecoveryPendingOffer: Codable, Equatable {
+  let ownerUserRecordName: String
   let role: FamilyRole
   let profileCount: Int?
 }
@@ -68,7 +69,7 @@ final class StartupRecoveryCoordinator: ObservableObject {
 
   private let store: StartupRecoveryStore
   private let lookupMembership: () async -> StartupRecoveryMembershipResult
-  private let lookupSyncedProfileCount: () async -> StartupRecoveryProfileCountResult
+  private let lookupSyncedProfileCount: (String) async -> StartupRecoveryProfileCountResult
   private let restoreFamilyRole: (FamilyRole) -> Void
   private let refreshChildLockCodes: () async -> Void
   private let setSyncEnabled: (Bool) -> Void
@@ -78,7 +79,7 @@ final class StartupRecoveryCoordinator: ObservableObject {
   init(
     store: StartupRecoveryStore,
     lookupMembership: @escaping () async -> StartupRecoveryMembershipResult,
-    lookupSyncedProfileCount: @escaping () async -> StartupRecoveryProfileCountResult,
+    lookupSyncedProfileCount: @escaping (String) async -> StartupRecoveryProfileCountResult,
     restoreFamilyRole: @escaping (FamilyRole) -> Void,
     refreshChildLockCodes: @escaping () async -> Void,
     setSyncEnabled: @escaping (Bool) -> Void,
@@ -98,7 +99,9 @@ final class StartupRecoveryCoordinator: ObservableObject {
       if let profileCount = pendingOffer.profileCount {
         state = .offer(role: pendingOffer.role, profileCount: profileCount)
       } else {
-        await recover(role: pendingOffer.role)
+        await recover(
+          role: pendingOffer.role,
+          ownerUserRecordName: pendingOffer.ownerUserRecordName)
       }
       return
     }
@@ -124,7 +127,11 @@ final class StartupRecoveryCoordinator: ObservableObject {
       state = .checking
       await checkMembership(canContinueAfterFailure: true, releasesStartup: true)
     case .retryProfiles(let role):
-      await checkProfiles(for: role)
+      guard let ownerUserRecordName = store.pendingOffer?.ownerUserRecordName else {
+        state = .retryMembership(canContinueSetup: true)
+        return
+      }
+      await checkProfiles(for: role, ownerUserRecordName: ownerUserRecordName)
     default:
       break
     }
@@ -140,8 +147,8 @@ final class StartupRecoveryCoordinator: ObservableObject {
     guard store.recheckPending else { return }
 
     switch await lookupMembership() {
-    case .member(let role):
-      await recover(role: role)
+    case .member(let role, let ownerUserRecordName):
+      await recover(role: role, ownerUserRecordName: ownerUserRecordName)
     case .confirmedNone:
       store.clearRecheckPending()
       state = .normal(recheckArmed: false)
@@ -168,8 +175,8 @@ final class StartupRecoveryCoordinator: ObservableObject {
 
   private func checkMembership(canContinueAfterFailure: Bool, releasesStartup: Bool) async {
     switch await lookupMembership() {
-    case .member(let role):
-      await recover(role: role)
+    case .member(let role, let ownerUserRecordName):
+      await recover(role: role, ownerUserRecordName: ownerUserRecordName)
     case .confirmedNone:
       store.clearRecheckPending()
       state = .normal(recheckArmed: false)
@@ -179,22 +186,26 @@ final class StartupRecoveryCoordinator: ObservableObject {
     }
   }
 
-  private func recover(role: FamilyRole) async {
-    store.pendingOffer = StartupRecoveryPendingOffer(role: role, profileCount: nil)
+  private func recover(role: FamilyRole, ownerUserRecordName: String) async {
+    store.pendingOffer = StartupRecoveryPendingOffer(
+      ownerUserRecordName: ownerUserRecordName,
+      role: role,
+      profileCount: nil)
     store.clearRecheckPending()
     restoreFamilyRole(role)
     if role == .child {
       await refreshChildLockCodes()
     }
-    await checkProfiles(for: role)
+    await checkProfiles(for: role, ownerUserRecordName: ownerUserRecordName)
   }
 
-  private func checkProfiles(for role: FamilyRole) async {
+  private func checkProfiles(for role: FamilyRole, ownerUserRecordName: String) async {
     state = .checkingProfiles(role: role)
-    switch await lookupSyncedProfileCount() {
+    switch await lookupSyncedProfileCount(ownerUserRecordName) {
     case .confirmed(let profileCount):
       let confirmedCount = max(profileCount, 0)
       store.pendingOffer = StartupRecoveryPendingOffer(
+        ownerUserRecordName: ownerUserRecordName,
         role: role,
         profileCount: confirmedCount)
       state = .offer(role: role, profileCount: confirmedCount)

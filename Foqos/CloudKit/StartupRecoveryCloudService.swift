@@ -4,16 +4,18 @@ import Foundation
 enum StartupRecoveryMembershipObservation: Equatable {
   case accountUnavailable
   case accountIndeterminate
-  case sharedZoneAbsent
+  case zoneListSucceededWithoutPolicyZone(ownerUserRecordName: String)
   case sharedZoneIndeterminate
-  case recordAbsent
-  case recordFailed
-  case recordRole(String)
+  case recordAbsent(ownerUserRecordName: String)
+  case recordFetchFailed
+  case recordZoneMissing
+  case recordRole(role: String, ownerUserRecordName: String)
 }
 
 enum StartupRecoveryProfileFetchOutcome: Equatable {
   case success
-  case zoneMissing
+  case zoneListSucceededWithoutSyncZone
+  case zoneFetchReportedMissing
   case indeterminate
 }
 
@@ -46,12 +48,14 @@ final class StartupRecoveryCloudService: @unchecked Sendable {  // SAFETY: Immut
     _ observation: StartupRecoveryMembershipObservation
   ) -> StartupRecoveryMembershipResult {
     switch observation {
-    case .sharedZoneAbsent, .recordAbsent:
-      return .confirmedNone
-    case .recordRole(let roleValue):
+    case .zoneListSucceededWithoutPolicyZone(let ownerUserRecordName),
+      .recordAbsent(let ownerUserRecordName):
+      return .confirmedNone(ownerUserRecordName: ownerUserRecordName)
+    case .recordRole(let roleValue, let ownerUserRecordName):
       guard let role = FamilyRole(rawValue: roleValue) else { return .indeterminate }
-      return .member(role)
-    case .accountUnavailable, .accountIndeterminate, .sharedZoneIndeterminate, .recordFailed:
+      return .member(role: role, ownerUserRecordName: ownerUserRecordName)
+    case .accountUnavailable, .accountIndeterminate, .sharedZoneIndeterminate,
+      .recordFetchFailed, .recordZoneMissing:
       return .indeterminate
     }
   }
@@ -63,9 +67,9 @@ final class StartupRecoveryCloudService: @unchecked Sendable {  // SAFETY: Immut
     switch outcome {
     case .success:
       return .confirmed(fold.profileCount)
-    case .zoneMissing:
+    case .zoneListSucceededWithoutSyncZone:
       return .confirmed(0)
-    case .indeterminate:
+    case .zoneFetchReportedMissing, .indeterminate:
       return .indeterminate
     }
   }
@@ -104,7 +108,9 @@ final class StartupRecoveryCloudService: @unchecked Sendable {  // SAFETY: Immut
           $0.zoneID.zoneName == CloudKitConstants.policyZoneName
         })
       else {
-        return Self.resolveMembership(.sharedZoneAbsent)
+        return Self.resolveMembership(
+          .zoneListSucceededWithoutPolicyZone(
+            ownerUserRecordName: userRecordID.recordName))
       }
       policyZoneID = matchingZone.zoneID
     } catch {
@@ -114,14 +120,21 @@ final class StartupRecoveryCloudService: @unchecked Sendable {  // SAFETY: Immut
       return Self.resolveMembership(.sharedZoneIndeterminate)
     }
 
-    let observation = await fetchMembershipObservation(
+    var observation = await fetchMembershipObservation(
       in: policyZoneID,
       userRecordName: userRecordID.recordName,
       database: database)
+    if observation == .recordZoneMissing {
+      observation = await recheckPolicyZoneAfterMissingFetch(
+        ownerUserRecordName: userRecordID.recordName,
+        database: database)
+    }
     return Self.resolveMembership(observation)
   }
 
-  func fetchSyncedProfileCount() async -> StartupRecoveryProfileCountResult {
+  func fetchSyncedProfileCount(
+    expectedOwnerUserRecordName: String
+  ) async -> StartupRecoveryProfileCountResult {
     do {
       guard try await container.accountStatus() == .available else {
         return .indeterminate
@@ -129,6 +142,19 @@ final class StartupRecoveryCloudService: @unchecked Sendable {  // SAFETY: Immut
     } catch {
       Log.error(
         "Startup recovery could not determine the profile account state: \(redactedErrorForLog(error))",
+        category: .cloudKit)
+      return .indeterminate
+    }
+
+    do {
+      guard
+        try await container.userRecordID().recordName == expectedOwnerUserRecordName
+      else {
+        return .indeterminate
+      }
+    } catch {
+      Log.error(
+        "Startup recovery could not verify the profile account: \(redactedErrorForLog(error))",
         category: .cloudKit)
       return .indeterminate
     }
@@ -165,15 +191,52 @@ final class StartupRecoveryCloudService: @unchecked Sendable {  // SAFETY: Immut
       }
     }
 
-    let outcome = await withCheckedContinuation { continuation in
+    var outcome = await withCheckedContinuation { continuation in
       operation.fetchRecordZoneChangesResultBlock = { result in
         continuation.resume(returning: accumulator.outcome(for: result))
       }
       container.privateCloudDatabase.add(operation)
     }
 
+    if outcome == .zoneFetchReportedMissing {
+      do {
+        let zones = try await container.privateCloudDatabase.allRecordZones()
+        if !zones.contains(where: { $0.zoneID.zoneName == CloudKitConstants.syncZoneName }) {
+          outcome = .zoneListSucceededWithoutSyncZone
+        } else {
+          outcome = .indeterminate
+        }
+      } catch {
+        Log.error(
+          "Startup recovery could not recheck the profile zone: \(redactedErrorForLog(error))",
+          category: .cloudKit)
+        outcome = .indeterminate
+      }
+    }
+
     let snapshot = accumulator.foldSnapshot()
     return Self.resolveProfileCount(fold: snapshot, outcome: outcome)
+  }
+
+  private func recheckPolicyZoneAfterMissingFetch(
+    ownerUserRecordName: String,
+    database: CKDatabase
+  ) async -> StartupRecoveryMembershipObservation {
+    do {
+      let zones = try await database.allRecordZones()
+      guard
+        zones.contains(where: { $0.zoneID.zoneName == CloudKitConstants.policyZoneName })
+      else {
+        return .zoneListSucceededWithoutPolicyZone(
+          ownerUserRecordName: ownerUserRecordName)
+      }
+      return .recordFetchFailed
+    } catch {
+      Log.error(
+        "Startup recovery could not recheck the shared family zone: \(redactedErrorForLog(error))",
+        category: .cloudKit)
+      return .sharedZoneIndeterminate
+    }
   }
 
   private func fetchMembershipObservation(
@@ -275,13 +338,15 @@ private final class MembershipFetchAccumulator: @unchecked Sendable {  // SAFETY
     for operationResult: Result<Void, Error>
   ) -> StartupRecoveryMembershipObservation {
     lock.withLock {
-      if zoneWasRemoved { return .sharedZoneAbsent }
-      if fetchFailed { return .recordFailed }
+      if zoneWasRemoved { return .recordZoneMissing }
+      if fetchFailed { return .recordFetchFailed }
       if case .failure(let error) = operationResult {
-        return startupRecoveryIsMissingZone(error) ? .sharedZoneAbsent : .recordFailed
+        return startupRecoveryIsMissingZone(error) ? .recordZoneMissing : .recordFetchFailed
       }
-      guard let roleValue else { return .recordAbsent }
-      return .recordRole(roleValue)
+      guard let roleValue else {
+        return .recordAbsent(ownerUserRecordName: userRecordName)
+      }
+      return .recordRole(role: roleValue, ownerUserRecordName: userRecordName)
     }
   }
 }
@@ -312,7 +377,8 @@ private final class ProfileFetchAccumulator: @unchecked Sendable {  // SAFETY: N
 
   func recordZoneFailure(_ error: Error) {
     lock.withLock {
-      zoneFailureOutcome = startupRecoveryIsMissingZone(error) ? .zoneMissing : .indeterminate
+      zoneFailureOutcome =
+        startupRecoveryIsMissingZone(error) ? .zoneFetchReportedMissing : .indeterminate
     }
   }
 
@@ -324,7 +390,7 @@ private final class ProfileFetchAccumulator: @unchecked Sendable {  // SAFETY: N
       case .success:
         return .success
       case .failure(let error):
-        return startupRecoveryIsMissingZone(error) ? .zoneMissing : .indeterminate
+        return startupRecoveryIsMissingZone(error) ? .zoneFetchReportedMissing : .indeterminate
       }
     }
   }

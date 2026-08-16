@@ -14,15 +14,18 @@ final class StartupRecoveryCoordinatorTests: XCTestCase {
       store: store,
       lookupMembership: {
         steps.append("membership")
-        return .member(.child)
+        return .member(role: .child, ownerUserRecordName: "owner-A")
       },
-      lookupSyncedProfileCount: {
+      lookupSyncedProfileCount: { ownerUserRecordName in
+        XCTAssertEqual(ownerUserRecordName, "owner-A")
         steps.append("profiles")
         return .confirmed(2)
       },
       restoreFamilyRole: { role in
         XCTAssertEqual(role, .child)
-        XCTAssertEqual(store.pendingOffer, .init(role: .child, profileCount: nil))
+        XCTAssertEqual(
+          store.pendingOffer,
+          .init(ownerUserRecordName: "owner-A", role: .child, profileCount: nil))
         steps.append("role")
       },
       refreshChildLockCodes: { steps.append("locks") },
@@ -33,7 +36,9 @@ final class StartupRecoveryCoordinatorTests: XCTestCase {
 
     XCTAssertEqual(steps, ["membership", "role", "locks", "profiles"])
     XCTAssertEqual(coordinator.state, .offer(role: .child, profileCount: 2))
-    XCTAssertEqual(store.pendingOffer, .init(role: .child, profileCount: 2))
+    XCTAssertEqual(
+      store.pendingOffer,
+      .init(ownerUserRecordName: "owner-A", role: .child, profileCount: 2))
   }
 
   func testGivenIndeterminateMembershipTwice_WhenContinuingSetup_ThenRecheckIsDurable() async {
@@ -69,13 +74,13 @@ final class StartupRecoveryCoordinatorTests: XCTestCase {
     let coordinator = makeCoordinator(
       store: store,
       membership: { membership },
-      profileCount: { .confirmed(0) },
+      profileCount: { _ in .confirmed(0) },
       restoreRole: { restoredRole = $0 })
 
     await coordinator.start(classification: .existing)
     XCTAssertEqual(coordinator.state, .normal(recheckArmed: true))
 
-    membership = .member(.parent)
+    membership = .member(role: .parent, ownerUserRecordName: "owner-A")
     await coordinator.recheckIfNeeded()
 
     XCTAssertEqual(restoredRole, .parent)
@@ -88,7 +93,9 @@ final class StartupRecoveryCoordinatorTests: XCTestCase {
     defer { defaults.removePersistentDomain(forName: suiteName) }
     let store = StartupRecoveryStore(defaults: defaults)
     store.markRecheckPending()
-    let coordinator = makeCoordinator(store: store, membership: { .confirmedNone })
+    let coordinator = makeCoordinator(
+      store: store,
+      membership: { .confirmedNone(ownerUserRecordName: "owner-A") })
 
     await coordinator.start(classification: .existing)
     await coordinator.recheckIfNeeded()
@@ -101,7 +108,10 @@ final class StartupRecoveryCoordinatorTests: XCTestCase {
     let (defaults, suiteName) = makeDefaults()
     defer { defaults.removePersistentDomain(forName: suiteName) }
     let store = StartupRecoveryStore(defaults: defaults)
-    store.pendingOffer = .init(role: .child, profileCount: nil)
+    store.pendingOffer = .init(
+      ownerUserRecordName: "owner-A",
+      role: .child,
+      profileCount: nil)
     var steps: [String] = []
     let coordinator = makeCoordinator(
       store: store,
@@ -109,7 +119,8 @@ final class StartupRecoveryCoordinatorTests: XCTestCase {
         XCTFail("Pending offer bypasses membership lookup")
         return .indeterminate
       },
-      profileCount: {
+      profileCount: { ownerUserRecordName in
+        XCTAssertEqual(ownerUserRecordName, "owner-A")
         steps.append("profiles")
         return .confirmed(1)
       },
@@ -126,14 +137,17 @@ final class StartupRecoveryCoordinatorTests: XCTestCase {
     let (defaults, suiteName) = makeDefaults()
     defer { defaults.removePersistentDomain(forName: suiteName) }
     let store = StartupRecoveryStore(defaults: defaults)
-    store.pendingOffer = .init(role: .parent, profileCount: 3)
+    store.pendingOffer = .init(
+      ownerUserRecordName: "owner-A",
+      role: .parent,
+      profileCount: 3)
     let coordinator = makeCoordinator(
       store: store,
       membership: {
         XCTFail("Stored offer bypasses membership lookup")
         return .indeterminate
       },
-      profileCount: {
+      profileCount: { _ in
         XCTFail("Stored count bypasses profile lookup")
         return .indeterminate
       })
@@ -151,8 +165,8 @@ final class StartupRecoveryCoordinatorTests: XCTestCase {
     var releaseCount = 0
     let coordinator = makeCoordinator(
       store: store,
-      membership: { .member(.parent) },
-      profileCount: { .confirmed(2) },
+      membership: { .member(role: .parent, ownerUserRecordName: "owner-A") },
+      profileCount: { _ in .confirmed(2) },
       setSyncEnabled: { syncValues.append($0) },
       releaseStartup: { releaseCount += 1 })
     await coordinator.start(classification: .fresh)
@@ -172,8 +186,8 @@ final class StartupRecoveryCoordinatorTests: XCTestCase {
     var didEnableSync = false
     let coordinator = makeCoordinator(
       store: store,
-      membership: { .member(.parent) },
-      profileCount: { .confirmed(2) },
+      membership: { .member(role: .parent, ownerUserRecordName: "owner-A") },
+      profileCount: { _ in .confirmed(2) },
       setSyncEnabled: { _ in didEnableSync = true })
     await coordinator.start(classification: .fresh)
 
@@ -191,8 +205,8 @@ final class StartupRecoveryCoordinatorTests: XCTestCase {
     var didEnableSync = false
     let coordinator = makeCoordinator(
       store: store,
-      membership: { .member(.child) },
-      profileCount: { .confirmed(0) },
+      membership: { .member(role: .child, ownerUserRecordName: "owner-A") },
+      profileCount: { _ in .confirmed(0) },
       setSyncEnabled: { _ in didEnableSync = true })
     await coordinator.start(classification: .fresh)
 
@@ -206,7 +220,9 @@ final class StartupRecoveryCoordinatorTests: XCTestCase {
   private func makeCoordinator(
     store: StartupRecoveryStore,
     membership: @escaping () async -> StartupRecoveryMembershipResult,
-    profileCount: @escaping () async -> StartupRecoveryProfileCountResult = { .confirmed(0) },
+    profileCount: @escaping (String) async -> StartupRecoveryProfileCountResult = { _ in
+      .confirmed(0)
+    },
     restoreRole: @escaping (FamilyRole) -> Void = { _ in },
     refreshLocks: @escaping () async -> Void = {},
     setSyncEnabled: @escaping (Bool) -> Void = { _ in },
