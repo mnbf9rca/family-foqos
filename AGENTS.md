@@ -6,7 +6,7 @@ This always-loaded file is the invariant sheet for agentic work in Family Foqos.
 
 - Keep implementations DRY and KISS; in general, apply YAGNI.
 - Never amend or force commits. Put every fix in a new signed commit; revert with a new commit when needed.
-- Obtain independent code review before every merge. The planner merges unless the active workflow explicitly names another merger.
+- Obtain independent adversarial design review before implementation and independent code review before every merge. The planner merges unless the active workflow explicitly names another merger.
 - At fleet/session startup while the human is present, the planner dispatches `scripts/warm-git-credentials.sh` to every implementation stream; each stream runs it in its clean assigned feature worktree before taking implementation work, and reruns it only if signing or SSH approval expires mid-session while the human is present.
 - The gate supports up to three Xcode/simulator streams when all simulator work uses `scripts/xcode-stream.sh --agent <agent> --session <session>` with stable ownership and UUID destinations only, never device-name destinations; it injects `-parallel-testing-enabled NO` and `-disable-concurrent-destination-testing`.
 - Keep implementation streams on separate feature branches/worktrees with disjoint files. Read-only work does not consume a gate slot and may run concurrently from another working copy.
