@@ -6,8 +6,8 @@ This always-loaded file is the invariant sheet for agentic work in Family Foqos.
 
 - Keep implementations DRY and KISS; in general, apply YAGNI.
 - Never amend or force commits. Put every fix in a new signed commit; revert with a new commit when needed.
-- Obtain independent adversarial design review before implementation and independent code review before every merge. The planner merges unless the active workflow explicitly names another merger.
-- At fleet/session startup while the human is present, the planner dispatches `scripts/warm-git-credentials.sh` to every implementation stream; each stream runs it in its clean assigned feature worktree before taking implementation work, and reruns it only if signing or SSH approval expires mid-session while the human is present.
+- Obtain independent adversarial design review (correctness, over-engineering, missing cases that matter in practice) before implementation and independent code review before every merge. The orchestrator merges, and only after asking the human about that specific PR.
+- At fleet startup while the human is present, the orchestrator dispatches `scripts/warm-git-credentials.sh` to every implementation stream; each stream runs it in its clean assigned feature worktree before taking implementation work, and reruns it only if signing or SSH approval expires mid-session while the human is present.
 - The gate supports up to three Xcode/simulator streams when all simulator work uses `scripts/xcode-stream.sh --agent <agent> --session <session>` with stable ownership and UUID destinations only, never device-name destinations; it injects `-parallel-testing-enabled NO` and `-disable-concurrent-destination-testing`.
 - Keep implementation streams on separate feature branches/worktrees with disjoint files. Read-only work does not consume a gate slot and may run concurrently from another working copy.
 
@@ -23,12 +23,15 @@ See [Development Workflow](docs/development-workflow.md) for credential fallback
 
 ## Multi-Agent Coordination
 
-- Route human gates through the planner; never park `gate/*` approvals in AMQ `user`, and send `blocked on human gate: <what>` on the normal planner thread.
-- After 30 quiet minutes with in-flight work, the planner drains its inbox, inspects the agent's `inbox/new`, sweeps `user`, checks commit age/dirty files/CPU delta, then pings directly.
-- `notifier_live` proves only that the wake process runs; never treat it as work or progress evidence.
-- Announce every wait for a gate, review, or dependency when it begins.
+- The fleet is one Herdr workspace with agents addressed by name: `orchestrator` (the human's proxy: dispatch, human gates, heartbeat, merges), `planner` (specs and plans only), `build1` and `build2` (implementation in their own worktrees), `reviewer` (design and code review).
+- Every agent loads this file at startup; the orchestrator's first prompt names your role; read `docs/multi-agent-coordination.md` for that role's rules before taking work.
+- Message an agent with `herdr agent prompt <name> "<your role>: <text>"` and read its reply with `herdr agent read <name> --source recent-unwrapped --lines N`. Review rounds run directly between planner and reviewer with a one-line notice to the orchestrator at request and at verdict.
+- Route human gates through the orchestrator: send `<role>: blocked on human gate: <what>` to `orchestrator` and wait.
+- The orchestrator produces no repository artifacts, verifies claims through its own subagents rather than in its own context, and briefs agents with only the problem, the human's rulings, undiscoverable details, and how to report back.
+- After 30 quiet minutes with in-flight work, the orchestrator checks the agent's Herdr state, has a subagent collect recent output, commit age, dirty files, and CPU delta, then prompts the agent unless it is blocked.
+- Announce every wait for a gate, review, or dependency to the orchestrator when it begins.
 - A PR reported approved or merge-ready must already be ready for review and must not be a draft.
-- Never end with only promised future work; state exactly what remains, and use commit age, dirty files, and CPU delta—not message recency—as evidence.
+- Never end with only promised future work; state exactly what remains, and use commit age, dirty files, and CPU delta as evidence, never message recency or Herdr's `agent_status`.
 
 See [Multi-Agent Coordination](docs/multi-agent-coordination.md) for gate examples, heartbeat diagnostics, CPU recipes, and calibrated operator-doc sign-off.
 
