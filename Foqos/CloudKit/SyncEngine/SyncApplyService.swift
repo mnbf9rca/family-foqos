@@ -498,6 +498,13 @@ final class SyncApplyService {
     profile.profileSchemaVersion = max(
       profile.profileSchemaVersion, synced.profileSchemaVersion)
     profile.scheduleLastStoppedAt = synced.scheduleLastStoppedAt
+    if FamilyActivityUtil.countSelectedActivities(profile.selectedActivity) == 0,
+      !profile.blockAdultWebsites, !profile.blockAppInstallation,
+      !profile.enableAllowMode, !profile.enableAllowModeDomains,
+      !(profile.domains ?? []).contains(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
+    {
+      profile.needsAppSelection = true
+    }
     BlockedProfiles.updateSnapshot(for: profile)
   }
 

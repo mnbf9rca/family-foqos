@@ -496,6 +496,9 @@ class BlockedProfiles {
     if let customReminderMessage {
       profile.customReminderMessage = customReminderMessage
     }
+    if blockAdultWebsites == true || blockAppInstallation == true {
+      profile.migrateToV2IfNeeded()
+    }
     profile.updatedAt = now
 
     // Update the snapshot

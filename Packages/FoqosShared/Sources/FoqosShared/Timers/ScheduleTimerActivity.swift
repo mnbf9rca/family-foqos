@@ -48,6 +48,11 @@ public class ScheduleTimerActivity: TimerActivity {
       withIdentifiers: reminderIds
     )
 
+    guard profile.needsAppSelection != true else {
+      Log.info("Skipping scheduled start until profile selection is confirmed", category: .timer)
+      return
+    }
+
     // Check start schedule — V2 uses consolidated shouldBeActiveNow, legacy uses individual checks
     if let startSchedule = profile.startSchedule, profile.startTriggersSchedule == true {
       let activeStopSchedule =
