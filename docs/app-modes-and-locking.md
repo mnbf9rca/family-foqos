@@ -8,6 +8,10 @@
 | **Parent** | Can set code | Yes | Yes | No (full access) |
 | **Child** | Synced from parent | Yes | No | Yes (requires code) |
 
+## Data Boundary
+
+Profiles, sessions, tags, and locations sync only between devices signed into the same private iCloud account; they never cross the family share. Family sharing carries only lock-code records (a salted hash and scope metadata), family-member records, child-to-parent heartbeats, and two parent-to-child commands: reset the emergency count (`resetEmergencyCount`) and reset lock-code throttling (`resetLockCodeThrottle`). A parent configures the profile on the child’s device, then enables Parent-Controlled in Parent mode with a configured code or uses the code-authorized Edit Locked Profiles sheet in Child mode; the lock code gates only editing/deleting locked items and changes to locked emergency settings in Child mode. The child’s device scans its own NFC/QR tags to start and stop sessions; parents do not push profiles, start/stop sessions, or scan for the child from their own device through family sharing.
+
 ## Individual-to-Parent Promotion
 
 An Individual device can set a lock code through the Family Controls Dashboard. This is the only
