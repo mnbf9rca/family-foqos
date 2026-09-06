@@ -153,6 +153,8 @@ DEFINE SCHEMA
         enableAllowMode         INT64,
         enableAllowModeDomains  INT64,
         enableSafariBlocking    INT64,
+        blockAdultWebsites      INT64,
+        blockAppInstallation    INT64,
         preActivationReminderTimesData  BYTES,
         physicalUnblockNFCTagId STRING,
         physicalUnblockQRCodeId STRING,

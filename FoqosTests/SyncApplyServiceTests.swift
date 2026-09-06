@@ -1147,4 +1147,38 @@ final class SyncApplyServiceTests: XCTestCase {
       .applied)
     XCTAssertNotNil(try BlockedProfiles.findProfile(byID: id, in: context), "genuine recreation applies")
   }
+
+  func testGivenIncomingSafetyOptions_WhenLocallyConfirmedThenUpdated_ThenStartEligibilityAndSnapshotFollow() throws {
+    let now = Date()
+    let manager = StrategyManager()
+    defer { manager.stopTimer() }
+    for (adult, installs) in [(true, false), (false, true)] {
+      let id = UUID()
+      let record = makeProfileRecord(id: id, name: "Safety", version: 1, originDeviceId: "device-B", now: now)
+      record["blockAdultWebsites"] = adult
+      record["blockAppInstallation"] = installs
+      XCTAssertEqual(makeService().applyFetchedModification(record, isPendingDeleteOrTombstoned: noPendingDelete), .applied)
+      let profile = try XCTUnwrap(BlockedProfiles.findProfile(byID: id, in: context))
+      XCTAssertEqual(profile.blockAdultWebsites, adult)
+      XCTAssertEqual(profile.blockAppInstallation, installs)
+      XCTAssertTrue(profile.needsAppSelection)
+      XCTAssertNotNil(manager.rejectionForStart(profile, activeSessionProvider: { nil }))
+      let needsSelection = BlockedProfiles.needsAppSelectionAfterLocalSave(
+        currentNeedsAppSelection: profile.needsAppSelection, selection: profile.selectedActivity,
+        blockAdultWebsites: profile.blockAdultWebsites, blockAppInstallation: profile.blockAppInstallation)
+      _ = try BlockedProfiles.updateProfile(profile, in: context, now: now, needsAppSelection: needsSelection)
+      XCTAssertNil(manager.rejectionForStart(profile, activeSessionProvider: { nil }))
+      XCTAssertEqual(SharedData.snapshot(for: id.uuidString)?.blockAdultWebsites, adult)
+      XCTAssertEqual(SharedData.snapshot(for: id.uuidString)?.blockAppInstallation, installs)
+      record["version"] = 2
+      record["blockAdultWebsites"] = false
+      record["blockAppInstallation"] = false
+      XCTAssertEqual(makeService().applyFetchedModification(record, isPendingDeleteOrTombstoned: noPendingDelete), .applied)
+      XCTAssertFalse(profile.blockAdultWebsites)
+      XCTAssertFalse(profile.blockAppInstallation)
+      XCTAssertEqual(SharedData.snapshot(for: id.uuidString)?.blockAdultWebsites, false)
+      XCTAssertEqual(SharedData.snapshot(for: id.uuidString)?.blockAppInstallation, false)
+    }
+  }
+
 }

@@ -8,8 +8,7 @@ extension SharedData {
     switch decision {
     case .deactivate:
       applier.deactivateRestrictions(
-        keepingAppRemovalDenied: session?.endTime == nil
-          && session?.pinnedProfileConfig?.enableStrictMode == true)
+        keepingSafeguardsFor: session?.endTime == nil ? session?.pinnedProfileConfig : nil)
     case .activate(let profile):
       applier.activateRestrictions(for: profile)
     case .bailPreserve:

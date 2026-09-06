@@ -42,6 +42,8 @@ struct BlockedProfileView: View {
   @State private var enableAllowMode: Bool = false
   @State private var enableAllowModeDomain: Bool = false
   @State private var enableSafariBlocking: Bool = true
+  @State private var blockAdultWebsites: Bool = false
+  @State private var blockAppInstallation: Bool = false
   @State private var disableBackgroundStops: Bool = false
   @State private var preActivationReminderTimes: Set<UInt8> = []
   @State private var domains: [String] = []
@@ -171,6 +173,8 @@ struct BlockedProfileView: View {
     _enableAllowModeDomain = State(
       initialValue: profile?.enableAllowModeDomains ?? false
     )
+    _blockAdultWebsites = State(initialValue: profile?.blockAdultWebsites ?? false)
+    _blockAppInstallation = State(initialValue: profile?.blockAppInstallation ?? false)
     _enableSafariBlocking = State(
       initialValue: profile?.enableSafariBlocking ?? true
     )
@@ -314,7 +318,7 @@ struct BlockedProfileView: View {
             CustomToggle(
               title: "Block Safari",
               description:
-                "Block Safari websites that are selected in the app selector above. When disabled, Safari will remain unrestricted regardless of the websites you pick.",
+                "Block Safari websites that are selected in the app selector above. This does not affect domain rules or the adult website filter.",
               isOn: $enableSafariBlocking,
               isDisabled: isBlocking
             )
@@ -334,6 +338,21 @@ struct BlockedProfileView: View {
                 "Pick domains to allow and block everything else. This will erase any other selection you've made.",
               isOn: $enableAllowModeDomain,
               isDisabled: isBlocking
+            )
+          }
+
+          Section("Session Safety") {
+            CustomToggle(
+              title: "Block adult websites",
+              description: "Use Apple’s adult website filter, including during breaks.",
+              isOn: $blockAdultWebsites,
+              isDisabled: editingDisabled
+            )
+            CustomToggle(
+              title: "Block new app installs",
+              description: "Prevent installing apps during this session, including during breaks.",
+              isOn: $blockAppInstallation,
+              isDisabled: editingDisabled
             )
           }
 
@@ -902,14 +921,18 @@ struct BlockedProfileView: View {
     domains: [String],
     enableAllowMode: Bool,
     enableAllowModeDomains: Bool,
-    needsAppSelection: Bool
+    needsAppSelection: Bool,
+    blockAdultWebsites: Bool = false,
+    blockAppInstallation: Bool = false
   ) -> String? {
     emptyProfileValidationMessage(
       selectedItemsCount: FamilyActivityUtil.countSelectedActivities(selection),
       domains: domains,
       enableAllowMode: enableAllowMode,
       enableAllowModeDomains: enableAllowModeDomains,
-      needsAppSelection: needsAppSelection
+      needsAppSelection: needsAppSelection,
+      blockAdultWebsites: blockAdultWebsites,
+      blockAppInstallation: blockAppInstallation
     )
   }
 
@@ -918,7 +941,9 @@ struct BlockedProfileView: View {
     domains: [String],
     enableAllowMode: Bool,
     enableAllowModeDomains: Bool,
-    needsAppSelection: Bool
+    needsAppSelection: Bool,
+    blockAdultWebsites: Bool = false,
+    blockAppInstallation: Bool = false
   ) -> String? {
     let hasSelectedActivity = selectedItemsCount > 0
     let hasDomains = domains.contains {
@@ -926,7 +951,10 @@ struct BlockedProfileView: View {
     }
     let hasAllowModeContent = enableAllowMode || enableAllowModeDomains
 
-    guard !hasSelectedActivity && !hasDomains && !hasAllowModeContent else {
+    guard
+      !hasSelectedActivity && !hasDomains && !hasAllowModeContent
+        && !blockAdultWebsites && !blockAppInstallation
+    else {
       return nil
     }
 
@@ -1014,7 +1042,9 @@ struct BlockedProfileView: View {
       domains: domains,
       enableAllowMode: enableAllowMode,
       enableAllowModeDomains: enableAllowModeDomain,
-      needsAppSelection: profile?.needsAppSelection ?? false
+      needsAppSelection: profile?.needsAppSelection ?? false,
+      blockAdultWebsites: blockAdultWebsites,
+      blockAppInstallation: blockAppInstallation
     ) {
       alertIdentifier = AlertIdentifier(id: .error, errorMessage: validationMessage)
       return
@@ -1043,7 +1073,9 @@ struct BlockedProfileView: View {
         existingProfile.customReminderMessage = customReminderMessage
         let needsAppSelectionAfterSave = BlockedProfiles.needsAppSelectionAfterLocalSave(
           currentNeedsAppSelection: existingProfile.needsAppSelection,
-          selection: selectedActivity
+          selection: selectedActivity,
+          blockAdultWebsites: blockAdultWebsites,
+          blockAppInstallation: blockAppInstallation
         )
 
         // Update remaining fields through updateProfile (which calls context.save())
@@ -1060,6 +1092,8 @@ struct BlockedProfileView: View {
           enableAllowMode: enableAllowMode,
           enableAllowModeDomains: enableAllowModeDomain,
           enableSafariBlocking: enableSafariBlocking,
+          blockAdultWebsites: blockAdultWebsites,
+          blockAppInstallation: blockAppInstallation,
           domains: domains,
           schedule: nil,
           disableBackgroundStops: disableBackgroundStops,
@@ -1084,6 +1118,8 @@ struct BlockedProfileView: View {
           enableAllowMode: enableAllowMode,
           enableAllowModeDomains: enableAllowModeDomain,
           enableSafariBlocking: enableSafariBlocking,
+          blockAdultWebsites: blockAdultWebsites,
+          blockAppInstallation: blockAppInstallation,
           domains: domains,
           physicalUnblockNFCTagId: physicalUnblockNFCTagId,
           physicalUnblockQRCodeId: physicalUnblockQRCodeId,

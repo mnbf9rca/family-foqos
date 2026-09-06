@@ -466,6 +466,8 @@ final class SyncApplyService {
     profile.enableAllowMode = synced.enableAllowMode
     profile.enableAllowModeDomains = synced.enableAllowModeDomains
     profile.enableSafariBlocking = synced.enableSafariBlocking
+    profile.blockAdultWebsites = synced.blockAdultWebsites == true
+    profile.blockAppInstallation = synced.blockAppInstallation == true
     profile.physicalUnblockNFCTagId = synced.physicalUnblockNFCTagId
     profile.physicalUnblockQRCodeId = synced.physicalUnblockQRCodeId
     profile.domains = synced.domains
@@ -518,6 +520,8 @@ final class SyncApplyService {
       enableAllowMode: synced.enableAllowMode,
       enableAllowModeDomains: synced.enableAllowModeDomains,
       enableSafariBlocking: synced.enableSafariBlocking,
+      blockAdultWebsites: synced.blockAdultWebsites == true,
+      blockAppInstallation: synced.blockAppInstallation == true,
       order: synced.order,
       domains: synced.domains,
       physicalUnblockNFCTagId: synced.physicalUnblockNFCTagId,

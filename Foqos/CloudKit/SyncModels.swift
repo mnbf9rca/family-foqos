@@ -37,6 +37,8 @@ struct SyncedProfile: Codable, Equatable {
   var enableAllowMode: Bool
   var enableAllowModeDomains: Bool
   var enableSafariBlocking: Bool
+  var blockAdultWebsites: Bool?
+  var blockAppInstallation: Bool?
   var preActivationReminderTimesData: Data?
 
   // Physical unlock settings
@@ -102,6 +104,8 @@ struct SyncedProfile: Codable, Equatable {
     case enableAllowMode
     case enableAllowModeDomains
     case enableSafariBlocking
+    case blockAdultWebsites
+    case blockAppInstallation
     case preActivationReminderTimesData
     case physicalUnblockNFCTagId
     case physicalUnblockQRCodeId
@@ -154,6 +158,8 @@ struct SyncedProfile: Codable, Equatable {
     record[FieldKey.enableAllowMode.rawValue] = enableAllowMode
     record[FieldKey.enableAllowModeDomains.rawValue] = enableAllowModeDomains
     record[FieldKey.enableSafariBlocking.rawValue] = enableSafariBlocking
+    record[FieldKey.blockAdultWebsites.rawValue] = blockAdultWebsites == true
+    record[FieldKey.blockAppInstallation.rawValue] = blockAppInstallation == true
     record[FieldKey.preActivationReminderTimesData.rawValue] = preActivationReminderTimesData
     record[FieldKey.physicalUnblockNFCTagId.rawValue] = physicalUnblockNFCTagId
     record[FieldKey.physicalUnblockQRCodeId.rawValue] = physicalUnblockQRCodeId
@@ -223,6 +229,8 @@ struct SyncedProfile: Codable, Equatable {
     enableAllowMode = record[FieldKey.enableAllowMode.rawValue] as? Bool ?? false
     enableAllowModeDomains = record[FieldKey.enableAllowModeDomains.rawValue] as? Bool ?? false
     enableSafariBlocking = record[FieldKey.enableSafariBlocking.rawValue] as? Bool ?? true
+    blockAdultWebsites = record[FieldKey.blockAdultWebsites.rawValue] as? Bool ?? false
+    blockAppInstallation = record[FieldKey.blockAppInstallation.rawValue] as? Bool ?? false
     if let data = record[FieldKey.preActivationReminderTimesData.rawValue] as? Data {
       preActivationReminderTimesData = data
     } else if let legacyEnabled = record["preActivationReminderEnabled"] as? Bool,
@@ -284,6 +292,8 @@ struct SyncedProfile: Codable, Equatable {
     enableAllowMode = profile.enableAllowMode
     enableAllowModeDomains = profile.enableAllowModeDomains
     enableSafariBlocking = profile.enableSafariBlocking
+    blockAdultWebsites = profile.blockAdultWebsites
+    blockAppInstallation = profile.blockAppInstallation
     preActivationReminderTimesData = profile.preActivationReminderTimesData
     physicalUnblockNFCTagId = profile.physicalUnblockNFCTagId
     physicalUnblockQRCodeId = profile.physicalUnblockQRCodeId

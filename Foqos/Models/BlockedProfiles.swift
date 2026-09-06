@@ -31,6 +31,8 @@ class BlockedProfiles {
   var enableAllowMode: Bool = false
   var enableAllowModeDomains: Bool = false
   var enableSafariBlocking: Bool = true
+  var blockAdultWebsites: Bool = false
+  var blockAppInstallation: Bool = false
 
   var physicalUnblockNFCTagId: String?
   var physicalUnblockQRCodeId: String?
@@ -257,6 +259,8 @@ class BlockedProfiles {
     enableAllowMode: Bool = false,
     enableAllowModeDomains: Bool = false,
     enableSafariBlocking: Bool = true,
+    blockAdultWebsites: Bool = false,
+    blockAppInstallation: Bool = false,
     order: Int = 0,
     domains: [String]? = nil,
     physicalUnblockNFCTagId: String? = nil,
@@ -288,6 +292,8 @@ class BlockedProfiles {
     self.enableAllowMode = enableAllowMode
     self.enableAllowModeDomains = enableAllowModeDomains
     self.enableSafariBlocking = enableSafariBlocking
+    self.blockAdultWebsites = blockAdultWebsites
+    self.blockAppInstallation = blockAppInstallation
     self.domains = domains
 
     self.physicalUnblockNFCTagId = physicalUnblockNFCTagId
@@ -370,6 +376,8 @@ class BlockedProfiles {
     enableAllowMode: Bool? = nil,
     enableAllowModeDomains: Bool? = nil,
     enableSafariBlocking: Bool? = nil,
+    blockAdultWebsites: Bool? = nil,
+    blockAppInstallation: Bool? = nil,
     order: Int? = nil,
     domains: [String]? = nil,
     physicalUnblockNFCTagId: String? = nil,
@@ -425,6 +433,14 @@ class BlockedProfiles {
 
     if let newEnableSafariBlocking = enableSafariBlocking {
       profile.enableSafariBlocking = newEnableSafariBlocking
+    }
+
+    if let blockAdultWebsites {
+      profile.blockAdultWebsites = blockAdultWebsites
+    }
+
+    if let blockAppInstallation {
+      profile.blockAppInstallation = blockAppInstallation
     }
 
     if let newOrder = order {
@@ -492,9 +508,12 @@ class BlockedProfiles {
 
   static func needsAppSelectionAfterLocalSave(
     currentNeedsAppSelection: Bool,
-    selection: FamilyActivitySelection
+    selection: FamilyActivitySelection,
+    blockAdultWebsites: Bool = false,
+    blockAppInstallation: Bool = false
   ) -> Bool {
     currentNeedsAppSelection && FamilyActivityUtil.countSelectedActivities(selection) == 0
+      && !blockAdultWebsites && !blockAppInstallation
   }
 
   struct DeleteCleanup {
@@ -587,6 +606,8 @@ class BlockedProfiles {
       enableAllowMode: profile.enableAllowMode,
       enableAllowModeDomains: profile.enableAllowModeDomains,
       enableSafariBlocking: profile.enableSafariBlocking,
+      blockAdultWebsites: profile.blockAdultWebsites,
+      blockAppInstallation: profile.blockAppInstallation,
       preActivationReminderTimes: profile.preActivationReminderTimes,
       domains: profile.domains,
       physicalUnblockNFCTagId: profile.physicalUnblockNFCTagId,
@@ -652,6 +673,8 @@ class BlockedProfiles {
     enableAllowMode: Bool = false,
     enableAllowModeDomains: Bool = false,
     enableSafariBlocking: Bool = true,
+    blockAdultWebsites: Bool = false,
+    blockAppInstallation: Bool = false,
     domains: [String]? = nil,
     physicalUnblockNFCTagId: String? = nil,
     physicalUnblockQRCodeId: String? = nil,
@@ -680,6 +703,8 @@ class BlockedProfiles {
       enableAllowMode: enableAllowMode,
       enableAllowModeDomains: enableAllowModeDomains,
       enableSafariBlocking: enableSafariBlocking,
+      blockAdultWebsites: blockAdultWebsites,
+      blockAppInstallation: blockAppInstallation,
       order: profileOrder,
       domains: domains,
       physicalUnblockNFCTagId: physicalUnblockNFCTagId,
@@ -725,6 +750,8 @@ class BlockedProfiles {
       enableAllowMode: source.enableAllowMode,
       enableAllowModeDomains: source.enableAllowModeDomains,
       enableSafariBlocking: source.enableSafariBlocking,
+      blockAdultWebsites: source.blockAdultWebsites,
+      blockAppInstallation: source.blockAppInstallation,
       order: nextOrder,
       domains: source.domains,
       physicalUnblockNFCTagId: source.physicalUnblockNFCTagId,
