@@ -1147,4 +1147,98 @@ final class SyncApplyServiceTests: XCTestCase {
       .applied)
     XCTAssertNotNil(try BlockedProfiles.findProfile(byID: id, in: context), "genuine recreation applies")
   }
+
+  func testGivenIncomingSafetyOptions_WhenLocallyConfirmedThenUpdated_ThenStartEligibilityAndSnapshotFollow() throws {
+    let now = Date()
+    let manager = StrategyManager()
+    defer { manager.stopTimer() }
+    for (adult, installs) in [(true, false), (false, true)] {
+      let id = UUID()
+      let record = makeProfileRecord(id: id, name: "Safety", version: 1, originDeviceId: "device-B", now: now)
+      record["scheduleData"] = try JSONEncoder().encode(
+        BlockedProfileSchedule(
+          days: Weekday.allCases, startHour: 0, startMinute: 0, endHour: 23, endMinute: 59,
+          updatedAt: now.addingTimeInterval(-120)))
+      record["blockAdultWebsites"] = adult
+      record["blockAppInstallation"] = installs
+      XCTAssertEqual(makeService().applyFetchedModification(record, isPendingDeleteOrTombstoned: noPendingDelete), .applied)
+      let profile = try XCTUnwrap(BlockedProfiles.findProfile(byID: id, in: context))
+      XCTAssertEqual(profile.blockAdultWebsites, adult)
+      XCTAssertEqual(profile.blockAppInstallation, installs)
+      XCTAssertTrue(profile.needsAppSelection)
+      XCTAssertNotNil(manager.rejectionForStart(profile, activeSessionProvider: { nil }))
+      let needsSelection = BlockedProfiles.needsAppSelectionAfterLocalSave(
+        currentNeedsAppSelection: profile.needsAppSelection, selection: profile.selectedActivity,
+        blockAdultWebsites: profile.blockAdultWebsites, blockAppInstallation: profile.blockAppInstallation)
+      _ = try BlockedProfiles.updateProfile(profile, in: context, now: now, needsAppSelection: needsSelection)
+      XCTAssertNil(manager.rejectionForStart(profile, activeSessionProvider: { nil }))
+      XCTAssertEqual(SharedData.snapshot(for: id.uuidString)?.blockAdultWebsites, adult)
+      XCTAssertEqual(SharedData.snapshot(for: id.uuidString)?.blockAppInstallation, installs)
+      record["version"] = 2
+      record["blockAdultWebsites"] = false
+      record["blockAppInstallation"] = false
+      XCTAssertEqual(makeService().applyFetchedModification(record, isPendingDeleteOrTombstoned: noPendingDelete), .applied)
+      XCTAssertFalse(profile.blockAdultWebsites)
+      XCTAssertFalse(profile.blockAppInstallation)
+      XCTAssertEqual(SharedData.snapshot(for: id.uuidString)?.blockAdultWebsites, false)
+      XCTAssertEqual(SharedData.snapshot(for: id.uuidString)?.blockAppInstallation, false)
+      XCTAssertTrue(profile.needsAppSelection)
+      XCTAssertNotNil(manager.rejectionForStart(profile, activeSessionProvider: { nil }))
+      let updatedSnapshot = try XCTUnwrap(SharedData.snapshot(for: id.uuidString))
+      ScheduleTimerActivity().start(for: updatedSnapshot)
+      XCTAssertNil(SharedData.getActiveSharedSession())
+      let victim = SharedData.SessionSnapshot(id: "victim", tag: "t", blockedProfileId: UUID(), startTime: now, forceStarted: false)
+      let victimProfile = BlockedProfiles(id: victim.blockedProfileId, name: "Victim", createdAt: now, updatedAt: now)
+      victimProfile.stopConditions = ProfileStopConditions(manual: true)
+      BlockedProfiles.updateSnapshot(for: victimProfile)
+      SharedData.createActiveSharedSession(for: victim)
+      ScheduleTimerActivity().start(for: updatedSnapshot)
+      XCTAssertEqual(SharedData.getActiveSharedSession()?.id, "victim")
+      SharedData.endActiveSharedSession()
+      AppBlockerUtil().deactivateRestrictions()
+    }
+  }
+
+  func testGivenLegacyProfileEnablingSafety_WhenOlderSchemaWinsVersion_ThenSafeguardsSurvive() throws {
+    let now = Date()
+    for (adult, installs) in [(true, false), (false, true)] {
+      let profile = BlockedProfiles(name: "Legacy", createdAt: now, updatedAt: now, syncVersion: 1)
+      profile.profileSchemaVersion = 1
+      profile.blockingStrategyId = NFCBlockingStrategy.id
+      context.insert(profile)
+      try context.save()
+      _ = try BlockedProfiles.updateProfile(
+        profile, in: context, now: now, blockAdultWebsites: adult, blockAppInstallation: installs)
+      let record = makeProfileRecord(
+        id: profile.id, name: "Old-device rename", version: 100, originDeviceId: "device-B", schemaVersion: 1, now: now)
+      record["blockAdultWebsites"] = nil
+      record["blockAppInstallation"] = nil
+      let service = makeService()
+      XCTAssertEqual(service.applyFetchedModification(record, isPendingDeleteOrTombstoned: noPendingDelete), .applied)
+      XCTAssertTrue(service.pendingReenqueues.contains(record.recordID))
+      XCTAssertEqual(profile.blockAdultWebsites, adult)
+      XCTAssertEqual(profile.blockAppInstallation, installs)
+      XCTAssertEqual(profile.profileSchemaVersion, 2)
+      XCTAssertTrue(profile.startTriggers.anyNFC)
+      XCTAssertTrue(profile.stopConditions.sameNFC)
+    }
+  }
+
+  func testGivenOtherRestrictionsRemain_WhenRemoteRemovesSafety_ThenProfileStaysEligible() throws {
+    let now = Date()
+    for (domains, allowApps, allowDomains) in [(["example.com"], false, false), ([], true, false), ([], false, true)] {
+      let profile = BlockedProfiles(
+        name: "Local", createdAt: now, updatedAt: now,
+        blockAdultWebsites: true, syncVersion: 1)
+      context.insert(profile)
+      try context.save()
+      let record = makeProfileRecord(id: profile.id, name: "Remote", version: 2, originDeviceId: "device-B", now: now)
+      record["domains"] = domains
+      record["enableAllowMode"] = allowApps
+      record["enableAllowModeDomains"] = allowDomains
+      XCTAssertEqual(makeService().applyFetchedModification(record, isPendingDeleteOrTombstoned: noPendingDelete), .applied)
+      XCTAssertFalse(profile.needsAppSelection)
+    }
+  }
+
 }

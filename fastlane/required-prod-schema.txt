@@ -98,6 +98,8 @@ RECORD TYPE SyncedProfile.enableStrictMode
 RECORD TYPE SyncedProfile.enableAllowMode
 RECORD TYPE SyncedProfile.enableAllowModeDomains
 RECORD TYPE SyncedProfile.enableSafariBlocking
+RECORD TYPE SyncedProfile.blockAdultWebsites
+RECORD TYPE SyncedProfile.blockAppInstallation
 RECORD TYPE SyncedProfile.preActivationReminderTimesData
 RECORD TYPE SyncedProfile.physicalUnblockNFCTagId
 RECORD TYPE SyncedProfile.physicalUnblockQRCodeId

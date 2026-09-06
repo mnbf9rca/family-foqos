@@ -23,11 +23,11 @@ final class RecordingRestrictionApplier: RestrictionApplying {
   }
 
   func deactivateRestrictions() {
-    deactivateRestrictions(keepingAppRemovalDenied: false)
+    deactivateRestrictions(keepingSafeguardsFor: nil)
   }
 
-  func deactivateRestrictions(keepingAppRemovalDenied: Bool) {
-    denyAppRemoval = keepingAppRemovalDenied
+  func deactivateRestrictions(keepingSafeguardsFor profile: SharedData.ProfileSnapshot?) {
+    denyAppRemoval = profile?.enableStrictMode == true
     calls.append(.deactivate)
     onDeactivate?()
   }
