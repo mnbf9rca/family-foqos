@@ -80,4 +80,3 @@ debug/
 
 # Agent Message Queue
 .agent-mail/
-.amqrc

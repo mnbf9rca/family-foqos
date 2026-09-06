@@ -17,7 +17,7 @@ slot.
 
 ## Warm Git Credentials
 
-At fleet/session startup, while the human is present, the planner dispatches this warm-up to every
+At fleet/session startup, while the human is present, the orchestrator dispatches this warm-up to every
 implementation stream. Each stream runs it in its clean assigned feature worktree before taking
 implementation work:
 
@@ -41,7 +41,7 @@ prompt. The separate `op` prompt uses #365's service-account path, not this Git 
 Every simulator build, test, and screenshot process tree enters through `scripts/xcode-stream.sh`.
 The machine-wide gate assigns a distinct simulator UUID, DerivedData directory, and capacity slot
 to each exact `(project, agent, session)` owner. Give every stream a stable agent name and optional
-session; later runs by the same owner reuse its registered UUID.
+session; later runs by the same owner reuse its registered UUID. In this fleet, `--agent` is your Herdr agent name (`build1`, `build2`, or `reviewer`) and `--session` is always `collab`; it is the simulator gate's ownership label, not a Herdr session identifier.
 
 UUID destinations only. Never pass a device-name destination: it can create a simulator under
 `~/Library/Developer/XCTestDevices/` on every invocation and consume about 16 GB. Never pass a
