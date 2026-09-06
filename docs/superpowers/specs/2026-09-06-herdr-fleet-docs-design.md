@@ -29,7 +29,7 @@ Active guidance with stale fleet content:
 | `AGENTS.md` | Lines 9, 10, 26, 27, 28 name the planner as merger and dispatcher, the AMQ `user` mailbox, `inbox/new`, and `notifier_live`. | Edit the listed lines. Replacement text below. |
 | `docs/multi-agent-coordination.md` | Whole file is written around AMQ threads, mailboxes, `agentctl`, tmux, `AM_ME`, and `AM_ROOT`. | Replace the file body. Full replacement text below. |
 | `docs/development-workflow.md` | Line 20: "the planner dispatches this warm-up". No explanation of what `--agent` and `--session` mean now. | One-word edit plus one added sentence. |
-| `.gitignore` | Line 83: `.amqrc`. | Delete the line. Nothing creates that file any more. |
+| `.gitignore` | Local `.agent-mail/` and `.amqrc` leftovers still exist. | No change; retain their ignore entries per the human ruling. |
 
 Historical records that mention the old fleet and stay untouched: every file under `docs/superpowers/plans/` and `docs/superpowers/specs/`, including this document. They record what was done at the time and are not live instructions. `FoqosTests/MutationFunnelTests.swift` and the 2026-07-03 sync-engine plan use the word "user" for a SwiftData context, which is a false positive.
 
@@ -238,17 +238,17 @@ In the "Xcode Stream" paragraph that begins "Every simulator build, test, and sc
 
 ## Change 4: `.gitignore`
 
-Delete line 83, `.amqrc`.
+No change; local leftovers still exist. The human ruled that `.agent-mail/` and `.amqrc` remain in the main checkout, so retain the entire ignore block to avoid untracked noise.
 
 ## Verification
 
 1. Active guidance must contain no retired fleet terms. Run this on the branch and require zero output:
 
    ```bash
-   rg -n -i 'amq|am_me|am_root|agentctl|tmux|user mailbox|`user`|notifier_live|inbox/new' AGENTS.md docs/development-workflow.md docs/multi-agent-coordination.md .gitignore
+   rg -n -i 'amq|am_me|am_root|agentctl|tmux|user mailbox|`user`|notifier_live|inbox/new' AGENTS.md docs/development-workflow.md docs/multi-agent-coordination.md
    ```
 
-   Files under `docs/superpowers/plans/` and `docs/superpowers/specs/`, including this document, are historical and are not checked.
+   Files under `docs/superpowers/plans/` and `docs/superpowers/specs/`, including this document, are historical and are not checked. `.gitignore` is also excluded under the Change 4 ruling because the retained `.amqrc` entry intentionally matches.
 2. Run the CPU-delta recipe verbatim four ways and paste the transcripts into the PR: against a live builder from a worktree of this repository (expect a pid and time), against a name that does not exist (expect `agent_not_found` and exit 1), from a throwaway `git init` directory outside this repository (expect the "belongs to ... not this repository" refusal and exit 1), and with `HERDR_ENV` unset (expect "run inside a Herdr pane" and exit 1). All four were run against the reviewed text of this document on September 6, 2026 and behaved as stated.
 3. Run `herdr agent prompt` against a live builder with the role-prefixed message format and read the reply with `herdr agent read`, and paste both into the PR.
 4. Confirm every link in `AGENTS.md` resolves.
@@ -257,7 +257,7 @@ Delete line 83, `.amqrc`.
 
 1. The reviewer does adversarial design review of this document. Review rounds run directly between planner and reviewer, with a one-line notice to the orchestrator at request and at verdict.
 2. The planner revises in this worktree.
-3. A builder implements all four changes in one PR from its own worktree, with the walkthrough transcripts in the PR body.
+3. A builder implements the changes, with Change 4 left unchanged per the human ruling, in one PR from its own worktree, with the walkthrough transcripts in the PR body.
 4. The reviewer approves the PR. The orchestrator asks the human, then merges. This is a restructured operator flow, so the human's final read of the text applies.
 
 ## Resolved Questions
