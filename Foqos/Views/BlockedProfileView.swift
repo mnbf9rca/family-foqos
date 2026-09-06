@@ -133,13 +133,14 @@ struct BlockedProfileView: View {
 
   /// Whether editing should be disabled
   private var editingDisabled: Bool {
-    ProfileEditGate.editingDisabled(
-      isBlocking: isBlocking,
-      isManaged: isManagedProfile,
-      isUnlocked: isUnlockedForEditing,
-      mode: appModeManager.currentMode,
-      lockActive: lockCodeManager.canVerifyCode
-    )
+    (profile != nil && !triggerConfig.hasLoadedProfile)
+      || ProfileEditGate.editingDisabled(
+        isBlocking: isBlocking,
+        isManaged: isManagedProfile,
+        isUnlocked: isUnlockedForEditing,
+        mode: appModeManager.currentMode,
+        lockActive: lockCodeManager.canVerifyCode
+      )
   }
 
   /// Whether to show the managed toggle (only in parent mode when lock code exists)
@@ -608,10 +609,11 @@ struct BlockedProfileView: View {
           )
         }
         .onAppear {
-          if let existingProfile = profile {
-            triggerConfig.loadFromProfile(existingProfile)
-          }
+          loadTriggerConfiguration()
           refreshScheduleOutOfSyncBanner()
+        }
+        .onChange(of: isBlocking) { wasBlocking, blocking in
+          if wasBlocking && !blocking { loadTriggerConfiguration() }
         }
         .onReceive(
           NotificationCenter.default.publisher(for: .scheduleRegistrationsDidReconcile)
@@ -1024,7 +1026,17 @@ struct BlockedProfileView: View {
     }
   }
 
+  private func loadTriggerConfiguration() {
+    guard let profile else { return }
+    do {
+      try triggerConfig.loadFromProfile(profile, in: modelContext, hasActiveSession: isBlocking)
+    } catch {
+      showError(message: "Could not load profile settings: \(error.localizedDescription)")
+    }
+  }
+
   private func saveProfile() {
+    guard profile == nil || triggerConfig.hasLoadedProfile else { return }
     // Validate trigger configuration before persisting anything
     triggerConfig.validate()
     if !triggerConfig.validationErrors.isEmpty {
