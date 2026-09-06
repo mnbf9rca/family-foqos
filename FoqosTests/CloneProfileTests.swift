@@ -142,4 +142,14 @@ final class CloneProfileTests: XCTestCase {
     XCTAssertTrue(cloned.startTriggers.manual)
     XCTAssertTrue(cloned.stopConditions.manual)
   }
+  func testCloneCopiesNamedKeysAndPrimary() throws {
+    let source = BlockedProfiles(name: "Keys")
+    source.physicalKeys = ProfilePhysicalKeys(startQR: [PhysicalKey(name: "Home", value: "X"), PhysicalKey(name: "Spare", value: "Y")])
+    context.insert(source)
+    try context.save()
+    let clone = try BlockedProfiles.cloneProfile(source, in: context, newName: "Copy")
+    XCTAssertEqual(clone.physicalKeys, source.physicalKeys)
+    XCTAssertEqual(clone.startQRCodeId, "X")
+  }
+
 }

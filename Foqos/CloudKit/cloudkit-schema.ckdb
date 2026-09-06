@@ -171,6 +171,7 @@ DEFINE SCHEMA
         stopConditionsData      BYTES,
         startScheduleData       BYTES,
         stopScheduleData        BYTES,
+        physicalKeysData       BYTES,
         startNFCTagId           STRING,
         startQRCodeId           STRING,
         stopNFCTagId            STRING,

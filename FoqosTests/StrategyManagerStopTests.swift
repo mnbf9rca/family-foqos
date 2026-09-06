@@ -15,8 +15,8 @@ final class StrategyManagerStopTests: XCTestCase {
       with: .manual,
       conditions: stop,
       sessionTag: nil,
-      stopNFCTagId: nil,
-      stopQRCodeId: nil
+      stopNFCValues: [],
+      stopQRValues: []
     )
 
     XCTAssertTrue(result.allowed)
@@ -30,8 +30,8 @@ final class StrategyManagerStopTests: XCTestCase {
       with: .manual,
       conditions: stop,
       sessionTag: nil,
-      stopNFCTagId: nil,
-      stopQRCodeId: nil
+      stopNFCValues: [],
+      stopQRValues: []
     )
 
     XCTAssertFalse(result.allowed)
@@ -45,8 +45,8 @@ final class StrategyManagerStopTests: XCTestCase {
       with: .nfc(tag: "any-tag"),
       conditions: stop,
       sessionTag: nil,
-      stopNFCTagId: nil,
-      stopQRCodeId: nil
+      stopNFCValues: [],
+      stopQRValues: []
     )
 
     XCTAssertTrue(result.allowed)
@@ -60,8 +60,8 @@ final class StrategyManagerStopTests: XCTestCase {
       with: .nfc(tag: "required-tag"),
       conditions: stop,
       sessionTag: nil,
-      stopNFCTagId: "required-tag",
-      stopQRCodeId: nil
+      stopNFCValues: ["required-tag"],
+      stopQRValues: []
     )
 
     XCTAssertTrue(result.allowed)
@@ -75,8 +75,8 @@ final class StrategyManagerStopTests: XCTestCase {
       with: .nfc(tag: "wrong-tag"),
       conditions: stop,
       sessionTag: nil,
-      stopNFCTagId: "required-tag",
-      stopQRCodeId: nil
+      stopNFCValues: ["required-tag"],
+      stopQRValues: []
     )
 
     XCTAssertFalse(result.allowed)
@@ -92,8 +92,8 @@ final class StrategyManagerStopTests: XCTestCase {
       with: .nfc(tag: "session-tag"),
       conditions: stop,
       sessionTag: "nfc:session-tag",
-      stopNFCTagId: nil,
-      stopQRCodeId: nil
+      stopNFCValues: [],
+      stopQRValues: []
     )
 
     XCTAssertTrue(result.allowed)
@@ -107,8 +107,8 @@ final class StrategyManagerStopTests: XCTestCase {
       with: .nfc(tag: "different-tag"),
       conditions: stop,
       sessionTag: "nfc:original-tag",
-      stopNFCTagId: nil,
-      stopQRCodeId: nil
+      stopNFCValues: [],
+      stopQRValues: []
     )
 
     XCTAssertFalse(result.allowed)
@@ -124,8 +124,8 @@ final class StrategyManagerStopTests: XCTestCase {
       with: .qr(code: "session-code"),
       conditions: stop,
       sessionTag: "qr:session-code",
-      stopNFCTagId: nil,
-      stopQRCodeId: nil
+      stopNFCValues: [],
+      stopQRValues: []
     )
 
     XCTAssertTrue(result.allowed)
@@ -139,8 +139,8 @@ final class StrategyManagerStopTests: XCTestCase {
       with: .qr(code: "different-code"),
       conditions: stop,
       sessionTag: "qr:original-code",
-      stopNFCTagId: nil,
-      stopQRCodeId: nil
+      stopNFCValues: [],
+      stopQRValues: []
     )
 
     XCTAssertFalse(result.allowed)
@@ -273,4 +273,27 @@ final class StrategyManagerStopTests: XCTestCase {
 
     XCTAssertEqual(action, .stopImmediately)
   }
+  func testSpecificKeysMatchAnyValueWithQRParity() {
+    for isNFC in [true, false] {
+      let conditions = ProfileStopConditions(specificNFC: isNFC, specificQR: !isNFC)
+      for value in ["Y", "missing"] {
+        let result = StartStopActionResolver.canStop(
+          with: isNFC ? .nfc(tag: value) : .qr(code: value), conditions: conditions,
+          sessionTag: nil, stopNFCValues: ["X", "Y"], stopQRValues: ["X", "Y"])
+        XCTAssertEqual(result.allowed, value == "Y")
+        XCTAssertEqual(result.errorMessage, value == "Y" ? nil : "Scan the correct \(isNFC ? "NFC tag" : "QR code") to stop")
+      }
+    }
+  }
+
+  func testSameKeyIgnoresSpareStopKeys() {
+    for isNFC in [true, false] {
+      let result = StartStopActionResolver.canStop(
+        with: isNFC ? .nfc(tag: "Y") : .qr(code: "Y"),
+        conditions: ProfileStopConditions(sameNFC: isNFC, sameQR: !isNFC),
+        sessionTag: isNFC ? "nfc:X" : "qr:X", stopNFCValues: ["Y"], stopQRValues: ["Y"])
+      XCTAssertFalse(result.allowed)
+    }
+  }
+
 }

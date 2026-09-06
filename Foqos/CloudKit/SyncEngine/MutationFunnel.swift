@@ -57,6 +57,7 @@ final class MutationFunnel {
       return
     }
     profile.syncVersion += 1
+    profile.physicalKeys = profile.physicalKeys
     do {
       try modelContext.save()
     } catch {

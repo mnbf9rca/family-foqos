@@ -1147,4 +1147,107 @@ final class SyncApplyServiceTests: XCTestCase {
       .applied)
     XCTAssertNotNil(try BlockedProfiles.findProfile(byID: id, in: context), "genuine recreation applies")
   }
+  func testGivenOldWriterWithoutKeys_WhenApplied_ThenEnqueuesOneRepairAndEchoEnqueuesNothing() throws {
+    let now = Date()
+    let record = makeProfileRecord(
+      id: UUID(), name: "Legacy", version: 2, originDeviceId: "device-B", now: now)
+    record["physicalKeysData"] = nil
+    let service = makeService()
+    XCTAssertEqual(service.applyFetchedModification(record, isPendingDeleteOrTombstoned: noPendingDelete), .applied)
+    XCTAssertEqual(service.drainReenqueues(), [record.recordID])
+    let profile = try XCTUnwrap(BlockedProfiles.findProfile(byID: UUID(uuidString: record.recordID.recordName)!, in: context))
+    let echo = SyncedProfile(from: profile, originDeviceId: deviceId).toCKRecord(in: zoneID)
+    XCTAssertNotNil(echo["physicalKeysData"] as? Data)
+    XCTAssertEqual(service.applyFetchedModification(echo, isPendingDeleteOrTombstoned: noPendingDelete), .applied)
+    XCTAssertTrue(service.drainReenqueues().isEmpty)
+  }
+
+  func testPhysicalKeySyncMatrixPreservesAndPromotesSparesForEverySlot() throws {
+    let now = Date()
+    let keys = [PhysicalKey(name: "Home", value: "X"), PhysicalKey(name: "Spare", value: "Y")]
+    let original = ProfilePhysicalKeys(startNFC: keys, startQR: keys, stopNFC: keys, stopQR: keys)
+    for create in [false, true] {
+      for present in [false, true] {
+        for legacy: String? in ["X", "Y", "Z", nil] {
+          let local = BlockedProfiles(name: "Keys", createdAt: now, updatedAt: now, syncVersion: 1)
+          local.physicalKeys = original
+          if !create {
+            context.insert(local)
+            try context.save()
+          }
+          var incoming = SyncedProfile(from: local, originDeviceId: "device-B")
+          incoming.version = 2
+          incoming.name = "Renamed"
+          let record = incoming.toCKRecord(in: zoneID)
+          if !present { record["physicalKeysData"] = nil }
+          for field in ["startNFCTagId", "startQRCodeId", "stopNFCTagId", "stopQRCodeId"] {
+            record[field] = legacy
+          }
+          let service = makeService()
+          XCTAssertEqual(service.applyFetchedModification(record, isPendingDeleteOrTombstoned: noPendingDelete), .applied)
+          let result = try XCTUnwrap(BlockedProfiles.findProfile(byID: local.id, in: context))
+          let base = create && !present ? [] : keys
+          let nfc = ProfilePhysicalKeys.reconcile(base: base, legacy: legacy, defaultName: "NFC tag")
+          let qr = ProfilePhysicalKeys.reconcile(base: base, legacy: legacy, defaultName: "QR code")
+          XCTAssertEqual(result.physicalKeys, ProfilePhysicalKeys(startNFC: nfc, startQR: qr, stopNFC: nfc, stopQR: qr))
+          XCTAssertEqual(result.name, "Renamed")
+          XCTAssertEqual(service.drainReenqueues(), present ? [] : [record.recordID])
+          let echo = SyncedProfile(from: result, originDeviceId: deviceId).toCKRecord(in: zoneID)
+          XCTAssertEqual(service.applyFetchedModification(echo, isPendingDeleteOrTombstoned: noPendingDelete), .applied)
+          XCTAssertTrue(service.drainReenqueues().isEmpty)
+          XCTAssertFalse(context.hasChanges, "payload-equal echo must not mutate")
+        }
+      }
+    }
+  }
+
+  func testExplicitEmptyPhysicalKeyListsClearLocalKeysAndEchoIsNoOp() throws {
+    let now = Date()
+    let keys = [PhysicalKey(name: "Home", value: "X"), PhysicalKey(name: "Spare", value: "Y")]
+    let local = BlockedProfiles(name: "Keys", createdAt: now, updatedAt: now, syncVersion: 1)
+    local.physicalKeys = ProfilePhysicalKeys(startNFC: keys, startQR: keys, stopNFC: keys, stopQR: keys)
+    context.insert(local)
+    try context.save()
+    var incoming = SyncedProfile(from: local, originDeviceId: "device-B")
+    incoming.version = 2
+    incoming.physicalKeysData = try JSONEncoder().encode(ProfilePhysicalKeys())
+    incoming.startNFCTagId = nil
+    incoming.startQRCodeId = nil
+    incoming.stopNFCTagId = nil
+    incoming.stopQRCodeId = nil
+    let record = incoming.toCKRecord(in: zoneID)
+    let service = makeService()
+    for _ in 0..<2 {
+      XCTAssertEqual(service.applyFetchedModification(record, isPendingDeleteOrTombstoned: noPendingDelete), .applied)
+      XCTAssertEqual(local.physicalKeys, ProfilePhysicalKeys())
+      XCTAssertTrue(service.drainReenqueues().isEmpty)
+      XCTAssertTrue(SyncPayloadEquality.profilesPayloadEqual(incoming, SyncedProfile(from: local, originDeviceId: deviceId)))
+      XCTAssertFalse(context.hasChanges)
+    }
+  }
+
+  func testKeyNameOnlyChangeIsPayloadDivergenceAndEmptyWritersAlwaysEncodeList() throws {
+    let local = BlockedProfiles(name: "Keys")
+    var synced = SyncedProfile(from: local, originDeviceId: deviceId)
+    XCTAssertEqual(try JSONDecoder().decode(ProfilePhysicalKeys.self, from: XCTUnwrap(synced.physicalKeysData)), ProfilePhysicalKeys())
+    // Even materializing a decoded legacy record writes a present list.
+    synced.physicalKeysData = nil
+    XCTAssertNotNil(synced.toCKRecord(in: zoneID)["physicalKeysData"] as? Data)
+    local.physicalKeys = ProfilePhysicalKeys(stopNFC: [PhysicalKey(name: "Home", value: "X")])
+    let original = SyncedProfile(from: local, originDeviceId: deviceId)
+    local.physicalKeys.stopNFC[0].name = "Renamed"
+    XCTAssertFalse(SyncPayloadEquality.profilesPayloadEqual(original, SyncedProfile(from: local, originDeviceId: deviceId)))
+  }
+
+  func testEqualVersionOldWriterWithEmptyKeysStillRepairs() throws {
+    let local = BlockedProfiles(name: "Empty", syncVersion: 2)
+    context.insert(local)
+    try context.save()
+    let record = SyncedProfile(from: local, originDeviceId: "device-B").toCKRecord(in: zoneID)
+    record["physicalKeysData"] = nil
+    let service = makeService()
+    XCTAssertEqual(service.applyFetchedModification(record, isPendingDeleteOrTombstoned: noPendingDelete), .applied)
+    XCTAssertEqual(service.drainReenqueues(), [record.recordID])
+  }
+
 }

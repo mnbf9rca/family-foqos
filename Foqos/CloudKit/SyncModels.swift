@@ -55,6 +55,7 @@ struct SyncedProfile: Codable, Equatable {
   var stopConditionsData: Data?
   var startScheduleData: Data?
   var stopScheduleData: Data?
+  var physicalKeysData: Data?
   var startNFCTagId: String?
   var startQRCodeId: String?
   var stopNFCTagId: String?
@@ -112,6 +113,7 @@ struct SyncedProfile: Codable, Equatable {
     case stopConditionsData
     case startScheduleData
     case stopScheduleData
+    case physicalKeysData
     case startNFCTagId
     case startQRCodeId
     case stopNFCTagId
@@ -164,6 +166,8 @@ struct SyncedProfile: Codable, Equatable {
     record[FieldKey.stopConditionsData.rawValue] = stopConditionsData
     record[FieldKey.startScheduleData.rawValue] = startScheduleData
     record[FieldKey.stopScheduleData.rawValue] = stopScheduleData
+    let keysData = physicalKeysData ?? (try? JSONEncoder().encode(physicalKeys))
+    record[FieldKey.physicalKeysData.rawValue] = keysData
     record[FieldKey.startNFCTagId.rawValue] = startNFCTagId
     record[FieldKey.startQRCodeId.rawValue] = startQRCodeId
     record[FieldKey.stopNFCTagId.rawValue] = stopNFCTagId
@@ -245,6 +249,7 @@ struct SyncedProfile: Codable, Equatable {
     stopConditionsData = record[FieldKey.stopConditionsData.rawValue] as? Data
     startScheduleData = record[FieldKey.startScheduleData.rawValue] as? Data
     stopScheduleData = record[FieldKey.stopScheduleData.rawValue] as? Data
+    physicalKeysData = record[FieldKey.physicalKeysData.rawValue] as? Data
     startNFCTagId = record[FieldKey.startNFCTagId.rawValue] as? String
     startQRCodeId = record[FieldKey.startQRCodeId.rawValue] as? String
     stopNFCTagId = record[FieldKey.stopNFCTagId.rawValue] as? String
@@ -319,11 +324,22 @@ struct SyncedProfile: Codable, Equatable {
     if let stopSchedule = profile.stopSchedule {
       stopScheduleData = try? JSONEncoder().encode(stopSchedule)
     }
-    startNFCTagId = profile.startNFCTagId
-    startQRCodeId = profile.startQRCodeId
-    stopNFCTagId = profile.stopNFCTagId
-    stopQRCodeId = profile.stopQRCodeId
+    physicalKeysData = try? JSONEncoder().encode(profile.physicalKeys.normalized())
+    startNFCTagId = profile.physicalKeys.startNFC.first?.value
+    startQRCodeId = profile.physicalKeys.startQR.first?.value
+    stopNFCTagId = profile.physicalKeys.stopNFC.first?.value
+    stopQRCodeId = profile.physicalKeys.stopQR.first?.value
     scheduleLastStoppedAt = profile.scheduleLastStoppedAt
+  }
+
+  var physicalKeys: ProfilePhysicalKeys {
+    reconciledPhysicalKeys(local: ProfilePhysicalKeys())
+  }
+
+  func reconciledPhysicalKeys(local: ProfilePhysicalKeys) -> ProfilePhysicalKeys {
+    (ProfilePhysicalKeys.decode(physicalKeysData) ?? local).reconciled(
+      startNFC: startNFCTagId, startQR: startQRCodeId,
+      stopNFC: stopNFCTagId, stopQR: stopQRCodeId)
   }
 
   // MARK: - Decode Schedule and Geofence
