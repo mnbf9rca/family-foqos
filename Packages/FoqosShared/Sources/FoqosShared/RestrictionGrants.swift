@@ -2,10 +2,14 @@ import Foundation
 
 extension SharedData {
   /// Thin applier for a derived decision.
-  static func applyDecision(_ decision: RestrictionDecision, applier: RestrictionApplying) {
+  static func applyDecision(
+    _ decision: RestrictionDecision, session: SessionSnapshot?, applier: RestrictionApplying
+  ) {
     switch decision {
     case .deactivate:
-      applier.deactivateRestrictions()
+      applier.deactivateRestrictions(
+        keepingAppRemovalDenied: session?.endTime == nil
+          && session?.pinnedProfileConfig?.enableStrictMode == true)
     case .activate(let profile):
       applier.activateRestrictions(for: profile)
     case .bailPreserve:
@@ -57,7 +61,7 @@ extension SharedData {
       guard commit(session) else { return false }
       applyDecision(
         deriveRestriction(session: session, liveSnapshot: pinned, process: .mainApp),
-        applier: applier)
+        session: session, applier: applier)
       return true
     }
   }
@@ -106,7 +110,7 @@ extension SharedData {
       guard commit(session) else { return false }
       applyDecision(
         deriveRestriction(session: session, liveSnapshot: pinned, process: .mainApp),
-        applier: applier)
+        session: session, applier: applier)
       return true
     }
   }
@@ -171,7 +175,7 @@ extension SharedData {
       guard commit(session) else { return false }
       applyDecision(
         deriveRestriction(session: session, liveSnapshot: liveSnapshot, process: process),
-        applier: applier)
+        session: session, applier: applier)
       return true
     }
   }
@@ -232,7 +236,7 @@ extension SharedData {
       guard commit(session) else { return false }
       applyDecision(
         deriveRestriction(session: session, liveSnapshot: liveSnapshot, process: process),
-        applier: applier)
+        session: session, applier: applier)
       return true
     }
   }
@@ -282,7 +286,7 @@ extension SharedData {
         _ = rawCommitActiveSession(nil)
       }
       let decision = deriveRestriction(session: session, liveSnapshot: liveSnapshot, process: process)
-      applyDecision(decision, applier: applier)
+      applyDecision(decision, session: session, applier: applier)
       return decision
     }
   }
