@@ -50,18 +50,24 @@ public class AppBlockerUtil {
   }
 
   public func deactivateRestrictions() {
+    deactivateRestrictions(keepingAppRemovalDenied: false)
+  }
+
+  public func deactivateRestrictions(keepingAppRemovalDenied: Bool) {
     Log.info("Stopping restrictions", category: .familyControls)
 
+    guard keepingAppRemovalDenied else {
+      store.clearAllSettings()
+      return
+    }
+
+    // A strict grant lifts content restrictions without ever clearing uninstall protection.
+    store.application.denyAppRemoval = true
     store.shield.applications = nil
     store.shield.applicationCategories = nil
     store.shield.webDomains = nil
     store.shield.webDomainCategories = nil
-
-    store.application.denyAppRemoval = false
-
     store.webContent.blockedByFilter = nil
-
-    store.clearAllSettings()
   }
 
   public func getWebDomains(from profile: SharedData.ProfileSnapshot) -> Set<WebDomain> {

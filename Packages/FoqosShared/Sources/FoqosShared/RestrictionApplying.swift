@@ -1,10 +1,10 @@
 import Foundation
 
-/// Lock-free restriction applier seam. `AppBlockerUtil` already implements both methods,
-/// so C2 primitives can default to it while tests inject a recording spy.
+/// Lock-free restriction applier seam for production settings and recording test spies.
 public protocol RestrictionApplying {
   func activateRestrictions(for profile: SharedData.ProfileSnapshot)
   func deactivateRestrictions()
+  func deactivateRestrictions(keepingAppRemovalDenied: Bool)
 }
 
 extension AppBlockerUtil: RestrictionApplying {}

@@ -8,6 +8,7 @@ final class RecordingRestrictionApplier: RestrictionApplying {
   }
 
   private(set) var calls: [Call] = []
+  private(set) var denyAppRemoval = false
   var onActivate: ((SharedData.ProfileSnapshot) -> Void)?
   var onDeactivate: (() -> Void)?
 
@@ -16,11 +17,17 @@ final class RecordingRestrictionApplier: RestrictionApplying {
   }
 
   func activateRestrictions(for profile: SharedData.ProfileSnapshot) {
+    denyAppRemoval = profile.enableStrictMode
     calls.append(.activate(profileId: profile.id))
     onActivate?(profile)
   }
 
   func deactivateRestrictions() {
+    deactivateRestrictions(keepingAppRemovalDenied: false)
+  }
+
+  func deactivateRestrictions(keepingAppRemovalDenied: Bool) {
+    denyAppRemoval = keepingAppRemovalDenied
     calls.append(.deactivate)
     onDeactivate?()
   }
