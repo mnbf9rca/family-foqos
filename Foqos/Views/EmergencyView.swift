@@ -245,7 +245,7 @@ struct EmergencyPreviewSheetHost: View {
     Color.clear
       .sheet(isPresented: $show) {
         NavigationView { EmergencyView() }
-          .presentationDetents([.medium])
+          .presentationDetents([.medium, .large])
           .presentationDragIndicator(.visible)
       }
   }

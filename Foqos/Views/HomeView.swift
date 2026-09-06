@@ -348,7 +348,7 @@ struct HomeView: View {
       BlockingStrategyActionView(
         customView: strategyManager.customStrategyView
       )
-      .presentationDetents([.medium])
+      .presentationDetents([.medium, .large])
     }
     .sheet(isPresented: $showSupportView) {
       SupportView()
@@ -358,7 +358,7 @@ struct HomeView: View {
     }
     .sheet(isPresented: $showEmergencyView) {
       EmergencyView()
-        .presentationDetents([.height(350)])
+        .presentationDetents([.height(350), .large])
     }
     .sheet(isPresented: $showingDebugMode) {
       DebugView()

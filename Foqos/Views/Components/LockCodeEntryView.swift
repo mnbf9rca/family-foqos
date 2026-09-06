@@ -42,87 +42,96 @@ struct LockCodeEntryView: View {
 
   var body: some View {
     NavigationStack {
-      VStack(spacing: 32) {
-        // Lock icon
-        Image(systemName: "lock.fill")
-          .font(.system(size: 48))
-          .foregroundColor(.accentColor)
-          .padding(.top, 40)
+      ScrollView {
+        VStack(spacing: 32) {
+          // Lock icon
+          Image(systemName: "lock.fill")
+            .font(.system(size: 48))
+            .foregroundColor(.accentColor)
+            .padding(.top, 40)
 
-        // Title and subtitle
-        VStack(spacing: 8) {
-          Text(title)
-            .font(.title2)
-            .fontWeight(.bold)
+          // Title and subtitle
+          VStack(spacing: 8) {
+            Text(title)
+              .font(.title2)
+              .fontWeight(.bold)
 
-          if let subtitle = subtitle {
-            Text(subtitle)
+            Text("Enter the 4-digit family lock code. This is separate from your device passcode.")
               .font(.subheadline)
               .foregroundColor(.secondary)
               .multilineTextAlignment(.center)
-              .padding(.horizontal)
+
+            if let subtitle = subtitle {
+              Text(subtitle)
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal)
+            }
           }
-        }
 
-        // Code dots display
-        HStack(spacing: 16) {
-          ForEach(0..<codeLength, id: \.self) { index in
-            Circle()
-              .fill(index < code.count ? Color.accentColor : Color(.systemGray4))
-              .frame(width: 16, height: 16)
-              .animation(.easeInOut(duration: 0.1), value: code.count)
+          // Code dots display
+          HStack(spacing: 16) {
+            ForEach(0..<codeLength, id: \.self) { index in
+              Circle()
+                .fill(index < code.count ? Color.accentColor : Color(.systemGray4))
+                .frame(width: 16, height: 16)
+                .animation(.easeInOut(duration: 0.1), value: code.count)
+            }
           }
-        }
-        .padding(.vertical, 8)
-        .modifier(ShakeEffect(shakeNumber: showError ? 3 : 0))
+          .padding(.vertical, 8)
+          .modifier(ShakeEffect(shakeNumber: showError ? 3 : 0))
 
-        // Error / lockout message
-        if lockoutSecondsRemaining > 0 {
-          Text("Too many attempts. Try again in \(lockoutTimeString).")
-            .font(.caption)
-            .foregroundColor(.red)
-            .transition(.opacity)
-        } else if showError {
-          Text("Incorrect code. Please try again.")
-            .font(.caption)
-            .foregroundColor(.red)
-            .transition(.opacity)
-        }
+          // Error / lockout message
+          if lockoutSecondsRemaining > 0 {
+            Text("Too many attempts. Try again in \(lockoutTimeString).")
+              .font(.caption)
+              .foregroundColor(.red)
+              .transition(.opacity)
+          } else if showError {
+            Text("Incorrect code. Please try again.")
+              .font(.caption)
+              .foregroundColor(.red)
+              .transition(.opacity)
+          }
 
-        // Number pad
-        VStack(spacing: 12) {
-          ForEach(0..<3) { row in
-            HStack(spacing: 24) {
-              ForEach(1...3, id: \.self) { col in
-                let number = row * 3 + col
-                NumberButton(number: "\(number)") {
-                  addDigit("\(number)")
+          // Number pad
+          VStack(spacing: 12) {
+            ForEach(0..<3) { row in
+              HStack(spacing: 24) {
+                ForEach(1...3, id: \.self) { col in
+                  let number = row * 3 + col
+                  NumberButton(number: "\(number)") {
+                    addDigit("\(number)")
+                  }
                 }
               }
             }
-          }
 
-          // Bottom row: empty, 0, delete
-          HStack(spacing: 24) {
-            // Empty space (same size as number buttons)
-            Color.clear
-              .frame(width: 72, height: 72)
+            // Bottom row: empty, 0, delete
+            HStack(spacing: 24) {
+              // Empty space (same size as number buttons)
+              Color.clear
+                .frame(width: 72, height: 72)
 
-            // 0 button
-            NumberButton(number: "0") {
-              addDigit("0")
+              // 0 button
+              NumberButton(number: "0") {
+                addDigit("0")
+              }
+
+              // Delete button (same size as number buttons, no background)
+              DeleteButton(disabled: code.isEmpty) {
+                deleteDigit()
+              }
             }
-
-            // Delete button (same size as number buttons, no background)
-            DeleteButton(disabled: code.isEmpty) {
-              deleteDigit()
-            }
           }
+          .disabled(lockoutSecondsRemaining > 0)
+          .opacity(lockoutSecondsRemaining > 0 ? 0.4 : 1.0)
+
         }
-        .disabled(lockoutSecondsRemaining > 0)
-        .opacity(lockoutSecondsRemaining > 0 ? 0.4 : 1.0)
-
-        Spacer()
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal)
+        .padding(.bottom)
       }
       .onAppear {
         updateLockoutRemaining()
@@ -309,86 +318,90 @@ struct LockCodeSetupView: View {
 
   var body: some View {
     NavigationStack {
-      VStack(spacing: 32) {
-        // Lock icon
-        Image(systemName: step == .enter ? "lock.open.fill" : "lock.fill")
-          .font(.system(size: 48))
-          .foregroundColor(.accentColor)
-          .padding(.top, 40)
-          .animation(.easeInOut, value: step)
+      ScrollView {
+        VStack(spacing: 32) {
+          // Lock icon
+          Image(systemName: step == .enter ? "lock.open.fill" : "lock.fill")
+            .font(.system(size: 48))
+            .foregroundColor(.accentColor)
+            .padding(.top, 40)
+            .animation(.easeInOut, value: step)
 
-        // Title and subtitle
-        VStack(spacing: 8) {
-          Text(step == .enter ? title : "Confirm Code")
-            .font(.title2)
-            .fontWeight(.bold)
+          // Title and subtitle
+          VStack(spacing: 8) {
+            Text(step == .enter ? title : "Confirm Code")
+              .font(.title2)
+              .fontWeight(.bold)
 
-          Text(
-            step == .enter
-              ? "Enter a 4-digit code"
-              : "Enter the same code again"
-          )
-          .font(.subheadline)
-          .foregroundColor(.secondary)
+            Text(
+              step == .enter
+                ? "Enter a 4-digit code"
+                : "Enter the same code again"
+            )
+            .font(.subheadline)
+            .foregroundColor(.secondary)
 
-          if step == .enter {
-            Text("This makes your device a parent device")
+            if step == .enter {
+              Text("This makes your device a parent device")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
+
+          // Code dots display
+          HStack(spacing: 16) {
+            ForEach(0..<codeLength, id: \.self) { index in
+              let currentCode = step == .enter ? code : confirmCode
+              Circle()
+                .fill(index < currentCode.count ? Color.accentColor : Color(.systemGray4))
+                .frame(width: 16, height: 16)
+                .animation(.easeInOut(duration: 0.1), value: currentCode.count)
+            }
+          }
+          .padding(.vertical, 8)
+          .modifier(ShakeEffect(shakeNumber: showError ? 3 : 0))
+
+          // Error message
+          if showError {
+            Text("Codes don't match. Please try again.")
               .font(.caption)
-              .foregroundColor(.secondary)
+              .foregroundColor(.red)
+              .transition(.opacity)
           }
-        }
 
-        // Code dots display
-        HStack(spacing: 16) {
-          ForEach(0..<codeLength, id: \.self) { index in
-            let currentCode = step == .enter ? code : confirmCode
-            Circle()
-              .fill(index < currentCode.count ? Color.accentColor : Color(.systemGray4))
-              .frame(width: 16, height: 16)
-              .animation(.easeInOut(duration: 0.1), value: currentCode.count)
-          }
-        }
-        .padding(.vertical, 8)
-        .modifier(ShakeEffect(shakeNumber: showError ? 3 : 0))
-
-        // Error message
-        if showError {
-          Text("Codes don't match. Please try again.")
-            .font(.caption)
-            .foregroundColor(.red)
-            .transition(.opacity)
-        }
-
-        // Number pad
-        VStack(spacing: 12) {
-          ForEach(0..<3) { row in
-            HStack(spacing: 24) {
-              ForEach(1...3, id: \.self) { col in
-                let number = row * 3 + col
-                NumberButton(number: "\(number)") {
-                  addDigit("\(number)")
+          // Number pad
+          VStack(spacing: 12) {
+            ForEach(0..<3) { row in
+              HStack(spacing: 24) {
+                ForEach(1...3, id: \.self) { col in
+                  let number = row * 3 + col
+                  NumberButton(number: "\(number)") {
+                    addDigit("\(number)")
+                  }
                 }
+              }
+            }
+
+            HStack(spacing: 24) {
+              // Empty space (same size as number buttons)
+              Color.clear
+                .frame(width: 72, height: 72)
+
+              NumberButton(number: "0") {
+                addDigit("0")
+              }
+
+              // Delete button (same size as number buttons, no background)
+              DeleteButton(disabled: currentCode.isEmpty) {
+                deleteDigit()
               }
             }
           }
 
-          HStack(spacing: 24) {
-            // Empty space (same size as number buttons)
-            Color.clear
-              .frame(width: 72, height: 72)
-
-            NumberButton(number: "0") {
-              addDigit("0")
-            }
-
-            // Delete button (same size as number buttons, no background)
-            DeleteButton(disabled: currentCode.isEmpty) {
-              deleteDigit()
-            }
-          }
         }
-
-        Spacer()
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal)
+        .padding(.bottom)
       }
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
