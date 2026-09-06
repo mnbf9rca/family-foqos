@@ -2,7 +2,7 @@
 
 ## Status and scope
 
-Design for issue #454. Base: `main` at `3034c03`. Revision 2, after the reviewer's first adversarial round. Changes from revision 1: key identity is the value, not a generated UUID (finding 2); the sync rule compares the single id with the first list value, not list membership (finding 1); the old-writer transport is stated with its evidence and a device check instead of a blanket claim, and the residual loss is documented (finding 3); the test list covers start matching, QR parity, validation, migration and malformed input (finding 4).
+Design for issue #454. Base: `main` at `3034c03`. Revision 3, after the reviewer's second adversarial round. Changes from revision 2: device check 31 now expects retained keys with matching disabled, a separate apply test covers a nil single id clearing the list (test 26), Decision 5 says a nil single id means no configured key, and acceptance of spare-key loss on an old app's unrelated edit is recorded as a pending maintainer ruling rather than decided here. Changes from revision 1: key identity is the value, not a generated UUID (finding 2); the sync rule compares the single id with the first list value, not list membership (finding 1); the old-writer transport is stated with its evidence and a device check instead of a blanket claim, and the residual loss is documented (finding 3); the test list covers start matching, QR parity, validation, migration and malformed input (finding 4).
 
 A profile's start trigger and stop condition each accept one NFC tag id and one QR code hash today. This design lets each of those four slots hold a named list, so a child with a tag at each parent's house, or a spare tag, can use any of them. The tags stay with the profile, which stays in the iCloud account of the device that runs it. Nothing crosses the family share and parents never scan for the child.
 
@@ -64,7 +64,7 @@ static func reconcile(list: [PhysicalKey], legacy: String?) -> [PhysicalKey] {
 
 `list` is the decoded blob, or empty when the record has no blob or the blob fails to decode. The single id is the authority because it is the only field every app version writes. The three outcomes:
 
-- Single id nil: the slot is off; the list is empty.
+- Single id nil: no key has ever been stored for this slot; the list is empty. The converse does not hold: switching a specific option off keeps the stored id, so a list can be present while its toggle is off, exactly as the single id is today.
 - Single id equals the first list value: the record was last written by the new app, or by an old app that did not touch this slot; the whole list is kept.
 - Single id differs from the first value: an old app changed this slot to one tag; the list collapses to that one tag, keeping its name if it was already on the list. Membership alone is not enough, because keeping `[A, B]` when the old app chose B would make the setter mirror A back into the single id and silently undo the edit.
 
@@ -72,7 +72,7 @@ static func reconcile(list: [PhysicalKey], legacy: String?) -> [PhysicalKey] {
 
 **What an old app's write does to the blob.** Outgoing records are rebuilt from the cached CloudKit system fields (`RecordProvider.materialize`, `CKRecordSystemFieldsCodec`, `CKRecord(coder:)`), which carry the server change tag and no field values, and `SyncedProfile.updateCKRecord` sets only the keys that app version knows. The sync engine saves with change-tag checking (it handles `serverRecordChanged`, `SyncEngineController.swift:266`), and under CloudKit's `ifServerRecordUnchanged` policy only the keys set on the local record object are sent. An old app therefore never sends `physicalKeysData`, and the server keeps the value the new app last wrote. A fresh record object (no cached system fields) saved over an existing server record is rejected as `serverRecordChanged` and refetched, so that path cannot clobber the blob either. This is CloudKit's documented behavior, not something this design can prove from code alone, so the device check below is mandatory before the builder reports done.
 
-**Residual loss, stated plainly.** If a record ever arrives with no blob while the single id is set, the only information available is the single id and the list becomes that one key. The profile keeps working with its first key on every device; only the extra keys are lost. If the device check shows that an unrelated edit on the old app drops the blob, this is the accepted limitation for the window in which the owner's devices run different app versions, and the release note must say so. Stamping a higher schema version on multi-key profiles was considered and rejected: an old app hides the start and stop actions on such profiles (`BlockedProfileCard.swift:61`), which is worse than losing spare keys.
+**Residual loss, stated plainly.** If a record ever arrives with no blob while the single id is set, the only information available is the single id and the list becomes that one key. The profile keeps working with its first key on every device; only the extra keys are lost. Whether that loss is acceptable for the window in which the owner's devices run different app versions is a product and data-loss decision for the maintainer, routed through the orchestrator on September 7, 2026 and pending as of this revision. If the maintainer accepts it, the release note must say so. If the maintainer rejects it and the device check shows the loss, the implementation PR is blocked until a design that preserves the keys is agreed; nothing in this revision assumes either outcome. Stamping a higher schema version on multi-key profiles was considered and rejected: an old app hides the start and stop actions on such profiles (`BlockedProfileCard.swift:61`), which is worse than losing spare keys.
 
 ### Decision 6: matching
 
@@ -174,15 +174,16 @@ Sync (extend the existing apply tests under `FoqosTests` that cover `updateLocal
 23. Given an incoming record with two stop keys and `stopNFCTagId` equal to the second, when applied, then the local stop list is the second key alone, with its name.
 24. Given an incoming record with two stop keys and `stopNFCTagId` equal to neither, when applied, then the local stop list is the single legacy key with the default name.
 25. Given an incoming record identical to the local profile, when applied twice, then the second apply is a no-op and `profilesPayloadEqual` is true.
-26. `profilesPayloadEqual` returns false when only a key name differs.
+26. Given an incoming record whose blob has two stop keys and whose `stopNFCTagId` is nil, when applied, then the local stop list is empty. This is the only way a list is cleared by sync; no editor action clears a stored id today.
+27. `profilesPayloadEqual` returns false when only a key name differs.
 
 Device check, required before the builder reports done, with one device on this build and one on the previous build signed into the same account:
 
-27. On the new build, register two NFC tags for stop. Start a session and stop it with the second tag.
-28. On the old build, confirm the profile stops with the first tag.
-29. On the old build, rename the profile (an edit that does not touch the tag slots). On the new build, confirm both keys are still present. If they are not, record it in the PR, keep the design, and add the limitation to the release note as described in Decision 5.
-30. On the old build, change the stop tag to a third tag. On the new build, confirm the stop list is that single tag.
-31. On the old build, turn the specific stop tag off. On the new build, confirm the stop list is empty and validation asks for a tag when the toggle is turned back on.
+28. On the new build, register two NFC tags for stop. Start a session and stop it with the second tag.
+29. On the old build, confirm the profile stops with the first tag.
+30. On the old build, rename the profile (an edit that does not touch the tag slots). On the new build, confirm both keys are still present. If they are not, record it in the PR, keep the design, and add the limitation to the release note as described in Decision 5.
+31. On the old build, change the stop tag to a third tag. On the new build, confirm the stop list is that single tag.
+32. On the old build, switch the NFC stop option from the specific tag to "Any" or off. Today's editor keeps the stored id when the option changes (`NFCStopOption.apply` flips only the flags), so on the new build confirm the stop option is off, the list is unchanged, and switching back to the specific option shows the same keys.
 
 ## Implementation notes for the builder
 
