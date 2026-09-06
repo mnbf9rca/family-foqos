@@ -62,5 +62,7 @@ See [Swift Style Guide](docs/swift-style-guide.md) for naming, SwiftUI/SwiftData
 - Lock restrictions apply only when `appModeManager.currentMode == .child`, never by checking `!= .parent`.
 - Parent lock toggles require `appModeManager.currentMode == .parent && lockCodeManager.hasAnyLockCode`; Child verification requires `item.isLocked && appModeManager.currentMode == .child`.
 - Individual-to-Parent lock-code setup must keep the `setLockCode` guard `!= .child`; requiring `== .parent` deadlocks promotion.
+- Profiles, sessions, tags, and locations sync only within the owning iCloud account’s private database (`DeviceSync`), never across the family share. Parents do not push profiles, start/stop sessions, or scan for the child from their own device through family sharing; the child’s device scans its own NFC/QR tags.
+- The family share (`FamilyPolicies`) carries only lock-code records (salted hash and scope metadata), `FamilyMember` rows, child-to-parent heartbeats, and the parent-to-child `resetEmergencyCount` and `resetLockCodeThrottle` commands. On a Child-mode device, the lock code gates only editing/deleting locked items and changes to locked emergency settings.
 
 See [App Modes and Locking](docs/app-modes-and-locking.md) for the full matrix, promotion rationale, and UI rules.
