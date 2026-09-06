@@ -1,3 +1,4 @@
+import AVFoundation
 import CodeScanner
 import SwiftUI
 import UIKit
@@ -8,6 +9,10 @@ struct LabeledCodeScannerView: View {
   let simulatedData: String?
   let onScanResult: (Result<String, ScanError>) -> Void
 
+  @State private var camera =
+    AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back)
+    ?? AVCaptureDevice.default(for: .video)
+  @State private var zoomFactor: CGFloat = 1
   @State private var isShowingScanner = true
   @State private var errorMessage: String? = nil
   @State private var scanError: ScanError? = nil
@@ -56,22 +61,43 @@ struct LabeledCodeScannerView: View {
             showViewfinder: true,
             shouldVibrateOnSuccess: true,
             isTorchOn: isTorchOn,
+            videoCaptureDevice: camera,
             completion: handleScanResult
           )
           .frame(maxWidth: .infinity, maxHeight: .infinity)
           .cornerRadius(12)
 
-          // Flashlight toggle button
-          Button(action: {
-            isTorchOn.toggle()
-          }) {
-            Image(systemName: isTorchOn ? "flashlight.on.fill" : "flashlight.slash")
-              .font(.system(size: 24))
-              .foregroundColor(.white)
-              .padding(12)
-              .background(Color.black.opacity(0.6))
-              .clipShape(Circle())
+          HStack {
+            if let camera,
+              Self.nextZoomFactor(
+                current: zoomFactor, minimum: camera.minAvailableVideoZoomFactor,
+                maximum: camera.maxAvailableVideoZoomFactor) != nil
+            {
+              Button(action: cycleZoom) {
+                Text(Double(zoomFactor).formatted(.number.precision(.fractionLength(0...1))) + "x")
+                  .font(.caption.bold().monospacedDigit())
+                  .frame(width: 48, height: 48)
+                  .foregroundStyle(.white)
+                  .background(Color.black.opacity(0.6), in: Circle())
+              }
+              .accessibilityLabel("Camera zoom")
+              .accessibilityValue("\(Double(zoomFactor).formatted()) times")
+              .accessibilityHint("Cycles through the available zoom levels")
+            }
+            Spacer()
+            Button(action: {
+              isTorchOn.toggle()
+            }) {
+              Image(systemName: isTorchOn ? "flashlight.on.fill" : "flashlight.slash")
+                .font(.system(size: 24))
+                .foregroundColor(.white)
+                .padding(12)
+                .background(Color.black.opacity(0.6))
+                .clipShape(Circle())
+            }
+            .accessibilityLabel(isTorchOn ? "Turn flashlight off" : "Turn flashlight on")
           }
+          .buttonStyle(.plain)
           .padding(16)
         }
         .padding(.vertical, 10)
@@ -123,11 +149,35 @@ struct LabeledCodeScannerView: View {
       errorMessage = nil
       scanError = nil
       isTorchOn = false
+      zoomFactor = camera?.videoZoomFactor ?? 1
     }
     .onDisappear {
       isShowingScanner = false
       scanError = nil
       isTorchOn = false
+    }
+  }
+
+  static func nextZoomFactor(current: CGFloat, minimum: CGFloat, maximum: CGFloat) -> CGFloat? {
+    let factors: [CGFloat] = [1, 2, 5].filter { $0 >= minimum && $0 <= maximum }
+    guard factors.count > 1 else { return nil }
+    return factors.first { $0 > current } ?? factors.first
+  }
+
+  private func cycleZoom() {
+    guard let camera else { return }
+    do {
+      try camera.lockForConfiguration()
+      defer { camera.unlockForConfiguration() }
+      guard
+        let next = Self.nextZoomFactor(
+          current: camera.videoZoomFactor, minimum: camera.minAvailableVideoZoomFactor,
+          maximum: camera.maxAvailableVideoZoomFactor)
+      else { return }
+      camera.videoZoomFactor = next
+      zoomFactor = camera.videoZoomFactor
+    } catch {
+      Log.warning("Unable to change scanner camera zoom", category: .ui)
     }
   }
 

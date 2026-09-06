@@ -442,81 +442,84 @@ struct LockCodeEntrySheet: View {
 
   var body: some View {
     NavigationStack {
-      VStack(spacing: 32) {
-        Spacer()
+      ScrollView {
+        VStack(spacing: 32) {
 
-        Image(systemName: "lock.shield.fill")
-          .font(.system(size: 60))
-          .foregroundColor(.accentColor)
+          Image(systemName: "lock.shield.fill")
+            .font(.system(size: 60))
+            .foregroundColor(.accentColor)
 
-        VStack(spacing: 8) {
-          Text("Enter Lock Code")
-            .font(.title2)
-            .fontWeight(.bold)
+          VStack(spacing: 8) {
+            Text("Enter Lock Code")
+              .font(.title2)
+              .fontWeight(.bold)
 
-          Text("Enter the 4-digit code set by your parent")
-            .font(.subheadline)
-            .foregroundColor(.secondary)
-        }
-
-        // Code entry field
-        SecureField("Code", text: $enteredCode)
-          .keyboardType(.numberPad)
-          .textContentType(.oneTimeCode)
-          .multilineTextAlignment(.center)
-          .font(.title)
-          .frame(width: 120)
-          .padding()
-          .background(
-            RoundedRectangle(cornerRadius: 12)
-              .fill(Color(.secondarySystemBackground))
-          )
-          .disabled(isLockedOut)
-          .opacity(isLockedOut ? 0.5 : 1.0)
-          .onChange(of: enteredCode) { _, newValue in
-            // Limit to 4 digits
-            if newValue.count > 4 {
-              enteredCode = String(newValue.prefix(4))
-            }
-            // Auto-submit when 4 digits entered
-            if enteredCode.count == 4 {
-              validateCode()
-            }
+            Text("Enter the 4-digit family lock code. This is separate from your device passcode.")
+              .font(.subheadline)
+              .foregroundColor(.secondary)
+              .multilineTextAlignment(.center)
           }
 
-        if isLockedOut {
-          VStack(spacing: 4) {
-            Text("Too many attempts")
+          // Code entry field
+          SecureField("Code", text: $enteredCode)
+            .keyboardType(.numberPad)
+            .textContentType(.oneTimeCode)
+            .multilineTextAlignment(.center)
+            .font(.title)
+            .frame(width: 120)
+            .padding()
+            .background(
+              RoundedRectangle(cornerRadius: 12)
+                .fill(Color(.secondarySystemBackground))
+            )
+            .disabled(isLockedOut)
+            .opacity(isLockedOut ? 0.5 : 1.0)
+            .onChange(of: enteredCode) { _, newValue in
+              // Limit to 4 digits
+              if newValue.count > 4 {
+                enteredCode = String(newValue.prefix(4))
+              }
+              // Auto-submit when 4 digits entered
+              if enteredCode.count == 4 {
+                validateCode()
+              }
+            }
+
+          if isLockedOut {
+            VStack(spacing: 4) {
+              Text("Too many attempts")
+                .font(.caption)
+                .foregroundColor(.red)
+                .fontWeight(.semibold)
+              Text("Try again in \(lockoutTimeString)")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+            }
+          } else if let error = errorMessage {
+            Text(error)
               .font(.caption)
               .foregroundColor(.red)
-              .fontWeight(.semibold)
-            Text("Try again in \(lockoutTimeString)")
-              .font(.caption2)
-              .foregroundColor(.secondary)
           }
-        } else if let error = errorMessage {
-          Text(error)
-            .font(.caption)
-            .foregroundColor(.red)
-        }
 
-        Spacer()
-
-        Button {
-          validateCode()
-        } label: {
-          Text("Unlock")
-            .fontWeight(.semibold)
-            .frame(maxWidth: .infinity)
-            .frame(height: 50)
-            .background(enteredCode.count == 4 ? Color.accentColor : Color.gray)
-            .foregroundColor(.white)
-            .cornerRadius(12)
+          Button {
+            validateCode()
+          } label: {
+            Text("Unlock")
+              .fontWeight(.semibold)
+              .frame(maxWidth: .infinity)
+              .frame(minHeight: 50)
+              .background(enteredCode.count == 4 ? Color.accentColor : Color.gray)
+              .foregroundColor(.white)
+              .cornerRadius(12)
+          }
+          .disabled(enteredCode.count != 4 || isLockedOut)
+          .padding(.horizontal)
+          .padding(.bottom, 32)
         }
-        .disabled(enteredCode.count != 4 || isLockedOut)
-        .padding(.horizontal)
-        .padding(.bottom, 32)
+        .frame(maxWidth: .infinity)
+        .padding()
       }
+      .scrollDismissesKeyboard(.interactively)
       .navigationTitle("Lock Code")
       .navigationBarTitleDisplayMode(.inline)
       .onAppear {

@@ -22,39 +22,39 @@ struct TimerDurationView: View {
   private let snapThreshold: Double = 10  // How close to snap (in minutes)
 
   var body: some View {
-    VStack(spacing: 32) {
-      // Header
-      VStack(alignment: .leading, spacing: 12) {
-        Text("Timer Settings")
-          .font(.title2).bold()
+    ScrollView {
+      VStack(spacing: 32) {
+        // Header
+        VStack(alignment: .leading, spacing: 12) {
+          Text("Timer Settings")
+            .font(.title2).bold()
 
-        Text(
-          "Select how long you want \(profileName) to last."
-        )
-        .font(.callout)
-        .foregroundColor(.secondary)
+          Text(
+            "Select how long you want \(profileName) to last."
+          )
+          .font(.callout)
+          .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, 16)
+
+        // Large time display
+        timeDisplay
+
+        // Slider with +/- buttons
+        sliderControls
+
+        // Confirm button
+        ActionButton(
+          title: "Set Duration",
+          backgroundColor: themeManager.themeColor,
+          iconName: "checkmark.circle.fill"
+        ) {
+          handleConfirm()
+        }
       }
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .padding(.top, 16)
-
-      // Large time display
-      timeDisplay
-
-      // Slider with +/- buttons
-      sliderControls
-
-      Spacer()
-
-      // Confirm button
-      ActionButton(
-        title: "Set Duration",
-        backgroundColor: themeManager.themeColor,
-        iconName: "checkmark.circle.fill"
-      ) {
-        handleConfirm()
-      }
+      .padding(24)
     }
-    .padding(24)
   }
 
   private var timeDisplay: some View {
@@ -221,7 +221,7 @@ struct TimerDurationPreviewSheetHost: View {
             }
           )
         }
-        .presentationDetents([.medium])
+        .presentationDetents([.medium, .large])
       }
   }
 }
