@@ -1323,6 +1323,38 @@ final class SyncApplyServiceTests: XCTestCase {
     XCTAssertTrue(service.drainReenqueues().isEmpty)
   }
 
+  func testIdenticalLegacyReplayRetriesMigrationAfterDurableApply() throws {
+    struct BoomError: Error {}
+    let now = Date()
+    let id = UUID()
+    let record = makeProfileRecord(id: id, name: "Incoming", version: 2, originDeviceId: "remote", schemaVersion: 2, now: now)
+    record["stopNFCTagId"] = "retry-tag"
+    let service = makeService()
+    service.activeSessionFetchOverride = { throw BoomError() }
+    XCTAssertEqual(service.applyFetchedModification(record, isPendingDeleteOrTombstoned: noPendingDelete), .failed)
+    let durableContext = ModelContext(container)
+    let durable = try XCTUnwrap(BlockedProfiles.findProfile(byID: id, in: durableContext))
+    XCTAssertEqual(durable.profileSchemaVersion, 2)
+    XCTAssertEqual(durable.stopNFCTagId, "retry-tag")
+    XCTAssertEqual(store.failedApplies.count, 1)
+    XCTAssertTrue(try SavedTag.fetchAll(in: context).isEmpty)
+    XCTAssertTrue(service.drainReenqueues().isEmpty)
+
+    service.activeSessionFetchOverride = nil
+    XCTAssertEqual(service.applyFetchedModification(record, isPendingDeleteOrTombstoned: noPendingDelete), .applied)
+    let migrated = try XCTUnwrap(BlockedProfiles.findProfile(byID: id, in: context))
+    XCTAssertEqual(migrated.profileSchemaVersion, 3)
+    XCTAssertNil(migrated.stopNFCTagId)
+    XCTAssertEqual(migrated.stopNFCTagIds, ["retry-tag"])
+    XCTAssertEqual(try SavedTag.fetchAll(in: context).map(\.id), ["retry-tag"])
+    XCTAssertTrue(store.failedApplies.isEmpty)
+    XCTAssertEqual(
+      Set(service.drainReenqueues()),
+      Set([
+        record.recordID, CKRecord.ID(recordName: SavedTag.recordName(for: "retry-tag"), zoneID: zoneID),
+      ]))
+  }
+
   func testIncomingV1EditDefersMigrationWhileLocalSessionIsActive() throws {
     let now = Date()
     let local = BlockedProfiles(name: "Legacy", createdAt: now, updatedAt: now, syncVersion: 1)
@@ -1334,6 +1366,9 @@ final class SyncApplyServiceTests: XCTestCase {
     let record = makeProfileRecord(id: local.id, name: "Incoming", version: 2, originDeviceId: "remote", schemaVersion: 1, now: now)
     record["physicalUnblockNFCTagId"] = "new"
     let service = makeService()
+    XCTAssertEqual(service.applyFetchedModification(record, isPendingDeleteOrTombstoned: noPendingDelete), .applied)
+    XCTAssertEqual(local.profileSchemaVersion, 1)
+    XCTAssertEqual(local.physicalUnblockNFCTagId, "new")
     XCTAssertEqual(service.applyFetchedModification(record, isPendingDeleteOrTombstoned: noPendingDelete), .applied)
     XCTAssertEqual(local.profileSchemaVersion, 1)
     XCTAssertEqual(local.physicalUnblockNFCTagId, "new")

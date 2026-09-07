@@ -33,6 +33,9 @@ final class SyncApplyService {
   /// Test seam: overrides the durable save so §5.1 rollback (S-30) is exercisable.
   var saveOverride: (() throws -> Void)?
 
+  /// Test seam for a transient fetch failure after the inbound payload is durable.
+  var activeSessionFetchOverride: (() throws -> BlockedProfileSession?)?
+
   /// Called only after a deferred remote profile delete has been durably committed.
   var profileDeleteCommitObserver: ((String) -> Void)?
 
@@ -410,6 +413,10 @@ final class SyncApplyService {
       // Equal-version divergence (§5.1): payload-differing => deterministic tie-break (#218).
       let localSynced = SyncedProfile(from: existing, originDeviceId: deviceId)
       if SyncPayloadEquality.profilesPayloadEqual(synced, localSynced) {
+        if existing.needsMigration {
+          try migrateIncomingProfile(existing)
+          storeSystemFields(record)
+        }
         SyncDiagnostics.profileApply(
           profileId: existing.id, branch: "equal_payload_noop",
           remoteVersion: synced.version, localVersion: localVersion,
@@ -580,7 +587,9 @@ final class SyncApplyService {
 
   private func migrateIncomingProfile(_ profile: BlockedProfiles) throws {
     let previousVersion = profile.profileSchemaVersion
-    let active = try BlockedProfileSession.mostRecentActiveSession(in: modelContext)
+    let active =
+      try activeSessionFetchOverride.map { try $0() }
+      ?? BlockedProfileSession.mostRecentActiveSession(in: modelContext)
     let created = try profile.migrateIfEligible(hasActiveSession: active?.blockedProfile.id == profile.id)
     guard profile.profileSchemaVersion != previousVersion else { return }
     pendingReenqueues.append(CKRecord.ID(recordName: profile.id.uuidString, zoneID: zoneID))
