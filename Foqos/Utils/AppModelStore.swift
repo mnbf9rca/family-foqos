@@ -3,7 +3,7 @@ import SwiftData
 
 enum AppModelStore {
   static var schema: Schema {
-    Schema([BlockedProfileSession.self, BlockedProfiles.self, SavedLocation.self])
+    Schema([BlockedProfileSession.self, BlockedProfiles.self, SavedLocation.self, SavedTag.self])
   }
 
   static var configuration: ModelConfiguration {

@@ -15,6 +15,8 @@ final class MockSyncEngineControlling: SyncEngineControlling {
   private(set) var cancelDeletingWipeCount = 0
   private(set) var enqueuedProfileSaves: [UUID] = []
   private(set) var enqueuedProfileDeletes: [UUID] = []
+  private(set) var enqueuedTagSaves: [String] = []
+  private(set) var enqueuedTagDeletes: [String] = []
   private(set) var enqueuedLocationSaves: [UUID] = []
   private(set) var enqueuedLocationDeletes: [UUID] = []
   private(set) var enqueuedEmergencySaves = 0
@@ -34,6 +36,7 @@ final class MockSyncEngineControlling: SyncEngineControlling {
   /// (review finding #15) and that `.notAttached` specifically drives delete call sites to
   /// their local-delete fallback (review findings #4–#6).
   var errorToThrow: Error?
+  var onTagSave: (() -> Void)?
 
   func start() { startCount += 1 }
   func stop() { stopCount += 1 }
@@ -73,6 +76,15 @@ final class MockSyncEngineControlling: SyncEngineControlling {
     enqueuedProfileDeletes.append(id)
     if requestSyncAfterPendingDelete { requestSync() }
     onDeleteCommitted()
+  }
+  func enqueueTagSave(_ id: String) throws {
+    if let errorToThrow { throw errorToThrow }
+    enqueuedTagSaves.append(id)
+    onTagSave?()
+  }
+  func enqueueTagDelete(_ id: String) throws {
+    if let errorToThrow { throw errorToThrow }
+    enqueuedTagDeletes.append(id)
   }
   func enqueueLocationSave(_ id: UUID) throws {
     if let errorToThrow { throw errorToThrow }

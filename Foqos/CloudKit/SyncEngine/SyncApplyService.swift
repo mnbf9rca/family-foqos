@@ -81,6 +81,8 @@ final class SyncApplyService {
     switch record.recordType {
     case SyncedProfile.recordType:
       return applyProfileModification(record)
+    case SyncedTag.recordType:
+      return applyTagModification(record)
     case SyncedLocation.recordType:
       return applyLocationModification(record)
     case SyncedEmergencySettings.recordType:
@@ -112,6 +114,8 @@ final class SyncApplyService {
     switch recordType {
     case SyncedProfile.recordType:
       return SyncedProfile.FieldKey.generation.rawValue
+    case SyncedTag.recordType:
+      return SyncedTag.FieldKey.generation.rawValue
     case SyncedLocation.recordType:
       return SyncedLocation.FieldKey.generation.rawValue
     case SyncedEmergencyEpoch.recordType:
@@ -132,6 +136,8 @@ final class SyncApplyService {
     switch recordType {
     case SyncedProfile.recordType:
       return deleteLocalProfile(recordName: recordName)
+    case SyncedTag.recordType:
+      return deleteLocalTag(recordName: recordName)
     case SyncedLocation.recordType:
       return deleteLocalLocation(recordName: recordName)
     case SyncedEmergencyUnblockEvent.recordType:
@@ -341,8 +347,9 @@ final class SyncApplyService {
           localGeofenceRefCount: nil)
         return .skippedStaleDelete
       }
-      createLocalProfile(from: synced)
+      let created = createLocalProfile(from: synced)
       try commit()
+      try migrateIncomingProfile(created)
       storeSystemFields(record)
       store.clearDeleteWatermark(recordName: recordName)
       SyncDiagnostics.profileApply(
@@ -389,6 +396,7 @@ final class SyncApplyService {
     } else if synced.version > existing.syncVersion {
       updateLocalProfile(existing, from: synced)
       try commit()
+      try migrateIncomingProfile(existing)
       SyncConflictManager.shared.clearConflict(profileId: existing.id)
       storeSystemFields(record)
       SyncDiagnostics.profileApply(
@@ -414,6 +422,7 @@ final class SyncApplyService {
         // Remote wins: adopt its already-published payload without re-enqueuing.
         updateLocalProfile(existing, from: synced)
         try commit()
+        try migrateIncomingProfile(existing)
         storeSystemFields(record)
         SyncConflictManager.shared.addDivergenceConflict(
           profileId: existing.id, profileName: existing.name)
@@ -491,9 +500,13 @@ final class SyncApplyService {
     if synced.stopScheduleData != nil {
       profile.stopSchedule = synced.stopSchedule
     }
+    profile.startNFCTagIds = synced.startNFCTagIds
     profile.startNFCTagId = synced.startNFCTagId
+    profile.startQRCodeIds = synced.startQRCodeIds
     profile.startQRCodeId = synced.startQRCodeId
+    profile.stopNFCTagIds = synced.stopNFCTagIds
     profile.stopNFCTagId = synced.stopNFCTagId
+    profile.stopQRCodeIds = synced.stopQRCodeIds
     profile.stopQRCodeId = synced.stopQRCodeId
     profile.profileSchemaVersion = max(
       profile.profileSchemaVersion, synced.profileSchemaVersion)
@@ -510,7 +523,7 @@ final class SyncApplyService {
 
   // Verbatim from SyncCoordinator.createLocalProfile (SyncCoordinator.swift:267-318),
   // adapted to use self.modelContext. E-1: needsAppSelection = true.
-  private func createLocalProfile(from synced: SyncedProfile) {
+  private func createLocalProfile(from synced: SyncedProfile) -> BlockedProfiles {
     let profile = BlockedProfiles(
       id: synced.profileId,
       name: synced.name,
@@ -550,14 +563,96 @@ final class SyncApplyService {
     }
     profile.startSchedule = synced.startSchedule
     profile.stopSchedule = synced.stopSchedule
+    profile.startNFCTagIds = synced.startNFCTagIds
     profile.startNFCTagId = synced.startNFCTagId
+    profile.startQRCodeIds = synced.startQRCodeIds
     profile.startQRCodeId = synced.startQRCodeId
+    profile.stopNFCTagIds = synced.stopNFCTagIds
     profile.stopNFCTagId = synced.stopNFCTagId
+    profile.stopQRCodeIds = synced.stopQRCodeIds
     profile.stopQRCodeId = synced.stopQRCodeId
     profile.profileSchemaVersion = synced.profileSchemaVersion
     profile.scheduleLastStoppedAt = synced.scheduleLastStoppedAt
     modelContext.insert(profile)
     BlockedProfiles.updateSnapshot(for: profile)
+    return profile
+  }
+
+  private func migrateIncomingProfile(_ profile: BlockedProfiles) throws {
+    let previousVersion = profile.profileSchemaVersion
+    let active = try BlockedProfileSession.mostRecentActiveSession(in: modelContext)
+    let created = try profile.migrateIfEligible(hasActiveSession: active?.blockedProfile.id == profile.id)
+    guard profile.profileSchemaVersion != previousVersion else { return }
+    pendingReenqueues.append(CKRecord.ID(recordName: profile.id.uuidString, zoneID: zoneID))
+    pendingReenqueues.append(
+      contentsOf: created.map {
+        CKRecord.ID(recordName: SavedTag.recordName(for: $0), zoneID: zoneID)
+      })
+    BlockedProfiles.updateSnapshot(for: profile)
+  }
+
+  private func applyTagModification(_ record: CKRecord) -> ApplyOutcome {
+    guard let synced = SyncedTag(from: record) else { return .ignored }
+    let recordName = record.recordID.recordName
+    do {
+      if let existing = try SavedTag.find(byID: synced.tagId, in: modelContext) {
+        if synced.lastModified > existing.updatedAt {
+          existing.name = synced.name
+          existing.kind = synced.kind
+          existing.updatedAt = synced.lastModified
+          existing.syncVersion = max(existing.syncVersion, 1) + 1
+          try commit()
+          SyncDiagnostics.tagApply(recordName: recordName, branch: "remote_newer_applied")
+        } else {
+          SyncDiagnostics.tagApply(recordName: recordName, branch: "local_newer_or_equal_noop")
+        }
+      } else {
+        if let watermark = store.deleteWatermark(for: recordName),
+          synced.lastModified.timeIntervalSinceReferenceDate <= watermark
+        {
+          store.removeFailedApply(recordName: recordName)
+          return .skippedStaleDelete
+        }
+        modelContext.insert(
+          SavedTag(
+            id: synced.tagId, kind: synced.kind, name: synced.name,
+            createdAt: synced.lastModified, updatedAt: synced.lastModified, syncVersion: 1))
+        try commit()
+        store.clearDeleteWatermark(recordName: recordName)
+        SyncDiagnostics.tagApply(recordName: recordName, branch: "created")
+      }
+      store.removeFailedApply(recordName: recordName)
+      storeSystemFields(record)
+      return .applied
+    } catch {
+      modelContext.rollback()
+      store.addFailedApply(FailedApply(recordName: recordName, recordType: SyncedTag.recordType, op: .upsert))
+      Log.error("Failed to apply tag record \(recordName): \(error.localizedDescription)", category: .sync)
+      return .failed
+    }
+  }
+
+  private func deleteLocalTag(recordName: String) -> DeletionOutcome {
+    do {
+      guard let tag = try SavedTag.find(byRecordName: recordName, in: modelContext) else {
+        clearDeletionBookkeeping(recordName: recordName)
+        SyncDiagnostics.tagDeletionApplied(recordName: recordName, existed: false)
+        return .notPresent
+      }
+      store.setDeleteWatermark(recordName: recordName, value: tag.updatedAt.timeIntervalSinceReferenceDate)
+      // Keep profile ids: a tag removed on a stale device must still stop a running session.
+      modelContext.delete(tag)
+      try commit()
+      clearDeletionBookkeeping(recordName: recordName)
+      SyncDiagnostics.tagDeletionApplied(recordName: recordName, existed: true)
+      return .deleted
+    } catch {
+      modelContext.rollback()
+      store.clearDeleteWatermark(recordName: recordName)
+      store.addFailedApply(FailedApply(recordName: recordName, recordType: SyncedTag.recordType, op: .delete))
+      Log.error("Failed to delete tag record \(recordName): \(error.localizedDescription)", category: .sync)
+      return .ignored
+    }
   }
 
   // MARK: - Location apply (N6 client-clock merge)

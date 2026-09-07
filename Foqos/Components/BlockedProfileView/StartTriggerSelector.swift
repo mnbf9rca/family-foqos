@@ -4,9 +4,11 @@ import SwiftUI
 /// Selector for profile start triggers
 struct StartTriggerSelector: View {
   @Binding var triggers: ProfileStartTriggers
-  @Binding var startNFCTagId: String?
-  @Binding var startQRCodeId: String?
+  @Binding var startNFCTagIds: [String]
+  @Binding var startQRCodeIds: [String]
   @Binding var startSchedule: ProfileScheduleTime?
+  let nfcTags: [(id: String, name: String)]
+  let qrTags: [(id: String, name: String)]
   let disabled: Bool
   let onTriggerChange: () -> Void
   let onScanNFCTag: () -> Void
@@ -34,11 +36,9 @@ struct StartTriggerSelector: View {
         onTriggerChange()
       }
       if nfcOption == .specific {
-        scanRow(
-          tagId: startNFCTagId,
-          onScan: onScanNFCTag,
-          label: "Tag"
-        )
+        TagPickerRows(
+          selectedIds: $startNFCTagIds, tags: nfcTags,
+          scanLabel: "Scan new tag", disabled: disabled, onChange: onTriggerChange, onScan: onScanNFCTag)
       }
 
       // QR picker
@@ -53,11 +53,9 @@ struct StartTriggerSelector: View {
         onTriggerChange()
       }
       if qrOption == .specific {
-        scanRow(
-          tagId: startQRCodeId,
-          onScan: onScanQRCode,
-          label: "Code"
-        )
+        TagPickerRows(
+          selectedIds: $startQRCodeIds, tags: qrTags,
+          scanLabel: "Scan new code", disabled: disabled, onChange: onTriggerChange, onScan: onScanQRCode)
       }
 
       // Schedule
@@ -98,23 +96,6 @@ struct StartTriggerSelector: View {
     .onChange(of: triggers) { _, newTriggers in
       nfcOption = NFCStartOption.from(newTriggers)
       qrOption = QRStartOption.from(newTriggers)
-    }
-  }
-
-  @ViewBuilder
-  private func scanRow(tagId: String?, onScan: @escaping () -> Void, label: String) -> some View {
-    HStack {
-      if let tagId, !tagId.isEmpty {
-        Text("\(label) set")
-          .font(.caption)
-          .foregroundStyle(.secondary)
-      }
-      Spacer()
-      Button(tagId == nil || tagId?.isEmpty == true ? "Scan" : "Change") {
-        onScan()
-      }
-      .buttonStyle(.bordered)
-      .disabled(disabled)
     }
   }
 

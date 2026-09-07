@@ -43,6 +43,15 @@ final class RecordProvider {
       // Session records are owned by SessionSyncService (CAS), never materialized here.
       return nil
     }
+    if recordName.hasPrefix("SavedTag_") {
+      guard let tag = try? SavedTag.find(byRecordName: recordName, in: modelContext) else { return nil }
+      let synced = SyncedTag(from: tag, generation: store.establishmentGeneration)
+      let record = materialize(
+        recordName: recordName, recordType: SyncedTag.recordType,
+        freshRecordID: CKRecord.ID(recordName: recordName, zoneID: zoneID))
+      synced.updateCKRecord(record)
+      return record
+    }
     guard let id = UUID(uuidString: recordName) else {
       return nil
     }

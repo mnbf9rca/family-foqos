@@ -1,5 +1,6 @@
 // FoqosTests/StrategyManagerStopTests.swift
 import FoqosShared
+import SwiftData
 import XCTest
 
 @testable import FamilyFoqos
@@ -15,8 +16,8 @@ final class StrategyManagerStopTests: XCTestCase {
       with: .manual,
       conditions: stop,
       sessionTag: nil,
-      stopNFCTagId: nil,
-      stopQRCodeId: nil
+      stopNFCTagIds: [],
+      stopQRCodeIds: []
     )
 
     XCTAssertTrue(result.allowed)
@@ -30,8 +31,8 @@ final class StrategyManagerStopTests: XCTestCase {
       with: .manual,
       conditions: stop,
       sessionTag: nil,
-      stopNFCTagId: nil,
-      stopQRCodeId: nil
+      stopNFCTagIds: [],
+      stopQRCodeIds: []
     )
 
     XCTAssertFalse(result.allowed)
@@ -45,8 +46,8 @@ final class StrategyManagerStopTests: XCTestCase {
       with: .nfc(tag: "any-tag"),
       conditions: stop,
       sessionTag: nil,
-      stopNFCTagId: nil,
-      stopQRCodeId: nil
+      stopNFCTagIds: [],
+      stopQRCodeIds: []
     )
 
     XCTAssertTrue(result.allowed)
@@ -60,8 +61,8 @@ final class StrategyManagerStopTests: XCTestCase {
       with: .nfc(tag: "required-tag"),
       conditions: stop,
       sessionTag: nil,
-      stopNFCTagId: "required-tag",
-      stopQRCodeId: nil
+      stopNFCTagIds: ["required-tag"],
+      stopQRCodeIds: []
     )
 
     XCTAssertTrue(result.allowed)
@@ -75,8 +76,8 @@ final class StrategyManagerStopTests: XCTestCase {
       with: .nfc(tag: "wrong-tag"),
       conditions: stop,
       sessionTag: nil,
-      stopNFCTagId: "required-tag",
-      stopQRCodeId: nil
+      stopNFCTagIds: ["required-tag"],
+      stopQRCodeIds: []
     )
 
     XCTAssertFalse(result.allowed)
@@ -92,8 +93,8 @@ final class StrategyManagerStopTests: XCTestCase {
       with: .nfc(tag: "session-tag"),
       conditions: stop,
       sessionTag: "nfc:session-tag",
-      stopNFCTagId: nil,
-      stopQRCodeId: nil
+      stopNFCTagIds: [],
+      stopQRCodeIds: []
     )
 
     XCTAssertTrue(result.allowed)
@@ -107,8 +108,8 @@ final class StrategyManagerStopTests: XCTestCase {
       with: .nfc(tag: "different-tag"),
       conditions: stop,
       sessionTag: "nfc:original-tag",
-      stopNFCTagId: nil,
-      stopQRCodeId: nil
+      stopNFCTagIds: [],
+      stopQRCodeIds: []
     )
 
     XCTAssertFalse(result.allowed)
@@ -124,8 +125,8 @@ final class StrategyManagerStopTests: XCTestCase {
       with: .qr(code: "session-code"),
       conditions: stop,
       sessionTag: "qr:session-code",
-      stopNFCTagId: nil,
-      stopQRCodeId: nil
+      stopNFCTagIds: [],
+      stopQRCodeIds: []
     )
 
     XCTAssertTrue(result.allowed)
@@ -139,8 +140,8 @@ final class StrategyManagerStopTests: XCTestCase {
       with: .qr(code: "different-code"),
       conditions: stop,
       sessionTag: "qr:original-code",
-      stopNFCTagId: nil,
-      stopQRCodeId: nil
+      stopNFCTagIds: [],
+      stopQRCodeIds: []
     )
 
     XCTAssertFalse(result.allowed)
@@ -273,4 +274,89 @@ final class StrategyManagerStopTests: XCTestCase {
 
     XCTAssertEqual(action, .stopImmediately)
   }
+  func testSpecificStopAcceptsSecondTagAndRejectsUnknownForBothKinds() {
+    for isNFC in [true, false] {
+      var conditions = ProfileStopConditions()
+      conditions.specificNFC = isNFC
+      conditions.specificQR = !isNFC
+      for (value, allowed) in [("second", true), ("unknown", false)] {
+        let result = StartStopActionResolver.canStop(
+          with: isNFC ? .nfc(tag: value) : .qr(code: value), conditions: conditions,
+          sessionTag: nil, stopNFCTagIds: ["first", "second"], stopQRCodeIds: ["first", "second"])
+        XCTAssertEqual(result.allowed, allowed)
+        if !allowed { XCTAssertEqual(result.errorMessage, isNFC ? "Scan the correct NFC tag to stop" : "Scan the correct QR code to stop") }
+      }
+    }
+  }
+
+  func testSameTagStillRequiresSessionTagEvenWhenScannedValueIsInStopList() {
+    for isNFC in [true, false] {
+      var conditions = ProfileStopConditions()
+      conditions.sameNFC = isNFC
+      conditions.sameQR = !isNFC
+      let result = StartStopActionResolver.canStop(
+        with: isNFC ? .nfc(tag: "other") : .qr(code: "other"), conditions: conditions,
+        sessionTag: isNFC ? "nfc:session" : "qr:session", stopNFCTagIds: ["other"], stopQRCodeIds: ["other"])
+      XCTAssertFalse(result.allowed)
+    }
+  }
+
+  func testDeferredV1SessionEndMigratesAndEnqueuesProfileAndTagOnce() throws {
+    let now = Date()
+    let container = try TestModelContainer.create()
+    let context = container.mainContext
+    let facade = ProfileSyncManager.shared
+    let previous = facade.engineController
+    let enabled = facade.isEnabled
+    let spy = MockSyncEngineControlling()
+    // Keep migration upload assertions real, then suppress unrelated live session CloudKit I/O.
+    spy.onTagSave = { facade.isEnabled = false }
+    facade.engineController = spy
+    facade.isEnabled = true
+    defer {
+      facade.engineController = previous
+      facade.isEnabled = enabled
+    }
+    let profile = BlockedProfiles(name: "Legacy", createdAt: now, updatedAt: now)
+    profile.profileSchemaVersion = 1
+    profile.physicalUnblockNFCTagId = "stop-tag"
+    context.insert(profile)
+    let session = BlockedProfileSession.createSession(in: context, withTag: "nfc:start", withProfile: profile)
+    try context.save()
+    let manager = StrategyManager()
+    defer { manager.stopTimer() }
+    let strategy = manager.getStrategy(id: ManualBlockingStrategy.id)
+    _ = strategy.stopBlocking(context: context, session: session)
+    XCTAssertEqual(profile.profileSchemaVersion, 3)
+    XCTAssertEqual(profile.stopNFCTagIds, ["stop-tag"])
+    XCTAssertNotNil(try SavedTag.find(byID: "stop-tag", in: context))
+    XCTAssertEqual(spy.enqueuedProfileSaves, [profile.id])
+    XCTAssertEqual(spy.enqueuedTagSaves, ["stop-tag"])
+  }
+
+  func testDeferredV1NFCStrategyStillRequiresLegacyPhysicalUnblockTag() throws {
+    let now = Date()
+    let container = try TestModelContainer.create()
+    let context = container.mainContext
+    let profile = BlockedProfiles(name: "Legacy", createdAt: now, updatedAt: now)
+    profile.profileSchemaVersion = 1
+    profile.physicalUnblockNFCTagId = "required"
+    context.insert(profile)
+    let session = BlockedProfileSession.createSession(in: context, withTag: "nfc:start", withProfile: profile)
+    try context.save()
+    XCTAssertTrue(try profile.migrateIfEligible(hasActiveSession: true).isEmpty)
+    let strategy = NFCBlockingStrategy()
+    var rejection: String?
+    strategy.onErrorMessage = { rejection = $0 }
+    _ = strategy.stopBlocking(context: context, session: session)
+    // Exercise the existing scanner callback without changing the scanner or opening hardware.
+    let scanner = try XCTUnwrap(Mirror(reflecting: strategy).children.compactMap { $0.value as? NFCScannerUtil }.first)
+    scanner.onTagScanned?(NFCResult(id: "wrong", dateScanned: now))
+    XCTAssertTrue(session.isActive)
+    XCTAssertNotNil(rejection)
+    XCTAssertEqual(profile.physicalUnblockNFCTagId, "required")
+    scanner.onTagScanned?(NFCResult(id: "required", dateScanned: now))
+    XCTAssertFalse(session.isActive)
+  }
+
 }

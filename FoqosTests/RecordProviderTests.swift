@@ -239,4 +239,45 @@ final class RecordProviderTests: XCTestCase {
     let name = ProfileSessionRecord.recordName(for: UUID())
     XCTAssertNil(makeProvider().record(forRecordName: name))
   }
+  func testTagMaterializationUsesHashedRecordNameAndGeneration() throws {
+    let tag = try SavedTag.findOrCreate(id: "hardware", kind: "nfc", name: "Kitchen", in: context)
+    try context.save()
+    store.establishmentGeneration = 4
+    let record = try XCTUnwrap(makeProvider().record(forRecordName: tag.recordName))
+    XCTAssertEqual(record.recordType, "SyncedTag")
+    XCTAssertEqual(record["tagId"] as? String, "hardware")
+    XCTAssertEqual(record["generation"] as? Int, 4)
+  }
+
+  func testCachedV3MaterializationExplicitlyClearsSixLegacyKeysButV1KeepsThem() throws {
+    let profile = BlockedProfiles(name: "Profile")
+    profile.profileSchemaVersion = 1
+    profile.startNFCTagId = "start-nfc"
+    profile.startQRCodeId = "start-qr"
+    profile.stopNFCTagId = "stop-nfc"
+    profile.stopQRCodeId = "stop-qr"
+    profile.physicalUnblockNFCTagId = "old-nfc"
+    profile.physicalUnblockQRCodeId = "old-qr"
+    context.insert(profile)
+    try context.save()
+    let provider = makeProvider()
+    let old = try XCTUnwrap(provider.record(forRecordName: profile.id.uuidString))
+    let keys = [
+      "startNFCTagId", "startQRCodeId", "stopNFCTagId", "stopQRCodeId",
+      "physicalUnblockNFCTagId", "physicalUnblockQRCodeId",
+    ]
+    for key in keys { XCTAssertNotNil(old[key]) }
+    store.setSystemFields(CKRecordSystemFieldsCodec.encode(old), for: profile.id.uuidString)
+    _ = try profile.migrateIfEligible(hasActiveSession: false)
+    let outgoing = try XCTUnwrap(provider.record(forRecordName: profile.id.uuidString))
+    XCTAssertEqual(outgoing["startNFCTagIds"] as? [String], ["start-nfc"])
+    for key in keys {
+      XCTAssertNil(outgoing[key])
+      XCTAssertTrue(outgoing.changedKeys().contains(key), "Must explicitly clear \(key)")
+    }
+    // Also exercise mutation over a full server copy, with the old user fields present.
+    SyncedProfile(from: profile, originDeviceId: deviceId).updateCKRecord(old)
+    for key in keys { XCTAssertNil(old[key]) }
+  }
+
 }

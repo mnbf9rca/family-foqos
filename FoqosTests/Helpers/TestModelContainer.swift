@@ -4,7 +4,7 @@ import SwiftData
 
 enum TestModelContainer {
   static func create() throws -> ModelContainer {
-    let schema = Schema([BlockedProfiles.self, BlockedProfileSession.self, SavedLocation.self])
+    let schema = Schema([BlockedProfiles.self, BlockedProfileSession.self, SavedLocation.self, SavedTag.self])
     let config = ModelConfiguration(
       schema: schema,
       isStoredInMemoryOnly: true,

@@ -5,10 +5,10 @@ import XCTest
 
 final class BlockedProfilesTriggersTests: XCTestCase {
 
-  func testGivenNewProfile_WhenCheckingSchema_ThenReturnsVersion2() {
+  func testGivenNewProfile_WhenCheckingSchema_ThenReturnsVersion3() {
     let profile = BlockedProfiles(name: "Test")
 
-    XCTAssertEqual(profile.profileSchemaVersion, 2)
+    XCTAssertEqual(profile.profileSchemaVersion, 3)
   }
 
   func testGivenNewProfile_WhenCheckingTriggers_ThenBothAreInvalid() {
@@ -142,4 +142,39 @@ final class BlockedProfilesTriggersTests: XCTestCase {
     XCTAssertEqual(cloned.startSchedule?.hour, 9)
     XCTAssertEqual(cloned.stopSchedule?.hour, 17)
   }
+  @MainActor
+  func testSpecificListsRequireASelectionAndRoundTripThroughEditor() throws {
+    let container = try TestModelContainer.create()
+    let profile = BlockedProfiles(name: "Source")
+    container.mainContext.insert(profile)
+    try container.mainContext.save()
+    let model = TriggerConfigurationModel()
+    try model.loadFromProfile(profile, in: container.mainContext)
+    model.startTriggers.specificNFC = true
+    model.startTriggers.specificQR = true
+    model.stopConditions.specificNFC = true
+    model.stopConditions.specificQR = true
+    model.validate()
+    let messages = [
+      "Scan an NFC tag to use as the start trigger", "Scan a QR code to use as the start trigger",
+      "Scan an NFC tag to use as the stop condition", "Scan a QR code to use as the stop condition",
+    ]
+    for message in messages { XCTAssertTrue(model.validationErrors.contains(message)) }
+    model.startNFCTagIds = ["n1", "n2"]
+    model.startQRCodeIds = ["q1", "q2"]
+    model.stopNFCTagIds = ["n3", "n4"]
+    model.stopQRCodeIds = ["q3", "q4"]
+    model.validate()
+    for message in messages { XCTAssertFalse(model.validationErrors.contains(message)) }
+    model.saveToProfile(profile)
+    let loaded = TriggerConfigurationModel()
+    try loaded.loadFromProfile(profile, in: container.mainContext)
+    let destination = BlockedProfiles(name: "Destination")
+    loaded.saveToProfile(destination)
+    XCTAssertEqual(destination.startNFCTagIds, ["n1", "n2"])
+    XCTAssertEqual(destination.startQRCodeIds, ["q1", "q2"])
+    XCTAssertEqual(destination.stopNFCTagIds, ["n3", "n4"])
+    XCTAssertEqual(destination.stopQRCodeIds, ["q3", "q4"])
+  }
+
 }

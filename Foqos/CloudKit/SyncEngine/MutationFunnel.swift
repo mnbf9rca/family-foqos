@@ -86,6 +86,38 @@ final class MutationFunnel {
     SyncDiagnostics.localLocationSaveEnqueued(locationId: locationId)
   }
 
+  func enqueueSave(tagId: String) throws {
+    guard let tag = try SavedTag.find(byID: tagId, in: modelContext) else {
+      throw MutationFunnelError.entityNotFound
+    }
+    tag.updatedAt = Date()
+    do { try modelContext.save() } catch {
+      modelContext.rollback()
+      throw error
+    }
+    let recordID = CKRecord.ID(recordName: tag.recordName, zoneID: zoneID)
+    driver.add(pendingRecordZoneChanges: [.saveRecord(recordID)])
+    SyncDiagnostics.localTagSaveEnqueued(recordName: tag.recordName)
+  }
+
+  func enqueueDelete(tagId: String) throws {
+    guard let tag = try SavedTag.find(byID: tagId, in: modelContext) else {
+      throw MutationFunnelError.entityNotFound
+    }
+    let recordName = tag.recordName
+    let changeTag = Self.changeTag(fromSystemFields: store.systemFields(for: recordName))
+    store.setTombstone(recordName: recordName, changeTag: changeTag)
+    store.setDeleteWatermark(recordName: recordName, value: tag.updatedAt.timeIntervalSinceReferenceDate)
+    do { try SavedTag.delete(tag, in: modelContext) } catch {
+      store.clearTombstone(recordName: recordName)
+      store.clearDeleteWatermark(recordName: recordName)
+      modelContext.rollback()
+      throw error
+    }
+    let recordID = CKRecord.ID(recordName: recordName, zoneID: zoneID)
+    driver.add(pendingRecordZoneChanges: [.deleteRecord(recordID)])
+  }
+
   /// Bump the emergency-settings version and enqueue the single fixed-name record (I2, §2).
   /// Not `throws`: nothing inside can fail (#9) — the facade layer above still throws for
   /// the "engine not attached" case (see `SyncEngineController+Cutover`).

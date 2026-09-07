@@ -499,8 +499,8 @@ class StrategyManager: ObservableObject {
           with: .deepLink,
           conditions: localActiveSession.blockedProfile.stopConditions,
           sessionTag: localActiveSession.tag,
-          stopNFCTagId: localActiveSession.blockedProfile.stopNFCTagId,
-          stopQRCodeId: localActiveSession.blockedProfile.stopQRCodeId
+          stopNFCTagIds: localActiveSession.blockedProfile.stopNFCTagIds,
+          stopQRCodeIds: localActiveSession.blockedProfile.stopQRCodeIds
         )
         guard stopResult.allowed else {
           self.errorMessage =
@@ -949,22 +949,14 @@ class StrategyManager: ObservableObject {
         // Remove all strategy timer activities
         DeviceActivityCenterUtil.removeAllStrategyTimerActivities()
 
-        // Migrate deferred profile now that session has ended
-        if endedProfile.needsMigration {
-          endedProfile.migrateToV2IfNeeded()
-          if !endedProfile.needsMigration, let context = endedProfile.modelContext {
-            do {
-              try context.save()
-              Log.info(
-                "Migrated deferred profile '\(endedProfile.name)' on session end", category: .app)
-              DeviceActivityCenterUtil.scheduleTimerActivity(for: endedProfile)
-              BlockedProfiles.updateSnapshot(for: endedProfile)
-            } catch {
-              Log.error(
-                "Failed to save deferred profile migration: \(error.localizedDescription)",
-                category: .strategy)
-            }
+        // Migrate and enqueue the profile and newly-created tags after the V1 session ends.
+        do {
+          if try ProfileMigrationUtil.migrate(endedProfile, hasActiveSession: false) {
+            DeviceActivityCenterUtil.scheduleTimerActivity(for: endedProfile)
+            BlockedProfiles.updateSnapshot(for: endedProfile)
           }
+        } catch {
+          Log.error("Failed to migrate deferred profile: \(error.localizedDescription)", category: .strategy)
         }
 
         // Sync session stop using CAS (if global sync is enabled)
@@ -1256,7 +1248,7 @@ class StrategyManager: ObservableObject {
   func startWithNFCTag(context: ModelContext, profile: BlockedProfiles, tagId: String) {
     // Validate specific NFC tag if required
     if profile.startTriggers.specificNFC {
-      guard let requiredTag = profile.startNFCTagId, tagId == requiredTag else {
+      guard profile.startNFCTagIds.contains(tagId) else {
         errorMessage = "This NFC tag doesn't match the one configured for this profile"
         return
       }
@@ -1269,7 +1261,7 @@ class StrategyManager: ObservableObject {
   func startWithQRCode(context: ModelContext, profile: BlockedProfiles, codeValue: String) {
     // Validate specific QR code if required
     if profile.startTriggers.specificQR {
-      guard let requiredCode = profile.startQRCodeId, codeValue == requiredCode else {
+      guard profile.startQRCodeIds.contains(codeValue) else {
         errorMessage = "This QR code doesn't match the one configured for this profile"
         return
       }
@@ -1289,8 +1281,8 @@ class StrategyManager: ObservableObject {
       with: .nfc(tag: tagId),
       conditions: session.blockedProfile.stopConditions,
       sessionTag: session.tag,
-      stopNFCTagId: session.blockedProfile.stopNFCTagId,
-      stopQRCodeId: session.blockedProfile.stopQRCodeId
+      stopNFCTagIds: session.blockedProfile.stopNFCTagIds,
+      stopQRCodeIds: session.blockedProfile.stopQRCodeIds
     )
 
     if validation.allowed {
@@ -1320,8 +1312,8 @@ class StrategyManager: ObservableObject {
       with: .qr(code: codeValue),
       conditions: session.blockedProfile.stopConditions,
       sessionTag: session.tag,
-      stopNFCTagId: session.blockedProfile.stopNFCTagId,
-      stopQRCodeId: session.blockedProfile.stopQRCodeId
+      stopNFCTagIds: session.blockedProfile.stopNFCTagIds,
+      stopQRCodeIds: session.blockedProfile.stopQRCodeIds
     )
 
     if validation.allowed {

@@ -93,7 +93,7 @@ final class CloneProfileTests: XCTestCase {
 
     let cloned = try BlockedProfiles.cloneProfile(source, in: context, newName: "V1 NFC Copy")
 
-    XCTAssertEqual(cloned.profileSchemaVersion, 2)
+    XCTAssertEqual(cloned.profileSchemaVersion, 3)
     XCTAssertTrue(cloned.startTriggers.anyNFC, "NFC strategy must migrate to NFC start trigger")
     XCTAssertTrue(cloned.stopConditions.sameNFC, "NFC strategy must migrate to same-NFC stop")
     XCTAssertTrue(cloned.stopConditions.isValid, "Clone must be startable")
@@ -110,10 +110,10 @@ final class CloneProfileTests: XCTestCase {
     let cloned = try BlockedProfiles.cloneProfile(source, in: context, newName: "V1 Physical Copy")
 
     XCTAssertTrue(cloned.stopConditions.specificNFC)
-    XCTAssertEqual(cloned.stopNFCTagId, "tag-123")
+    XCTAssertEqual(cloned.stopNFCTagIds, ["tag-123"])
   }
 
-  func testGivenUnmigratedV1Profile_WhenCloned_ThenSourceRemainsV1() throws {
+  func testGivenUnmigratedV1Profile_WhenCloned_ThenSourceMigratesToV3() throws {
     let source = BlockedProfiles(name: "V1 NFC")
     source.profileSchemaVersion = 1
     source.blockingStrategyId = "NFCBlockingStrategy"
@@ -122,8 +122,8 @@ final class CloneProfileTests: XCTestCase {
 
     _ = try BlockedProfiles.cloneProfile(source, in: context, newName: "V1 NFC Copy")
 
-    XCTAssertEqual(source.profileSchemaVersion, 1, "Cloning must not migrate the source")
-    XCTAssertTrue(source.needsMigration, "Source must stay eligible for the normal migration pass")
+    XCTAssertEqual(source.profileSchemaVersion, 3)
+    XCTAssertFalse(source.needsMigration)
   }
 
   func testGivenV2ProfileWithManualTriggers_WhenCloned_ThenTriggersCopiedUnchanged() throws {
@@ -138,8 +138,17 @@ final class CloneProfileTests: XCTestCase {
 
     let cloned = try BlockedProfiles.cloneProfile(source, in: context, newName: "Manual Copy")
 
-    XCTAssertEqual(cloned.profileSchemaVersion, 2)
+    XCTAssertEqual(cloned.profileSchemaVersion, 3)
     XCTAssertTrue(cloned.startTriggers.manual)
     XCTAssertTrue(cloned.stopConditions.manual)
   }
+  func testCloneKeepsBothSelectedQRCodes() throws {
+    let source = BlockedProfiles(name: "Source")
+    source.startQRCodeIds = ["one", "two"]
+    context.insert(source)
+    try context.save()
+    let clone = try BlockedProfiles.cloneProfile(source, in: context, newName: "Clone")
+    XCTAssertEqual(clone.startQRCodeIds, ["one", "two"])
+  }
+
 }

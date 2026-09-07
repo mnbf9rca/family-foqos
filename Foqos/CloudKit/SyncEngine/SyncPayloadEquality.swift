@@ -31,9 +31,13 @@ enum SyncPayloadEquality {
       && a.managedByChildId == b.managedByChildId
       && a.profileSchemaVersion == b.profileSchemaVersion
       && a.scheduleLastStoppedAt == b.scheduleLastStoppedAt
+      && a.startNFCTagIds == b.startNFCTagIds
       && a.startNFCTagId == b.startNFCTagId
+      && a.startQRCodeIds == b.startQRCodeIds
       && a.startQRCodeId == b.startQRCodeId
+      && a.stopNFCTagIds == b.stopNFCTagIds
       && a.stopNFCTagId == b.stopNFCTagId
+      && a.stopQRCodeIds == b.stopQRCodeIds
       && a.stopQRCodeId == b.stopQRCodeId
       && a.schedule == b.schedule
       && a.geofenceRule == b.geofenceRule

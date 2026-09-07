@@ -58,9 +58,13 @@ struct SyncedProfile: Codable, Equatable {
   var startScheduleData: Data?
   var stopScheduleData: Data?
   var startNFCTagId: String?
+  var startNFCTagIds: [String] = []
   var startQRCodeId: String?
+  var startQRCodeIds: [String] = []
   var stopNFCTagId: String?
+  var stopNFCTagIds: [String] = []
   var stopQRCodeId: String?
+  var stopQRCodeIds: [String] = []
 
   /// Other settings
   var disableBackgroundStops: Bool
@@ -117,9 +121,13 @@ struct SyncedProfile: Codable, Equatable {
     case startScheduleData
     case stopScheduleData
     case startNFCTagId
+    case startNFCTagIds
     case startQRCodeId
+    case startQRCodeIds
     case stopNFCTagId
+    case stopNFCTagIds
     case stopQRCodeId
+    case stopQRCodeIds
     case disableBackgroundStops
     case isManaged
     case managedByChildId
@@ -161,8 +169,8 @@ struct SyncedProfile: Codable, Equatable {
     record[FieldKey.blockAdultWebsites.rawValue] = blockAdultWebsites == true
     record[FieldKey.blockAppInstallation.rawValue] = blockAppInstallation == true
     record[FieldKey.preActivationReminderTimesData.rawValue] = preActivationReminderTimesData
-    record[FieldKey.physicalUnblockNFCTagId.rawValue] = physicalUnblockNFCTagId
-    record[FieldKey.physicalUnblockQRCodeId.rawValue] = physicalUnblockQRCodeId
+    record[FieldKey.physicalUnblockNFCTagId.rawValue] = profileSchemaVersion < 3 ? physicalUnblockNFCTagId : nil
+    record[FieldKey.physicalUnblockQRCodeId.rawValue] = profileSchemaVersion < 3 ? physicalUnblockQRCodeId : nil
     record[FieldKey.domains.rawValue] = domains
     record[FieldKey.scheduleData.rawValue] = scheduleData
     record[FieldKey.geofenceRuleData.rawValue] = geofenceRuleData
@@ -170,10 +178,14 @@ struct SyncedProfile: Codable, Equatable {
     record[FieldKey.stopConditionsData.rawValue] = stopConditionsData
     record[FieldKey.startScheduleData.rawValue] = startScheduleData
     record[FieldKey.stopScheduleData.rawValue] = stopScheduleData
-    record[FieldKey.startNFCTagId.rawValue] = startNFCTagId
-    record[FieldKey.startQRCodeId.rawValue] = startQRCodeId
-    record[FieldKey.stopNFCTagId.rawValue] = stopNFCTagId
-    record[FieldKey.stopQRCodeId.rawValue] = stopQRCodeId
+    record[FieldKey.startNFCTagIds.rawValue] = startNFCTagIds
+    record[FieldKey.startNFCTagId.rawValue] = profileSchemaVersion < 3 ? startNFCTagId : nil
+    record[FieldKey.startQRCodeIds.rawValue] = startQRCodeIds
+    record[FieldKey.startQRCodeId.rawValue] = profileSchemaVersion < 3 ? startQRCodeId : nil
+    record[FieldKey.stopNFCTagIds.rawValue] = stopNFCTagIds
+    record[FieldKey.stopNFCTagId.rawValue] = profileSchemaVersion < 3 ? stopNFCTagId : nil
+    record[FieldKey.stopQRCodeIds.rawValue] = stopQRCodeIds
+    record[FieldKey.stopQRCodeId.rawValue] = profileSchemaVersion < 3 ? stopQRCodeId : nil
     record[FieldKey.disableBackgroundStops.rawValue] = disableBackgroundStops
     record[FieldKey.isManaged.rawValue] = isManaged
     record[FieldKey.managedByChildId.rawValue] = managedByChildId
@@ -199,6 +211,7 @@ struct SyncedProfile: Codable, Equatable {
       return nil
     }
 
+    profileSchemaVersion = record[FieldKey.profileSchemaVersion.rawValue] as? Int ?? 1
     self.profileId = profileId
     self.name = name
     self.createdAt = createdAt
@@ -244,8 +257,8 @@ struct SyncedProfile: Codable, Equatable {
     } else {
       preActivationReminderTimesData = nil
     }
-    physicalUnblockNFCTagId = record[FieldKey.physicalUnblockNFCTagId.rawValue] as? String
-    physicalUnblockQRCodeId = record[FieldKey.physicalUnblockQRCodeId.rawValue] as? String
+    physicalUnblockNFCTagId = profileSchemaVersion < 3 ? record[FieldKey.physicalUnblockNFCTagId.rawValue] as? String : nil
+    physicalUnblockQRCodeId = profileSchemaVersion < 3 ? record[FieldKey.physicalUnblockQRCodeId.rawValue] as? String : nil
     domains = record[FieldKey.domains.rawValue] as? [String]
     scheduleData = record[FieldKey.scheduleData.rawValue] as? Data
     geofenceRuleData = record[FieldKey.geofenceRuleData.rawValue] as? Data
@@ -253,10 +266,14 @@ struct SyncedProfile: Codable, Equatable {
     stopConditionsData = record[FieldKey.stopConditionsData.rawValue] as? Data
     startScheduleData = record[FieldKey.startScheduleData.rawValue] as? Data
     stopScheduleData = record[FieldKey.stopScheduleData.rawValue] as? Data
-    startNFCTagId = record[FieldKey.startNFCTagId.rawValue] as? String
-    startQRCodeId = record[FieldKey.startQRCodeId.rawValue] as? String
-    stopNFCTagId = record[FieldKey.stopNFCTagId.rawValue] as? String
-    stopQRCodeId = record[FieldKey.stopQRCodeId.rawValue] as? String
+    startNFCTagIds = record[FieldKey.startNFCTagIds.rawValue] as? [String] ?? []
+    startNFCTagId = profileSchemaVersion < 3 ? record[FieldKey.startNFCTagId.rawValue] as? String : nil
+    startQRCodeIds = record[FieldKey.startQRCodeIds.rawValue] as? [String] ?? []
+    startQRCodeId = profileSchemaVersion < 3 ? record[FieldKey.startQRCodeId.rawValue] as? String : nil
+    stopNFCTagIds = record[FieldKey.stopNFCTagIds.rawValue] as? [String] ?? []
+    stopNFCTagId = profileSchemaVersion < 3 ? record[FieldKey.stopNFCTagId.rawValue] as? String : nil
+    stopQRCodeIds = record[FieldKey.stopQRCodeIds.rawValue] as? [String] ?? []
+    stopQRCodeId = profileSchemaVersion < 3 ? record[FieldKey.stopQRCodeId.rawValue] as? String : nil
     disableBackgroundStops = record[FieldKey.disableBackgroundStops.rawValue] as? Bool ?? false
     isManaged = record[FieldKey.isManaged.rawValue] as? Bool ?? false
     managedByChildId = record[FieldKey.managedByChildId.rawValue] as? String
@@ -265,7 +282,6 @@ struct SyncedProfile: Codable, Equatable {
     self.originDeviceId = originDeviceId
     self.version = version
     // Default to schema version 1 (legacy) if not present - older devices don't send this field
-    profileSchemaVersion = record[FieldKey.profileSchemaVersion.rawValue] as? Int ?? 1
     scheduleLastStoppedAt = record[FieldKey.scheduleLastStoppedAt.rawValue] as? Date
   }
 
@@ -295,8 +311,8 @@ struct SyncedProfile: Codable, Equatable {
     blockAdultWebsites = profile.blockAdultWebsites
     blockAppInstallation = profile.blockAppInstallation
     preActivationReminderTimesData = profile.preActivationReminderTimesData
-    physicalUnblockNFCTagId = profile.physicalUnblockNFCTagId
-    physicalUnblockQRCodeId = profile.physicalUnblockQRCodeId
+    physicalUnblockNFCTagId = profile.profileSchemaVersion < 3 ? profile.physicalUnblockNFCTagId : nil
+    physicalUnblockQRCodeId = profile.profileSchemaVersion < 3 ? profile.physicalUnblockQRCodeId : nil
     domains = profile.domains
     disableBackgroundStops = profile.disableBackgroundStops
     isManaged = profile.isManaged
@@ -329,10 +345,14 @@ struct SyncedProfile: Codable, Equatable {
     if let stopSchedule = profile.stopSchedule {
       stopScheduleData = try? JSONEncoder().encode(stopSchedule)
     }
-    startNFCTagId = profile.startNFCTagId
-    startQRCodeId = profile.startQRCodeId
-    stopNFCTagId = profile.stopNFCTagId
-    stopQRCodeId = profile.stopQRCodeId
+    startNFCTagIds = profile.startNFCTagIds
+    startNFCTagId = profile.profileSchemaVersion < 3 ? profile.startNFCTagId : nil
+    startQRCodeIds = profile.startQRCodeIds
+    startQRCodeId = profile.profileSchemaVersion < 3 ? profile.startQRCodeId : nil
+    stopNFCTagIds = profile.stopNFCTagIds
+    stopNFCTagId = profile.profileSchemaVersion < 3 ? profile.stopNFCTagId : nil
+    stopQRCodeIds = profile.stopQRCodeIds
+    stopQRCodeId = profile.profileSchemaVersion < 3 ? profile.stopQRCodeId : nil
     scheduleLastStoppedAt = profile.scheduleLastStoppedAt
   }
 
@@ -486,6 +506,64 @@ struct SyncedLocation: Codable, Equatable {
     isLocked = location.isLocked
     self.generation = generation
     lastModified = location.updatedAt
+  }
+}
+
+// MARK: - SyncedTag
+
+struct SyncedTag: Codable, Equatable {
+  var tagId: String
+  var kind: String
+  var name: String
+  var generation: Int
+  var lastModified: Date
+
+  static let recordType = "SyncedTag"
+  var recordName: String { SavedTag.recordName(for: tagId) }
+
+  enum FieldKey: String {
+    case tagId
+    case kind
+    case name
+    case generation
+    case lastModified
+  }
+
+  init(from tag: SavedTag, generation: Int = 0) {
+    tagId = tag.id
+    kind = tag.kind
+    name = tag.name
+    self.generation = generation
+    lastModified = tag.updatedAt
+  }
+
+  init?(from record: CKRecord) {
+    guard record.recordType == Self.recordType,
+      let tagId = record[FieldKey.tagId.rawValue] as? String, !tagId.isEmpty,
+      let kind = record[FieldKey.kind.rawValue] as? String, ["nfc", "qr"].contains(kind),
+      let name = record[FieldKey.name.rawValue] as? String,
+      let lastModified = record[FieldKey.lastModified.rawValue] as? Date,
+      record.recordID.recordName == SavedTag.recordName(for: tagId)
+    else { return nil }
+    self.tagId = tagId
+    self.kind = kind
+    self.name = name
+    self.lastModified = lastModified
+    generation = record[FieldKey.generation.rawValue] as? Int ?? 0
+  }
+
+  func toCKRecord(in zoneID: CKRecordZone.ID) -> CKRecord {
+    let record = CKRecord(recordType: Self.recordType, recordID: CKRecord.ID(recordName: recordName, zoneID: zoneID))
+    updateCKRecord(record)
+    return record
+  }
+
+  func updateCKRecord(_ record: CKRecord) {
+    record[FieldKey.tagId.rawValue] = tagId
+    record[FieldKey.kind.rawValue] = kind
+    record[FieldKey.name.rawValue] = name
+    record[FieldKey.generation.rawValue] = generation
+    record[FieldKey.lastModified.rawValue] = lastModified
   }
 }
 

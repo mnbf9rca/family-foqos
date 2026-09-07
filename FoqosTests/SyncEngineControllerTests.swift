@@ -294,6 +294,7 @@ final class SyncEngineControllerTests: XCTestCase {
   func testGivenSeedHelper_WhenSeed_ThenIntentFirstThenSaveZoneAndSaveAllRestorable() throws {
     let p = BlockedProfiles(name: "A")
     context.insert(p)
+    let tag = try SavedTag.findOrCreate(id: "tag", kind: "nfc", name: "Kitchen", in: context)
     let loc = SavedLocation(name: "Home", latitude: 1, longitude: 2)
     context.insert(loc)
     try context.save()
@@ -309,6 +310,8 @@ final class SyncEngineControllerTests: XCTestCase {
     let saves = pendingSaveNames()
     XCTAssertTrue(saves.contains(p.id.uuidString))
     XCTAssertTrue(saves.contains(loc.id.uuidString))
+    XCTAssertTrue(saves.contains(tag.recordName))
+    XCTAssertTrue(controller.restorableRecordNames().contains(tag.recordName))
     XCTAssertTrue(saves.contains(SyncedEmergencySettings.recordName))
   }
 
