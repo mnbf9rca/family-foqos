@@ -418,7 +418,7 @@ struct HomeView: View {
             case .success(let hashedCode):
               showStartQRScanner = false
               strategyManager.startWithQRCode(
-                context: context, profile: profile, codeValue: hashedCode)
+                context: context, profile: profile, codeValue: hashedCode.hash, rawHash: hashedCode.rawHash)
               scannerProfile = nil
             case .failure:
               showStartQRScanner = false
@@ -439,7 +439,7 @@ struct HomeView: View {
             case .success(let hashedCode):
               showStopQRScanner = false
               strategyManager.stopWithQRCode(
-                context: context, codeValue: hashedCode)
+                context: context, codeValue: hashedCode.hash, rawHash: hashedCode.rawHash)
               scannerProfile = nil
             case .failure:
               showStopQRScanner = false

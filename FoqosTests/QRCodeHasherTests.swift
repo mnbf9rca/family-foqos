@@ -1,4 +1,5 @@
 // FoqosTests/QRCodeHasherTests.swift
+import CryptoKit
 import XCTest
 
 @testable import FamilyFoqos
@@ -32,4 +33,28 @@ final class QRCodeHasherTests: XCTestCase {
     let hash = QRCodeHasher.hash("hello")
     XCTAssertEqual(hash, "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824")
   }
+  func testNormalizationPreservesEverythingExceptWhitespaceSchemeHostAndBareSlash() {
+    let cases = [
+      (" \nHTTPS://EXAMPLE.COM/\t", "https://example.com"),
+      ("HTTPS://EXAMPLE.COM", "https://example.com"),
+      ("  plain Text  ", "plain Text"),
+      (" \n\t", ""),
+      ("  /Relative/Path/ ", "/Relative/Path/"),
+      (" MAILTO:Name@EXAMPLE.COM ", "MAILTO:Name@EXAMPLE.COM"),
+      (" HTTPS:///Path/ ", "HTTPS:///Path/"),
+      ("HTTPS://User:Pass@EXAMPLE.COM:8443/Path/", "https://User:Pass@example.com:8443/Path/"),
+      ("HTTPS://EXAMPLE.COM/%2f/%2F?Q=%2b#Frag%2f", "https://example.com/%2f/%2F?Q=%2b#Frag%2f"),
+      ("HTTPS://EXAMPLE.COM/?", "https://example.com/?"),
+      ("HTTPS://EXAMPLE.COM/#", "https://example.com/#"),
+      ("HTTPS://EXAMPLE.COM/?#", "https://example.com/?#"),
+      ("HTTPS://EXAMPLE.COM/?Q=Value", "https://example.com/?Q=Value"),
+      ("HTTPS://EXAMPLE.COM/#Fragment", "https://example.com/#Fragment"),
+    ]
+    for (payload, normalized) in cases {
+      let expected = SHA256.hash(data: Data(normalized.utf8))
+        .map { String(format: "%02x", $0) }.joined()
+      XCTAssertEqual(QRCodeHasher.hash(payload), expected, payload)
+    }
+  }
+
 }

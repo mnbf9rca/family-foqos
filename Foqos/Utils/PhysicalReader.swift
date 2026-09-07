@@ -27,7 +27,7 @@ class PhysicalReader {
     ) { result in
       switch result {
       case .success(let hashedCode):
-        onSuccess(hashedCode)
+        onSuccess(hashedCode.hash)
       case .failure(let error):
         onFailure(error.localizedDescription)
       }
