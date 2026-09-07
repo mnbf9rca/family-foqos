@@ -24,11 +24,11 @@ The description promises three things, in this order: block distracting apps wit
 
 ### 1. Home with an active session (unchanged)
 
-Keep the current scenario and caption. It is the screen people use every day, and the timer, "Stop" button, break control, and the "Breaks" chip show the product working rather than being configured. The habit tracker above the card shows the seeded history.
+Keep the current scenario with the human's caption, "Block distractions and stay focused". It is the screen people use every day, and the timer, "Stop" button, break control, and the "Breaks" chip show the product working rather than being configured. The habit tracker above the card shows the seeded history.
 
 ### 2. Profile editor at the trigger sections (replaces `02-profile-editor`)
 
-The current screenshot shows the top of the editor: the name field and the app picker. Every app blocker has an app picker, and its caption, "Pick the strategy that works for you", names a V1 concept that V2 removed. The V2 difference is that a profile chooses how it starts ("Start by...") and what ends it ("Continue until..."), with NFC, QR, schedule, timer, and tap as the choices.
+The previous screenshot showed the top of the editor: the name field and the app picker. The human kept "Pick the strategy that works for you" as the caption for the V2 trigger sections. These show how a profile starts ("Start by...") and what ends it ("Continue until..."), with NFC, QR, schedule, timer, and tap as the choices.
 
 Staging:
 
