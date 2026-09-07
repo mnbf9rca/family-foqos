@@ -5,6 +5,7 @@ import os
 enum ScreenshotDemoScenario: String {
   case homeActive = "home-active"
   case profileEditor = "profile-editor"
+  case childLocked = "child-locked"
   case parentDashboard = "parent-dashboard"
 }
 

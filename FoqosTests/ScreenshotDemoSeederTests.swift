@@ -66,7 +66,7 @@ final class ScreenshotDemoSeederTests: XCTestCase {
     let context = container.mainContext
     let profiles = try context.fetch(FetchDescriptor<BlockedProfiles>())
     XCTAssertEqual(profiles.count, 4)
-    XCTAssertTrue(profiles.contains { $0.isManaged })
+    XCTAssertEqual(profiles.filter(\.isManaged).count, 1)
     XCTAssertFalse(profiles.contains { $0.needsMigration })
 
     let sessions = try context.fetch(FetchDescriptor<BlockedProfileSession>())
@@ -128,5 +128,24 @@ final class ScreenshotDemoSeederTests: XCTestCase {
     XCTAssertEqual(profiles.count, 4)
     XCTAssertEqual(sessions.count, 16)
     XCTAssertTrue(sessions.allSatisfy { !$0.isActive })
+  }
+
+  func testGivenChildLockedScenario_WhenSeeding_ThenChildRulesAndCodeAreStaged() throws {
+    let now = Date()
+    ScreenshotDemoMode.scenarioOverrideForTesting = try XCTUnwrap(
+      ScreenshotDemoScenario(rawValue: "child-locked"))
+    try ScreenshotDemoSeeder.seed(container: container, now: now)
+
+    let profiles = try container.mainContext.fetch(FetchDescriptor<BlockedProfiles>())
+    XCTAssertEqual(AppModeManager.shared.currentMode, .child)
+    XCTAssertTrue(CloudKitManager.shared.isConnectedToFamily)
+    XCTAssertFalse(CloudKitManager.shared.isShareOwner)
+    XCTAssertEqual(
+      Set(profiles.filter(\.isManaged).map(\.name)),
+      Set(["School Nights", "Homework", "Bedtime"]))
+    XCTAssertEqual(profiles.filter { !$0.isManaged }.map(\.name), ["Deep Focus"])
+    XCTAssertTrue(profiles.filter(\.isManaged).allSatisfy { $0.managedByChildId == "_demo-emma" })
+    XCTAssertEqual(LockCodeManager.shared.cachedChildLockCodeCount, 1)
+    XCTAssertTrue(LockCodeManager.shared.canVerifyCode)
   }
 }

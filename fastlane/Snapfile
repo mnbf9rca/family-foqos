@@ -17,7 +17,7 @@ derived_data_path(simulator_gate.fetch(:derived_data_path))
 xcargs(simulator_gate.fetch(:xcargs))
 app_identifier("com.cynexia.family-foqos")
 output_directory("./fastlane/screenshots")
-# Keep this true so the Fastfile's exactly-three framed check cannot pass on stale output.
+# Keep this true so the Fastfile's framed screenshot check cannot pass on stale output.
 clear_previous_screenshots(true)
 override_status_bar(true)
 stop_after_first_error(true)

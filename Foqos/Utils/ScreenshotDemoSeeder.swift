@@ -37,6 +37,13 @@ import SwiftData
       focus.startTriggers = ProfileStartTriggers(manual: true, anyNFC: true)
       focus.stopConditions = ProfileStopConditions(anyNFC: true)
 
+      if ScreenshotDemoMode.scenario == .childLocked {
+        for profile in [school, homework, bedtime] {
+          profile.isManaged = true
+          profile.managedByChildId = "_demo-emma"
+        }
+      }
+
       for profile in [school, homework, bedtime, focus] {
         context.insert(profile)
       }
@@ -53,7 +60,7 @@ import SwiftData
 
       CloudKitManager.shared.isSignedIn = true
       CloudKitManager.shared.isConnectedToFamily = true
-      CloudKitManager.shared.isShareOwner = true
+      CloudKitManager.shared.isShareOwner = ScreenshotDemoMode.scenario != .childLocked
       CloudKitManager.shared.familyMembers = [
         FamilyMember(
           userRecordName: "_demo-alex", displayName: "Alex", role: .parent,
@@ -79,7 +86,12 @@ import SwiftData
           authRevokedNotifiedAt: nil),
       ]
 
-      let mode: AppMode = ScreenshotDemoMode.scenario == .parentDashboard ? .parent : .individual
+      let mode: AppMode =
+        switch ScreenshotDemoMode.scenario {
+        case .parentDashboard: .parent
+        case .childLocked: .child
+        default: .individual
+        }
       AppModeManager.shared.selectMode(mode)
       UserDefaults.standard.set(true, forKey: "family_foqos_has_completed_onboarding")
       UserDefaults.standard.set(false, forKey: "family_foqos_show_intro_screen")

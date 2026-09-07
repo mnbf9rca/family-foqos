@@ -26,9 +26,10 @@ final class ScreenshotDemoModeTests: XCTestCase {
     XCTAssertTrue(ScreenshotDemoMode.isActive)
   }
 
-  func testGivenScenarioRawValues_WhenParsing_ThenAllThreeResolve() {
+  func testGivenScenarioRawValues_WhenParsing_ThenAllFourResolve() {
     XCTAssertEqual(ScreenshotDemoScenario(rawValue: "home-active"), .homeActive)
     XCTAssertEqual(ScreenshotDemoScenario(rawValue: "profile-editor"), .profileEditor)
+    XCTAssertEqual(ScreenshotDemoScenario(rawValue: "child-locked"), .childLocked)
     XCTAssertEqual(ScreenshotDemoScenario(rawValue: "parent-dashboard"), .parentDashboard)
   }
 }

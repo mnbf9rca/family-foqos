@@ -124,8 +124,9 @@ platform :ios do
     screenshots_directory = File.expand_path('screenshots', __dir__)
     expected_names = %w[
       01-home-active
-      02-profile-editor
-      03-parent-dashboard
+      02-profile-triggers
+      03-child-locked
+      04-parent-dashboard
     ]
     framed = Dir.glob(File.join(screenshots_directory, 'en-GB', '*_framed.png'))
     missing = expected_names.reject do |name|
@@ -133,10 +134,11 @@ platform :ios do
     end
     unless framed.count == expected_names.count && missing.empty?
       UI.user_error!(
-        "Expected 3 framed en-GB screenshots; found #{framed.count}, missing: #{missing.join(', ')}"
+        "Expected #{expected_names.count} framed en-GB screenshots; " \
+        "found #{framed.count}, missing: #{missing.join(', ')}"
       )
     end
-    UI.success('Validated 3 framed en-GB screenshots')
+    UI.success("Validated #{expected_names.count} framed en-GB screenshots")
   end
 
   private_lane :assert_snapshot_gate do

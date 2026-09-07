@@ -53,6 +53,9 @@ struct HomeView: View {
 
   // Parent dashboard (accessible in parent mode)
   @State private var showParentDashboard = false
+  #if DEBUG
+    @State private var showChildDashboardForScreenshots = false
+  #endif
 
   @SafeQuery(
     filter: #Predicate<BlockedProfileSession> { $0.endTime != nil },
@@ -366,6 +369,11 @@ struct HomeView: View {
     .sheet(isPresented: $showParentDashboard) {
       ParentDashboardView()
     }
+    #if DEBUG
+      .sheet(isPresented: $showChildDashboardForScreenshots) {
+        ChildDashboardView()
+      }
+    #endif
     .alert(alertTitle, isPresented: $showingAlert) {
       Button("OK", role: .cancel) { dismissAlert() }
     } message: {
@@ -639,7 +647,10 @@ struct HomeView: View {
     loadApp()
     #if DEBUG
       if ScreenshotDemoMode.scenario == .profileEditor {
-        profileToEdit = profiles.valid.first
+        profileToEdit = profiles.valid.first { $0.name == "Deep Focus" }
+      }
+      if ScreenshotDemoMode.scenario == .childLocked {
+        showChildDashboardForScreenshots = true
       }
       if ScreenshotDemoMode.scenario == .parentDashboard {
         showParentDashboard = true
