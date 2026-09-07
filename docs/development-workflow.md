@@ -102,11 +102,19 @@ scripts/fastlane.sh verify_export
 # Upload lanes.
 scripts/fastlane.sh beta
 scripts/fastlane.sh release
+scripts/fastlane.sh update_screenshots
 ```
 
 `verify_export`, `beta`, and `release` preflight the standalone xcbeautify binary. The beta lane
 uploads to TestFlight and then publishes dSYMs; the release lane uploads metadata, screenshots,
 and the binary, confirms submission for review, and then publishes dSYMs.
+
+`update_screenshots` requires a clean `main` checkout, the framed screenshots validated by the lane,
+and an existing editable App Store Connect version. It uses the ASC credentials from 1Password to
+replace draft screenshots, skipping binary, metadata, and app-version updates. Overwrite deletes
+**all device screenshot sets in each uploaded locale** before uploading their replacements. The lane
+never submits for review and does not immediately change the live App Store listing shown to
+TestFlight testers. Its first live run is performed by the human.
 
 ## Format Swift
 

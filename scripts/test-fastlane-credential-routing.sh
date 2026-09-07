@@ -164,7 +164,7 @@ assert_local_bundle_environment() {
   fi
 }
 
-for lane in check_asc_key pull_metadata beta release verify_export; do
+for lane in check_asc_key pull_metadata beta release verify_export update_screenshots; do
   run_wrapper "$TEST_ROOT/ruby" "$lane" "argument with spaces"
   printf -v expected 'bundle\t--version\nbundle\tcheck\nop\trun\t--env-file\t%s\t--\tbundle\texec\tfastlane\t%s\targument with spaces' \
     "$REPO_ROOT/scripts/../fastlane/asc.env" "$lane"
@@ -175,6 +175,9 @@ for lane in check_asc_key pull_metadata beta release verify_export; do
   fi
   assert_local_bundle_environment
 done
+
+run_wrapper "$TEST_ROOT/no-xcbeautify-ruby" update_screenshots
+assert_local_bundle_environment
 
 for lane in screenshots lanes gates build_number; do
   run_wrapper "$TEST_ROOT/ruby" "$lane" "argument with spaces"
@@ -261,18 +264,20 @@ for lane in screenshots beta release verify_export; do
   fi
 done
 
-set +e
-MISSING_OP_OUTPUT=$(run_wrapper "$TEST_ROOT/no-op-ruby" check_asc_key 2>&1)
-MISSING_OP_STATUS=$?
-set -e
-if [[ "$MISSING_OP_STATUS" -eq 0 || "$MISSING_OP_OUTPUT" != *"1Password CLI 'op' is required"* ]]; then
-  echo "FAIL: missing op must fail with a friendly error"
-  printf 'exit: %s\n%s\n' "$MISSING_OP_STATUS" "$MISSING_OP_OUTPUT"
-  exit 1
-fi
-if [[ -e "$TEST_ROOT/command.log" ]]; then
-  echo "FAIL: missing op invoked bundle"
-  exit 1
-fi
+for lane in check_asc_key update_screenshots; do
+  set +e
+  MISSING_OP_OUTPUT=$(run_wrapper "$TEST_ROOT/no-op-ruby" "$lane" 2>&1)
+  MISSING_OP_STATUS=$?
+  set -e
+  if [[ "$MISSING_OP_STATUS" -eq 0 || "$MISSING_OP_OUTPUT" != *"1Password CLI 'op' is required"* ]]; then
+    echo "FAIL: missing op must fail with a friendly error"
+    printf 'exit: %s\n%s\n' "$MISSING_OP_STATUS" "$MISSING_OP_OUTPUT"
+    exit 1
+  fi
+  if [[ -e "$TEST_ROOT/command.log" ]]; then
+    echo "FAIL: missing op invoked bundle"
+    exit 1
+  fi
+done
 
 echo "PASS: Fastlane credential routing and reference mappings"
