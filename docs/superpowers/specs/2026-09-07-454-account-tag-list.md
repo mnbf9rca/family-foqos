@@ -2,7 +2,7 @@
 
 ## Status and scope
 
-Design for issue #454. Base: `main` at `40c3128`. Revision 2, after the reviewer's round 1: migration persists and rolls back in one place with two named upload sites, incoming V1 records are covered, legacy fields are retired for version-3 profiles only, and tag record names are hashes. Supersedes `2026-09-07-454-multiple-physical-keys.md` and the implementation in PR #465; the maintainer's rulings of September 7, 2026 replace that design.
+Design for issue #454. Base: `main` at `40c3128`. Revision 3, after the reviewer's round 2 (legacy keys are cleared by explicit nil writes and ignored on version-3 decode). Revision 2, after round 1: migration persists and rolls back in one place with two named upload sites, incoming V1 records are covered, legacy fields are retired for version-3 profiles only, and tag record names are hashes. Supersedes `2026-09-07-454-multiple-physical-keys.md` and the implementation in PR #465; the maintainer's rulings of September 7, 2026 replace that design.
 
 Today a profile holds one NFC tag id and one QR code id for starting and one of each for stopping (`startNFCTagId`, `startQRCodeId`, `stopNFCTagId`, `stopQRCodeId` in `Foqos/Models/BlockedProfiles.swift`). This design replaces those four text fields with four lists of references into one account-wide list of named tags. "Tag" below means an NFC tag or a QR code; both use the same mechanism.
 
@@ -40,7 +40,7 @@ Using the scanned value as the id is what makes deduplication free: `findOrCreat
 
 The six legacy single-id properties (`startNFCTagId`, `startQRCodeId`, `stopNFCTagId`, `stopQRCodeId`, `physicalUnblockNFCTagId`, `physicalUnblockQRCodeId`) are retired for version-3 profiles only. A version-3 profile has them nil, nothing reads them from it, and its sync record does not carry them. Profiles below version 3 keep working exactly as today until their migration runs: a V1 profile whose migration is deferred by an active session still uploads as V1 with the legacy keys, and the six V1 strategy classes (`NFCBlockingStrategy` and siblings) still read `physicalUnblockNFCTagId` and `physicalUnblockQRCodeId` during that session. The properties stay declared on the SwiftData model because the migration has to read them from rows written by older builds; dropping the columns would destroy that data first.
 
-`SyncedProfile` (`Foqos/CloudKit/SyncModels.swift`) gains the four list fields. `updateCKRecord` writes the six legacy keys only while `profileSchemaVersion < 3`; `init(record:)` always decodes them so an incoming older record can be migrated. `SyncPayloadEquality.profilesPayloadEqual` adds the four list comparisons and keeps the six legacy ones, which a deferred V1 profile still needs for equal-version divergence and which are nil on both sides for version 3. `cloneProfile` copies the four lists (the source is migrated first, as today).
+`SyncedProfile` (`Foqos/CloudKit/SyncModels.swift`) gains the four list fields. `updateCKRecord` keeps writing all six legacy keys unconditionally, exactly as today: their values below version 3, nil at version 3. The nil writes matter because `RecordProvider.materialize` rebuilds an outgoing record from cached metadata only, so a key the client does not set keeps its old server value; an explicit nil is what clears it. `init(record:)` decodes the six keys only when the record's `profileSchemaVersion` is below 3 and leaves them nil otherwise, so a version-3 server record that still carries old scalars (written before this device's first version-3 upload, or by a fresh record whose first save conflicted) can never reintroduce them locally. `SyncPayloadEquality.profilesPayloadEqual` adds the four list comparisons and keeps the six legacy ones, which a deferred V1 profile still needs for equal-version divergence and which are nil on both sides for version 3. `cloneProfile` copies the four lists (the source is migrated first, as today).
 
 ### CloudKit additions
 
@@ -48,7 +48,7 @@ All in the per-account private database, `DeviceSync` zone, with the same grants
 
 - New record type `SyncedTag`: `tagId STRING QUERYABLE SEARCHABLE`, `kind STRING`, `name STRING QUERYABLE SEARCHABLE SORTABLE`, `generation INT64`, `lastModified TIMESTAMP QUERYABLE SORTABLE`. Record name is the tag's `recordName` (`SavedTag_` plus the SHA-256 hex of the id), so the scanned value never appears in a record name. The sync layer prints record names in several shared diagnostics (`repairReenqueue`, `sentSaveConfirmed`, `sentDeleteConfirmed`, `echoGuardDrained`, the apply-failure errors); deriving the name from a hash keeps every one of them clean without touching them. The `SavedTag_` prefix routes the record in `RecordProvider.materialize` and `SyncEngineController` the way `ProfileSession_` does, because those paths otherwise parse the record name as a UUID, and the lookup is `SavedTag.find(byRecordName:)`. The record's `tagId` field holds the raw value, in the private database, exactly as the profile fields do today.
 - `SyncedProfile` gains `startNFCTagIds LIST<STRING>`, `startQRCodeIds LIST<STRING>`, `stopNFCTagIds LIST<STRING>`, `stopQRCodeIds LIST<STRING>`.
-- The six legacy `SyncedProfile` fields stay declared: Production schema changes are additive-only.
+- The six legacy `SyncedProfile` fields stay declared: Production schema changes are additive-only. A version-3 record carries them as nil after its first version-3 upload; readers ignore them at version 3 regardless.
 
 The builder updates `Foqos/CloudKit/cloudkit-schema.ckdb` and `fastlane/required-prod-schema.txt` and runs the drift reporter and schema checker from `docs/cloudkit-production-schema.md` section 1 (the reporter finds `SyncedTag` automatically because it lives in `SyncModels.swift`). **Production promotion is a maintainer step** (section 2 of that document): import the checked-in schema into Development, deploy the additive diff to Production, run `scripts/check-prod-schema.sh`, all before the first TestFlight build that carries this change.
 
@@ -332,7 +332,8 @@ Pin time per the test invariant where a date is involved; none of these need one
 `RecordProviderTests` and `SyncEngineControllerTests` (extend):
 
 29. Given a local tag, when materialized for its record name, then a `SyncedTag` record with the establishment generation and the raw `tagId` field is produced; `restorableRecordNames` includes the record name.
-30. Given a version-1 profile whose migration is deferred, when materialized, then the record carries the legacy keys; given a version-3 profile, then it carries the four lists and none of the six legacy keys.
+30. Given a version-1 profile whose migration is deferred, when materialized, then the record carries the legacy keys; given a version-3 profile materialized over cached metadata whose server copy still holds the six scalar keys, then the outgoing record carries the four lists and explicitly nil for all six legacy keys.
+30a. Given an incoming version-3 record that still carries old scalar values in the six legacy keys, when decoded, then all six are nil; when applied over an identical local version-3 profile, then it is a payload-equal no-op and nothing is re-enqueued.
 
 `MutationFunnelTests` (extend):
 
