@@ -1,3 +1,4 @@
+import CoreLocation
 import XCTest
 
 final class ScreenshotTests: XCTestCase {
@@ -56,5 +57,22 @@ final class ScreenshotTests: XCTestCase {
     XCTAssertTrue(app.staticTexts["Lock Code Set"].waitForExistence(timeout: 15))
     sleep(1)
     snapshot("04-parent-dashboard")
+  }
+
+  @MainActor
+  func testLocationRestrictionsScreenshot() throws {
+    let app = launch(scenario: "location-restrictions")
+    let previousLocation = XCUIDevice.shared.location
+    defer { XCUIDevice.shared.location = previousLocation }
+    let work = CLLocation(latitude: 51.5054, longitude: -0.0235)
+    XCUIDevice.shared.location = XCUILocation(location: work)
+    XCTAssertTrue(app.staticTexts["Restriction Type"].waitForExistence(timeout: 15))
+    XCTAssertTrue(app.staticTexts["Preview"].waitForExistence(timeout: 15))
+    sleep(3)
+    let coordinate = try XCTUnwrap(XCUIDevice.shared.location).location.coordinate
+    XCTAssertEqual(coordinate.latitude, 51.5054, accuracy: 0.000001)
+    XCTAssertEqual(coordinate.longitude, -0.0235, accuracy: 0.000001)
+    XCTAssertFalse(app.alerts.firstMatch.exists)
+    snapshot("05-location-restrictions")
   }
 }

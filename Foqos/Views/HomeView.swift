@@ -649,6 +649,9 @@ struct HomeView: View {
       if ScreenshotDemoMode.scenario == .profileEditor {
         profileToEdit = profiles.valid.first { $0.name == "Deep Focus" }
       }
+      if ScreenshotDemoMode.scenario == .locationRestrictions {
+        profileToEdit = profiles.valid.first { $0.name == "No social at work" }
+      }
       if ScreenshotDemoMode.scenario == .childLocked {
         showChildDashboardForScreenshots = true
       }

@@ -19,7 +19,7 @@ Dir.singleton_class.define_method(:glob) do |pattern, *args, **options|
   next original_glob.call(pattern, *args, **options) unless pattern == screenshot_pattern
 
   events << :screenshots
-  names = %w[01-home-active 02-profile-triggers 03-child-locked 04-parent-dashboard]
+  names = %w[01-home-active 02-profile-triggers 03-child-locked 04-parent-dashboard 05-location-restrictions]
   names.pop if scenario == :missing_screenshot
   names.map { |name| "#{name}_framed.png" }
 end
@@ -65,7 +65,7 @@ fastfile = Fastlane::FastFile.new(File.join(repo_root, 'fastlane/Fastfile'))
     success: [nil, %i[clean branch main screenshots key deliver]],
     dirty_tree: ['dirty tree', [:clean]],
     wrong_branch: ['wrong branch', %i[clean branch main]],
-    missing_screenshot: ['Expected 4 framed en-GB screenshots', %i[clean branch main screenshots]]
+    missing_screenshot: ['Expected 5 framed en-GB screenshots', %i[clean branch main screenshots]]
   }.fetch(scenario)
   begin
     Dir.chdir(repo_root) { fastfile.runner.execute(:update_screenshots, :ios, {}) }

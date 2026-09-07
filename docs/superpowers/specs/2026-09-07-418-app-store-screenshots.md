@@ -10,9 +10,9 @@ The live listing still shows five V1 screenshots. Two of them show things V2 no 
 
 ## What the listing has to say
 
-The description promises three things, in this order: block distracting apps with a tap, a schedule, or a physical scan; parents lock the rules while kids run their own profiles; and the first three screenshots are what App Store search results show. The set below puts one screenshot on each promise and keeps the parent's management page fourth.
+The description promises three things, in this order: block distracting apps with a tap, a schedule, or a physical scan; parents lock the rules while kids run their own profiles; and the first three screenshots are what App Store search results show. The set below puts one screenshot on each promise, keeps the parent's management page fourth, and closes with location restrictions, the one V1 screenshot whose feature V2 kept unchanged.
 
-## Decision: four screenshots
+## Decision: five screenshots
 
 | Order | Name | Screen | Caption (en-GB) |
 |---|---|---|---|
@@ -20,6 +20,7 @@ The description promises three things, in this order: block distracting apps wit
 | 2 | `02-profile-triggers` | Profile editor, scrolled to "Start by..." and "Continue until..." | Start with a tap, a schedule or an NFC tag |
 | 3 | `03-child-locked` | Child dashboard ("My Screen Time") with locked profile cards | Kids run their own profiles. Parents lock the rules |
 | 4 | `04-parent-dashboard` | Parent dashboard ("Family Controls") | Manage the lock code from any parent device |
+| 5 | `05-location-restrictions` | "Location Restrictions" sheet for "No social at work", map preview of "Work" | Stays blocked until you leave work |
 
 ### 1. Home with an active session (unchanged)
 
@@ -53,19 +54,39 @@ Staging, as a new `child-locked` scenario:
 
 Keep the current scenario and caption. It is the parent's one management page, and the V1 listing already sells it with the same caption.
 
-## Not included, and why
+### 5. Location restrictions (new; human ruling 2026-09-07)
 
-- **Location restrictions.** V2 still has the feature and V1 sold it with a map. The map needs tiles from the network on the simulator and a seeded saved location. A blank map is worse than no screenshot. Add it later if the maintainer wants a fifth, after a real run shows the map renders.
+V1 sold this feature with a map and V2 kept it unchanged. The frame tells one story (human ruling 2026-09-07): a profile called "No social at work" can only be switched off once you have left "Work". The sheet shows the "Must be outside" rule ("Stop only away from selected locations") selected, the "Work" location row, and the "Preview" map with the location's circle and pin. The map preview draws its region and circle from the saved location's own coordinates and has no user-location dot, so the picture depends on map tiles loading, not on the device position. The screenshot Mac has internet access, so tiles load.
+
+Staging, as a new `location-restrictions` scenario:
+
+- Seed one `SavedLocation` named "Work" at latitude 51.5054, longitude -0.0235 (Canary Wharf, London) with the default 500 m radius, for this scenario only.
+- Seed one extra profile named "No social at work" (manual start, manual stop) for this scenario only, carrying a `geofenceRule` of type `.outside` that references "Work", so the picker opens with "Must be outside" selected, the row ticked, and the "Preview" section present. The four standard profiles are unchanged.
+- `HomeView` opens "No social at work" for editing in the existing `onAppearApp` seam, and `BlockedProfileView` sets `showingGeofencePicker = true` in its `onAppear` when this scenario is active. In the real app the sheet opens from the "Location Restrictions" row; the frame looks the same.
+- The UI test pins the simulator (below), waits for the "Restriction Type" and "Preview" headers, waits three seconds for map tiles, then captures.
+- Location permission is requested only on the stop and emergency-unblock paths (`GeofenceEvaluator`, `StrategyManager`), never at launch or when the picker opens, so no permission alert can cover the capture and no code guard is needed.
+
+Simulator position, inside the gated capture flow: fastlane snapshot kills and shuts down the booted simulator before it launches the tests (`snapshot/lib/snapshot/simulator_launchers/simulator_launcher_base.rb`, `prepare_simulators_for_launch`, in the pinned fastlane 2.238.0), and the gate's `xcrun` adapter routes that shutdown to the gate-owned UUID. A pin set from the lane before `snapshot` therefore may not survive to capture. The pin is set from inside the UI test instead, after that restart and immediately before capture:
+
+```swift
+let work = CLLocation(latitude: 51.5054, longitude: -0.0235)
+XCUIDevice.shared.location = XCUILocation(location: work)
+```
+
+`XCUIDevice.location` is "the location currently being simulated by the device" (XCUIAutomation, iOS 16.4 and later; the project's Xcode 26 toolchain has it). The test reads the property back and asserts the coordinate equals 51.5054, -0.0235 before it captures, so the effect is checked at capture time in the same lifecycle that captures. This puts the device "at work" to match the story. No Fastfile step and no `simctl` call are needed; the gate wrapper still owns the simulator as before.
+
+## Not included, and why
 - **Device sync settings page.** A page of toggles sells nothing the description does not already say. Sync stays in the description text.
 - **Blocking strategy picker.** V2 removed the concept. Screenshot 2 replaces it.
 - **Tags list, Stats for Nerds, Emergency Unblock, intro pages.** The tag list is a plain list. Stats are not a listing promise and the habit tracker in screenshot 1 already hints at history. The emergency sheet reads as a warning, not a feature. Intro pages are not the product.
 
 ## Implementation notes for the #418 PR
 
-- `FoqosUITests/ScreenshotTests.swift`: rename `testProfileEditorScreenshot` to open "Deep Focus" and scroll to the trigger sections; add `testChildLockedScreenshot`; renumber the parent dashboard snapshot to `04-parent-dashboard`.
-- `Foqos/Utils/ScreenshotDemoMode.swift`: add `childLocked = "child-locked"`.
+- `FoqosUITests/ScreenshotTests.swift`: rename `testProfileEditorScreenshot` to open "Deep Focus" and scroll to the trigger sections; add `testChildLockedScreenshot` and `testLocationRestrictionsScreenshot` (the latter imports CoreLocation and pins the device as in section 5); renumber the parent dashboard snapshot to `04-parent-dashboard`.
+- `Foqos/Utils/ScreenshotDemoMode.swift`: add `childLocked = "child-locked"` and `locationRestrictions = "location-restrictions"`.
 - `Foqos/Views/Child/ChildDashboardView.swift`: the demo guard in `verifyChildAuthorization()` described above.
-- `Foqos/Utils/ScreenshotDemoSeeder.swift`: the scenario-specific changes above. Unit-test the child scenario the same way `ScreenshotDemoSeederTests` covers the others: mode is `.child`, three managed profiles, cached lock code present.
-- `fastlane/Fastfile`: `assert_framed_screenshots` lists the four names and derives the expected count from the list instead of the literal `3`.
-- `fastlane/screenshots/en-GB/title.strings`: the four captions above. The captions must render without clipping at the current frame font size; the final PNG inspection is the check. If one clips, shorten that caption rather than the font.
-- Acceptance: `scripts/xcode-stream.sh --agent build1 --session <session> -- scripts/fastlane.sh screenshots` produces exactly four framed en-GB images, and the PR description attaches those four images (the PNGs are gitignored) so the maintainer can check them before the lane uploads them.
+- `Foqos/Utils/ScreenshotDemoSeeder.swift`: the scenario-specific changes above. Unit-test the child scenario the same way `ScreenshotDemoSeederTests` covers the others: mode is `.child`, three managed profiles, cached lock code present. Unit-test the location scenario: one saved location named "Work" at 51.5054, -0.0235, and a fifth profile "No social at work" carries an `.outside` rule referencing it.
+- `Foqos/Views/BlockedProfileView.swift`: the `onAppear` seam that opens the location picker in the `location-restrictions` scenario, inside `#if DEBUG`.
+- `fastlane/Fastfile`: `assert_framed_screenshots` lists the five names and derives the expected count from the list instead of the literal `3`.
+- `fastlane/screenshots/en-GB/title.strings`: the five captions above. The captions must render without clipping at the current frame font size; the final PNG inspection is the check. If one clips, shorten that caption rather than the font.
+- Acceptance: `scripts/xcode-stream.sh --agent build1 --session <session> -- scripts/fastlane.sh screenshots` produces exactly five framed en-GB images, the location frame shows rendered map tiles with the "Work" pin and circle rather than a blank map, and the PR description attaches all five images (the PNGs are gitignored) so the maintainer can check them before the lane uploads them.

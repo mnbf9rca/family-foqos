@@ -148,4 +148,27 @@ final class ScreenshotDemoSeederTests: XCTestCase {
     XCTAssertEqual(LockCodeManager.shared.cachedChildLockCodeCount, 1)
     XCTAssertTrue(LockCodeManager.shared.canVerifyCode)
   }
+
+  func testGivenLocationScenario_WhenSeeding_ThenWorkAndOutsideProfileAreStaged() throws {
+    let now = Date()
+    ScreenshotDemoMode.scenarioOverrideForTesting = try XCTUnwrap(
+      ScreenshotDemoScenario(rawValue: "location-restrictions"))
+    try ScreenshotDemoSeeder.seed(container: container, now: now)
+
+    let locations = try container.mainContext.fetch(FetchDescriptor<SavedLocation>())
+    XCTAssertEqual(locations.count, 1)
+    let work = try XCTUnwrap(locations.first)
+    XCTAssertEqual(work.name, "Work")
+    XCTAssertEqual(work.latitude, 51.5054)
+    XCTAssertEqual(work.longitude, -0.0235)
+    XCTAssertEqual(work.defaultRadiusMeters, 500)
+    let profiles = try container.mainContext.fetch(FetchDescriptor<BlockedProfiles>())
+    XCTAssertEqual(profiles.count, 5)
+    let profile = try XCTUnwrap(profiles.first { $0.name == "No social at work" })
+    XCTAssertTrue(profile.startTriggers.manual)
+    XCTAssertTrue(profile.stopConditions.manual)
+    let rule = try XCTUnwrap(profile.geofenceRule)
+    XCTAssertEqual(rule.ruleType, .outside)
+    XCTAssertEqual(rule.locationReferences.map(\.savedLocationId), [work.id])
+  }
 }

@@ -2,3 +2,4 @@
 "02-profile-triggers" = "Start with a tap, a schedule or an NFC tag";
 "03-child-locked" = "Kids run their own profiles. Parents lock the rules";
 "04-parent-dashboard" = "Manage the lock code from any parent device";
+"05-location-restrictions" = "Stays blocked until you leave work";

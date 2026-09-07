@@ -7,6 +7,7 @@ enum ScreenshotDemoScenario: String {
   case profileEditor = "profile-editor"
   case childLocked = "child-locked"
   case parentDashboard = "parent-dashboard"
+  case locationRestrictions = "location-restrictions"
 }
 
 /// Screenshot demo mode: active ONLY when launched with `--screenshot-demo`

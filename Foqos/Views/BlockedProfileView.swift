@@ -624,6 +624,11 @@ struct BlockedProfileView: View {
           )
         }
         .onAppear {
+          #if DEBUG
+            if ScreenshotDemoMode.scenario == .locationRestrictions {
+              showingGeofencePicker = true
+            }
+          #endif
           loadTriggerConfiguration()
           refreshScheduleOutOfSyncBanner()
         }

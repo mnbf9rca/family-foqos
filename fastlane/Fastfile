@@ -127,6 +127,7 @@ platform :ios do
       02-profile-triggers
       03-child-locked
       04-parent-dashboard
+      05-location-restrictions
     ]
     framed = Dir.glob(File.join(screenshots_directory, 'en-GB', '*_framed.png'))
     missing = expected_names.reject do |name|

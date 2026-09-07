@@ -56,6 +56,20 @@ import SwiftData
           tag: "manual", blockedProfile: homework, startTime: now.addingTimeInterval(-2400))
         context.insert(session)
       }
+      if ScreenshotDemoMode.scenario == .locationRestrictions {
+        let work = SavedLocation(
+          name: "Work", latitude: 51.5054, longitude: -0.0235,
+          createdAt: now, updatedAt: now)
+        context.insert(work)
+        let workProfile = BlockedProfiles(
+          name: "No social at work", createdAt: now, updatedAt: now, order: 4,
+          geofenceRule: ProfileGeofenceRule(
+            ruleType: .outside,
+            locationReferences: [ProfileLocationReference(savedLocationId: work.id)]))
+        workProfile.startTriggers = ProfileStartTriggers(manual: true)
+        workProfile.stopConditions = ProfileStopConditions(manual: true)
+        context.insert(workProfile)
+      }
       try context.save()
 
       CloudKitManager.shared.isSignedIn = true
