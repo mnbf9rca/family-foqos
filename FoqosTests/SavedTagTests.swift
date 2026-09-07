@@ -1,4 +1,5 @@
 import CloudKit
+import CryptoKit
 import SwiftData
 import XCTest
 
@@ -246,6 +247,13 @@ final class SavedTagTests: XCTestCase {
       physicalUnblockNFCTagId: "stale-nfc", physicalUnblockQRCodeId: "stale-qr")
     XCTAssertNil(profile.physicalUnblockNFCTagId)
     XCTAssertNil(profile.physicalUnblockQRCodeId)
+  }
+
+  func testRecordNamesKeepHashingExactStoredIdentifiers() {
+    for id in ["04ABCD1234", " HTTPS://EXAMPLE.COM/ ", "f7bab0e3b417cf24e9a77e97a53fc4cea1084e20398a2e7258281e80239ca6f1"] {
+      let digest = SHA256.hash(data: Data(id.utf8)).map { String(format: "%02x", $0) }.joined()
+      XCTAssertEqual(SavedTag.recordName(for: id), "SavedTag_" + digest)
+    }
   }
 
 }

@@ -409,4 +409,61 @@ final class StrategyManagerStartTests: XCTestCase {
     XCTAssertTrue(manager.errorMessage?.contains("doesn't match") == true)
   }
 
+  func testSpecificQRMatchesOldRawPrimaryAndSpareWithoutChangingAssignments() throws {
+    let now = Date()
+    let payload = " \nHTTPS://EXAMPLE.COM/\t"
+    let oldHash = "f7bab0e3b417cf24e9a77e97a53fc4cea1084e20398a2e7258281e80239ca6f1"
+    for ids in [[oldHash, "other"], ["other", oldHash]] {
+      let profile = BlockedProfiles(name: "Legacy", createdAt: now, updatedAt: now)
+      profile.startTriggers = ProfileStartTriggers(specificQR: true)
+      profile.startQRCodeIds = ids
+      context.insert(profile)
+      try context.save()
+      manager.startWithQRCode(
+        context: context, profile: profile,
+        codeValue: QRCodeHasher.hash(payload), rawHash: QRCodeHasher.rawHash(payload))
+      let session = try XCTUnwrap(manager.activeSession)
+      XCTAssertEqual(session.blockedProfile.id, profile.id)
+      XCTAssertEqual(session.tag, "qr:100680ad546ce6a577f42f52df33b4cfdca756859e664b8d7de329b150d09ce9")
+      XCTAssertEqual(profile.startQRCodeIds, ids)
+      session.endSession()
+      try context.save()
+      manager.stopTimer()
+      manager = StrategyManager()
+    }
+  }
+
+  func testSpecificQRNewTagMatchesDifferentlyCasedPrintout() throws {
+    let now = Date()
+    let tag = try SavedTag.findOrCreate(
+      id: QRCodeHasher.hash("HTTPS://EXAMPLE.COM/"),
+      kind: "qr", name: "New code", in: context)
+    let profile = BlockedProfiles(name: "New", createdAt: now, updatedAt: now)
+    profile.startTriggers = ProfileStartTriggers(specificQR: true)
+    profile.startQRCodeIds = ["other", tag.id]
+    context.insert(profile)
+    try context.save()
+    let scan = " https://Example.Com "
+    manager.startWithQRCode(
+      context: context, profile: profile,
+      codeValue: QRCodeHasher.hash(scan), rawHash: QRCodeHasher.rawHash(scan))
+    XCTAssertEqual(manager.activeSession?.blockedProfile.id, profile.id)
+  }
+
+  func testSpecificQRRejectsBothDigestsOutsideAssignedTags() throws {
+    let now = Date()
+    let scan = " HTTPS://EXAMPLE.COM/ "
+    _ = try SavedTag.findOrCreate(id: QRCodeHasher.rawHash(scan), kind: "qr", name: "Unassigned", in: context)
+    let profile = BlockedProfiles(name: "Other", createdAt: now, updatedAt: now)
+    profile.startTriggers = ProfileStartTriggers(specificQR: true)
+    profile.startQRCodeIds = [QRCodeHasher.hash("https://elsewhere.example")]
+    context.insert(profile)
+    try context.save()
+    manager.startWithQRCode(
+      context: context, profile: profile,
+      codeValue: QRCodeHasher.hash(scan), rawHash: QRCodeHasher.rawHash(scan))
+    XCTAssertTrue(try activeSessions().isEmpty)
+    XCTAssertTrue(manager.errorMessage?.contains("doesn't match") == true)
+  }
+
 }

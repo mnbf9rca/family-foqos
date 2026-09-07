@@ -359,4 +359,56 @@ final class StrategyManagerStopTests: XCTestCase {
     XCTAssertFalse(session.isActive)
   }
 
+  func testSpecificQRStopMatchesOldRawPrimarySpareAndNewPrintoutOnly() {
+    let scan = " \nHTTPS://EXAMPLE.COM/\t"
+    let oldHash = "f7bab0e3b417cf24e9a77e97a53fc4cea1084e20398a2e7258281e80239ca6f1"
+    let newHash = QRCodeHasher.hash("https://example.com")
+    for (ids, allowed) in [
+      ([oldHash, "other"], true), (["other", oldHash], true),
+      (["other", newHash], true), (["other"], false), ([], false),
+    ] {
+      let result = StartStopActionResolver.canStop(
+        with: .qr(code: QRCodeHasher.hash(scan), rawHash: QRCodeHasher.rawHash(scan)),
+        conditions: ProfileStopConditions(specificQR: true), sessionTag: nil,
+        stopNFCTagIds: [oldHash, newHash], stopQRCodeIds: ids)
+      XCTAssertEqual(result.allowed, allowed)
+    }
+  }
+
+  func testSameQRStopMatchesOldSessionButNeverNFCPrefixOrAnotherSession() {
+    let scan = " \nHTTPS://EXAMPLE.COM/\t"
+    let oldHash = "f7bab0e3b417cf24e9a77e97a53fc4cea1084e20398a2e7258281e80239ca6f1"
+    for (sessionTag, allowed) in [("qr:" + oldHash, true), ("nfc:" + oldHash, false), ("qr:other", false)] {
+      let result = StartStopActionResolver.canStop(
+        with: .qr(code: QRCodeHasher.hash(scan), rawHash: QRCodeHasher.rawHash(scan)),
+        conditions: ProfileStopConditions(sameQR: true), sessionTag: sessionTag,
+        stopNFCTagIds: [], stopQRCodeIds: [oldHash])
+      XCTAssertEqual(result.allowed, allowed)
+    }
+  }
+
+  func testLegacyQRStrategiesAcceptRawHashAndRejectUnknownScan() throws {
+    let now = Date()
+    let container = try TestModelContainer.create()
+    let context = container.mainContext
+    let payload = " \nHTTPS://EXAMPLE.COM/\t"
+    let oldHash = "f7bab0e3b417cf24e9a77e97a53fc4cea1084e20398a2e7258281e80239ca6f1"
+    for var strategy: any BlockingStrategy in [QRCodeBlockingStrategy(), QRManualBlockingStrategy(), QRTimerBlockingStrategy()] {
+      let profile = BlockedProfiles(name: "Legacy", createdAt: now, updatedAt: now)
+      profile.profileSchemaVersion = 1
+      profile.physicalUnblockQRCodeId = oldHash
+      context.insert(profile)
+      let session = BlockedProfileSession.createSession(in: context, withTag: "qr:other", withProfile: profile)
+      try context.save()
+      var rejection: String?
+      strategy.onErrorMessage = { rejection = $0 }
+      let scanner = try XCTUnwrap(strategy.stopBlocking(context: context, session: session) as? LabeledCodeScannerView)
+      scanner.onScanResult(.success((hash: "wrong", rawHash: "also-wrong")))
+      XCTAssertTrue(session.isActive)
+      XCTAssertNotNil(rejection)
+      scanner.onScanResult(.success((hash: QRCodeHasher.hash(payload), rawHash: QRCodeHasher.rawHash(payload))))
+      XCTAssertFalse(session.isActive)
+    }
+  }
+
 }

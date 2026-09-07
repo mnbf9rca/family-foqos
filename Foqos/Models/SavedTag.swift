@@ -22,7 +22,7 @@ class SavedTag {
   }
 
   static func recordName(for id: String) -> String {
-    "SavedTag_" + QRCodeHasher.hash(id)
+    "SavedTag_" + QRCodeHasher.rawHash(id)
   }
 
   static func fetchAll(in context: ModelContext) throws -> [SavedTag] {
