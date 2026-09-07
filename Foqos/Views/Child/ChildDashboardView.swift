@@ -152,6 +152,7 @@ struct ChildDashboardView: View {
   /// Verify that this device still has valid child authorization
   @MainActor
   private func verifyChildAuthorization() async {
+    guard !ScreenshotDemoMode.isActive else { return }
     guard !isVerifyingAuthorization else { return }
     isVerifyingAuthorization = true
     defer { isVerifyingAuthorization = false }

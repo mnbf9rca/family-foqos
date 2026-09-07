@@ -203,6 +203,7 @@ class LockCodeManager: ObservableObject {
     /// Screenshot/demo + test seeding only — `lockCodes` is private(set).
     func seedForScreenshots(_ codes: [FamilyLockCode]) {
       lockCodes = codes
+      cachedLockCodes = codes
     }
 
     /// Test assertion seam for the private child verification cache.

@@ -28,7 +28,7 @@ case "${1:-}" in
 esac
 
 case "${1:-}" in
-  beta|release|verify_export|pull_metadata|check_asc_key)
+  beta|release|verify_export|pull_metadata|check_asc_key|update_screenshots)
     if ! command -v op >/dev/null 2>&1; then
       echo "1Password CLI 'op' is required for credential-using Fastlane lanes." >&2
       exit 127
@@ -57,7 +57,7 @@ if ! bundle check >/dev/null 2>&1; then
 fi
 
 case "${1:-}" in
-  beta|release|verify_export|pull_metadata|check_asc_key)
+  beta|release|verify_export|pull_metadata|check_asc_key|update_screenshots)
     exec op run --env-file "$(dirname "$0")/../fastlane/asc.env" -- \
       bundle exec fastlane "$@"
     ;;

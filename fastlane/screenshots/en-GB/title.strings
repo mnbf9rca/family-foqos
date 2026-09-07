@@ -1,3 +1,5 @@
-"01-home-active" = "Block distracting apps, on your terms";
-"02-profile-editor" = "Pick the strategy that works for you";
-"03-parent-dashboard" = "Manage the lock code from any parent device";
+"01-home-active" = "Block distractions\nand stay focused";
+"02-profile-triggers" = "Pick the strategy\nthat works for you";
+"03-child-locked" = "Lock profiles with\na parent control PIN";
+"04-parent-dashboard" = "Manage the lock code\nfrom any parent device";
+"05-location-restrictions" = "Keep blocks active\nwhile at work or school";
