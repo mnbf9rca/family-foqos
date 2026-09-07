@@ -9,6 +9,8 @@ struct DebugView: View {
 
   @EnvironmentObject var strategyManager: StrategyManager
 
+  @SafeQuery(sort: \SavedTag.name) private var tags: [SavedTag]
+
   @State private var activeProfile: BlockedProfiles?
   @State private var showCopyConfirmation = false
   @State private var showingLogExport = false
@@ -194,19 +196,11 @@ struct DebugView: View {
       markdown += "- **Custom Reminder Message:** \(customMessage)\n"
     }
 
-    if let nfcTagId = DebugRedaction.physicalUnblockNFCTagIdForDisplay(
-      profile.physicalUnblockNFCTagId,
-      mode: AppModeManager.shared.currentMode
-    ) {
-      markdown += "- **Physical Unlock NFC Tag ID:** \(nfcTagId)\n"
-    }
-
-    if let qrCodeId = DebugRedaction.physicalUnblockQRCodeIdForDisplay(
-      profile.physicalUnblockQRCodeId,
-      mode: AppModeManager.shared.currentMode
-    ) {
-      markdown += "- **Physical Unlock QR Code ID:** \(qrCodeId)\n"
-    }
+    let names = Dictionary(uniqueKeysWithValues: tags.map { ($0.id, $0.name) })
+    markdown += "- **Start NFC tags:** \(SavedTag.summary(ids: profile.startNFCTagIds, names: names))\n"
+    markdown += "- **Start QR codes:** \(SavedTag.summary(ids: profile.startQRCodeIds, names: names))\n"
+    markdown += "- **Stop NFC tags:** \(SavedTag.summary(ids: profile.stopNFCTagIds, names: names))\n"
+    markdown += "- **Stop QR codes:** \(SavedTag.summary(ids: profile.stopQRCodeIds, names: names))\n"
 
     markdown += "- **Total Sessions:** \(profile.sessions.count)\n"
 
@@ -305,4 +299,5 @@ struct DebugView: View {
 #Preview {
   DebugView()
     .environmentObject(StrategyManager.shared)
+    .modelContainer(for: [SavedTag.self], inMemory: true)
 }

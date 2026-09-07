@@ -1040,4 +1040,30 @@ final class MutationFunnelTests: XCTestCase {
     XCTAssertNil(MutationFunnel.changeTag(fromSystemFields: nil))
     XCTAssertNil(MutationFunnel.changeTag(fromSystemFields: Data([0x00, 0x01, 0x02])))
   }
+  func testTagSaveAndDeleteUseFunnelAndMissingTagThrows() throws {
+    let now = Date()
+    let container = try TestModelContainer.create()
+    let context = container.mainContext
+    let tag = SavedTag(id: "tag", kind: "nfc", name: "Kitchen", createdAt: now, updatedAt: now.addingTimeInterval(-60))
+    context.insert(tag)
+    try context.save()
+    let name = tag.recordName
+    let store = makeStore()
+    let driver = MockSyncEngineDriver()
+    let funnel = MutationFunnel(modelContext: context, store: store, driver: driver, deviceId: "device")
+    try funnel.enqueueSave(tagId: "tag")
+    XCTAssertGreaterThanOrEqual(tag.updatedAt, now)
+    XCTAssertEqual(driver.pendingRecordZoneChanges, [.saveRecord(recordID(name))])
+    try funnel.enqueueDelete(tagId: "tag")
+    XCTAssertNil(try SavedTag.find(byID: "tag", in: context))
+    XCTAssertTrue(store.deleteTombstones.keys.contains(name))
+    XCTAssertTrue(driver.pendingRecordZoneChanges.contains(.deleteRecord(recordID(name))))
+    XCTAssertThrowsError(try funnel.enqueueSave(tagId: "missing")) {
+      XCTAssertEqual($0 as? MutationFunnel.MutationFunnelError, .entityNotFound)
+    }
+    XCTAssertThrowsError(try funnel.enqueueDelete(tagId: "missing")) {
+      XCTAssertEqual($0 as? MutationFunnel.MutationFunnelError, .entityNotFound)
+    }
+  }
+
 }

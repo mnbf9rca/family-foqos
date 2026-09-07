@@ -55,6 +55,7 @@ class ProfileSyncManager: ObservableObject {
   // Mutations that could not be enqueued because the engine was not attached yet (#294).
   // Drained on attach so a mutation in the pre-attach window is retried instead of lost.
   private var deferredProfileSaveIds: Set<UUID> = []
+  private var deferredTagSaveIds: Set<String> = []
   private var deferredLocationSaveIds: Set<UUID> = []
   private var deferredDeleteRecordNames: Set<String> = []
   private var deferredEmergencySave = false
@@ -97,7 +98,7 @@ class ProfileSyncManager: ObservableObject {
 
   /// Test seam: true when nothing is pending re-enqueue.
   var hasNoDeferredMutations: Bool {
-    deferredProfileSaveIds.isEmpty && deferredLocationSaveIds.isEmpty
+    deferredProfileSaveIds.isEmpty && deferredLocationSaveIds.isEmpty && deferredTagSaveIds.isEmpty
       && deferredDeleteRecordNames.isEmpty && !deferredEmergencySave
       && deferredEmergencyUnblockEvents.isEmpty && !deferredEmergencyEpochSave
   }
@@ -181,7 +182,7 @@ class ProfileSyncManager: ObservableObject {
 
   private var totalPendingCount: Int {
     let deferred =
-      deferredProfileSaveIds.count + deferredLocationSaveIds.count
+      deferredProfileSaveIds.count + deferredLocationSaveIds.count + deferredTagSaveIds.count
       + deferredDeleteRecordNames.count + (deferredEmergencySave ? 1 : 0)
       + deferredEmergencyUnblockEvents.count + (deferredEmergencyEpochSave ? 1 : 0)
     return (engineController?.pendingChangeCount ?? 0) + deferred
@@ -501,6 +502,8 @@ class ProfileSyncManager: ObservableObject {
       try BlockedProfiles.deleteProfile(profile, in: context, cleanup: cleanup)
     }
 
+    let tags = try SavedTag.fetchAll(in: context)
+    for tag in tags { try SavedTag.delete(tag, in: context) }
     let locations = try context.fetch(FetchDescriptor<SavedLocation>())
     for location in locations {
       try SavedLocation.delete(location, in: context)
@@ -542,6 +545,8 @@ class ProfileSyncManager: ObservableObject {
       try BlockedProfiles.deleteProfile(profile, in: context, cleanup: cleanup)
     }
 
+    let tags = try SavedTag.fetchAll(in: context)
+    for tag in tags { try SavedTag.delete(tag, in: context) }
     let locations = try context.fetch(FetchDescriptor<SavedLocation>())
     for location in locations {
       try SavedLocation.delete(location, in: context)
@@ -813,6 +818,38 @@ class ProfileSyncManager: ObservableObject {
       throw SyncEngineControllingError.notAttached
     }
   }
+  func enqueueTagSave(_ id: String) throws {
+    defer { recomputeSyncStatus() }
+    guard let engineController else {
+      deferredTagSaveIds.insert(id)
+      throw SyncEngineControllingError.notAttached
+    }
+    do {
+      try engineController.enqueueTagSave(id)
+    } catch SyncEngineControllingError.notAttached {
+      deferredTagSaveIds.insert(id)
+      throw SyncEngineControllingError.notAttached
+    }
+    if isSyncReady { engineController.requestSync() }
+  }
+  func enqueueTagDelete(_ id: String) throws {
+    defer { recomputeSyncStatus() }
+    guard let engineController else {
+      deferredDeleteRecordNames.insert(SavedTag.recordName(for: id))
+      PreAttachDeleteBuffer.add(
+        SavedTag.recordName(for: id), userRecordName: preAttachBufferUserRecordName, defaults: bufferDefaults)
+      throw SyncEngineControllingError.notAttached
+    }
+    do {
+      try engineController.enqueueTagDelete(id)
+    } catch SyncEngineControllingError.notAttached {
+      deferredDeleteRecordNames.insert(SavedTag.recordName(for: id))
+      PreAttachDeleteBuffer.add(
+        SavedTag.recordName(for: id), userRecordName: preAttachBufferUserRecordName, defaults: bufferDefaults)
+      throw SyncEngineControllingError.notAttached
+    }
+    if isSyncReady { engineController.requestSync() }
+  }
   func enqueueLocationSave(_ id: UUID) throws {
     defer { recomputeSyncStatus() }
     guard let engineController else {
@@ -927,6 +964,7 @@ class ProfileSyncManager: ObservableObject {
     // by recordName, and GC deletes drain through the existing tombstone path. These operations
     // need no sequencing guarantee relative to each other or to a fetched remote epoch.
     for id in deferredProfileSaveIds { try? engineController.enqueueProfileSave(id) }
+    for id in deferredTagSaveIds { try? engineController.enqueueTagSave(id) }
     for id in deferredLocationSaveIds { try? engineController.enqueueLocationSave(id) }
     for name in deferredDeleteRecordNames { engineController.enqueueDeferredDelete(recordName: name) }
     if deferredEmergencySave { try? engineController.enqueueEmergencySettingsSave() }
@@ -937,6 +975,7 @@ class ProfileSyncManager: ObservableObject {
     }
     if deferredEmergencyEpochSave { try? engineController.enqueueEmergencyEpochSave() }
     deferredProfileSaveIds.removeAll()
+    deferredTagSaveIds.removeAll()
     deferredLocationSaveIds.removeAll()
     deferredDeleteRecordNames.removeAll()
     deferredEmergencySave = false

@@ -152,15 +152,19 @@ class BlockedProfiles {
 
   /// NFC tag ID required to start (when startTriggers.specificNFC = true)
   var startNFCTagId: String?
+  var startNFCTagIds: [String] = []
 
   /// QR code ID required to start (when startTriggers.specificQR = true)
   var startQRCodeId: String?
+  var startQRCodeIds: [String] = []
 
   /// NFC tag ID required to stop (when stopConditions.specificNFC = true)
   var stopNFCTagId: String?
+  var stopNFCTagIds: [String] = []
 
   /// QR code ID required to stop (when stopConditions.specificQR = true)
   var stopQRCodeId: String?
+  var stopQRCodeIds: [String] = []
 
   /// Start schedule - serialized as JSON in SwiftData
   private var startScheduleData: Data?
@@ -359,6 +363,7 @@ class BlockedProfiles {
     return try context.fetch(descriptor).first
   }
 
+  @MainActor
   static func updateProfile(
     _ profile: BlockedProfiles,
     in context: ModelContext,
@@ -483,11 +488,9 @@ class BlockedProfiles {
       profile.needsAppSelection = newNeedsAppSelection
     }
 
-    if let physicalUnblockNFCTagId {
-      profile.physicalUnblockNFCTagId = physicalUnblockNFCTagId
-    }
-    if let physicalUnblockQRCodeId {
-      profile.physicalUnblockQRCodeId = physicalUnblockQRCodeId
+    if profile.profileSchemaVersion < 3 {
+      if let physicalUnblockNFCTagId { profile.physicalUnblockNFCTagId = physicalUnblockNFCTagId }
+      if let physicalUnblockQRCodeId { profile.physicalUnblockQRCodeId = physicalUnblockQRCodeId }
     }
 
     if let reminderTime {
@@ -496,9 +499,8 @@ class BlockedProfiles {
     if let customReminderMessage {
       profile.customReminderMessage = customReminderMessage
     }
-    if blockAdultWebsites == true || blockAppInstallation == true {
-      profile.migrateToV2IfNeeded()
-    }
+    let active = try BlockedProfileSession.mostRecentActiveSession(in: context)
+    try ProfileMigrationUtil.migrate(profile, hasActiveSession: active?.blockedProfile.id == profile.id)
     profile.updatedAt = now
 
     // Update the snapshot
@@ -733,11 +735,14 @@ class BlockedProfiles {
     return profile
   }
 
+  @MainActor
   static func cloneProfile(
     _ source: BlockedProfiles,
     in context: ModelContext,
     newName: String
   ) throws -> BlockedProfiles {
+    let active = try BlockedProfileSession.mostRecentActiveSession(in: context)
+    try ProfileMigrationUtil.migrate(source, hasActiveSession: active?.blockedProfile.id == source.id)
     let nextOrder = getNextOrder(in: context)
     let cloned = BlockedProfiles(
       name: newName,
@@ -774,9 +779,13 @@ class BlockedProfiles {
     // Copy V2 trigger data
     cloned.startTriggers = source.startTriggers
     cloned.stopConditions = source.stopConditions
+    cloned.startNFCTagIds = source.startNFCTagIds
     cloned.startNFCTagId = source.startNFCTagId
+    cloned.startQRCodeIds = source.startQRCodeIds
     cloned.startQRCodeId = source.startQRCodeId
+    cloned.stopNFCTagIds = source.stopNFCTagIds
     cloned.stopNFCTagId = source.stopNFCTagId
+    cloned.stopQRCodeIds = source.stopQRCodeIds
     cloned.stopQRCodeId = source.stopQRCodeId
     cloned.startSchedule = source.startSchedule
     cloned.stopSchedule = source.stopSchedule
@@ -786,7 +795,7 @@ class BlockedProfiles {
     // migration pass will ever repair. Migrating here translates the copied
     // blockingStrategyId into startable triggers immediately (#223)
     cloned.profileSchemaVersion = source.profileSchemaVersion
-    cloned.migrateToV2IfNeeded()
+    try ProfileMigrationUtil.migrate(cloned, hasActiveSession: false)
 
     try context.save()
 
@@ -802,7 +811,7 @@ class BlockedProfiles {
 
 extension BlockedProfiles {
   /// Current schema version
-  static let currentSchemaVersion = 2
+  static let currentSchemaVersion = 3
 
   /// Whether this profile needs migration
   var needsMigration: Bool {
@@ -815,17 +824,77 @@ extension BlockedProfiles {
     profileSchemaVersion > Self.currentSchemaVersion
   }
 
-  /// Migrates to V2 if eligible (not already V2, no active session).
-  /// Returns true if migration was performed.
+  /// Persist the complete migration before its caller enqueues any uploads.
   @discardableResult
-  func migrateToV2IfEligible(hasActiveSession: Bool) -> Bool {
-    guard needsMigration else { return false }
-    guard !hasActiveSession else {
+  func migrateIfEligible(hasActiveSession: Bool) throws -> [String] {
+    guard needsMigration else { return [] }
+    guard profileSchemaVersion != 1 || !hasActiveSession else {
       Log.info("Deferring profile migration — active session", category: .app)
-      return false
+      return []
     }
-    migrateToV2IfNeeded()
-    return !needsMigration
+    guard let context = modelContext else {
+      Log.warning("Deferring profile migration — no model context", category: .app)
+      return []
+    }
+    let previousVersion = profileSchemaVersion
+    let dataFields: [ReferenceWritableKeyPath<BlockedProfiles, Data?>] = [
+      \.startTriggersData, \.stopConditionsData, \.startScheduleData, \.stopScheduleData,
+    ]
+    let previousData = dataFields.map { self[keyPath: $0] }
+    let scalarFields: [ReferenceWritableKeyPath<BlockedProfiles, String?>] = [
+      \.startNFCTagId, \.startQRCodeId, \.stopNFCTagId, \.stopQRCodeId,
+      \.physicalUnblockNFCTagId, \.physicalUnblockQRCodeId,
+    ]
+    let previousScalars = scalarFields.map { self[keyPath: $0] }
+    let listFields: [ReferenceWritableKeyPath<BlockedProfiles, [String]>] = [
+      \.startNFCTagIds, \.startQRCodeIds, \.stopNFCTagIds, \.stopQRCodeIds,
+    ]
+    let previousLists = listFields.map { self[keyPath: $0] }
+    var createdIds: [String] = []
+    do {
+      migrateToV2IfNeeded()
+      guard profileSchemaVersion == 2 else { return [] }
+      let pairs: [(String?, String, String, ReferenceWritableKeyPath<BlockedProfiles, [String]>)] = [
+        (startNFCTagId, "nfc", "start tag", \.startNFCTagIds),
+        (startQRCodeId, "qr", "start code", \.startQRCodeIds),
+        (stopNFCTagId, "nfc", "stop tag", \.stopNFCTagIds),
+        (stopQRCodeId, "qr", "stop code", \.stopQRCodeIds),
+      ]
+      for (value, kind, role, keyPath) in pairs {
+        guard let value, !value.isEmpty else { continue }
+        let exists = try SavedTag.find(byID: value, in: context) != nil
+        _ = try SavedTag.findOrCreate(id: value, kind: kind, name: "\(name) \(role)", in: context)
+        if !exists { createdIds.append(value) }
+        self[keyPath: keyPath] = [value]
+      }
+      startNFCTagId = nil
+      startQRCodeId = nil
+      stopNFCTagId = nil
+      stopQRCodeId = nil
+      physicalUnblockNFCTagId = nil
+      physicalUnblockQRCodeId = nil
+      profileSchemaVersion = 3
+      try context.save()
+      return createdIds
+    } catch {
+      context.rollback()
+      // SwiftData may retain changed models after a failed store save even after rollback.
+      // Restore only live models; rollback can also detach a newly-inserted profile or tag.
+      if isPersistentModelValid {
+        profileSchemaVersion = previousVersion
+        for (field, value) in zip(dataFields, previousData) { self[keyPath: field] = value }
+        for (field, value) in zip(scalarFields, previousScalars) { self[keyPath: field] = value }
+        for (field, value) in zip(listFields, previousLists) { self[keyPath: field] = value }
+      }
+      // A failed save can replace an inserted model's identity; re-fetch only our new ids.
+      for id in createdIds {
+        if let tag = try? SavedTag.find(byID: id, in: context), tag.isPersistentModelValid {
+          context.delete(tag)
+        }
+      }
+      context.processPendingChanges()
+      throw error
+    }
   }
 
   /// Migrates profile from V1 (blockingStrategyId) to V2 (triggers) if needed

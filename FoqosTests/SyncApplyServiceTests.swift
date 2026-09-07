@@ -1218,7 +1218,7 @@ final class SyncApplyServiceTests: XCTestCase {
       XCTAssertTrue(service.pendingReenqueues.contains(record.recordID))
       XCTAssertEqual(profile.blockAdultWebsites, adult)
       XCTAssertEqual(profile.blockAppInstallation, installs)
-      XCTAssertEqual(profile.profileSchemaVersion, 2)
+      XCTAssertEqual(profile.profileSchemaVersion, 3)
       XCTAssertTrue(profile.startTriggers.anyNFC)
       XCTAssertTrue(profile.stopConditions.sameNFC)
     }
@@ -1239,6 +1239,156 @@ final class SyncApplyServiceTests: XCTestCase {
       XCTAssertEqual(makeService().applyFetchedModification(record, isPendingDeleteOrTombstoned: noPendingDelete), .applied)
       XCTAssertFalse(profile.needsAppSelection)
     }
+  }
+
+  func testIncomingLegacyProfileMigratesAndReenqueuesProfileAndDeduplicatedTag() throws {
+    let now = Date()
+    for version in [1, 2] {
+      let source = BlockedProfiles(name: "Imported", createdAt: now, updatedAt: now)
+      source.profileSchemaVersion = version
+      if version == 1 {
+        source.physicalUnblockNFCTagId = "shared-tag"
+      } else {
+        source.stopNFCTagId = "shared-tag"
+      }
+      let record = SyncedProfile(from: source, originDeviceId: "remote").toCKRecord(in: zoneID)
+      let service = makeService()
+      XCTAssertEqual(service.applyFetchedModification(record, isPendingDeleteOrTombstoned: noPendingDelete), .applied)
+      let local = try XCTUnwrap(BlockedProfiles.findProfile(byID: source.id, in: context))
+      XCTAssertEqual(local.profileSchemaVersion, 3)
+      XCTAssertEqual(local.stopNFCTagIds, ["shared-tag"])
+      if version == 1 { XCTAssertTrue(local.stopConditions.specificNFC) }
+      let tag = try XCTUnwrap(SavedTag.find(byID: "shared-tag", in: context))
+      let expected = version == 1 ? [record.recordID.recordName, tag.recordName] : [record.recordID.recordName]
+      XCTAssertEqual(Set(service.drainReenqueues().map(\.recordName)), Set(expected))
+    }
+    XCTAssertEqual(try SavedTag.fetchAll(in: context).count, 1)
+  }
+
+  func testV3StaleScalarsArePayloadEqualAndListsAreCompared() throws {
+    let now = Date()
+    let profile = BlockedProfiles(name: "Profile", createdAt: now, updatedAt: now)
+    profile.startNFCTagIds = ["one", "two"]
+    context.insert(profile)
+    try context.save()
+    let synced = SyncedProfile(from: profile, originDeviceId: "remote")
+    let record = synced.toCKRecord(in: zoneID)
+    for key in [
+      "startNFCTagId", "startQRCodeId", "stopNFCTagId", "stopQRCodeId",
+      "physicalUnblockNFCTagId", "physicalUnblockQRCodeId",
+    ] { record[key] = "stale" }
+    let decoded = try XCTUnwrap(SyncedProfile(from: record))
+    XCTAssertTrue(SyncPayloadEquality.profilesPayloadEqual(synced, decoded))
+    var changed = synced
+    changed.startNFCTagIds = ["other"]
+    XCTAssertFalse(SyncPayloadEquality.profilesPayloadEqual(synced, changed))
+    var legacy = synced
+    legacy.profileSchemaVersion = 1
+    changed = legacy
+    changed.stopNFCTagId = "legacy"
+    XCTAssertFalse(SyncPayloadEquality.profilesPayloadEqual(legacy, changed))
+    let service = makeService()
+    for _ in 0..<2 {
+      XCTAssertEqual(service.applyFetchedModification(record, isPendingDeleteOrTombstoned: noPendingDelete), .applied)
+      XCTAssertTrue(service.drainReenqueues().isEmpty)
+    }
+    XCTAssertEqual(profile.startNFCTagIds, ["one", "two"])
+  }
+
+  func testTagApplyUsesClockAndDeletionRetainsProfileReferences() throws {
+    let now = Date()
+    let tag = SavedTag(id: "hardware", kind: "nfc", name: "Before", createdAt: now, updatedAt: now)
+    let profile = BlockedProfiles(name: "Uses tag")
+    profile.stopNFCTagIds = [tag.id]
+    context.insert(tag)
+    context.insert(profile)
+    try context.save()
+    let record = CKRecord(recordType: "SyncedTag", recordID: CKRecord.ID(recordName: tag.recordName, zoneID: zoneID))
+    record["tagId"] = tag.id
+    record["kind"] = "nfc"
+    record["name"] = "After"
+    record["lastModified"] = now.addingTimeInterval(10)
+    let service = makeService()
+    XCTAssertEqual(service.applyFetchedModification(record, isPendingDeleteOrTombstoned: noPendingDelete), .applied)
+    XCTAssertEqual(tag.name, "After")
+    for time in [now, now.addingTimeInterval(10)] {
+      record["lastModified"] = time
+      record["name"] = "Stale"
+      XCTAssertEqual(service.applyFetchedModification(record, isPendingDeleteOrTombstoned: noPendingDelete), .applied)
+      XCTAssertEqual(tag.name, "After")
+    }
+    XCTAssertEqual(service.applyFetchedDeletion(recordID: record.recordID, recordType: "SyncedTag"), .deleted)
+    XCTAssertNil(try SavedTag.find(byID: "hardware", in: context))
+    XCTAssertEqual(profile.stopNFCTagIds, ["hardware"])
+    XCTAssertTrue(service.drainReenqueues().isEmpty)
+  }
+
+  func testIdenticalLegacyReplayRetriesMigrationAfterDurableApply() throws {
+    struct BoomError: Error {}
+    let now = Date()
+    let id = UUID()
+    let record = makeProfileRecord(id: id, name: "Incoming", version: 2, originDeviceId: "remote", schemaVersion: 2, now: now)
+    record["stopNFCTagId"] = "retry-tag"
+    let service = makeService()
+    service.activeSessionFetchOverride = { throw BoomError() }
+    XCTAssertEqual(service.applyFetchedModification(record, isPendingDeleteOrTombstoned: noPendingDelete), .failed)
+    let durableContext = ModelContext(container)
+    let durable = try XCTUnwrap(BlockedProfiles.findProfile(byID: id, in: durableContext))
+    XCTAssertEqual(durable.profileSchemaVersion, 2)
+    XCTAssertEqual(durable.stopNFCTagId, "retry-tag")
+    XCTAssertEqual(store.failedApplies.count, 1)
+    XCTAssertTrue(try SavedTag.fetchAll(in: context).isEmpty)
+    XCTAssertTrue(service.drainReenqueues().isEmpty)
+
+    service.activeSessionFetchOverride = nil
+    XCTAssertEqual(service.applyFetchedModification(record, isPendingDeleteOrTombstoned: noPendingDelete), .applied)
+    let migrated = try XCTUnwrap(BlockedProfiles.findProfile(byID: id, in: context))
+    XCTAssertEqual(migrated.profileSchemaVersion, 3)
+    XCTAssertNil(migrated.stopNFCTagId)
+    XCTAssertEqual(migrated.stopNFCTagIds, ["retry-tag"])
+    XCTAssertEqual(try SavedTag.fetchAll(in: context).map(\.id), ["retry-tag"])
+    XCTAssertTrue(store.failedApplies.isEmpty)
+    XCTAssertEqual(
+      Set(service.drainReenqueues()),
+      Set([
+        record.recordID, CKRecord.ID(recordName: SavedTag.recordName(for: "retry-tag"), zoneID: zoneID),
+      ]))
+  }
+
+  func testIncomingV1EditDefersMigrationWhileLocalSessionIsActive() throws {
+    let now = Date()
+    let local = BlockedProfiles(name: "Legacy", createdAt: now, updatedAt: now, syncVersion: 1)
+    local.profileSchemaVersion = 1
+    local.physicalUnblockNFCTagId = "old"
+    context.insert(local)
+    _ = BlockedProfileSession.createSession(in: context, withTag: "nfc:start", withProfile: local)
+    try context.save()
+    let record = makeProfileRecord(id: local.id, name: "Incoming", version: 2, originDeviceId: "remote", schemaVersion: 1, now: now)
+    record["physicalUnblockNFCTagId"] = "new"
+    let service = makeService()
+    XCTAssertEqual(service.applyFetchedModification(record, isPendingDeleteOrTombstoned: noPendingDelete), .applied)
+    XCTAssertEqual(local.profileSchemaVersion, 1)
+    XCTAssertEqual(local.physicalUnblockNFCTagId, "new")
+    XCTAssertEqual(service.applyFetchedModification(record, isPendingDeleteOrTombstoned: noPendingDelete), .applied)
+    XCTAssertEqual(local.profileSchemaVersion, 1)
+    XCTAssertEqual(local.physicalUnblockNFCTagId, "new")
+    XCTAssertTrue(try SavedTag.fetchAll(in: context).isEmpty)
+    XCTAssertTrue(service.drainReenqueues().isEmpty)
+  }
+
+  func testStaleV2EditCannotReplaceV3Lists() throws {
+    let now = Date()
+    let local = BlockedProfiles(name: "Current", createdAt: now, updatedAt: now, syncVersion: 1)
+    local.stopNFCTagIds = ["one", "two"]
+    context.insert(local)
+    try context.save()
+    let record = makeProfileRecord(id: local.id, name: "Stale", version: 100, originDeviceId: "remote", schemaVersion: 2, now: now)
+    record["stopNFCTagId"] = "stale"
+    let service = makeService()
+    XCTAssertEqual(service.applyFetchedModification(record, isPendingDeleteOrTombstoned: noPendingDelete), .applied)
+    XCTAssertEqual(local.stopNFCTagIds, ["one", "two"])
+    XCTAssertEqual(local.name, "Current")
+    XCTAssertEqual(service.drainReenqueues(), [record.recordID])
   }
 
 }

@@ -134,9 +134,10 @@ final class CloudKitCodeSchemaDriftTests: XCTestCase {
       .deletingLastPathComponent()
       .deletingLastPathComponent()
     let expectedCounts = [
-      "SyncedProfile": 41,
+      "SyncedProfile": 45,
       "ProfileSession": 10,
       "SyncedLocation": 8,
+      "SyncedTag": 5,
       "EmergencySettings": 7,
       "EmergencyUnblockEvent": 5,
       "SyncResetRequest": 4,
@@ -152,8 +153,8 @@ final class CloudKitCodeSchemaDriftTests: XCTestCase {
     let fields = try CloudKitSchemaDriftValidator.validate(repoRoot: repositoryRoot)
 
     XCTAssertEqual(fields.mapValues(\.count), expectedCounts)
-    XCTAssertEqual(fields.count, 13)
-    XCTAssertEqual(fields.values.reduce(0) { $0 + $1.count }, 103)
+    XCTAssertEqual(fields.count, 14)
+    XCTAssertEqual(fields.values.reduce(0) { $0 + $1.count }, 112)
     XCTAssertEqual(fields["FamilyRoot"], ["createdAt"])
   }
 

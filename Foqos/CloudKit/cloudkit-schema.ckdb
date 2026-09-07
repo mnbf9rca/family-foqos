@@ -174,9 +174,13 @@ DEFINE SCHEMA
         startScheduleData       BYTES,
         stopScheduleData        BYTES,
         startNFCTagId           STRING,
+        startNFCTagIds LIST<STRING>,
         startQRCodeId           STRING,
+        startQRCodeIds LIST<STRING>,
         stopNFCTagId            STRING,
+        stopNFCTagIds LIST<STRING>,
         stopQRCodeId            STRING,
+        stopQRCodeIds LIST<STRING>,
         scheduleLastStoppedAt   TIMESTAMP,
         GRANT WRITE TO "_creator",
         GRANT CREATE TO "_icloud",
@@ -242,6 +246,23 @@ DEFINE SCHEMA
         isLocked              INT64 QUERYABLE,
         generation            INT64,
         lastModified          TIMESTAMP QUERYABLE SORTABLE,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_creator"
+    );
+
+    RECORD TYPE SyncedTag (
+        "___createTime" TIMESTAMP QUERYABLE SORTABLE,
+        "___createdBy" REFERENCE QUERYABLE,
+        "___etag" STRING,
+        "___modTime" TIMESTAMP QUERYABLE SORTABLE,
+        "___modifiedBy" REFERENCE QUERYABLE,
+        "___recordID" REFERENCE QUERYABLE,
+        tagId STRING QUERYABLE SEARCHABLE,
+        kind STRING,
+        name STRING QUERYABLE SEARCHABLE SORTABLE,
+        generation INT64,
+        lastModified TIMESTAMP QUERYABLE SORTABLE,
         GRANT WRITE TO "_creator",
         GRANT CREATE TO "_icloud",
         GRANT READ TO "_creator"

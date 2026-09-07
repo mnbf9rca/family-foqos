@@ -14,10 +14,10 @@ final class TriggerConfigurationModel: ObservableObject {
   @Published private(set) var hasLoadedProfile = false
 
   // Tag bindings
-  @Published var startNFCTagId: String?
-  @Published var startQRCodeId: String?
-  @Published var stopNFCTagId: String?
-  @Published var stopQRCodeId: String?
+  @Published var startNFCTagIds: [String] = []
+  @Published var startQRCodeIds: [String] = []
+  @Published var stopNFCTagIds: [String] = []
+  @Published var stopQRCodeIds: [String] = []
 
   // Schedule bindings
   @Published var startSchedule: ProfileScheduleTime?
@@ -27,12 +27,16 @@ final class TriggerConfigurationModel: ObservableObject {
 
   /// Call when start triggers change to auto-fix invalid stop conditions
   func startTriggersDidChange() {
+    if !startTriggers.specificNFC { startNFCTagIds = [] }
+    if !startTriggers.specificQR { startQRCodeIds = [] }
     validator.autoFix(start: startTriggers, stop: &stopConditions)
     validate()
   }
 
   /// Call when stop conditions change to re-run validation
   func stopConditionsDidChange() {
+    if !stopConditions.specificNFC { stopNFCTagIds = [] }
+    if !stopConditions.specificQR { stopQRCodeIds = [] }
     validate()
   }
 
@@ -41,16 +45,16 @@ final class TriggerConfigurationModel: ObservableObject {
     var errors = validator.validate(start: startTriggers, stop: stopConditions)
 
     // Check for missing data when specific toggles are enabled
-    if startTriggers.specificNFC && (startNFCTagId == nil || startNFCTagId?.isEmpty == true) {
+    if startTriggers.specificNFC && startNFCTagIds.isEmpty {
       errors.append("Scan an NFC tag to use as the start trigger")
     }
-    if startTriggers.specificQR && (startQRCodeId == nil || startQRCodeId?.isEmpty == true) {
+    if startTriggers.specificQR && startQRCodeIds.isEmpty {
       errors.append("Scan a QR code to use as the start trigger")
     }
-    if stopConditions.specificNFC && (stopNFCTagId == nil || stopNFCTagId?.isEmpty == true) {
+    if stopConditions.specificNFC && stopNFCTagIds.isEmpty {
       errors.append("Scan an NFC tag to use as the stop condition")
     }
-    if stopConditions.specificQR && (stopQRCodeId == nil || stopQRCodeId?.isEmpty == true) {
+    if stopConditions.specificQR && stopQRCodeIds.isEmpty {
       errors.append("Scan a QR code to use as the stop condition")
     }
     if startTriggers.schedule && (startSchedule == nil || startSchedule?.isActive != true) {
@@ -110,25 +114,19 @@ final class TriggerConfigurationModel: ObservableObject {
     _ profile: BlockedProfiles, in context: ModelContext, hasActiveSession: Bool = false
   ) throws {
     hasLoadedProfile = false
-    if !hasActiveSession {
-      let migrated = profile.migrateToV2IfEligible(hasActiveSession: false)
-      guard !profile.needsMigration else {
-        throw NSError(
-          domain: "ProfileMigration", code: 1,
-          userInfo: [NSLocalizedDescriptionKey: "Could not migrate this profile’s trigger settings."])
-      }
-      // A failed save leaves the in-memory schema advanced; retry the pending save too.
-      if migrated || context.hasChanges {
-        try context.save()
-        BlockedProfiles.updateSnapshot(for: profile)
-      }
+    let migrated = try ProfileMigrationUtil.migrate(profile, hasActiveSession: hasActiveSession)
+    if !hasActiveSession && profile.needsMigration {
+      throw NSError(
+        domain: "ProfileMigration", code: 1,
+        userInfo: [NSLocalizedDescriptionKey: "Could not migrate this profile’s trigger settings."])
     }
+    if migrated { BlockedProfiles.updateSnapshot(for: profile) }
     startTriggers = profile.startTriggers
     stopConditions = profile.stopConditions
-    startNFCTagId = profile.startNFCTagId
-    startQRCodeId = profile.startQRCodeId
-    stopNFCTagId = profile.stopNFCTagId
-    stopQRCodeId = profile.stopQRCodeId
+    startNFCTagIds = profile.startNFCTagIds
+    startQRCodeIds = profile.startQRCodeIds
+    stopNFCTagIds = profile.stopNFCTagIds
+    stopQRCodeIds = profile.stopQRCodeIds
     startSchedule = profile.startSchedule
     stopSchedule = profile.stopSchedule
     validate()
@@ -139,10 +137,10 @@ final class TriggerConfigurationModel: ObservableObject {
   func saveToProfile(_ profile: BlockedProfiles) {
     profile.startTriggers = startTriggers
     profile.stopConditions = stopConditions
-    profile.startNFCTagId = startNFCTagId
-    profile.startQRCodeId = startQRCodeId
-    profile.stopNFCTagId = stopNFCTagId
-    profile.stopQRCodeId = stopQRCodeId
+    profile.startNFCTagIds = startNFCTagIds
+    profile.startQRCodeIds = startQRCodeIds
+    profile.stopNFCTagIds = stopNFCTagIds
+    profile.stopQRCodeIds = stopQRCodeIds
     profile.startSchedule = startSchedule
     profile.stopSchedule = stopSchedule
 

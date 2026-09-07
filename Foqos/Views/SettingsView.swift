@@ -25,6 +25,7 @@ struct SettingsView: View {
   @State private var showParentDashboard = false
   @State private var showChildDashboard = false
   @State private var showSavedLocations = false
+  @State private var showTags = false
   @State private var showDebugView = false
   @State private var syncErrorMessage: String?
 
@@ -177,6 +178,22 @@ struct SettingsView: View {
           Text("Location")
         } footer: {
           Text("Save locations to restrict when profiles can be stopped based on your physical location.")
+        }
+
+        Section {
+          Button {
+            showTags = true
+          } label: {
+            HStack {
+              Label("Tags", systemImage: "tag.fill")
+              Spacer()
+              Image(systemName: "chevron.right").foregroundStyle(.secondary)
+            }
+          }
+        } header: {
+          Text("Tags")
+        } footer: {
+          Text("Name the NFC tags and QR codes your profiles start and stop with.")
         }
 
         // Device Sync Section
@@ -505,6 +522,7 @@ struct SettingsView: View {
           Text(message)
         }
       }
+      .sheet(isPresented: $showTags) { TagsView() }
       .sheet(isPresented: $showSavedLocations) {
         SavedLocationsView()
       }

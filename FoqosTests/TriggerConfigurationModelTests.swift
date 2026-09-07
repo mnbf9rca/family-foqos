@@ -1,10 +1,76 @@
 // FoqosTests/TriggerConfigurationModelTests.swift
+import SwiftData
 import XCTest
 
 @testable import FamilyFoqos
 
 @MainActor
 final class TriggerConfigurationModelTests: XCTestCase {
+
+  func testLeavingSpecificStartClearsOnlyThatRolesAssignments() throws {
+    let now = Date()
+    for (nfc, qr) in [(NFCStartOption.none, QRStartOption.none), (.any, .any)] {
+      let container = try TestModelContainer.create()
+      let context = container.mainContext
+      let profile = BlockedProfiles(name: "Profile", createdAt: now, updatedAt: now)
+      context.insert(profile)
+      let model = TriggerConfigurationModel()
+      model.startTriggers.specificNFC = true
+      model.startTriggers.specificQR = true
+      model.stopConditions.specificNFC = true
+      model.startNFCTagIds = ["start-nfc"]
+      model.startQRCodeIds = ["start-qr"]
+      model.stopNFCTagIds = ["stop-nfc"]
+
+      nfc.apply(to: &model.startTriggers)
+      model.startTriggersDidChange()
+      XCTAssertTrue(model.startNFCTagIds.isEmpty)
+      XCTAssertEqual(model.startQRCodeIds, ["start-qr"])
+      XCTAssertEqual(model.stopNFCTagIds, ["stop-nfc"])
+      qr.apply(to: &model.startTriggers)
+      model.startTriggersDidChange()
+      XCTAssertTrue(model.startQRCodeIds.isEmpty)
+      model.saveToProfile(profile)
+      try context.save()
+      XCTAssertEqual(SavedTag.assignments(profiles: [profile]), ["stop-nfc": ["Profile"]])
+      NFCStartOption.specific.apply(to: &model.startTriggers)
+      model.startTriggersDidChange()
+      XCTAssertTrue(model.validationErrors.contains("Scan an NFC tag to use as the start trigger"))
+    }
+  }
+
+  func testLeavingSpecificStopClearsOnlyThatRolesAssignments() throws {
+    let now = Date()
+    for (nfc, qr) in [(NFCStopOption.none, QRStopOption.none), (.any, .any), (.same, .same)] {
+      let container = try TestModelContainer.create()
+      let context = container.mainContext
+      let profile = BlockedProfiles(name: "Profile", createdAt: now, updatedAt: now)
+      context.insert(profile)
+      let model = TriggerConfigurationModel()
+      model.startTriggers.specificNFC = true
+      model.startTriggers.anyQR = true
+      model.stopConditions.specificNFC = true
+      model.stopConditions.specificQR = true
+      model.startNFCTagIds = ["start-nfc"]
+      model.stopNFCTagIds = ["stop-nfc"]
+      model.stopQRCodeIds = ["stop-qr"]
+
+      nfc.apply(to: &model.stopConditions)
+      model.stopConditionsDidChange()
+      XCTAssertTrue(model.stopNFCTagIds.isEmpty)
+      XCTAssertEqual(model.stopQRCodeIds, ["stop-qr"])
+      XCTAssertEqual(model.startNFCTagIds, ["start-nfc"])
+      qr.apply(to: &model.stopConditions)
+      model.stopConditionsDidChange()
+      XCTAssertTrue(model.stopQRCodeIds.isEmpty)
+      model.saveToProfile(profile)
+      try context.save()
+      XCTAssertEqual(SavedTag.assignments(profiles: [profile]), ["start-nfc": ["Profile"]])
+      QRStopOption.specific.apply(to: &model.stopConditions)
+      model.stopConditionsDidChange()
+      XCTAssertTrue(model.validationErrors.contains("Scan a QR code to use as the stop condition"))
+    }
+  }
 
   func testGivenSameNFCWithNoNFCStart_WhenStartTriggersChange_ThenAutoFixesStop() {
     let model = TriggerConfigurationModel()

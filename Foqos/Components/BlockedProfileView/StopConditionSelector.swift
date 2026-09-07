@@ -4,10 +4,12 @@ import SwiftUI
 /// Selector for profile stop conditions
 struct StopConditionSelector: View {
   @Binding var conditions: ProfileStopConditions
-  @Binding var stopNFCTagId: String?
-  @Binding var stopQRCodeId: String?
+  @Binding var stopNFCTagIds: [String]
+  @Binding var stopQRCodeIds: [String]
   @Binding var stopSchedule: ProfileScheduleTime?
   let startTriggers: ProfileStartTriggers
+  let nfcTags: [(id: String, name: String)]
+  let qrTags: [(id: String, name: String)]
   let disabled: Bool
   let onConditionChange: () -> Void
   let onScanNFCTag: () -> Void
@@ -46,11 +48,9 @@ struct StopConditionSelector: View {
         }
       }
       if nfcOption == .specific {
-        scanRow(
-          tagId: stopNFCTagId,
-          onScan: onScanNFCTag,
-          label: "Tag"
-        )
+        TagPickerRows(
+          selectedIds: $stopNFCTagIds, tags: nfcTags,
+          scanLabel: "Scan new tag", disabled: disabled, onChange: onConditionChange, onScan: onScanNFCTag)
       }
 
       // QR picker
@@ -72,11 +72,9 @@ struct StopConditionSelector: View {
         }
       }
       if qrOption == .specific {
-        scanRow(
-          tagId: stopQRCodeId,
-          onScan: onScanQRCode,
-          label: "Code"
-        )
+        TagPickerRows(
+          selectedIds: $stopQRCodeIds, tags: qrTags,
+          scanLabel: "Scan new code", disabled: disabled, onChange: onConditionChange, onScan: onScanQRCode)
       }
 
       // Schedule
@@ -125,23 +123,6 @@ struct StopConditionSelector: View {
     .onChange(of: conditions) { _, newConditions in
       nfcOption = NFCStopOption.from(newConditions)
       qrOption = QRStopOption.from(newConditions)
-    }
-  }
-
-  @ViewBuilder
-  private func scanRow(tagId: String?, onScan: @escaping () -> Void, label: String) -> some View {
-    HStack {
-      if let tagId, !tagId.isEmpty {
-        Text("\(label) set")
-          .font(.caption)
-          .foregroundStyle(.secondary)
-      }
-      Spacer()
-      Button(tagId == nil || tagId?.isEmpty == true ? "Scan" : "Change") {
-        onScan()
-      }
-      .buttonStyle(.bordered)
-      .disabled(disabled)
     }
   }
 

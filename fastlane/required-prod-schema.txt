@@ -125,3 +125,15 @@ RECORD TYPE SyncedProfile.profileSchemaVersion
 RECORD TYPE SyncedProfile.scheduleLastStoppedAt
 RECORD TYPE SyncedSession
 RECORD TYPE "cloudkit.share"
+
+# Account-wide named NFC tags and QR codes (profile schema 3).
+RECORD TYPE SyncedTag
+RECORD TYPE SyncedTag.tagId
+RECORD TYPE SyncedTag.kind
+RECORD TYPE SyncedTag.name
+RECORD TYPE SyncedTag.generation
+RECORD TYPE SyncedTag.lastModified
+RECORD TYPE SyncedProfile.startNFCTagIds
+RECORD TYPE SyncedProfile.startQRCodeIds
+RECORD TYPE SyncedProfile.stopNFCTagIds
+RECORD TYPE SyncedProfile.stopQRCodeIds

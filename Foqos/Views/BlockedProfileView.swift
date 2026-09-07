@@ -26,10 +26,30 @@ struct BlockedProfileView: View {
   @ObservedObject private var appModeManager = AppModeManager.shared
   @ObservedObject private var lockCodeManager = LockCodeManager.shared
 
+  @SafeQuery(sort: \SavedTag.name) private var savedTags: [SavedTag]
+
   @SafeQuery(sort: \SavedLocation.name) private var savedLocations: [SavedLocation]
 
   /// If profile is nil, we're creating a new profile
   var profile: BlockedProfiles?
+
+  private func registerTag(id: String, kind: String, selectedIds: Binding<[String]>) {
+    do {
+      let number = savedTags.filter { $0.kind == kind }.count + 1
+      let name = "\(kind == "nfc" ? "NFC tag" : "QR code") \(number)"
+      let tag = try SavedTag.findOrCreate(id: id, kind: kind, name: name, in: modelContext)
+      try modelContext.save()
+      if profileSyncManager.isEnabled {
+        do { try profileSyncManager.enqueueTagSave(tag.id) } catch SyncEngineControllingError.notAttached {
+          Log.info("New tag upload deferred until sync attaches", category: .sync)
+        }
+      }
+      if !selectedIds.wrappedValue.contains(id) { selectedIds.wrappedValue.append(id) }
+      triggerConfig.validate()
+    } catch {
+      showError(message: "Failed to save tag: \(error.localizedDescription)")
+    }
+  }
 
   @State private var name: String = ""
   @State private var enableLiveActivity: Bool = false
@@ -47,9 +67,6 @@ struct BlockedProfileView: View {
   @State private var disableBackgroundStops: Bool = false
   @State private var preActivationReminderTimes: Set<UInt8> = []
   @State private var domains: [String] = []
-
-  @State private var physicalUnblockNFCTagId: String?
-  @State private var physicalUnblockQRCodeId: String?
 
   @State private var geofenceRule: ProfileGeofenceRule?
 
@@ -196,12 +213,6 @@ struct BlockedProfileView: View {
     )
     _domains = State(
       initialValue: profile?.domains ?? []
-    )
-    _physicalUnblockNFCTagId = State(
-      initialValue: profile?.physicalUnblockNFCTagId ?? nil
-    )
-    _physicalUnblockQRCodeId = State(
-      initialValue: profile?.physicalUnblockQRCodeId ?? nil
     )
     _isManaged = State(initialValue: profile?.isManaged ?? false)
     _geofenceRule = State(initialValue: profile?.geofenceRule)
@@ -359,16 +370,18 @@ struct BlockedProfileView: View {
 
           StartTriggerSelector(
             triggers: $triggerConfig.startTriggers,
-            startNFCTagId: $triggerConfig.startNFCTagId,
-            startQRCodeId: $triggerConfig.startQRCodeId,
+            startNFCTagIds: $triggerConfig.startNFCTagIds,
+            startQRCodeIds: $triggerConfig.startQRCodeIds,
             startSchedule: $triggerConfig.startSchedule,
+            nfcTags: savedTags.filter { $0.kind == "nfc" }.map { ($0.id, $0.name) },
+            qrTags: savedTags.filter { $0.kind == "qr" }.map { ($0.id, $0.name) },
             disabled: editingDisabled,
             onTriggerChange: {
               triggerConfig.startTriggersDidChange()
             },
             onScanNFCTag: {
               nfcScanner.onTagScanned = { tag in
-                triggerConfig.startNFCTagId = tag.id
+                registerTag(id: tag.id, kind: "nfc", selectedIds: $triggerConfig.startNFCTagIds)
               }
               nfcScanner.onError = { error in
                 alertIdentifier = AlertIdentifier(id: .error, errorMessage: error)
@@ -398,17 +411,19 @@ struct BlockedProfileView: View {
 
           StopConditionSelector(
             conditions: $triggerConfig.stopConditions,
-            stopNFCTagId: $triggerConfig.stopNFCTagId,
-            stopQRCodeId: $triggerConfig.stopQRCodeId,
+            stopNFCTagIds: $triggerConfig.stopNFCTagIds,
+            stopQRCodeIds: $triggerConfig.stopQRCodeIds,
             stopSchedule: $triggerConfig.stopSchedule,
             startTriggers: triggerConfig.startTriggers,
+            nfcTags: savedTags.filter { $0.kind == "nfc" }.map { ($0.id, $0.name) },
+            qrTags: savedTags.filter { $0.kind == "qr" }.map { ($0.id, $0.name) },
             disabled: editingDisabled,
             onConditionChange: {
               triggerConfig.stopConditionsDidChange()
             },
             onScanNFCTag: {
               nfcScanner.onTagScanned = { tag in
-                triggerConfig.stopNFCTagId = tag.id
+                registerTag(id: tag.id, kind: "nfc", selectedIds: $triggerConfig.stopNFCTagIds)
               }
               nfcScanner.onError = { error in
                 alertIdentifier = AlertIdentifier(id: .error, errorMessage: error)
@@ -780,7 +795,7 @@ struct BlockedProfileView: View {
             customView: physicalReader.readQRCode(
               onSuccess: { codeId in
                 showStartQRScanner = false
-                triggerConfig.startQRCodeId = codeId
+                registerTag(id: codeId, kind: "qr", selectedIds: $triggerConfig.startQRCodeIds)
               },
               onFailure: { _ in
                 showStartQRScanner = false
@@ -793,7 +808,7 @@ struct BlockedProfileView: View {
             customView: physicalReader.readQRCode(
               onSuccess: { codeId in
                 showStopQRScanner = false
-                triggerConfig.stopQRCodeId = codeId
+                registerTag(id: codeId, kind: "qr", selectedIds: $triggerConfig.stopQRCodeIds)
               },
               onFailure: { _ in
                 showStopQRScanner = false
@@ -1079,8 +1094,6 @@ struct BlockedProfileView: View {
         // if-let guards can't distinguish "not passed" from "clear to nil".
         existingProfile.geofenceRule = geofenceRule
         existingProfile.managedByChildId = managedChildId
-        existingProfile.physicalUnblockNFCTagId = physicalUnblockNFCTagId
-        existingProfile.physicalUnblockQRCodeId = physicalUnblockQRCodeId
         existingProfile.reminderTimeInSeconds = reminderTimeSeconds
         existingProfile.customReminderMessage = customReminderMessage
         let needsAppSelectionAfterSave = BlockedProfiles.needsAppSelectionAfterLocalSave(
@@ -1133,8 +1146,6 @@ struct BlockedProfileView: View {
           blockAdultWebsites: blockAdultWebsites,
           blockAppInstallation: blockAppInstallation,
           domains: domains,
-          physicalUnblockNFCTagId: physicalUnblockNFCTagId,
-          physicalUnblockQRCodeId: physicalUnblockQRCodeId,
           schedule: nil,
           geofenceRule: geofenceRule,
           disableBackgroundStops: disableBackgroundStops,
@@ -1158,7 +1169,7 @@ struct BlockedProfileView: View {
   BlockedProfileView()
     .environmentObject(NFCWriter())
     .environmentObject(StrategyManager.shared)
-    .modelContainer(for: [BlockedProfiles.self, SavedLocation.self], inMemory: true)
+    .modelContainer(for: [BlockedProfiles.self, SavedLocation.self, SavedTag.self], inMemory: true)
 }
 
 #Preview {
@@ -1171,5 +1182,5 @@ struct BlockedProfileView: View {
   BlockedProfileView(profile: previewProfile)
     .environmentObject(NFCWriter())
     .environmentObject(StrategyManager.shared)
-    .modelContainer(for: [BlockedProfiles.self, SavedLocation.self], inMemory: true)
+    .modelContainer(for: [BlockedProfiles.self, SavedLocation.self, SavedTag.self], inMemory: true)
 }

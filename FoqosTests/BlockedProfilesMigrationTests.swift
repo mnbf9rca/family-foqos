@@ -4,6 +4,7 @@ import XCTest
 
 @testable import FamilyFoqos
 
+@MainActor
 final class BlockedProfilesMigrationTests: XCTestCase {
 
   func testGivenV1Profile_WhenMigrating_ThenSetsSchemaVersionToV2() {
@@ -79,20 +80,20 @@ final class BlockedProfilesMigrationTests: XCTestCase {
     XCTAssertTrue(profile.needsMigration)
   }
 
-  func testGivenV2Profile_WhenCheckingNeedsMigration_ThenReturnsFalse() {
+  func testGivenV3Profile_WhenCheckingNeedsMigration_ThenReturnsFalse() {
     let profile = BlockedProfiles(name: "Test")
-    profile.profileSchemaVersion = 2
+    profile.profileSchemaVersion = 3
     XCTAssertFalse(profile.needsMigration)
   }
 
-  func testGivenActiveSession_WhenMigrating_ThenSkipsProfile() {
+  func testGivenActiveSession_WhenMigrating_ThenSkipsProfile() throws {
     let profile = BlockedProfiles(name: "Active")
     profile.profileSchemaVersion = 1
     profile.blockingStrategyId = "ManualBlockingStrategy"
 
-    let migrated = profile.migrateToV2IfEligible(hasActiveSession: true)
+    let migrated = try profile.migrateIfEligible(hasActiveSession: true)
 
-    XCTAssertFalse(migrated)
+    XCTAssertTrue(migrated.isEmpty)
     XCTAssertEqual(profile.profileSchemaVersion, 1)  // Still V1
   }
 
@@ -129,7 +130,7 @@ final class BlockedProfilesMigrationTests: XCTestCase {
 
   func testGivenFutureSchemaVersion_WhenCheckingIsNewer_ThenReturnsTrue() {
     let profile = BlockedProfiles(name: "Future")
-    profile.profileSchemaVersion = 3
+    profile.profileSchemaVersion = 4
     XCTAssertTrue(profile.isNewerSchemaVersion)
   }
 
@@ -143,14 +144,15 @@ final class BlockedProfilesMigrationTests: XCTestCase {
     XCTAssertTrue(profile.isNewerSchemaVersion, "Version above current should be 'newer'")
   }
 
-  func testGivenNoActiveSession_WhenMigrating_ThenMigratesSuccessfully() {
+  func testGivenNoActiveSession_WhenMigrating_ThenMigratesSuccessfully() throws {
+    let container = try TestModelContainer.create()
     let profile = BlockedProfiles(name: "Inactive")
     profile.profileSchemaVersion = 1
     profile.blockingStrategyId = "ManualBlockingStrategy"
 
-    let migrated = profile.migrateToV2IfEligible(hasActiveSession: false)
-
-    XCTAssertTrue(migrated)
-    XCTAssertEqual(profile.profileSchemaVersion, 2)  // Now V2
+    container.mainContext.insert(profile)
+    try container.mainContext.save()
+    _ = try profile.migrateIfEligible(hasActiveSession: false)
+    XCTAssertEqual(profile.profileSchemaVersion, 3)
   }
 }

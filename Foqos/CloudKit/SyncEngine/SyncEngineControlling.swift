@@ -25,6 +25,8 @@ protocol SyncEngineControlling: AnyObject {
     requestSyncAfterPendingDelete: Bool,
     onDeleteCommitted: @escaping @MainActor () -> Void
   ) throws
+  func enqueueTagSave(_ id: String) throws
+  func enqueueTagDelete(_ id: String) throws
   func enqueueLocationSave(_ id: UUID) throws
   func enqueueLocationDelete(_ id: UUID) throws
   func enqueueEmergencySettingsSave() throws

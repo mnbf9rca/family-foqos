@@ -3,6 +3,7 @@ import SwiftUI
 
 struct ProfileDebugCard: View {
   let profile: BlockedProfiles
+  @SafeQuery(sort: \SavedTag.name) private var tags: [SavedTag]
 
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
@@ -50,22 +51,13 @@ struct ProfileDebugCard: View {
 
       Divider()
 
-      // Physical Unlock
+      // Tag references are shown by name, never by scanned value.
       Group {
-        DebugRow(
-          label: "NFC Tag ID",
-          value: DebugRedaction.physicalUnblockNFCTagIdForDisplay(
-            profile.physicalUnblockNFCTagId,
-            mode: AppModeManager.shared.currentMode
-          ) ?? "nil"
-        )
-        DebugRow(
-          label: "QR Code ID",
-          value: DebugRedaction.physicalUnblockQRCodeIdForDisplay(
-            profile.physicalUnblockQRCodeId,
-            mode: AppModeManager.shared.currentMode
-          ) ?? "nil"
-        )
+        let names = Dictionary(uniqueKeysWithValues: tags.map { ($0.id, $0.name) })
+        DebugRow(label: "Start NFC tags", value: SavedTag.summary(ids: profile.startNFCTagIds, names: names))
+        DebugRow(label: "Start QR codes", value: SavedTag.summary(ids: profile.startQRCodeIds, names: names))
+        DebugRow(label: "Stop NFC tags", value: SavedTag.summary(ids: profile.stopNFCTagIds, names: names))
+        DebugRow(label: "Stop QR codes", value: SavedTag.summary(ids: profile.stopQRCodeIds, names: names))
       }
 
       Divider()
@@ -97,7 +89,7 @@ struct ProfileDebugCard: View {
 
   return ProfileDebugCard(profile: profile)
     .padding()
-    .modelContainer(for: [BlockedProfiles.self, BlockedProfileSession.self])
+    .modelContainer(for: [BlockedProfiles.self, BlockedProfileSession.self, SavedTag.self])
 }
 
 #Preview("Profile with NFC Tag") {
@@ -113,7 +105,7 @@ struct ProfileDebugCard: View {
 
   return ProfileDebugCard(profile: profile)
     .padding()
-    .modelContainer(for: [BlockedProfiles.self, BlockedProfileSession.self])
+    .modelContainer(for: [BlockedProfiles.self, BlockedProfileSession.self, SavedTag.self])
 }
 
 #Preview("Profile with Schedule") {
@@ -137,5 +129,5 @@ struct ProfileDebugCard: View {
 
   return ProfileDebugCard(profile: profile)
     .padding()
-    .modelContainer(for: [BlockedProfiles.self, BlockedProfileSession.self])
+    .modelContainer(for: [BlockedProfiles.self, BlockedProfileSession.self, SavedTag.self])
 }

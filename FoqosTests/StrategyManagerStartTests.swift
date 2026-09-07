@@ -366,4 +366,47 @@ final class StrategyManagerStartTests: XCTestCase {
 
     XCTAssertEqual(rejection, "Couldn't verify whether a session is already active. Try again.")
   }
+
+  func testSpecificNFCStartsWithSpare() throws {
+    let profile = BlockedProfiles(name: "Keys")
+    profile.startTriggers = ProfileStartTriggers(specificNFC: true)
+    profile.startNFCTagIds = ["X", "Y"]
+    context.insert(profile)
+    try context.save()
+    manager.startWithNFCTag(context: context, profile: profile, tagId: "Y")
+    XCTAssertEqual(manager.activeSession?.blockedProfile.id, profile.id)
+  }
+
+  func testSpecificNFCRejectsUnknownKey() throws {
+    let profile = BlockedProfiles(name: "Keys")
+    profile.startTriggers = ProfileStartTriggers(specificNFC: true)
+    profile.startNFCTagIds = ["X", "Y"]
+    context.insert(profile)
+    try context.save()
+    manager.startWithNFCTag(context: context, profile: profile, tagId: "Z")
+    XCTAssertTrue(try activeSessions().isEmpty)
+    XCTAssertTrue(manager.errorMessage?.contains("doesn't match") == true)
+  }
+
+  func testSpecificQRStartsWithSpare() throws {
+    let profile = BlockedProfiles(name: "Keys")
+    profile.startTriggers = ProfileStartTriggers(specificQR: true)
+    profile.startQRCodeIds = ["X", "Y"]
+    context.insert(profile)
+    try context.save()
+    manager.startWithQRCode(context: context, profile: profile, codeValue: "Y")
+    XCTAssertEqual(manager.activeSession?.blockedProfile.id, profile.id)
+  }
+
+  func testSpecificQRRejectsUnknownKey() throws {
+    let profile = BlockedProfiles(name: "Keys")
+    profile.startTriggers = ProfileStartTriggers(specificQR: true)
+    profile.startQRCodeIds = ["X", "Y"]
+    context.insert(profile)
+    try context.save()
+    manager.startWithQRCode(context: context, profile: profile, codeValue: "Z")
+    XCTAssertTrue(try activeSessions().isEmpty)
+    XCTAssertTrue(manager.errorMessage?.contains("doesn't match") == true)
+  }
+
 }

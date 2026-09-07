@@ -606,7 +606,7 @@ final class SyncEngineController: SyncEngineDriverDelegate {
   // MARK: - T4 sentRecordZoneChanges routing (§5.3, S-10, S-11, S-17, S-23, S-29)
 
   private static let scopedTypes: Set<String> = [
-    SyncedProfile.recordType, SyncedLocation.recordType, SyncedEmergencySettings.recordType,
+    SyncedProfile.recordType, SyncedLocation.recordType, SyncedTag.recordType, SyncedEmergencySettings.recordType,
     SyncedEmergencyEpoch.recordType,
   ]
 
@@ -894,6 +894,10 @@ final class SyncEngineController: SyncEngineDriverDelegate {
       else { return false }
       let serverVersion = server[SyncedProfile.FieldKey.version.rawValue] as? Int ?? 0
       return local.syncVersion > serverVersion
+    case SyncedTag.recordType:
+      guard let local = try? SavedTag.find(byRecordName: name, in: modelContext) else { return false }
+      let serverUpdated = server[SyncedTag.FieldKey.lastModified.rawValue] as? Date ?? .distantPast
+      return local.updatedAt > serverUpdated
     case SyncedLocation.recordType:
       guard let uuid = UUID(uuidString: name),
         let local = try? modelContext.fetch(
@@ -1109,6 +1113,9 @@ final class SyncEngineController: SyncEngineDriverDelegate {
   }
 
   private func deleteRetryLocalEntityExists(_ entry: FailedApply) -> Bool {
+    if entry.recordType == SyncedTag.recordType {
+      return (try? SavedTag.find(byRecordName: entry.recordName, in: modelContext)) != nil
+    }
     guard let id = UUID(uuidString: entry.recordName) else { return true }
     switch entry.recordType {
     case SyncedProfile.recordType:
@@ -1200,6 +1207,9 @@ final class SyncEngineController: SyncEngineDriverDelegate {
   }
 
   private func entityExists(recordName: String) -> Bool {
+    if recordName.hasPrefix("SavedTag_") {
+      return (try? SavedTag.find(byRecordName: recordName, in: modelContext)) != nil
+    }
     guard let uuid = UUID(uuidString: recordName) else { return false }
     if (try? modelContext.fetch(
       FetchDescriptor<BlockedProfiles>(predicate: #Predicate { $0.id == uuid })
@@ -1317,6 +1327,8 @@ final class SyncEngineController: SyncEngineDriverDelegate {
     names.append(contentsOf: profiles.map { $0.id.uuidString })
     let locations = (try? modelContext.fetch(FetchDescriptor<SavedLocation>())) ?? []
     names.append(contentsOf: locations.map { $0.id.uuidString })
+    let tags = (try? SavedTag.fetchAll(in: modelContext)) ?? []
+    names.append(contentsOf: tags.map(\.recordName))
     names.append(SyncedEmergencySettings.recordName)
     if store.establishmentGeneration > 0 {
       names.append(SyncedEstablishment.recordName)
@@ -1549,6 +1561,18 @@ enum SyncDiagnostics {
       "sync.event=local_profile_save_enqueued profile=\(profileId.uuidString) "
         + "sync_version=\(syncVersion)",
       category: .sync)
+  }
+
+  static func tagApply(recordName: String, branch _: String) {
+    Log.debug("sync.event=tag_apply record=\(recordName)", category: .sync)
+  }
+
+  static func tagDeletionApplied(recordName: String, existed: Bool) {
+    Log.debug("sync.event=tag_deletion_apply record=\(recordName) existed=\(existed)", category: .sync)
+  }
+
+  static func localTagSaveEnqueued(recordName: String) {
+    Log.debug("sync.event=local_tag_save_enqueued record=\(recordName)", category: .sync)
   }
 
   static func localLocationSaveEnqueued(locationId: UUID) {

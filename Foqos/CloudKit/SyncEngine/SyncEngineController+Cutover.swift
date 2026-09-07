@@ -67,6 +67,14 @@ extension SyncEngineController: SyncEngineControlling {
       profileId: id,
       onPendingDeleteEnqueued: commitCallback)
   }
+  func enqueueTagSave(_ id: String) throws {
+    guard let funnel else { throw SyncEngineControllingError.notAttached }
+    try funnel.enqueueSave(tagId: id)
+  }
+  func enqueueTagDelete(_ id: String) throws {
+    guard let funnel else { throw SyncEngineControllingError.notAttached }
+    try funnel.enqueueDelete(tagId: id)
+  }
   func enqueueLocationSave(_ id: UUID) throws {
     guard let funnel else { throw SyncEngineControllingError.notAttached }
     try funnel.enqueueSave(locationId: id)
