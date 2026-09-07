@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+for tool in dirname mktemp rm mkdir git bash; do
+  command -v "$tool" >/dev/null 2>&1 || { echo "$tool is required" >&2; exit 1; }
+done
+
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 GATE_SCRIPT="$REPO_ROOT/scripts/check-version-increment.sh"
 TEST_ROOT=$(mktemp -d)
@@ -112,5 +116,58 @@ expect_fail "malformed marketing version" "$head_ref"
 
 head_ref=$(commit_fixture 1.2.7 16 1.2.8 16)
 expect_fail "inconsistent project versions" "$head_ref"
+
+expect_fail "empty diff" "$BASE_REF"
+
+# Restore unchanged versions; only the paths added below differ from the base.
+write_project 1.2.3 10
+mkdir -p "$TEST_ROOT/docs" "$TEST_ROOT/notes"
+printf 'documentation\n' >"$TEST_ROOT/README.md"
+printf 'nested documentation\n' >"$TEST_ROOT/notes/guide.md"
+printf 'diagram\n' >"$TEST_ROOT/docs/diagram.svg"
+git -C "$TEST_ROOT" add .
+git -C "$TEST_ROOT" commit -q -m "docs only"
+head_ref=$(git -C "$TEST_ROOT" rev-parse HEAD)
+expect_pass "docs-only diff without a version bump" "$head_ref"
+
+printf 'source\n' >"$TEST_ROOT/App.swift"
+git -C "$TEST_ROOT" add App.swift
+git -C "$TEST_ROOT" commit -q -m "mixed docs and source"
+head_ref=$(git -C "$TEST_ROOT" rev-parse HEAD)
+expect_fail "mixed diff without a version bump" "$head_ref"
+
+BASE_REF=$head_ref
+git -C "$TEST_ROOT" mv App.swift docs/App.swift
+git -C "$TEST_ROOT" commit -q -m "move source into docs"
+head_ref=$(git -C "$TEST_ROOT" rev-parse HEAD)
+expect_fail "source-to-doc rename" "$head_ref"
+
+BASE_REF=$head_ref
+mkdir -p "$TEST_ROOT/.github/workflows"
+printf 'name: test\n' >"$TEST_ROOT/.github/workflows/test.yml"
+git -C "$TEST_ROOT" add .github
+git -C "$TEST_ROOT" commit -q -m "workflow change"
+head_ref=$(git -C "$TEST_ROOT" rev-parse HEAD)
+expect_fail "workflow change without a version bump" "$head_ref"
+
+# A classifier failure must not look like an empty list of build paths.
+(
+  # shellcheck disable=SC2329 # Exported into the gate subprocess.
+  git() {
+    case "$*" in
+      *':(top,glob,exclude)'*) return 73 ;;
+      *) command git "$@" ;;
+    esac
+  }
+  export -f git
+  expect_fail "path classification unavailable" "$head_ref"
+  [[ "$GATE_STATUS" -eq 73 ]] || { echo "FAIL: classifier status was not preserved"; exit 1; }
+)
+
+expect_fail "unreadable diff" missing-ref
+if [[ "$GATE_STATUS" -ne 128 ]]; then
+  echo "FAIL: unreadable diff should preserve Git status 128, got $GATE_STATUS"
+  exit 1
+fi
 
 echo "PASS: version increment gate cases"
