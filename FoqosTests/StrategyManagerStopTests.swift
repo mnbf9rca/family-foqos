@@ -296,4 +296,28 @@ final class StrategyManagerStopTests: XCTestCase {
     }
   }
 
+  func testSpecificQRMatchesRawPrimarySpareAndNormalizedKeys() {
+    let payload = " \nHTTPS://EXAMPLE.COM/\t"
+    for keys in [[QRCodeHasher.rawHash(payload)], ["unrelated", QRCodeHasher.rawHash(payload)], [QRCodeHasher.hash("https://example.com")]] {
+      for scan in [payload, "different code"] {
+        let result = StartStopActionResolver.canStop(
+          with: .qr(code: QRCodeHasher.hash(scan), rawHash: QRCodeHasher.rawHash(scan)),
+          conditions: ProfileStopConditions(specificQR: true), sessionTag: nil,
+          stopNFCValues: [], stopQRValues: keys)
+        XCTAssertEqual(result.allowed, scan == payload)
+      }
+    }
+  }
+
+  func testSameQRAcceptsOldRawSessionAndRejectsDifferentScan() {
+    let payload = " HTTPS://EXAMPLE.COM/ "
+    for scan in [payload, "different code"] {
+      let result = StartStopActionResolver.canStop(
+        with: .qr(code: QRCodeHasher.hash(scan), rawHash: QRCodeHasher.rawHash(scan)),
+        conditions: ProfileStopConditions(sameQR: true),
+        sessionTag: "qr:\(QRCodeHasher.rawHash(payload))", stopNFCValues: [], stopQRValues: [])
+      XCTAssertEqual(result.allowed, scan == payload)
+    }
+  }
+
 }

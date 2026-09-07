@@ -1266,10 +1266,10 @@ class StrategyManager: ObservableObject {
   }
 
   /// Start blocking with a pre-scanned QR code (for trigger-based start)
-  func startWithQRCode(context: ModelContext, profile: BlockedProfiles, codeValue: String) {
+  func startWithQRCode(context: ModelContext, profile: BlockedProfiles, codeValue: String, rawHash: String? = nil) {
     // Validate specific QR code if required
     if profile.startTriggers.specificQR {
-      guard profile.physicalKeys.startQR.contains(where: { $0.value == codeValue }) else {
+      guard profile.physicalKeys.startQR.contains(where: { $0.value == codeValue || $0.value == rawHash }) else {
         errorMessage = "This QR code doesn't match the one configured for this profile"
         return
       }
@@ -1310,14 +1310,14 @@ class StrategyManager: ObservableObject {
   }
 
   /// Stop blocking with a scanned QR code (for stop-condition-based stop)
-  func stopWithQRCode(context: ModelContext, codeValue: String) {
+  func stopWithQRCode(context: ModelContext, codeValue: String, rawHash: String? = nil) {
     guard let session = activeSession else {
       errorMessage = "No active session to stop"
       return
     }
 
     let validation = StartStopActionResolver.canStop(
-      with: .qr(code: codeValue),
+      with: .qr(code: codeValue, rawHash: rawHash),
       conditions: session.blockedProfile.stopConditions,
       sessionTag: session.tag,
       stopNFCValues: session.blockedProfile.physicalKeys.stopNFC.map(\.value),

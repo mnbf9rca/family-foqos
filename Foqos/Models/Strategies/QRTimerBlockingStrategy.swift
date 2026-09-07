@@ -68,7 +68,7 @@ class QRTimerBlockingStrategy: BlockingStrategy {
       switch result {
       case .success(let hashedCode):
         if let physicalUnblockQRCodeId = session.blockedProfile.physicalUnblockQRCodeId,
-          physicalUnblockQRCodeId != hashedCode
+          physicalUnblockQRCodeId != hashedCode.hash && physicalUnblockQRCodeId != hashedCode.rawHash
         {
           self.onErrorMessage?(
             "This QR code is not allowed to unblock this profile. Physical unblock setting is on for this profile"

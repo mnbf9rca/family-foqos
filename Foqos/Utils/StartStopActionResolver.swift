@@ -169,10 +169,10 @@ enum StartStopActionResolver {
 
       return .denied("NFC stop is not enabled for this profile")
 
-    case .qr(let scannedCode):
+    case .qr(let scannedCode, let rawHash):
       // Check specific QR first
       if conditions.specificQR {
-        if stopQRValues.contains(scannedCode) {
+        if stopQRValues.contains(where: { $0 == scannedCode || $0 == rawHash }) {
           return .allowed()
         }
         return .denied("Scan the correct QR code to stop")
@@ -183,6 +183,7 @@ enum StartStopActionResolver {
         if let sessionStartCode = sessionTag,
           sessionStartCode.hasPrefix("qr:"),
           scannedCode == String(sessionStartCode.dropFirst(3))
+            || rawHash == String(sessionStartCode.dropFirst(3))
         {
           return .allowed()
         }
@@ -236,7 +237,7 @@ enum StopMethod {
   case manual
   case timer
   case nfc(tag: String)
-  case qr(code: String)
+  case qr(code: String, rawHash: String? = nil)
   case schedule
   case deepLink
 }

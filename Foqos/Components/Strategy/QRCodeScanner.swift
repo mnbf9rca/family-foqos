@@ -7,7 +7,7 @@ struct LabeledCodeScannerView: View {
   let heading: String
   let subtitle: String
   let simulatedData: String?
-  let onScanResult: (Result<String, ScanError>) -> Void
+  let onScanResult: (Result<(hash: String, rawHash: String), ScanError>) -> Void
 
   @State private var camera =
     AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back)
@@ -22,7 +22,7 @@ struct LabeledCodeScannerView: View {
     heading: String,
     subtitle: String,
     simulatedData: String? = nil,
-    onScanResult: @escaping (Result<String, ScanError>) -> Void
+    onScanResult: @escaping (Result<(hash: String, rawHash: String), ScanError>) -> Void
   ) {
     self.heading = heading
     self.subtitle = subtitle
@@ -187,10 +187,15 @@ struct LabeledCodeScannerView: View {
       isShowingScanner = false
       errorMessage = nil
       scanError = nil
-      // Hash at the scan choke point so all callers receive opaque digests.
+      // Keep both digests so existing keys match the untouched original payload.
       // V1 profiles with active QR sessions store plaintext physicalUnblockQRCodeId;
       // those sessions will mismatch until ended (Emergency Unblock) and migrated to V2.
-      onScanResult(.success(QRCodeHasher.hash(scanResult.string)))
+      onScanResult(
+        .success(
+          (
+            hash: QRCodeHasher.hash(scanResult.string),
+            rawHash: QRCodeHasher.rawHash(scanResult.string)
+          )))
     case .failure(let error):
       if case ScanError.permissionDenied = error {
         isShowingScanner = false

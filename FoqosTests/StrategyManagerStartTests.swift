@@ -403,9 +403,91 @@ final class StrategyManagerStartTests: XCTestCase {
     profile.physicalKeys = ProfilePhysicalKeys(startQR: [PhysicalKey(name: "Home", value: "X"), PhysicalKey(name: "Spare", value: "Y")])
     context.insert(profile)
     try context.save()
-    manager.startWithQRCode(context: context, profile: profile, codeValue: "Z")
+    manager.startWithQRCode(context: context, profile: profile, codeValue: "Z", rawHash: "W")
     XCTAssertTrue(try activeSessions().isEmpty)
     XCTAssertTrue(manager.errorMessage?.contains("doesn't match") == true)
+  }
+
+  func testSpecificQRMatchesOldRawPrimaryAndSpareKeys() throws {
+    let payload = " \nHTTPS://EXAMPLE.COM/\t"
+    for keys in [[QRCodeHasher.rawHash(payload)], ["unrelated", QRCodeHasher.rawHash(payload)]] {
+      let profile = BlockedProfiles(name: "Old QR keys")
+      profile.startTriggers = ProfileStartTriggers(specificQR: true)
+      profile.physicalKeys = ProfilePhysicalKeys(startQR: keys.map { PhysicalKey(name: "Code", value: $0) })
+      context.insert(profile)
+      try context.save()
+      manager.startWithQRCode(context: context, profile: profile, codeValue: QRCodeHasher.hash(payload), rawHash: QRCodeHasher.rawHash(payload))
+      XCTAssertEqual(manager.activeSession?.blockedProfile.id, profile.id)
+      XCTAssertEqual(manager.activeSession?.tag, "qr:\(QRCodeHasher.hash(payload))")
+      manager.activeSession?.endSession()
+      try context.save()
+      manager.stopTimer()
+      manager = StrategyManager()
+    }
+  }
+
+  func testNewQRKeyMatchesDifferentlyCasedPrintout() throws {
+    let profile = BlockedProfiles(name: "New QR key")
+    profile.startTriggers = ProfileStartTriggers(specificQR: true)
+    profile.physicalKeys = ProfilePhysicalKeys(startQR: [PhysicalKey(name: "Code", value: QRCodeHasher.hash("https://example.com"))])
+    context.insert(profile)
+    try context.save()
+    manager.startWithQRCode(context: context, profile: profile, codeValue: QRCodeHasher.hash(" HTTPS://EXAMPLE.COM/ "))
+    XCTAssertEqual(manager.activeSession?.blockedProfile.id, profile.id)
+  }
+
+  func testLegacyQRStrategiesAcceptRawHashAndRejectOtherCodes() throws {
+    let payload = " HTTPS://EXAMPLE.COM/ "
+    let strategies: [any BlockingStrategy] = [QRCodeBlockingStrategy(), QRManualBlockingStrategy(), QRTimerBlockingStrategy()]
+    for strategy in strategies {
+      for scan in [payload, "different code"] {
+        let profile = BlockedProfiles(name: "Legacy QR")
+        profile.physicalUnblockQRCodeId = QRCodeHasher.rawHash(payload)
+        context.insert(profile)
+        let session = BlockedProfileSession(tag: "qr:\(QRCodeHasher.rawHash(payload))", blockedProfile: profile)
+        context.insert(session)
+        try context.save()
+        let scanner = try XCTUnwrap(strategy.stopBlocking(context: context, session: session) as? LabeledCodeScannerView)
+        scanner.onScanResult(.success((hash: QRCodeHasher.hash(scan), rawHash: QRCodeHasher.rawHash(scan))))
+        XCTAssertEqual(session.endTime != nil, scan == payload, strategy.getIdentifier())
+      }
+    }
+  }
+
+  func testLegacySameQRSessionAcceptsRawHash() throws {
+    let payload = " HTTPS://EXAMPLE.COM/ "
+    let profile = BlockedProfiles(name: "Legacy session")
+    context.insert(profile)
+    let session = BlockedProfileSession(tag: "qr:\(QRCodeHasher.rawHash(payload))", blockedProfile: profile)
+    context.insert(session)
+    try context.save()
+    let scanner = try XCTUnwrap(QRCodeBlockingStrategy().stopBlocking(context: context, session: session) as? LabeledCodeScannerView)
+    scanner.onScanResult(.success((hash: QRCodeHasher.hash(payload), rawHash: QRCodeHasher.rawHash(payload))))
+    XCTAssertNotNil(session.endTime)
+  }
+
+  func testQRRegistrationKeepsOnlyNormalizedHash() throws {
+    var saved: String?
+    let scanner = try XCTUnwrap(
+      PhysicalReader().readQRCode(
+        onSuccess: { saved = $0 }, onFailure: { XCTFail($0) }) as? LabeledCodeScannerView)
+    let payload = " HTTPS://EXAMPLE.COM/ "
+    scanner.onScanResult(.success((hash: QRCodeHasher.hash(payload), rawHash: QRCodeHasher.rawHash(payload))))
+    XCTAssertEqual(saved, "100680ad546ce6a577f42f52df33b4cfdca756859e664b8d7de329b150d09ce9")
+  }
+
+  func testStopWithQRCodeForwardsRawHashToMatcher() throws {
+    let payload = " HTTPS://EXAMPLE.COM/ "
+    let profile = BlockedProfiles(name: "Old stop key")
+    profile.startTriggers = ProfileStartTriggers(anyQR: true)
+    profile.stopConditions = ProfileStopConditions(specificQR: true)
+    profile.physicalKeys = ProfilePhysicalKeys(stopQR: [PhysicalKey(name: "Code", value: QRCodeHasher.rawHash(payload))])
+    context.insert(profile)
+    try context.save()
+    manager.startWithQRCode(context: context, profile: profile, codeValue: QRCodeHasher.hash(payload))
+    let session = try XCTUnwrap(manager.activeSession)
+    manager.stopWithQRCode(context: context, codeValue: QRCodeHasher.hash(payload), rawHash: QRCodeHasher.rawHash(payload))
+    XCTAssertNotNil(session.endTime)
   }
 
 }
