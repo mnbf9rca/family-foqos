@@ -125,8 +125,8 @@ enum StartStopActionResolver {
     with method: StopMethod,
     conditions: ProfileStopConditions,
     sessionTag: String?,
-    stopNFCTagId: String?,
-    stopQRCodeId: String?
+    stopNFCValues: [String],
+    stopQRValues: [String]
   ) -> StopValidationResult {
 
     switch method {
@@ -145,7 +145,7 @@ enum StartStopActionResolver {
     case .nfc(let scannedTag):
       // Check specific NFC first (highest priority)
       if conditions.specificNFC {
-        if let requiredTag = stopNFCTagId, scannedTag == requiredTag {
+        if stopNFCValues.contains(scannedTag) {
           return .allowed()
         }
         return .denied("Scan the correct NFC tag to stop")
@@ -172,7 +172,7 @@ enum StartStopActionResolver {
     case .qr(let scannedCode):
       // Check specific QR first
       if conditions.specificQR {
-        if let requiredCode = stopQRCodeId, scannedCode == requiredCode {
+        if stopQRValues.contains(scannedCode) {
           return .allowed()
         }
         return .denied("Scan the correct QR code to stop")

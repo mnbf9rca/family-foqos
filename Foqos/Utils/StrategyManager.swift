@@ -499,8 +499,8 @@ class StrategyManager: ObservableObject {
           with: .deepLink,
           conditions: localActiveSession.blockedProfile.stopConditions,
           sessionTag: localActiveSession.tag,
-          stopNFCTagId: localActiveSession.blockedProfile.stopNFCTagId,
-          stopQRCodeId: localActiveSession.blockedProfile.stopQRCodeId
+          stopNFCValues: localActiveSession.blockedProfile.physicalKeys.stopNFC.map(\.value),
+          stopQRValues: localActiveSession.blockedProfile.physicalKeys.stopQR.map(\.value)
         )
         guard stopResult.allowed else {
           self.errorMessage =
@@ -1256,7 +1256,7 @@ class StrategyManager: ObservableObject {
   func startWithNFCTag(context: ModelContext, profile: BlockedProfiles, tagId: String) {
     // Validate specific NFC tag if required
     if profile.startTriggers.specificNFC {
-      guard let requiredTag = profile.startNFCTagId, tagId == requiredTag else {
+      guard profile.physicalKeys.startNFC.contains(where: { $0.value == tagId }) else {
         errorMessage = "This NFC tag doesn't match the one configured for this profile"
         return
       }
@@ -1269,7 +1269,7 @@ class StrategyManager: ObservableObject {
   func startWithQRCode(context: ModelContext, profile: BlockedProfiles, codeValue: String) {
     // Validate specific QR code if required
     if profile.startTriggers.specificQR {
-      guard let requiredCode = profile.startQRCodeId, codeValue == requiredCode else {
+      guard profile.physicalKeys.startQR.contains(where: { $0.value == codeValue }) else {
         errorMessage = "This QR code doesn't match the one configured for this profile"
         return
       }
@@ -1289,8 +1289,8 @@ class StrategyManager: ObservableObject {
       with: .nfc(tag: tagId),
       conditions: session.blockedProfile.stopConditions,
       sessionTag: session.tag,
-      stopNFCTagId: session.blockedProfile.stopNFCTagId,
-      stopQRCodeId: session.blockedProfile.stopQRCodeId
+      stopNFCValues: session.blockedProfile.physicalKeys.stopNFC.map(\.value),
+      stopQRValues: session.blockedProfile.physicalKeys.stopQR.map(\.value)
     )
 
     if validation.allowed {
@@ -1320,8 +1320,8 @@ class StrategyManager: ObservableObject {
       with: .qr(code: codeValue),
       conditions: session.blockedProfile.stopConditions,
       sessionTag: session.tag,
-      stopNFCTagId: session.blockedProfile.stopNFCTagId,
-      stopQRCodeId: session.blockedProfile.stopQRCodeId
+      stopNFCValues: session.blockedProfile.physicalKeys.stopNFC.map(\.value),
+      stopQRValues: session.blockedProfile.physicalKeys.stopQR.map(\.value)
     )
 
     if validation.allowed {

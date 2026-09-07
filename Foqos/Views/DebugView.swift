@@ -194,19 +194,10 @@ struct DebugView: View {
       markdown += "- **Custom Reminder Message:** \(customMessage)\n"
     }
 
-    if let nfcTagId = DebugRedaction.physicalUnblockNFCTagIdForDisplay(
-      profile.physicalUnblockNFCTagId,
-      mode: AppModeManager.shared.currentMode
-    ) {
-      markdown += "- **Physical Unlock NFC Tag ID:** \(nfcTagId)\n"
-    }
-
-    if let qrCodeId = DebugRedaction.physicalUnblockQRCodeIdForDisplay(
-      profile.physicalUnblockQRCodeId,
-      mode: AppModeManager.shared.currentMode
-    ) {
-      markdown += "- **Physical Unlock QR Code ID:** \(qrCodeId)\n"
-    }
+    markdown += "- **Start NFC keys:** \(profile.physicalKeys.startNFC.count): \(profile.physicalKeys.startNFC.map(\.name).joined(separator: ", "))\n"
+    markdown += "- **Start QR keys:** \(profile.physicalKeys.startQR.count): \(profile.physicalKeys.startQR.map(\.name).joined(separator: ", "))\n"
+    markdown += "- **Stop NFC keys:** \(profile.physicalKeys.stopNFC.count): \(profile.physicalKeys.stopNFC.map(\.name).joined(separator: ", "))\n"
+    markdown += "- **Stop QR keys:** \(profile.physicalKeys.stopQR.count): \(profile.physicalKeys.stopQR.map(\.name).joined(separator: ", "))\n"
 
     markdown += "- **Total Sessions:** \(profile.sessions.count)\n"
 

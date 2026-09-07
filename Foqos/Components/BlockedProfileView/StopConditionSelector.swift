@@ -4,8 +4,8 @@ import SwiftUI
 /// Selector for profile stop conditions
 struct StopConditionSelector: View {
   @Binding var conditions: ProfileStopConditions
-  @Binding var stopNFCTagId: String?
-  @Binding var stopQRCodeId: String?
+  @Binding var stopNFC: [PhysicalKey]
+  @Binding var stopQR: [PhysicalKey]
   @Binding var stopSchedule: ProfileScheduleTime?
   let startTriggers: ProfileStartTriggers
   let disabled: Bool
@@ -46,11 +46,7 @@ struct StopConditionSelector: View {
         }
       }
       if nfcOption == .specific {
-        scanRow(
-          tagId: stopNFCTagId,
-          onScan: onScanNFCTag,
-          label: "Tag"
-        )
+        PhysicalKeyRows(keys: $stopNFC, label: "Tag", disabled: disabled, onScan: onScanNFCTag, onChange: onConditionChange)
       }
 
       // QR picker
@@ -72,11 +68,7 @@ struct StopConditionSelector: View {
         }
       }
       if qrOption == .specific {
-        scanRow(
-          tagId: stopQRCodeId,
-          onScan: onScanQRCode,
-          label: "Code"
-        )
+        PhysicalKeyRows(keys: $stopQR, label: "Code", disabled: disabled, onScan: onScanQRCode, onChange: onConditionChange)
       }
 
       // Schedule
@@ -125,23 +117,6 @@ struct StopConditionSelector: View {
     .onChange(of: conditions) { _, newConditions in
       nfcOption = NFCStopOption.from(newConditions)
       qrOption = QRStopOption.from(newConditions)
-    }
-  }
-
-  @ViewBuilder
-  private func scanRow(tagId: String?, onScan: @escaping () -> Void, label: String) -> some View {
-    HStack {
-      if let tagId, !tagId.isEmpty {
-        Text("\(label) set")
-          .font(.caption)
-          .foregroundStyle(.secondary)
-      }
-      Spacer()
-      Button(tagId == nil || tagId?.isEmpty == true ? "Scan" : "Change") {
-        onScan()
-      }
-      .buttonStyle(.bordered)
-      .disabled(disabled)
     }
   }
 

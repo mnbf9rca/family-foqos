@@ -14,10 +14,10 @@ final class TriggerConfigurationModel: ObservableObject {
   @Published private(set) var hasLoadedProfile = false
 
   // Tag bindings
-  @Published var startNFCTagId: String?
-  @Published var startQRCodeId: String?
-  @Published var stopNFCTagId: String?
-  @Published var stopQRCodeId: String?
+  @Published var startNFC: [PhysicalKey] = []
+  @Published var startQR: [PhysicalKey] = []
+  @Published var stopNFC: [PhysicalKey] = []
+  @Published var stopQR: [PhysicalKey] = []
 
   // Schedule bindings
   @Published var startSchedule: ProfileScheduleTime?
@@ -41,16 +41,16 @@ final class TriggerConfigurationModel: ObservableObject {
     var errors = validator.validate(start: startTriggers, stop: stopConditions)
 
     // Check for missing data when specific toggles are enabled
-    if startTriggers.specificNFC && (startNFCTagId == nil || startNFCTagId?.isEmpty == true) {
+    if startTriggers.specificNFC && startNFC.isEmpty {
       errors.append("Scan an NFC tag to use as the start trigger")
     }
-    if startTriggers.specificQR && (startQRCodeId == nil || startQRCodeId?.isEmpty == true) {
+    if startTriggers.specificQR && startQR.isEmpty {
       errors.append("Scan a QR code to use as the start trigger")
     }
-    if stopConditions.specificNFC && (stopNFCTagId == nil || stopNFCTagId?.isEmpty == true) {
+    if stopConditions.specificNFC && stopNFC.isEmpty {
       errors.append("Scan an NFC tag to use as the stop condition")
     }
-    if stopConditions.specificQR && (stopQRCodeId == nil || stopQRCodeId?.isEmpty == true) {
+    if stopConditions.specificQR && stopQR.isEmpty {
       errors.append("Scan a QR code to use as the stop condition")
     }
     if startTriggers.schedule && (startSchedule == nil || startSchedule?.isActive != true) {
@@ -95,6 +95,22 @@ final class TriggerConfigurationModel: ObservableObject {
     }
   }
 
+  /// Returns the existing alert message when the scanned value is already registered.
+  func appendKey(
+    value: String, to slot: ReferenceWritableKeyPath<TriggerConfigurationModel, [PhysicalKey]>,
+    label: String
+  ) -> String? {
+    guard !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      return "Scan a valid \(label == "Tag" ? "NFC tag" : "QR code")"
+    }
+    guard !self[keyPath: slot].contains(where: { $0.value == value }) else {
+      return "This \(label == "Tag" ? "tag" : "QR code") is already on the list"
+    }
+    self[keyPath: slot].append(PhysicalKey(name: "\(label) \(self[keyPath: slot].count + 1)", value: value))
+    validate()
+    return nil
+  }
+
   /// Check if a stop option is enabled given current start triggers
   func isStopEnabled(_ stop: StopOption) -> Bool {
     validator.isStopAvailable(stop, forStart: startTriggers)
@@ -125,10 +141,10 @@ final class TriggerConfigurationModel: ObservableObject {
     }
     startTriggers = profile.startTriggers
     stopConditions = profile.stopConditions
-    startNFCTagId = profile.startNFCTagId
-    startQRCodeId = profile.startQRCodeId
-    stopNFCTagId = profile.stopNFCTagId
-    stopQRCodeId = profile.stopQRCodeId
+    startNFC = profile.physicalKeys.startNFC
+    startQR = profile.physicalKeys.startQR
+    stopNFC = profile.physicalKeys.stopNFC
+    stopQR = profile.physicalKeys.stopQR
     startSchedule = profile.startSchedule
     stopSchedule = profile.stopSchedule
     validate()
@@ -139,10 +155,8 @@ final class TriggerConfigurationModel: ObservableObject {
   func saveToProfile(_ profile: BlockedProfiles) {
     profile.startTriggers = startTriggers
     profile.stopConditions = stopConditions
-    profile.startNFCTagId = startNFCTagId
-    profile.startQRCodeId = startQRCodeId
-    profile.stopNFCTagId = stopNFCTagId
-    profile.stopQRCodeId = stopQRCodeId
+    profile.physicalKeys = ProfilePhysicalKeys(
+      startNFC: startNFC, startQR: startQR, stopNFC: stopNFC, stopQR: stopQR)
     profile.startSchedule = startSchedule
     profile.stopSchedule = stopSchedule
 

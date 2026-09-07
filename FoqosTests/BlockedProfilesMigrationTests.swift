@@ -153,4 +153,51 @@ final class BlockedProfilesMigrationTests: XCTestCase {
     XCTAssertTrue(migrated)
     XCTAssertEqual(profile.profileSchemaVersion, 2)  // Now V2
   }
+  func testV1PhysicalKeysMigrateToStopListsWithHashedQR() {
+    for isNFC in [true, false] {
+      let profile = BlockedProfiles(name: "Legacy")
+      profile.profileSchemaVersion = 1
+      profile.blockingStrategyId = "ManualBlockingStrategy"
+      if isNFC { profile.physicalUnblockNFCTagId = "legacy" } else { profile.physicalUnblockQRCodeId = "legacy" }
+      profile.migrateToV2IfNeeded()
+      XCTAssertEqual(
+        isNFC ? profile.physicalKeys.stopNFC : profile.physicalKeys.stopQR,
+        [PhysicalKey(name: isNFC ? "NFC tag" : "QR code", value: isNFC ? "legacy" : QRCodeHasher.hash("legacy"))])
+    }
+  }
+
+  func testV1MigrationReconcilesMaterializedStopSlotAndPreservesOtherLists() {
+    for isNFC in [true, false] {
+      let migratedValue = isNFC ? "legacy" : QRCodeHasher.hash("legacy")
+      let migrated = PhysicalKey(name: "Named legacy", value: migratedValue)
+      let spare = PhysicalKey(name: "Spare", value: "spare")
+      for stopKeys in [[], [spare], [spare, migrated]] {
+        let profile = BlockedProfiles(name: "Legacy")
+        profile.profileSchemaVersion = 1
+        profile.blockingStrategyId = "ManualBlockingStrategy"
+        if isNFC {
+          profile.physicalUnblockNFCTagId = "legacy"
+          profile.physicalUnblockQRCodeId = "ignored-because-nfc-wins"
+        } else {
+          profile.physicalUnblockQRCodeId = "legacy"
+        }
+        let untouched = [PhysicalKey(name: "Other", value: "other")]
+        profile.physicalKeys = ProfilePhysicalKeys(
+          startNFC: untouched, startQR: untouched,
+          stopNFC: isNFC ? stopKeys : untouched, stopQR: isNFC ? untouched : stopKeys)
+        profile.migrateToV2IfNeeded()
+        let expected = [stopKeys.contains(migrated) ? migrated : PhysicalKey(name: isNFC ? "NFC tag" : "QR code", value: migratedValue)] + stopKeys.filter { $0.value != migratedValue }
+        XCTAssertEqual(isNFC ? profile.physicalKeys.stopNFC : profile.physicalKeys.stopQR, expected)
+        XCTAssertEqual(isNFC ? profile.stopNFCTagId : profile.stopQRCodeId, migratedValue)
+        XCTAssertTrue(isNFC ? profile.stopConditions.specificNFC : profile.stopConditions.specificQR)
+        XCTAssertEqual(profile.physicalKeys.startNFC, untouched)
+        XCTAssertEqual(profile.physicalKeys.startQR, untouched)
+        XCTAssertEqual(isNFC ? profile.physicalKeys.stopQR : profile.physicalKeys.stopNFC, untouched)
+        let once = profile.physicalKeys
+        profile.migrateToV2IfNeeded()
+        XCTAssertEqual(profile.physicalKeys, once)
+      }
+    }
+  }
+
 }

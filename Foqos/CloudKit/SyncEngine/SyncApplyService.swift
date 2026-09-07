@@ -306,6 +306,12 @@ final class SyncApplyService {
       Log.info("Ignoring undecodable SyncedProfile record", category: .sync)
       return .ignored
     }
+    if synced.profileSchemaVersion <= BlockedProfiles.currentSchemaVersion,
+      let data = synced.physicalKeysData, ProfilePhysicalKeys.decode(data) == nil
+    {
+      // Decode logs without payload. Never repair unknown remote spares from local data.
+      return .ignored
+    }
     let recordName = record.recordID.recordName
     do {
       let outcome = try applyDecodedProfile(synced, record: record)
@@ -343,6 +349,7 @@ final class SyncApplyService {
       }
       createLocalProfile(from: synced)
       try commit()
+      if synced.physicalKeysData == nil { pendingReenqueues.append(record.recordID) }
       storeSystemFields(record)
       store.clearDeleteWatermark(recordName: recordName)
       SyncDiagnostics.profileApply(
@@ -389,6 +396,7 @@ final class SyncApplyService {
     } else if synced.version > existing.syncVersion {
       updateLocalProfile(existing, from: synced)
       try commit()
+      if synced.physicalKeysData == nil { pendingReenqueues.append(record.recordID) }
       SyncConflictManager.shared.clearConflict(profileId: existing.id)
       storeSystemFields(record)
       SyncDiagnostics.profileApply(
@@ -402,6 +410,11 @@ final class SyncApplyService {
       // Equal-version divergence (§5.1): payload-differing => deterministic tie-break (#218).
       let localSynced = SyncedProfile(from: existing, originDeviceId: deviceId)
       if SyncPayloadEquality.profilesPayloadEqual(synced, localSynced) {
+        if synced.physicalKeysData == nil {
+          existing.physicalKeys = synced.reconciledPhysicalKeys(local: existing.physicalKeys)
+          try commit()
+          pendingReenqueues.append(record.recordID)
+        }
         SyncDiagnostics.profileApply(
           profileId: existing.id, branch: "equal_payload_noop",
           remoteVersion: synced.version, localVersion: localVersion,
@@ -414,6 +427,7 @@ final class SyncApplyService {
         // Remote wins: adopt its already-published payload without re-enqueuing.
         updateLocalProfile(existing, from: synced)
         try commit()
+        if synced.physicalKeysData == nil { pendingReenqueues.append(record.recordID) }
         storeSystemFields(record)
         SyncConflictManager.shared.addDivergenceConflict(
           profileId: existing.id, profileName: existing.name)
@@ -491,10 +505,7 @@ final class SyncApplyService {
     if synced.stopScheduleData != nil {
       profile.stopSchedule = synced.stopSchedule
     }
-    profile.startNFCTagId = synced.startNFCTagId
-    profile.startQRCodeId = synced.startQRCodeId
-    profile.stopNFCTagId = synced.stopNFCTagId
-    profile.stopQRCodeId = synced.stopQRCodeId
+    profile.physicalKeys = synced.reconciledPhysicalKeys(local: profile.physicalKeys)
     profile.profileSchemaVersion = max(
       profile.profileSchemaVersion, synced.profileSchemaVersion)
     profile.scheduleLastStoppedAt = synced.scheduleLastStoppedAt
@@ -550,10 +561,7 @@ final class SyncApplyService {
     }
     profile.startSchedule = synced.startSchedule
     profile.stopSchedule = synced.stopSchedule
-    profile.startNFCTagId = synced.startNFCTagId
-    profile.startQRCodeId = synced.startQRCodeId
-    profile.stopNFCTagId = synced.stopNFCTagId
-    profile.stopQRCodeId = synced.stopQRCodeId
+    profile.physicalKeys = synced.reconciledPhysicalKeys(local: profile.physicalKeys)
     profile.profileSchemaVersion = synced.profileSchemaVersion
     profile.scheduleLastStoppedAt = synced.scheduleLastStoppedAt
     modelContext.insert(profile)

@@ -4,8 +4,8 @@ import SwiftUI
 /// Selector for profile start triggers
 struct StartTriggerSelector: View {
   @Binding var triggers: ProfileStartTriggers
-  @Binding var startNFCTagId: String?
-  @Binding var startQRCodeId: String?
+  @Binding var startNFC: [PhysicalKey]
+  @Binding var startQR: [PhysicalKey]
   @Binding var startSchedule: ProfileScheduleTime?
   let disabled: Bool
   let onTriggerChange: () -> Void
@@ -34,11 +34,7 @@ struct StartTriggerSelector: View {
         onTriggerChange()
       }
       if nfcOption == .specific {
-        scanRow(
-          tagId: startNFCTagId,
-          onScan: onScanNFCTag,
-          label: "Tag"
-        )
+        PhysicalKeyRows(keys: $startNFC, label: "Tag", disabled: disabled, onScan: onScanNFCTag, onChange: onTriggerChange)
       }
 
       // QR picker
@@ -53,11 +49,7 @@ struct StartTriggerSelector: View {
         onTriggerChange()
       }
       if qrOption == .specific {
-        scanRow(
-          tagId: startQRCodeId,
-          onScan: onScanQRCode,
-          label: "Code"
-        )
+        PhysicalKeyRows(keys: $startQR, label: "Code", disabled: disabled, onScan: onScanQRCode, onChange: onTriggerChange)
       }
 
       // Schedule
@@ -101,23 +93,6 @@ struct StartTriggerSelector: View {
     }
   }
 
-  @ViewBuilder
-  private func scanRow(tagId: String?, onScan: @escaping () -> Void, label: String) -> some View {
-    HStack {
-      if let tagId, !tagId.isEmpty {
-        Text("\(label) set")
-          .font(.caption)
-          .foregroundStyle(.secondary)
-      }
-      Spacer()
-      Button(tagId == nil || tagId?.isEmpty == true ? "Scan" : "Change") {
-        onScan()
-      }
-      .buttonStyle(.bordered)
-      .disabled(disabled)
-    }
-  }
-
   private func binding(_ keyPath: WritableKeyPath<ProfileStartTriggers, Bool>) -> Binding<Bool> {
     Binding(
       get: { triggers[keyPath: keyPath] },
@@ -127,4 +102,35 @@ struct StartTriggerSelector: View {
       }
     )
   }
+}
+
+struct PhysicalKeyRows: View {
+  @Binding var keys: [PhysicalKey]
+  let label: String
+  let disabled: Bool
+  let onScan: () -> Void
+  let onChange: () -> Void
+
+  var body: some View {
+    ForEach($keys) { $key in
+      VStack(alignment: .leading) {
+        TextField("Name", text: $key.name)
+        Text(label == "Tag" ? "NFC tag" : "QR code")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+      .disabled(disabled)
+    }
+    .onDelete(perform: delete)
+    .deleteDisabled(disabled)
+    Button(keys.isEmpty ? "Scan \(label.lowercased())" : "Scan another \(label.lowercased())", action: onScan)
+      .buttonStyle(.bordered)
+      .disabled(disabled)
+  }
+  func delete(at offsets: IndexSet) {
+    guard !disabled else { return }
+    keys.remove(atOffsets: offsets)
+    onChange()
+  }
+
 }

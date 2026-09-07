@@ -1,4 +1,5 @@
 // FoqosTests/BlockedProfilesTriggersTests.swift
+import SwiftUI
 import XCTest
 
 @testable import FamilyFoqos
@@ -142,4 +143,70 @@ final class BlockedProfilesTriggersTests: XCTestCase {
     XCTAssertEqual(cloned.startSchedule?.hour, 9)
     XCTAssertEqual(cloned.stopSchedule?.hour, 17)
   }
+  @MainActor
+  func testSpecificListsRequireKeysAndDuplicateScansAreRejected() {
+    let model = TriggerConfigurationModel()
+    model.startTriggers = ProfileStartTriggers(specificNFC: true, specificQR: true)
+    model.stopConditions = ProfileStopConditions(specificNFC: true, specificQR: true)
+    let slots: [(ReferenceWritableKeyPath<TriggerConfigurationModel, [PhysicalKey]>, String, String)] = [
+      (\.startNFC, "Tag", "Scan an NFC tag to use as the start trigger"),
+      (\.startQR, "Code", "Scan a QR code to use as the start trigger"),
+      (\.stopNFC, "Tag", "Scan an NFC tag to use as the stop condition"),
+      (\.stopQR, "Code", "Scan a QR code to use as the stop condition"),
+    ]
+    model.validate()
+    for (slot, label, error) in slots {
+      XCTAssertTrue(model.validationErrors.contains(error))
+      XCTAssertNil(model.appendKey(value: "X", to: slot, label: label))
+      XCTAssertFalse(model.validationErrors.contains(error))
+      XCTAssertEqual(model[keyPath: slot], [PhysicalKey(name: "\(label) 1", value: "X")])
+      XCTAssertEqual(model.appendKey(value: "X", to: slot, label: label), "This \(label.lowercased() == "tag" ? "tag" : "QR code") is already on the list")
+      XCTAssertEqual(model[keyPath: slot].count, 1)
+    }
+  }
+
+  @MainActor
+  func testBlankKeyNamesBecomeDefaultsOnSaveAndListsReload() throws {
+    let model = TriggerConfigurationModel()
+    let unnamed = [PhysicalKey(name: "  ", value: "X")]
+    model.startNFC = unnamed
+    model.stopNFC = unnamed
+    model.startQR = unnamed
+    model.stopQR = unnamed
+    let profile = BlockedProfiles(name: "Keys")
+    model.saveToProfile(profile)
+    XCTAssertEqual(profile.physicalKeys.startNFC.first?.name, "NFC tag")
+    XCTAssertEqual(profile.physicalKeys.stopNFC.first?.name, "NFC tag")
+    XCTAssertEqual(profile.physicalKeys.startQR.first?.name, "QR code")
+    XCTAssertEqual(profile.physicalKeys.stopQR.first?.name, "QR code")
+    let reloaded = TriggerConfigurationModel()
+    let container = try TestModelContainer.create()
+    container.mainContext.insert(profile)
+    try reloaded.loadFromProfile(profile, in: container.mainContext)
+    XCTAssertEqual(reloaded.startNFC, profile.physicalKeys.startNFC)
+    XCTAssertEqual(reloaded.stopQR, profile.physicalKeys.stopQR)
+  }
+
+  @MainActor
+  func testDeletingLastKeyRefreshesValidationAndDisabledDeletionDoesNothing() {
+    let model = TriggerConfigurationModel()
+    model.startTriggers = ProfileStartTriggers(specificNFC: true)
+    model.startNFC = [PhysicalKey(name: "Tag", value: "X")]
+    model.validate()
+    let keys = Binding(get: { model.startNFC }, set: { model.startNFC = $0 })
+    for disabled in [true, false] {
+      var callbacks = 0
+      let rows = PhysicalKeyRows(
+        keys: keys, label: "Tag", disabled: disabled, onScan: {},
+        onChange: {
+          callbacks += 1
+          model.startTriggersDidChange()
+        })
+      rows.delete(at: IndexSet(integer: 0))
+      XCTAssertEqual(callbacks, disabled ? 0 : 1)
+      XCTAssertEqual(model.startNFC.isEmpty, !disabled)
+      XCTAssertEqual(model.validationErrors.contains("Scan an NFC tag to use as the start trigger"), !disabled)
+    }
+  }
+
 }

@@ -20,6 +20,8 @@ The four single-id fields (`startNFCTagId`, `startQRCodeId`, `stopNFCTagId`, `st
 
 The issue lists three roles: start, stop and physical unblock. In this codebase the physical-unblock role exists only as V1 data. `migrateToV2IfNeeded` folds `physicalUnblockNFCTagId` and `physicalUnblockQRCodeId` into the stop condition `specificNFC` or `specificQR` with the same id (`BlockedProfiles.swift:811`, `TriggerMigration.swift:60`), and no V2 editor reads or writes those two fields (`BlockedProfileView.swift` only passes them through on save). A V2 profile therefore expresses "physical unblock" as its stop list. Extending the V1 fields would add a third list nobody can edit. They stay exactly as they are, and the migration still writes the migrated id into `stopNFCTagId` or `stopQRCodeId`, which Decision 3 turns into a one-item stop list.
 
+**Implementation correction (approved by orchestrator and reviewer):** the V1 storage fields remain unchanged, but migration writes the migrated stop key through the `physicalKeys` setter, reconciling only that slot and preserving its spares and the other three lists. Sync or a first local save can materialize the blob before V1 migration runs; writing only the single id would then leave the migrated key hidden behind the existing blob. The existing migration's NFC precedence and already-hashed QR value are retained. The local save funnel materializes `physicalKeys` in its existing save transaction after the newer-schema guard, with no extra save or enqueue.
+
 ### Decision 3: one Codable value with four lists, stored as one JSON blob
 
 ```swift
@@ -70,6 +72,8 @@ static func reconcile(base: [PhysicalKey], legacy: String?) -> [PhysicalKey] {
 - The list field, when present, is authoritative for which keys exist. An explicit empty list is the only way a slot's keys are deleted through sync; a new writer produces it when the user removes every key.
 - The single id decides the primary key. If it equals the first value of `base`, nothing changed in this slot. If it differs, an old app scanned a different tag for this slot: that tag becomes the primary key, keeping its name if it was already on the list, and the other keys stay as spares. New writers always set the single id to the first value, so this branch is reached only by an old app's edit.
 - A nil single id says nothing about spares and deletes nothing. It arises for a slot that never had a key, where `base` is empty anyway. An old app cannot clear a single id, and a new app writes the single id from the list, so a nil single id next to a non-empty list is not a state any writer produces; the reader keeps the list and the setter mirrors the first value back on the next local save.
+
+For a supported profile schema, a present but undecodable incoming `physicalKeysData` blob is rejected before any profile mutation, logging without payload and keeping local keys without uploading a repair; corrupt local storage retains Decision 4’s legacy fallback.
 
 `base` when the field is absent is the reader's local list, because the old writer did not see the spares and its record says nothing about them. When the field is present it is trusted as written, whether fresh from a new app or left on the server by an earlier new-app write that an old app's save did not touch. The same function handles both, so the reader never has to know which transport case it is in.
 

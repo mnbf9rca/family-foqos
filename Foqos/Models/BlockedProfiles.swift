@@ -162,6 +162,29 @@ class BlockedProfiles {
   /// QR code ID required to stop (when stopConditions.specificQR = true)
   var stopQRCodeId: String?
 
+  private var physicalKeysData: Data?
+
+  var physicalKeys: ProfilePhysicalKeys {
+    get {
+      ProfilePhysicalKeys.decode(physicalKeysData)
+        ?? ProfilePhysicalKeys().reconciled(
+          startNFC: startNFCTagId, startQR: startQRCodeId,
+          stopNFC: stopNFCTagId, stopQR: stopQRCodeId)
+    }
+    set {
+      let keys = newValue.normalized()
+      do {
+        physicalKeysData = try JSONEncoder().encode(keys)
+        startNFCTagId = keys.startNFC.first?.value
+        startQRCodeId = keys.startQR.first?.value
+        stopNFCTagId = keys.stopNFC.first?.value
+        stopQRCodeId = keys.stopQR.first?.value
+      } catch {
+        Log.error("Failed to encode physical keys", category: .sync)
+      }
+    }
+  }
+
   /// Start schedule - serialized as JSON in SwiftData
   private var startScheduleData: Data?
 
@@ -778,6 +801,7 @@ class BlockedProfiles {
     cloned.startQRCodeId = source.startQRCodeId
     cloned.stopNFCTagId = source.stopNFCTagId
     cloned.stopQRCodeId = source.stopQRCodeId
+    cloned.physicalKeysData = source.physicalKeysData
     cloned.startSchedule = source.startSchedule
     cloned.stopSchedule = source.stopSchedule
 
@@ -845,11 +869,13 @@ extension BlockedProfiles {
         physicalUnblockQRCodeId: physicalUnblockQRCodeId
       )
       stop = updatedStop
+      var keys = physicalKeys
       if physicalUnblockNFCTagId != nil {
-        stopNFCTagId = tagId
+        keys.stopNFC = ProfilePhysicalKeys.reconcile(base: keys.stopNFC, legacy: tagId, defaultName: "NFC tag")
       } else {
-        stopQRCodeId = tagId
+        keys.stopQR = ProfilePhysicalKeys.reconcile(base: keys.stopQR, legacy: tagId, defaultName: "QR code")
       }
+      physicalKeys = keys
     }
 
     // Step 3: Migrate schedule

@@ -50,22 +50,12 @@ struct ProfileDebugCard: View {
 
       Divider()
 
-      // Physical Unlock
+      // Physical keys: names and counts only, never scan values.
       Group {
-        DebugRow(
-          label: "NFC Tag ID",
-          value: DebugRedaction.physicalUnblockNFCTagIdForDisplay(
-            profile.physicalUnblockNFCTagId,
-            mode: AppModeManager.shared.currentMode
-          ) ?? "nil"
-        )
-        DebugRow(
-          label: "QR Code ID",
-          value: DebugRedaction.physicalUnblockQRCodeIdForDisplay(
-            profile.physicalUnblockQRCodeId,
-            mode: AppModeManager.shared.currentMode
-          ) ?? "nil"
-        )
+        DebugRow(label: "Start NFC", value: "\(profile.physicalKeys.startNFC.count): \(profile.physicalKeys.startNFC.map(\.name).joined(separator: ", "))")
+        DebugRow(label: "Start QR", value: "\(profile.physicalKeys.startQR.count): \(profile.physicalKeys.startQR.map(\.name).joined(separator: ", "))")
+        DebugRow(label: "Stop NFC", value: "\(profile.physicalKeys.stopNFC.count): \(profile.physicalKeys.stopNFC.map(\.name).joined(separator: ", "))")
+        DebugRow(label: "Stop QR", value: "\(profile.physicalKeys.stopQR.count): \(profile.physicalKeys.stopQR.map(\.name).joined(separator: ", "))")
       }
 
       Divider()

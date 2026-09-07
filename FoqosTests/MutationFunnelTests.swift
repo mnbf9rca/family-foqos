@@ -1040,4 +1040,22 @@ final class MutationFunnelTests: XCTestCase {
     XCTAssertNil(MutationFunnel.changeTag(fromSystemFields: nil))
     XCTAssertNil(MutationFunnel.changeTag(fromSystemFields: Data([0x00, 0x01, 0x02])))
   }
+  func testFirstSaveMaterializesLegacyKeysInSameTransaction() throws {
+    let container = try TestModelContainer.create()
+    let context = container.mainContext
+    let profile = try insertProfile(in: context, id: UUID(), name: "Legacy")
+    profile.stopNFCTagId = "X"
+    try context.save()
+    let driver = MockSyncEngineDriver()
+    let funnel = MutationFunnel(modelContext: context, store: makeStore(), driver: driver, deviceId: "device-A")
+    try funnel.enqueueSave(profileId: profile.id)
+    let fresh = ModelContext(container)
+    let persisted = try XCTUnwrap(BlockedProfiles.findProfile(byID: profile.id, in: fresh))
+    // A materialized list survives a stale direct-id edit; a lazy legacy read would change to Y.
+    persisted.stopNFCTagId = "Y"
+    XCTAssertEqual(persisted.physicalKeys.stopNFC, [PhysicalKey(name: "NFC tag", value: "X")])
+    XCTAssertEqual(persisted.syncVersion, 1)
+    XCTAssertEqual(driver.pendingRecordZoneChanges, [.saveRecord(recordID(profile.id.uuidString))])
+  }
+
 }

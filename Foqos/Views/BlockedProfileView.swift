@@ -359,8 +359,8 @@ struct BlockedProfileView: View {
 
           StartTriggerSelector(
             triggers: $triggerConfig.startTriggers,
-            startNFCTagId: $triggerConfig.startNFCTagId,
-            startQRCodeId: $triggerConfig.startQRCodeId,
+            startNFC: $triggerConfig.startNFC,
+            startQR: $triggerConfig.startQR,
             startSchedule: $triggerConfig.startSchedule,
             disabled: editingDisabled,
             onTriggerChange: {
@@ -368,7 +368,9 @@ struct BlockedProfileView: View {
             },
             onScanNFCTag: {
               nfcScanner.onTagScanned = { tag in
-                triggerConfig.startNFCTagId = tag.id
+                if let error = triggerConfig.appendKey(value: tag.id, to: \.startNFC, label: "Tag") {
+                  alertIdentifier = AlertIdentifier(id: .error, errorMessage: error)
+                }
               }
               nfcScanner.onError = { error in
                 alertIdentifier = AlertIdentifier(id: .error, errorMessage: error)
@@ -398,8 +400,8 @@ struct BlockedProfileView: View {
 
           StopConditionSelector(
             conditions: $triggerConfig.stopConditions,
-            stopNFCTagId: $triggerConfig.stopNFCTagId,
-            stopQRCodeId: $triggerConfig.stopQRCodeId,
+            stopNFC: $triggerConfig.stopNFC,
+            stopQR: $triggerConfig.stopQR,
             stopSchedule: $triggerConfig.stopSchedule,
             startTriggers: triggerConfig.startTriggers,
             disabled: editingDisabled,
@@ -408,7 +410,9 @@ struct BlockedProfileView: View {
             },
             onScanNFCTag: {
               nfcScanner.onTagScanned = { tag in
-                triggerConfig.stopNFCTagId = tag.id
+                if let error = triggerConfig.appendKey(value: tag.id, to: \.stopNFC, label: "Tag") {
+                  alertIdentifier = AlertIdentifier(id: .error, errorMessage: error)
+                }
               }
               nfcScanner.onError = { error in
                 alertIdentifier = AlertIdentifier(id: .error, errorMessage: error)
@@ -780,7 +784,9 @@ struct BlockedProfileView: View {
             customView: physicalReader.readQRCode(
               onSuccess: { codeId in
                 showStartQRScanner = false
-                triggerConfig.startQRCodeId = codeId
+                if let error = triggerConfig.appendKey(value: codeId, to: \.startQR, label: "Code") {
+                  alertIdentifier = AlertIdentifier(id: .error, errorMessage: error)
+                }
               },
               onFailure: { _ in
                 showStartQRScanner = false
@@ -793,7 +799,9 @@ struct BlockedProfileView: View {
             customView: physicalReader.readQRCode(
               onSuccess: { codeId in
                 showStopQRScanner = false
-                triggerConfig.stopQRCodeId = codeId
+                if let error = triggerConfig.appendKey(value: codeId, to: \.stopQR, label: "Code") {
+                  alertIdentifier = AlertIdentifier(id: .error, errorMessage: error)
+                }
               },
               onFailure: { _ in
                 showStopQRScanner = false
