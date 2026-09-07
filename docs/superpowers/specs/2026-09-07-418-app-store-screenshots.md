@@ -16,11 +16,11 @@ The description promises three things, in this order: block distracting apps wit
 
 | Order | Name | Screen | Caption (en-GB) |
 |---|---|---|---|
-| 1 | `01-home-active` | Home, "Homework" session running | Block distracting apps, on your terms |
-| 2 | `02-profile-triggers` | Profile editor, scrolled to "Start by..." and "Continue until..." | Start with a tap, a schedule or an NFC tag |
-| 3 | `03-child-locked` | Child dashboard ("My Screen Time") with locked profile cards | Kids run their own profiles. Parents lock the rules |
+| 1 | `01-home-active` | Home, "Homework" session running | Block distractions and stay focused |
+| 2 | `02-profile-triggers` | Profile editor, scrolled to "Start by..." and "Continue until..." | Pick the strategy that works for you |
+| 3 | `03-child-locked` | Child dashboard ("My Screen Time") with locked profile cards | Lock profiles with a parent control PIN |
 | 4 | `04-parent-dashboard` | Parent dashboard ("Family Controls") | Manage the lock code from any parent device |
-| 5 | `05-location-restrictions` | "Location Restrictions" sheet for "No social at work", map preview of "Work" | Stays blocked until you leave work |
+| 5 | `05-location-restrictions` | "Location Restrictions" sheet for "No social at work", map preview of "Work" | Keep blocks active while at work or school |
 
 ### 1. Home with an active session (unchanged)
 
@@ -88,5 +88,5 @@ XCUIDevice.shared.location = XCUILocation(location: work)
 - `Foqos/Utils/ScreenshotDemoSeeder.swift`: the scenario-specific changes above. Unit-test the child scenario the same way `ScreenshotDemoSeederTests` covers the others: mode is `.child`, three managed profiles, cached lock code present. Unit-test the location scenario: one saved location named "Work" at 51.5054, -0.0235, and a fifth profile "No social at work" carries an `.outside` rule referencing it.
 - `Foqos/Views/BlockedProfileView.swift`: the `onAppear` seam that opens the location picker in the `location-restrictions` scenario, inside `#if DEBUG`.
 - `fastlane/Fastfile`: `assert_framed_screenshots` lists the five names and derives the expected count from the list instead of the literal `3`.
-- `fastlane/screenshots/en-GB/title.strings`: the five captions above. The captions must render without clipping at the current frame font size; the final PNG inspection is the check. If one clips, shorten that caption rather than the font.
+- `fastlane/screenshots/en-GB/title.strings`: the five captions above. All five captions use the same 96-point font size, with explicit two-line wrapping and a shared 300-pixel title area so frameit does not shrink individual captions. The final PNG inspection checks equal text size and no clipping.
 - Acceptance: `scripts/xcode-stream.sh --agent build1 --session <session> -- scripts/fastlane.sh screenshots` produces exactly five framed en-GB images, the location frame shows rendered map tiles with the "Work" pin and circle rather than a blank map, and the PR description attaches all five images (the PNGs are gitignored) so the maintainer can check them before the lane uploads them.

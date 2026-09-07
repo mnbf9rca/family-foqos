@@ -3,6 +3,7 @@
   "default": {
     "background": "./background.png",
     "padding": 60,
+    "title_min_height": 300,
     "show_complete_frame": true,
     "stack_title": false,
     "title": {
