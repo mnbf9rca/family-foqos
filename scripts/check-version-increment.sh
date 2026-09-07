@@ -93,8 +93,29 @@ if [[ $# -lt 1 || $# -gt 2 ]]; then
   exit 2
 fi
 
+for tool in git sed sort awk; do
+  command -v "$tool" >/dev/null 2>&1 || { echo "$tool is required" >&2; exit 1; }
+done
+
 base_ref=$1
 head_ref=${2:-HEAD}
+
+# Only a nonempty diff containing docs/ or Markdown paths can skip the bump.
+# Disable renames so moving a build file into docs still counts its deletion.
+if git diff --quiet --no-ext-diff --no-textconv --no-renames "$base_ref" "$head_ref" --; then
+  : # Empty diffs keep the existing version requirement.
+else
+  status=$?
+  [[ "$status" -eq 1 ]] || { echo "Unable to read PR diff." >&2; exit "$status"; }
+  if git diff --quiet --no-ext-diff --no-textconv --no-renames "$base_ref" "$head_ref" -- \
+    ':(top,glob,exclude)docs/**' ':(top,glob,exclude)**/*.md'; then
+    echo "Version gate passed: docs-only diff; no version bump required."
+    exit 0
+  else
+    status=$?
+    [[ "$status" -eq 1 ]] || { echo "Unable to classify PR paths." >&2; exit "$status"; }
+  fi
+fi
 
 base_marketing=$(unique_setting_value "$base_ref" MARKETING_VERSION)
 head_marketing=$(unique_setting_value "$head_ref" MARKETING_VERSION)
