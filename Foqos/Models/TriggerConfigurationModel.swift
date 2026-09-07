@@ -1,5 +1,6 @@
 import FoqosShared
 import Foundation
+import SwiftData
 import SwiftUI
 
 /// Observable model for trigger configuration UI
@@ -10,6 +11,7 @@ final class TriggerConfigurationModel: ObservableObject {
   @Published var startTriggers = ProfileStartTriggers()
   @Published var stopConditions = ProfileStopConditions()
   @Published var validationErrors: [String] = []
+  @Published private(set) var hasLoadedProfile = false
 
   // Tag bindings
   @Published var startNFC: [PhysicalKey] = []
@@ -120,7 +122,23 @@ final class TriggerConfigurationModel: ObservableObject {
   }
 
   /// Load from profile
-  func loadFromProfile(_ profile: BlockedProfiles) {
+  func loadFromProfile(
+    _ profile: BlockedProfiles, in context: ModelContext, hasActiveSession: Bool = false
+  ) throws {
+    hasLoadedProfile = false
+    if !hasActiveSession {
+      let migrated = profile.migrateToV2IfEligible(hasActiveSession: false)
+      guard !profile.needsMigration else {
+        throw NSError(
+          domain: "ProfileMigration", code: 1,
+          userInfo: [NSLocalizedDescriptionKey: "Could not migrate this profile’s trigger settings."])
+      }
+      // A failed save leaves the in-memory schema advanced; retry the pending save too.
+      if migrated || context.hasChanges {
+        try context.save()
+        BlockedProfiles.updateSnapshot(for: profile)
+      }
+    }
     startTriggers = profile.startTriggers
     stopConditions = profile.stopConditions
     startNFC = profile.physicalKeys.startNFC
@@ -130,6 +148,7 @@ final class TriggerConfigurationModel: ObservableObject {
     startSchedule = profile.startSchedule
     stopSchedule = profile.stopSchedule
     validate()
+    hasLoadedProfile = true
   }
 
   /// Save to profile

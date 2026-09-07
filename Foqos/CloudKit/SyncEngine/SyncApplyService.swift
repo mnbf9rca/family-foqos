@@ -306,6 +306,12 @@ final class SyncApplyService {
       Log.info("Ignoring undecodable SyncedProfile record", category: .sync)
       return .ignored
     }
+    if synced.profileSchemaVersion <= BlockedProfiles.currentSchemaVersion,
+      let data = synced.physicalKeysData, ProfilePhysicalKeys.decode(data) == nil
+    {
+      // Decode logs without payload. Never repair unknown remote spares from local data.
+      return .ignored
+    }
     let recordName = record.recordID.recordName
     do {
       let outcome = try applyDecodedProfile(synced, record: record)
@@ -474,6 +480,8 @@ final class SyncApplyService {
     profile.enableAllowMode = synced.enableAllowMode
     profile.enableAllowModeDomains = synced.enableAllowModeDomains
     profile.enableSafariBlocking = synced.enableSafariBlocking
+    profile.blockAdultWebsites = synced.blockAdultWebsites == true
+    profile.blockAppInstallation = synced.blockAppInstallation == true
     profile.physicalUnblockNFCTagId = synced.physicalUnblockNFCTagId
     profile.physicalUnblockQRCodeId = synced.physicalUnblockQRCodeId
     profile.domains = synced.domains
@@ -501,6 +509,13 @@ final class SyncApplyService {
     profile.profileSchemaVersion = max(
       profile.profileSchemaVersion, synced.profileSchemaVersion)
     profile.scheduleLastStoppedAt = synced.scheduleLastStoppedAt
+    if FamilyActivityUtil.countSelectedActivities(profile.selectedActivity) == 0,
+      !profile.blockAdultWebsites, !profile.blockAppInstallation,
+      !profile.enableAllowMode, !profile.enableAllowModeDomains,
+      !(profile.domains ?? []).contains(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
+    {
+      profile.needsAppSelection = true
+    }
     BlockedProfiles.updateSnapshot(for: profile)
   }
 
@@ -523,6 +538,8 @@ final class SyncApplyService {
       enableAllowMode: synced.enableAllowMode,
       enableAllowModeDomains: synced.enableAllowModeDomains,
       enableSafariBlocking: synced.enableSafariBlocking,
+      blockAdultWebsites: synced.blockAdultWebsites == true,
+      blockAppInstallation: synced.blockAppInstallation == true,
       order: synced.order,
       domains: synced.domains,
       physicalUnblockNFCTagId: synced.physicalUnblockNFCTagId,

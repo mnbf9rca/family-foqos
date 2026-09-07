@@ -20,6 +20,8 @@ enum SyncPayloadEquality {
       && a.enableAllowMode == b.enableAllowMode
       && a.enableAllowModeDomains == b.enableAllowModeDomains
       && a.enableSafariBlocking == b.enableSafariBlocking
+      && (a.blockAdultWebsites == true) == (b.blockAdultWebsites == true)
+      && (a.blockAppInstallation == true) == (b.blockAppInstallation == true)
       && a.preActivationReminderTimes == b.preActivationReminderTimes
       && a.physicalUnblockNFCTagId == b.physicalUnblockNFCTagId
       && a.physicalUnblockQRCodeId == b.physicalUnblockQRCodeId

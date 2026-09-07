@@ -34,7 +34,7 @@ struct StartTriggerSelector: View {
         onTriggerChange()
       }
       if nfcOption == .specific {
-        PhysicalKeyRows(keys: $startNFC, label: "Tag", disabled: disabled, onScan: onScanNFCTag)
+        PhysicalKeyRows(keys: $startNFC, label: "Tag", disabled: disabled, onScan: onScanNFCTag, onChange: onTriggerChange)
       }
 
       // QR picker
@@ -49,7 +49,7 @@ struct StartTriggerSelector: View {
         onTriggerChange()
       }
       if qrOption == .specific {
-        PhysicalKeyRows(keys: $startQR, label: "Code", disabled: disabled, onScan: onScanQRCode)
+        PhysicalKeyRows(keys: $startQR, label: "Code", disabled: disabled, onScan: onScanQRCode, onChange: onTriggerChange)
       }
 
       // Schedule
@@ -109,6 +109,7 @@ struct PhysicalKeyRows: View {
   let label: String
   let disabled: Bool
   let onScan: () -> Void
+  let onChange: () -> Void
 
   var body: some View {
     ForEach($keys) { $key in
@@ -120,13 +121,16 @@ struct PhysicalKeyRows: View {
       }
       .disabled(disabled)
     }
-    .onDelete { offsets in
-      guard !disabled else { return }
-      keys.remove(atOffsets: offsets)
-    }
+    .onDelete(perform: delete)
     .deleteDisabled(disabled)
     Button(keys.isEmpty ? "Scan \(label.lowercased())" : "Scan another \(label.lowercased())", action: onScan)
       .buttonStyle(.bordered)
       .disabled(disabled)
   }
+  func delete(at offsets: IndexSet) {
+    guard !disabled else { return }
+    keys.remove(atOffsets: offsets)
+    onChange()
+  }
+
 }

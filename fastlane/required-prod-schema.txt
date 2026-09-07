@@ -3,7 +3,7 @@
 # Repeat the type searches, review the results, and preserve built-ins and deprecated types:
 #   rg -n 'static let recordType\s*=\s*"[^"]+"' Foqos FoqosDeviceMonitor FoqosShieldConfig FoqosWidget
 #   rg -n 'CKRecord\(recordType:\s*"[^"]+"' Foqos FoqosDeviceMonitor FoqosShieldConfig FoqosWidget
-# Repeat the field searches and reconcile the 13 active types / 102 fields below:
+# Repeat the field searches and reconcile the 13 active types / 104 fields below:
 #   rg -n 'static let recordType|enum FieldKey: String|^[[:space:]]+case [[:alnum:]_]+( = "[^"]+")?$' Foqos/CloudKit/SyncModels.swift Foqos/CloudKit/ProfileSessionRecord.swift
 #   rg -n 'static let recordType|enum RecordKey|^[[:space:]]+static let [[:alnum:]_]+ = "[^"]+"' Foqos/Models/DeviceHeartbeat.swift Foqos/Models/FamilyCommand.swift Foqos/Models/FamilyLockCode.swift Foqos/Models/FamilyMember.swift
 #   rg -n 'rootRecord\["[^"]+"\]' Foqos/CloudKit/CloudKitNetworkService.swift Foqos/CloudKit/CloudKitNetworkService+Sharing.swift
@@ -98,6 +98,8 @@ RECORD TYPE SyncedProfile.enableStrictMode
 RECORD TYPE SyncedProfile.enableAllowMode
 RECORD TYPE SyncedProfile.enableAllowModeDomains
 RECORD TYPE SyncedProfile.enableSafariBlocking
+RECORD TYPE SyncedProfile.blockAdultWebsites
+RECORD TYPE SyncedProfile.blockAppInstallation
 RECORD TYPE SyncedProfile.preActivationReminderTimesData
 RECORD TYPE SyncedProfile.physicalUnblockNFCTagId
 RECORD TYPE SyncedProfile.physicalUnblockQRCodeId

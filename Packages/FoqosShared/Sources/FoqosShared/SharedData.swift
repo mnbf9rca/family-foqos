@@ -244,6 +244,9 @@ public enum SharedData {
     public var enableAllowMode: Bool
     public var enableAllowModeDomains: Bool
     public var enableSafariBlocking: Bool
+    // Missing fields in older snapshots mean these options are off.
+    public var blockAdultWebsites: Bool?
+    public var blockAppInstallation: Bool?
 
     public var preActivationReminderTimes: [UInt8]?
 
@@ -292,6 +295,8 @@ public enum SharedData {
       enableAllowMode: Bool,
       enableAllowModeDomains: Bool,
       enableSafariBlocking: Bool,
+      blockAdultWebsites: Bool = false,
+      blockAppInstallation: Bool = false,
       preActivationReminderTimes: [UInt8]? = nil,
       domains: [String]? = nil,
       physicalUnblockNFCTagId: String? = nil,
@@ -327,6 +332,8 @@ public enum SharedData {
       self.enableAllowMode = enableAllowMode
       self.enableAllowModeDomains = enableAllowModeDomains
       self.enableSafariBlocking = enableSafariBlocking
+      self.blockAdultWebsites = blockAdultWebsites
+      self.blockAppInstallation = blockAppInstallation
       self.preActivationReminderTimes = preActivationReminderTimes
       self.domains = domains
       self.physicalUnblockNFCTagId = physicalUnblockNFCTagId

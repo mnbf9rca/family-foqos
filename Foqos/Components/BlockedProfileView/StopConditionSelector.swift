@@ -46,7 +46,7 @@ struct StopConditionSelector: View {
         }
       }
       if nfcOption == .specific {
-        PhysicalKeyRows(keys: $stopNFC, label: "Tag", disabled: disabled, onScan: onScanNFCTag)
+        PhysicalKeyRows(keys: $stopNFC, label: "Tag", disabled: disabled, onScan: onScanNFCTag, onChange: onConditionChange)
       }
 
       // QR picker
@@ -68,7 +68,7 @@ struct StopConditionSelector: View {
         }
       }
       if qrOption == .specific {
-        PhysicalKeyRows(keys: $stopQR, label: "Code", disabled: disabled, onScan: onScanQRCode)
+        PhysicalKeyRows(keys: $stopQR, label: "Code", disabled: disabled, onScan: onScanQRCode, onChange: onConditionChange)
       }
 
       // Schedule

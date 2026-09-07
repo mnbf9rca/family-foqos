@@ -6,6 +6,10 @@ public class AppBlockerUtil {
     named: ManagedSettingsStore.Name("familyFoqosAppRestrictions")
   )
 
+  // A separate store intersects the adult filter with domain allow mode instead of
+  // treating allowed domains as exceptions to the adult filter.
+  private let safetyStore = ManagedSettingsStore(named: .init("familyFoqosProfileSafety"))
+
   public init() {}
 
   public func activateRestrictions(for profile: SharedData.ProfileSnapshot) {
@@ -47,27 +51,36 @@ public class AppBlockerUtil {
     }
 
     store.application.denyAppRemoval = strict
+    applySafetySettings(for: profile)
   }
 
   public func deactivateRestrictions() {
-    deactivateRestrictions(keepingAppRemovalDenied: false)
+    deactivateRestrictions(keepingSafeguardsFor: nil)
   }
 
-  public func deactivateRestrictions(keepingAppRemovalDenied: Bool) {
+  public func deactivateRestrictions(keepingSafeguardsFor profile: SharedData.ProfileSnapshot?) {
     Log.info("Stopping restrictions", category: .familyControls)
 
-    guard keepingAppRemovalDenied else {
+    guard let profile else {
       store.clearAllSettings()
+      safetyStore.clearAllSettings()
       return
     }
 
-    // A strict grant lifts content restrictions without ever clearing uninstall protection.
-    store.application.denyAppRemoval = true
+    // Reapply the pin after process reconstruction without transiently lifting safeguards.
+    store.application.denyAppRemoval = profile.enableStrictMode
+    applySafetySettings(for: profile)
     store.shield.applications = nil
     store.shield.applicationCategories = nil
     store.shield.webDomains = nil
     store.shield.webDomainCategories = nil
     store.webContent.blockedByFilter = nil
+  }
+
+  private func applySafetySettings(for profile: SharedData.ProfileSnapshot) {
+    safetyStore.webContent.blockedByFilter =
+      profile.blockAdultWebsites == true ? .auto([], except: []) : nil
+    safetyStore.application.denyAppInstallation = profile.blockAppInstallation == true
   }
 
   public func getWebDomains(from profile: SharedData.ProfileSnapshot) -> Set<WebDomain> {
