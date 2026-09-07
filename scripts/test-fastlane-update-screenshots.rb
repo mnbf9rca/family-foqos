@@ -25,7 +25,7 @@ Dir.singleton_class.define_method(:glob) do |pattern, *args, **options|
 end
 
 fastfile = Fastlane::FastFile.new(File.join(repo_root, 'fastlane/Fastfile'))
-[:success, :dirty_tree, :wrong_branch, :missing_screenshot].each do |current_scenario|
+%i[success dirty_tree wrong_branch missing_screenshot].each do |current_scenario|
   scenario = current_scenario
   events.clear
   # Intercept every action boundary: any archive, shell, or unexpected action fails closed.
@@ -62,10 +62,10 @@ fastfile = Fastlane::FastFile.new(File.join(repo_root, 'fastlane/Fastfile'))
   end
 
   expected_error, expected_events = {
-    success: [nil, [:clean, :branch, :main, :screenshots, :key, :deliver]],
+    success: [nil, %i[clean branch main screenshots key deliver]],
     dirty_tree: ['dirty tree', [:clean]],
-    wrong_branch: ['wrong branch', [:clean, :branch, :main]],
-    missing_screenshot: ['Expected 3 framed en-GB screenshots', [:clean, :branch, :main, :screenshots]]
+    wrong_branch: ['wrong branch', %i[clean branch main]],
+    missing_screenshot: ['Expected 3 framed en-GB screenshots', %i[clean branch main screenshots]]
   }.fetch(scenario)
   begin
     Dir.chdir(repo_root) { fastfile.runner.execute(:update_screenshots, :ios, {}) }
