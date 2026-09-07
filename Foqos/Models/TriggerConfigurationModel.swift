@@ -27,12 +27,16 @@ final class TriggerConfigurationModel: ObservableObject {
 
   /// Call when start triggers change to auto-fix invalid stop conditions
   func startTriggersDidChange() {
+    if !startTriggers.specificNFC { startNFCTagIds = [] }
+    if !startTriggers.specificQR { startQRCodeIds = [] }
     validator.autoFix(start: startTriggers, stop: &stopConditions)
     validate()
   }
 
   /// Call when stop conditions change to re-run validation
   func stopConditionsDidChange() {
+    if !stopConditions.specificNFC { stopNFCTagIds = [] }
+    if !stopConditions.specificQR { stopQRCodeIds = [] }
     validate()
   }
 
