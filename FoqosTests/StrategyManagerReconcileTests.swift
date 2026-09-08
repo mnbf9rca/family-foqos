@@ -51,7 +51,10 @@ final class StrategyManagerReconcileTests: XCTestCase {
         PreActivationReminderScheduler.reconcileScheduleRegistrations(
           context: context,
           notificationCenter: NotificationCenter(),
-          register: { registeredProfileIds.append($0.id) }
+          register: {
+            registeredProfileIds.append($0.id)
+            return []
+          }
         )
       })
 

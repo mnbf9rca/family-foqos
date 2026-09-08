@@ -237,6 +237,9 @@ struct BlockedProfileCarousel: View {
       initialSetup()
       refreshScheduleOutOfSyncCards()
     }
+    .onChange(of: validProfiles.map { DeviceActivityCenterUtil.requiredActivities(for: $0) }) { _, _ in
+      refreshScheduleOutOfSyncCards()
+    }
     .onReceive(
       NotificationCenter.default.publisher(for: .scheduleRegistrationsDidReconcile)
     ) { _ in
@@ -246,6 +249,7 @@ struct BlockedProfileCarousel: View {
       initialSetup()
     }
     .onChange(of: profiles) { _, _ in
+      refreshScheduleOutOfSyncCards()
       if Self.shouldRunInitialSetupOnProfilesChange(
         currentProfileId: currentProfileId,
         startingProfileId: startingProfileId,

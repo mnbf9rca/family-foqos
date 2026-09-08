@@ -1,59 +1,27 @@
 import SwiftUI
 
 struct ScheduleWarningPrompt: View {
-  @EnvironmentObject var themeManager: ThemeManager
-
-  let onApply: () -> Void
-  let disabled: Bool
-
   var body: some View {
-    Section {
-      VStack(spacing: 16) {
-        HStack(alignment: .top, spacing: 12) {
-          Image(systemName: "exclamationmark.triangle.fill")
-            .font(.title2)
-            .foregroundColor(.yellow)
-
-          Text(
-            "Your schedule is out of sync with the system. Tap Fix Schedule to re-register it, or update your schedule settings below."
-          )
+    HStack(alignment: .top, spacing: 12) {
+      Image(systemName: "exclamationmark.triangle.fill")
+        .font(.title2)
+        .foregroundColor(.yellow)
+      VStack(alignment: .leading, spacing: 8) {
+        Text("Schedule not registered on this device")
+          .font(.headline)
+        Text("A required schedule is not registered. The app retries when you return to it.")
           .font(.subheadline)
-          .foregroundColor(.primary)
-          .fixedSize(horizontal: false, vertical: true)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-
-        Button(action: onApply) {
-          Text("Fix Schedule")
-            .font(.headline)
-            .foregroundColor(.white)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .background(themeManager.themeColor)
-            .cornerRadius(10)
-        }
-        .disabled(disabled)
-        .opacity(disabled ? 0.5 : 1.0)
       }
-      .padding(.vertical, 8)
+      .foregroundColor(.primary)
+      .fixedSize(horizontal: false, vertical: true)
     }
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .padding(.vertical, 8)
   }
 }
 
 #Preview {
   Form {
-    ScheduleWarningPrompt(
-      onApply: { Log.debug("Apply tapped", category: .ui) },
-      disabled: false
-    )
-  }
-}
-
-#Preview("Disabled") {
-  Form {
-    ScheduleWarningPrompt(
-      onApply: { Log.debug("Apply tapped", category: .ui) },
-      disabled: true
-    )
+    ScheduleWarningPrompt()
   }
 }
