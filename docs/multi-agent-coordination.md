@@ -40,6 +40,8 @@ orchestrator: you are <role>. Before taking work: read docs/multi-agent-coordina
 - build1/build2: herdr, ponytail.
 - reviewer: herdr, communicating-clearly, writing-clearly, ponytail, ponytail-review.
 
+A Codex agent loads a skill missing from its catalog by reading that skill's `SKILL.md` directly.
+
 An agent takes no gate, review, or confirmation step that the runbook does not name.
 
 The agent then reads this runbook for that role's rules before taking work.
