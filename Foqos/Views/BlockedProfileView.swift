@@ -7,6 +7,7 @@ import SwiftUI
 struct AlertIdentifier: Identifiable {
   enum AlertType {
     case error
+    case savedWithWarnings
     case deleteProfile
   }
 
@@ -302,7 +303,7 @@ struct BlockedProfileView: View {
 
           if scheduleOutOfSyncBanner.isVisible {
             Section {
-              ScheduleWarningPrompt(onApply: { saveProfile() }, disabled: isBlocking)
+              ScheduleWarningPrompt()
             }
           }
 
@@ -635,6 +636,9 @@ struct BlockedProfileView: View {
         .onChange(of: isBlocking) { wasBlocking, blocking in
           if wasBlocking && !blocking { loadTriggerConfiguration() }
         }
+        .onChange(of: profile.map { DeviceActivityCenterUtil.requiredActivities(for: $0) }) { _, _ in
+          refreshScheduleOutOfSyncBanner()
+        }
         .onReceive(
           NotificationCenter.default.publisher(for: .scheduleRegistrationsDidReconcile)
         ) { _ in
@@ -782,13 +786,22 @@ struct BlockedProfileView: View {
                   let clonedProfile = try BlockedProfiles.cloneProfile(
                     source, in: modelContext, newName: trimmed
                   )
-                  DeviceActivityCenterUtil.scheduleTimerActivity(for: clonedProfile)
-                  try profileSyncManager.enqueueProfileSave(clonedProfile.id)
+                  let failures = DeviceActivityCenterUtil.scheduleTimerActivity(for: clonedProfile)
+                  var warnings: [String] = []
+                  if !failures.isEmpty {
+                    warnings.append(
+                      "Profile created, but its schedule could not be registered: "
+                        + failures.joined(separator: "; "))
+                  }
+                  do {
+                    try profileSyncManager.enqueueProfileSave(clonedProfile.id)
+                  } catch SyncEngineControllingError.notAttached {
+                    Log.warning("Clone saved locally; sync engine not attached yet", category: .sync)
+                  } catch {
+                    warnings.append("Profile created, but sync could not be queued: \(error.localizedDescription)")
+                  }
+                  if !warnings.isEmpty { showError(message: warnings.joined(separator: "\n\n")) }
                 }
-              } catch SyncEngineControllingError.notAttached {
-                // Engine isn't attached yet — the clone is already saved locally; it will
-                // sync once the engine attaches or on the next "Sync Now".
-                Log.warning("Clone saved locally; sync engine not attached yet", category: .sync)
               } catch {
                 showError(message: error.localizedDescription)
               }
@@ -842,6 +855,12 @@ struct BlockedProfileView: View {
               title: Text("Error"),
               message: Text(alert.errorMessage ?? "An unknown error occurred"),
               dismissButton: .default(Text("OK"))
+            )
+          case .savedWithWarnings:
+            return Alert(
+              title: Text("Profile Saved"),
+              message: Text(alert.errorMessage ?? ""),
+              dismissButton: .default(Text("OK")) { dismiss() }
             )
           case .deleteProfile:
             return Alert(
@@ -1033,8 +1052,13 @@ struct BlockedProfileView: View {
       Log.error(
         "Failed to save trigger config: \(error.localizedDescription)", category: .ui)
     }
-    DeviceActivityCenterUtil.scheduleTimerActivity(for: profile)
-    ScheduleRegistrationRefreshNotifier.post()
+    let failures = DeviceActivityCenterUtil.scheduleTimerActivity(for: profile)
+    var warnings: [String] = []
+    if !failures.isEmpty {
+      warnings.append(
+        "Profile saved, but its schedule could not be registered: "
+          + failures.joined(separator: "; "))
+    }
     do {
       try profileSyncManager.enqueueProfileSave(profile.id)
     } catch SyncEngineControllingError.notAttached {
@@ -1042,7 +1066,11 @@ struct BlockedProfileView: View {
       // once the engine attaches or on the next "Sync Now".
       Log.warning("Profile saved locally; sync engine not attached yet", category: .sync)
     } catch {
-      showError(message: error.localizedDescription)
+      warnings.append("Profile saved, but sync could not be queued: \(error.localizedDescription)")
+    }
+    if !warnings.isEmpty {
+      alertIdentifier = AlertIdentifier(
+        id: .savedWithWarnings, errorMessage: warnings.joined(separator: "\n\n"))
     }
   }
 
@@ -1056,6 +1084,7 @@ struct BlockedProfileView: View {
   }
 
   private func saveProfile() {
+    guard !editingDisabled else { return }
     guard profile == nil || triggerConfig.hasLoadedProfile else { return }
     // Validate trigger configuration before persisting anything
     triggerConfig.validate()
@@ -1162,7 +1191,7 @@ struct BlockedProfileView: View {
         finalizeSave(newProfile)
       }
 
-      dismiss()
+      if alertIdentifier?.id != .savedWithWarnings { dismiss() }
     } catch {
       alertIdentifier = AlertIdentifier(id: .error, errorMessage: error.localizedDescription)
     }

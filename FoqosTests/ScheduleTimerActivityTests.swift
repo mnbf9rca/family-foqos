@@ -52,6 +52,18 @@ final class ScheduleTimerActivityTests: XCTestCase {
       disableBackgroundStops: false, stopConditions: stopConditions)
   }
 
+  func testGivenPendingSelection_WhenScheduledStartFires_ThenNoSessionStarts() {
+    var snap = snapshot(id: UUID())
+    snap.schedule = BlockedProfileSchedule(
+      days: Weekday.allCases, startHour: 9, startMinute: 0, endHour: 17, endMinute: 0,
+      updatedAt: .distantPast)
+    snap.needsAppSelection = true
+
+    ScheduleTimerActivity().start(for: snap)
+
+    XCTAssertNil(SharedData.getActiveSharedSession())
+  }
+
   func testGivenBackgroundStopsDisabled_WhenStopScheduleFires_ThenSessionSurvives() {
     let id = UUID()
     SharedData.createSessionForScheduler(for: id)

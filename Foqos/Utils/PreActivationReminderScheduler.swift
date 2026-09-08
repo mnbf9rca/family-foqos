@@ -33,17 +33,6 @@ enum PreActivationReminderScheduler {
     }
   }
 
-  /// #301: a profile is eligible for automatic DeviceActivity schedule registration iff it has
-  /// an active start/legacy schedule AND its apps are selected on THIS device. The
-  /// needsAppSelection gate is the semantic default: FamilyControls tokens are device-local,
-  /// so a freshly-synced profile registers only after its apps are selected on this device.
-  static func isEligibleForScheduleReconcile(_ profile: BlockedProfiles) -> Bool {
-    let hasActiveSchedule =
-      (profile.startTriggers.schedule && profile.startSchedule?.isActive == true)
-      || profile.schedule?.isActive == true
-    return hasActiveSchedule && !profile.needsAppSelection
-  }
-
   @MainActor
   static func reconcileMissingSnapshots(context: ModelContext) {
     do {
@@ -58,24 +47,23 @@ enum PreActivationReminderScheduler {
     }
   }
 
-  /// #301: register DeviceActivity schedules for eligible profiles independent of whether
-  /// pre-activation reminders are enabled.
-  /// Old reminder-gated name `rescheduleAllReminders` caused #301 by hiding registration.
+  /// Re-register required schedules and clean up obsolete names, even without a start schedule.
   @MainActor
   static func reconcileScheduleRegistrations(
     context: ModelContext,
     notificationCenter: NotificationCenter = .default,
-    register: (BlockedProfiles) -> Void = { DeviceActivityCenterUtil.scheduleTimerActivity(for: $0) }
+    register: (BlockedProfiles) -> [String] = { DeviceActivityCenterUtil.scheduleTimerActivity(for: $0) }
   ) {
+    defer { ScheduleRegistrationRefreshNotifier.post(notificationCenter: notificationCenter) }
     do {
-      let profiles = try BlockedProfiles.fetchProfiles(in: context)
+      let profiles = try BlockedProfiles.fetchProfiles(in: context).valid
 
-      for profile in profiles where isEligibleForScheduleReconcile(profile) {
-        register(profile)
+      for profile in profiles where !profile.isNewerSchemaVersion {
+        // The registrar logs each concrete OS failure; continue with the remaining profiles.
+        _ = register(profile)
       }
 
-      Log.debug("Reconciled DeviceActivity schedule registrations", category: .timer)
-      ScheduleRegistrationRefreshNotifier.post(notificationCenter: notificationCenter)
+      Log.debug("Finished DeviceActivity schedule registration attempts", category: .timer)
     } catch {
       Log.error(
         "Failed to reconcile schedule registrations: \(error.localizedDescription)",

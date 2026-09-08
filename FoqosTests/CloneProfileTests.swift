@@ -151,4 +151,36 @@ final class CloneProfileTests: XCTestCase {
     XCTAssertEqual(clone.startQRCodeIds, ["one", "two"])
   }
 
+  func testPendingSelectionSurvivesCloning() throws {
+    let source = try BlockedProfiles.createProfile(in: context, name: "Pending")
+    source.needsAppSelection = true
+    try context.save()
+
+    let clone = try BlockedProfiles.cloneProfile(source, in: context, newName: "Copy")
+
+    XCTAssertTrue(clone.needsAppSelection)
+    XCTAssertEqual(SharedData.snapshot(for: clone.id.uuidString)?.needsAppSelection, true)
+  }
+
+  func testChildClonesAreUnlockedAndParentClonesPreserveOwnership() throws {
+    for mode in [AppMode.child, .parent] {
+      for managed in [false, true] {
+        let source = try BlockedProfiles.createProfile(in: context, name: "Source")
+        source.isManaged = managed
+        source.managedByChildId = managed ? "child-owner" : nil
+        try context.save()
+        BlockedProfiles.updateSnapshot(for: source)
+
+        let clone = try BlockedProfiles.cloneProfile(source, in: context, newName: "Copy", mode: mode)
+        let persisted = try XCTUnwrap(BlockedProfiles.fetchProfiles(in: context).first { $0.id == clone.id })
+        XCTAssertEqual(persisted.isManaged, mode == .child ? false : managed)
+        XCTAssertEqual(persisted.managedByChildId, mode == .child ? nil : source.managedByChildId)
+        XCTAssertEqual(SharedData.snapshot(for: clone.id.uuidString)?.isManaged, mode == .child ? false : managed)
+        XCTAssertEqual(source.isManaged, managed)
+        XCTAssertEqual(source.managedByChildId, managed ? "child-owner" : nil)
+        XCTAssertEqual(SharedData.snapshot(for: source.id.uuidString)?.isManaged, managed)
+      }
+    }
+  }
+
 }

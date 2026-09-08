@@ -230,20 +230,15 @@ class BlockedProfiles {
     #if DEBUG
       if ScreenshotDemoMode.isActive { return false }
     #endif
-    let hasStartSchedule =
-      (schedule?.isActive == true)
-      || (startTriggers.schedule && startSchedule?.isActive == true)
-    let startOutOfSync =
-      hasStartSchedule
-      && DeviceActivityCenterUtil.getActiveScheduleTimerActivity(for: self) == nil
+    return scheduleIsOutOfSync(activities: DeviceActivityCenterUtil.getDeviceActivities())
+  }
 
-    let hasStopSchedule = stopConditions.schedule && stopSchedule?.isActive == true
-    let stopNeedsOwnActivity = hasStopSchedule && !hasStartSchedule
-    let stopOutOfSync =
-      stopNeedsOwnActivity
-      && DeviceActivityCenterUtil.getActiveStopScheduleTimerActivity(for: self) == nil
-
-    return startOutOfSync || stopOutOfSync
+  /// This checks missing required names, not CloudKit sync or OS interval correctness.
+  func scheduleIsOutOfSync(activities: [DeviceActivityName]) -> Bool {
+    #if DEBUG
+      if ScreenshotDemoMode.isActive { return false }
+    #endif
+    return DeviceActivityCenterUtil.requiredActivities(for: self).contains { !activities.contains($0) }
   }
 
   init(
@@ -739,8 +734,10 @@ class BlockedProfiles {
   static func cloneProfile(
     _ source: BlockedProfiles,
     in context: ModelContext,
-    newName: String
+    newName: String,
+    mode: AppMode? = nil
   ) throws -> BlockedProfiles {
+    let mode = mode ?? AppModeManager.shared.currentMode
     let active = try BlockedProfileSession.mostRecentActiveSession(in: context)
     try ProfileMigrationUtil.migrate(source, hasActiveSession: active?.blockedProfile.id == source.id)
     let nextOrder = getNextOrder(in: context)
@@ -768,10 +765,10 @@ class BlockedProfiles {
       geofenceRule: source.geofenceRule,
       disableBackgroundStops: source.disableBackgroundStops,
       preActivationReminderTimes: source.preActivationReminderTimes,
-      isManaged: source.isManaged,
-      managedByChildId: source.managedByChildId,
+      isManaged: mode == .child ? false : source.isManaged,
+      managedByChildId: mode == .child ? nil : source.managedByChildId,
       syncVersion: 0,  // Reset sync version for cloned profile
-      needsAppSelection: false  // Cloned profile has app selection from source
+      needsAppSelection: source.needsAppSelection
     )
 
     context.insert(cloned)
