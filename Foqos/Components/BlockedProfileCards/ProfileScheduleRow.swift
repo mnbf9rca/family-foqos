@@ -96,7 +96,7 @@ struct ProfileScheduleRow: View {
 
       VStack(alignment: .leading, spacing: 2) {
         if data.scheduleIsOutOfSync {
-          Text("Schedule Out of Sync")
+          Text("Schedule not registered on this device")
             .font(.caption2)
             .lineLimit(2)
             .minimumScaleFactor(0.8)

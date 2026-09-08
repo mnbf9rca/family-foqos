@@ -4,7 +4,26 @@ import ManagedSettings
 import SwiftUI
 
 class DeviceActivityCenterUtil {
-  static func scheduleTimerActivity(for profile: BlockedProfiles) {
+  /// Required device-local names, shared by registration and missing-registration warnings.
+  static func requiredActivities(for profile: BlockedProfiles) -> [DeviceActivityName] {
+    guard !profile.isNewerSchemaVersion else { return [] }
+    let hasV2Start = profile.startTriggers.schedule && profile.startSchedule?.isActive == true
+    let requiresV2Start = hasV2Start && !profile.needsAppSelection
+    var names: [DeviceActivityName] = []
+    if (hasV2Start || profile.schedule?.isActive == true) && !profile.needsAppSelection {
+      names.append(ScheduleTimerActivity().getDeviceActivityName(from: profile.id.uuidString))
+    }
+    if profile.stopConditions.schedule && profile.stopSchedule?.isActive == true && !requiresV2Start {
+      names.append(StopScheduleTimerActivity().getDeviceActivityName(from: profile.id.uuidString))
+    }
+    return names
+  }
+
+  @MainActor
+  static func scheduleTimerActivity(for profile: BlockedProfiles) -> [String] {
+    defer { ScheduleRegistrationRefreshNotifier.post() }
+    guard !profile.isNewerSchemaVersion else { return [] }
+    var failures: [String] = []
     // Always cancel any existing pre-activation reminders first
     TimersUtil.cancelAllPreActivationReminders(for: profile.id)
 
@@ -19,15 +38,11 @@ class DeviceActivityCenterUtil {
       profile.startTriggers.schedule
       && profile.startSchedule?.isActive == true
 
-    // Legacy fallback: use profile.schedule if V2 start schedule not configured
-    let hasLegacySchedule = profile.schedule?.isActive == true
-
-    guard hasV2StartSchedule || hasLegacySchedule else {
+    guard requiredActivities(for: profile).contains(deviceActivityName) else {
       // No start schedule — remove any existing schedule activity
       stopActivities(for: [deviceActivityName], with: center)
       // Still check for stop-only schedule
-      scheduleStopActivity(for: profile)
-      return
+      return scheduleStopActivity(for: profile)
     }
 
     // Build interval from V2 or legacy
@@ -77,11 +92,14 @@ class DeviceActivityCenterUtil {
         schedulePreActivationReminder(for: profile, schedule: schedule)
       }
     } catch {
-      Log.info("Failed to start monitoring: \(error.localizedDescription)", category: .timer)
+      let message = "Start schedule: \(error.localizedDescription)"
+      Log.error("Start schedule: \(error.localizedDescription)", category: .timer)
+      failures.append(message)
     }
 
-    // Also register stop-only activity if stop schedule is independent
-    scheduleStopActivity(for: profile)
+    // A failed start must not prevent an independent stop from registering.
+    failures += scheduleStopActivity(for: profile)
+    return failures
   }
 
   /// Schedule pre-activation reminder notifications for a legacy-schedule profile
@@ -98,25 +116,20 @@ class DeviceActivityCenterUtil {
 
   /// Register a stop-only DeviceActivity for profiles with scheduled stop but no scheduled start.
   /// Uses StopScheduleTimerActivity which fires intervalDidEnd at the stop time.
-  static func scheduleStopActivity(for profile: BlockedProfiles) {
+  @MainActor
+  static func scheduleStopActivity(for profile: BlockedProfiles) -> [String] {
+    defer { ScheduleRegistrationRefreshNotifier.post() }
+    guard !profile.isNewerSchemaVersion else { return [] }
     let stopTimerActivity = StopScheduleTimerActivity()
     let deviceActivityName = stopTimerActivity.getDeviceActivityName(
       from: profile.id.uuidString
     )
     let center = DeviceActivityCenter()
 
-    // Only register if stop schedule is active AND start is NOT scheduled
-    // (if both are scheduled, ScheduleTimerActivity handles the end via intervalDidEnd)
-    let hasScheduledStart =
-      profile.startTriggers.schedule
-      && profile.startSchedule?.isActive == true
-    let hasScheduledStop =
-      profile.stopConditions.schedule
-      && profile.stopSchedule?.isActive == true
-
-    guard hasScheduledStop && !hasScheduledStart else {
+    // A selection-pending V2 start does not own the stop callback.
+    guard requiredActivities(for: profile).contains(deviceActivityName) else {
       stopActivities(for: [deviceActivityName], with: center)
-      return
+      return []
     }
 
     let stopSchedule = profile.stopSchedule!
@@ -138,11 +151,11 @@ class DeviceActivityCenterUtil {
         category: .timer
       )
     } catch {
-      Log.error(
-        "Failed to schedule stop activity: \(error.localizedDescription)",
-        category: .timer
-      )
+      let message = "Stop schedule: \(error.localizedDescription)"
+      Log.error("Stop schedule: \(error.localizedDescription)", category: .timer)
+      return [message]
     }
+    return []
   }
 
   static func removeStopScheduleActivity(for profile: BlockedProfiles) {

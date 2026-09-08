@@ -138,7 +138,8 @@ class StrategyManager: ObservableObject {
         liveActivityManager.startSessionActivity(session: session)
 
         // Re-register stop schedule on app launch
-        DeviceActivityCenterUtil.scheduleStopActivity(for: session.blockedProfile)
+        let failures = DeviceActivityCenterUtil.scheduleStopActivity(for: session.blockedProfile)
+        if !failures.isEmpty { errorMessage = failures.joined(separator: "\n") }
       }
     } else {
       // Close live activity if no session is active and a scheduled session might have ended
@@ -895,7 +896,8 @@ class StrategyManager: ObservableObject {
     liveActivityManager.startSessionActivity(session: session)
 
     // Schedule stop activity if configured
-    DeviceActivityCenterUtil.scheduleStopActivity(for: session.blockedProfile)
+    let failures = DeviceActivityCenterUtil.scheduleStopActivity(for: session.blockedProfile)
+    if !failures.isEmpty { errorMessage = failures.joined(separator: "\n") }
 
     // Cancel pre-activation reminders now that profile is active
     TimersUtil.cancelAllPreActivationReminders(for: session.blockedProfile.id)
@@ -952,8 +954,9 @@ class StrategyManager: ObservableObject {
         // Migrate and enqueue the profile and newly-created tags after the V1 session ends.
         do {
           if try ProfileMigrationUtil.migrate(endedProfile, hasActiveSession: false) {
-            DeviceActivityCenterUtil.scheduleTimerActivity(for: endedProfile)
             BlockedProfiles.updateSnapshot(for: endedProfile)
+            let failures = DeviceActivityCenterUtil.scheduleTimerActivity(for: endedProfile)
+            if !failures.isEmpty { self.errorMessage = failures.joined(separator: "\n") }
           }
         } catch {
           Log.error("Failed to migrate deferred profile: \(error.localizedDescription)", category: .strategy)
