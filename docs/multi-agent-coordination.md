@@ -30,7 +30,21 @@ A brief never contains method, model, effort, or workflow guidance. The agent's 
 
 ## Fleet Startup
 
-Every agent auto-loads `AGENTS.md` when it starts. The orchestrator's first prompt names the agent's role. The agent then reads this runbook for that role's rules before taking work.
+Every agent auto-loads `AGENTS.md` when it starts. The orchestrator's first prompt names the agent's role.
+
+```text
+orchestrator: you are <role>. Before taking work: read docs/multi-agent-coordination.md for the <role> rules, and load these skills: <skills for the role>. Reply with one line naming what you loaded, your role, and "exact remainder: none". Take no work until a brief arrives.
+```
+
+- planner: herdr, communicating-clearly, writing-clearly, ponytail.
+- build1/build2: herdr, ponytail.
+- reviewer: herdr, communicating-clearly, writing-clearly, ponytail, ponytail-review.
+
+A Codex agent loads a skill missing from its catalog by reading that skill's `SKILL.md` directly.
+
+An agent takes no gate, review, or confirmation step that the runbook does not name.
+
+The agent then reads this runbook for that role's rules before taking work.
 
 A Codex agent shows a "Hooks need review" trust prompt on its first start after a Herdr integration install, and Herdr reads that prompt as `idle`; answer it by hand before the first prompt. Codex registers its session with Herdr only on its first turn, so a Codex pane that has never been prompted does not restore after a Herdr restart.
 
