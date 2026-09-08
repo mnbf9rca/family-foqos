@@ -21,7 +21,6 @@ class DeviceActivityCenterUtil {
 
   @MainActor
   static func scheduleTimerActivity(for profile: BlockedProfiles) -> [String] {
-    defer { ScheduleRegistrationRefreshNotifier.post() }
     guard !profile.isNewerSchemaVersion else { return [] }
     var failures: [String] = []
     // Always cancel any existing pre-activation reminders first
@@ -390,16 +389,6 @@ class DeviceActivityCenterUtil {
 
     return activities.first(where: {
       $0 == scheduleTimerActivity.getDeviceActivityName(from: profile.id.uuidString)
-    })
-  }
-
-  static func getActiveStopScheduleTimerActivity(for profile: BlockedProfiles) -> DeviceActivityName? {
-    let center = DeviceActivityCenter()
-    let stopTimerActivity = StopScheduleTimerActivity()
-    let activities = center.activities
-
-    return activities.first(where: {
-      $0 == stopTimerActivity.getDeviceActivityName(from: profile.id.uuidString)
     })
   }
 
