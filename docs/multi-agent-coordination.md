@@ -153,6 +153,8 @@ reviewer: blocked on review gate: waiting for build1 to push the fix commit for 
 
 ## Report Merge Readiness Literally
 
+A spec or plan PR is never merged alone; the build stream branches from the approved spec head and the spec lands in the same PR as its implementation.
+
 Before reporting a PR approved or merge-ready, verify that it is already ready for review and not a draft. Include the exact head and base, check state, and independent review decision in the handoff. The orchestrator performs the merge, and only after asking the human about that specific PR.
 
 A PR changing source code gets the `greptile-review` label once, when its author believes it is ready to merge after the reviewer’s findings are addressed, because every push after labelling triggers a paid re-review; never label spec-only, docs-only, version-only, or small follow-up PRs.
