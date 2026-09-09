@@ -906,7 +906,7 @@ struct FamilyMemberCard: View {
         if let statusText = resetStatus.displayText {
           Text(statusText)
             .font(.caption2)
-            .foregroundColor(resetStatus == .confirmed ? .green : .secondary)
+            .foregroundColor(.secondary)
         }
       }
 
@@ -947,10 +947,7 @@ struct FamilyMemberCard: View {
           case .awaitingChild:
             Image(systemName: "paperplane.circle")
               .foregroundColor(.secondary)
-          case .confirmed:
-            Image(systemName: "checkmark.circle.fill")
-              .foregroundColor(.green)
-          case .idle:
+          case .idle, .noLongerPending:
             Image(systemName: "ellipsis.circle")
               .foregroundColor(.secondary)
           }
@@ -1068,7 +1065,7 @@ struct FamilyMemberCard: View {
       let next = ParentResetCommandStatus.afterConfirmationProbe(
         commandStillPending: stillPending)
       await MainActor.run { resetStatus = next }
-      if next == .confirmed { return }
+      if next == .noLongerPending { return }
     }
   }
 }

@@ -12,6 +12,23 @@ extension CloudKitNetworkService {
     hasRecordFailures ? (codes: [], isConnected: false) : (codes: codes, isConnected: true)
   }
 
+  /// A partial parent list must not replace the last complete fetch.
+  static func decodeLockCodeRecords(_ results: [Result<CKRecord, Error>]) throws -> [FamilyLockCode] {
+    try results.map { result in
+      do {
+        guard let code = FamilyLockCode(from: try result.get()) else {
+          throw NSError(
+            domain: "FamilyLockCode", code: 1,
+            userInfo: [NSLocalizedDescriptionKey: "A family lock-code record could not be read."])
+        }
+        return code
+      } catch {
+        // Wrap row errors so unknownItem is not mistaken for an absent query/zone below.
+        throw CloudKitError.fetchFailed(error)
+      }
+    }.sorted { $0.createdAt < $1.createdAt }
+  }
+
   func saveLockCode(_ lockCode: FamilyLockCode) async throws {
     Log.info("Saving lock code", category: .cloudKit)
 
@@ -81,17 +98,7 @@ extension CloudKitNetworkService {
         inZoneWith: policyZoneID
       )
 
-      var codes: [FamilyLockCode] = []
-      for (_, result) in results {
-        if case .success(let record) = result,
-          let code = FamilyLockCode(from: record)
-        {
-          codes.append(code)
-        }
-      }
-
-      codes.sort { $0.createdAt < $1.createdAt }
-      return codes
+      return try Self.decodeLockCodeRecords(results.map { $0.1 })
     } catch let error as CKError {
       if error.code == .zoneNotFound || error.code == .unknownItem {
         return []

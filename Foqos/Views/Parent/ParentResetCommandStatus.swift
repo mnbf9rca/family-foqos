@@ -1,17 +1,15 @@
 import Foundation
 
-/// #331: honest status of a parent-to-child reset command on the family dashboard. Saving the
-/// command to CloudKit only queues it; confirmation comes only when the child deletes the command
-/// record after processing.
+/// Saving queues a request; disappearance alone cannot prove execution on a child device.
 enum ParentResetCommandStatus: Equatable {
   case idle
   case awaitingChild
-  case confirmed
+  case noLongerPending
 
   static let afterSuccessfulSave: ParentResetCommandStatus = .awaitingChild
 
   static func afterConfirmationProbe(commandStillPending: Bool) -> ParentResetCommandStatus {
-    commandStillPending ? .awaitingChild : .confirmed
+    commandStillPending ? .awaitingChild : .noLongerPending
   }
 
   var displayText: String? {
@@ -19,9 +17,9 @@ enum ParentResetCommandStatus: Equatable {
     case .idle:
       return nil
     case .awaitingChild:
-      return "Sent — waiting for child to confirm"
-    case .confirmed:
-      return "Confirmed by child"
+      return "Sent — not yet confirmed. Open Foqos on the child's device; both devices may need an app update."
+    case .noLongerPending:
+      return "Request no longer pending."
     }
   }
 }

@@ -108,12 +108,22 @@ extension FamilyLockCode {
     self.createdAt = createdAt
     self.updatedAt = updatedAt
 
-    // Parse scope
-    let scopeType = record[RecordKey.scopeType] as? String ?? "all"
-    if scopeType == "specific", let childId = record[RecordKey.scopeChildId] as? String {
-      self.scope = .specificChild(childId: childId)
-    } else {
+    // Only an absent scope retains the historical all-children default.
+    guard let rawScope = record[RecordKey.scopeType] else {
       self.scope = .allChildren
+      return
+    }
+    guard let scopeType = rawScope as? String else { return nil }
+    switch scopeType {
+    case "all":
+      self.scope = .allChildren
+    case "specific":
+      guard let childId = record[RecordKey.scopeChildId] as? String, !childId.isEmpty else {
+        return nil
+      }
+      self.scope = .specificChild(childId: childId)
+    default:
+      return nil
     }
   }
 
