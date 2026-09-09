@@ -1,7 +1,7 @@
 import CloudKit
 import Foundation
 
-/// Command types that can be sent from parent to child
+/// Immutable operation contracts: new semantics or required payloads need a new discriminator.
 enum FamilyCommandType: String, Codable {
   case resetEmergencyCount
   case resetLockCodeThrottle
@@ -50,25 +50,35 @@ extension FamilyCommand {
     static let createdBy = "createdBy"
   }
 
-  /// Create a FamilyCommand from a CKRecord
-  init?(from record: CKRecord) {
+  enum DecodeResult {
+    case supported(FamilyCommand)
+    case unsupported(String)
+    case malformed
+  }
+
+  /// Validate the whole envelope before treating an unknown operation as forward compatible.
+  static func decode(_ record: CKRecord) -> DecodeResult {
     guard record.recordType == FamilyCommand.recordType,
       let idString = record[RecordKey.id] as? String,
       let id = UUID(uuidString: idString),
       let commandTypeString = record[RecordKey.commandType] as? String,
-      let commandType = FamilyCommandType(rawValue: commandTypeString),
+      !commandTypeString.isEmpty,
       let targetChildId = record[RecordKey.targetChildId] as? String,
+      !targetChildId.isEmpty,
       let createdAt = record[RecordKey.createdAt] as? Date,
-      let createdBy = record[RecordKey.createdBy] as? String
+      let createdBy = record[RecordKey.createdBy] as? String,
+      !createdBy.isEmpty
     else {
-      return nil
+      return .malformed
     }
 
-    self.id = id
-    self.commandType = commandType
-    self.targetChildId = targetChildId
-    self.createdAt = createdAt
-    self.createdBy = createdBy
+    guard let commandType = FamilyCommandType(rawValue: commandTypeString) else {
+      return .unsupported(commandTypeString)
+    }
+    return .supported(
+      FamilyCommand(
+        id: id, commandType: commandType, targetChildId: targetChildId,
+        createdBy: createdBy, createdAt: createdAt))
   }
 
   /// Convert to a CKRecord for saving to CloudKit

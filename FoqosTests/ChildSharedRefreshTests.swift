@@ -124,7 +124,7 @@ final class ChildSharedRefreshTests: XCTestCase {
 
   func testGivenMissingCommandIdentity_WhenResolvingFetch_ThenReportsDisconnected() {
     let result = CloudKitNetworkService.resolvePendingCommandFetch(
-      commands: [],
+      records: [],
       hasFailures: false,
       hasUserRecordID: false)
 
@@ -207,7 +207,7 @@ final class ChildSharedRefreshTests: XCTestCase {
 
   func testGivenCommandRecordFailure_WhenResolvingFetch_ThenReportsDisconnected() {
     let result = CloudKitNetworkService.resolvePendingCommandFetch(
-      commands: [],
+      records: [],
       hasFailures: true)
 
     XCTAssertFalse(result.isConnected)
