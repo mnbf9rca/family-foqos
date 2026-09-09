@@ -159,7 +159,7 @@ Before reporting a PR approved or merge-ready, verify that it is already ready f
 
 A PR changing source code gets the `greptile-review` label once, when its author believes it is ready to merge after the reviewer’s findings are addressed, because every push after labelling triggers a paid re-review; never label spec-only, docs-only, version-only, or small follow-up PRs.
 
-Greptile writes its result into the PR description as a `greptile_comment` block with a confidence score; any inline findings arrive as review threads. Check with `gh pr view N --json body`; never remove and re-add the `greptile-review` label to retrigger a review.
+Greptile writes its result into the PR description as a `greptile_comment` block with a confidence score; any inline findings arrive as review threads. Check with `gh pr view N --json body`. If no result appears within about 30 minutes, the human retriggers the review from the Greptile management portal; do not remove and re-add the label.
 
 ### Calibrate Operator-Document Sign-Off
 
