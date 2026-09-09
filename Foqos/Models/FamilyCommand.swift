@@ -81,12 +81,6 @@ extension FamilyCommand {
         createdBy: createdBy, createdAt: createdAt))
   }
 
-  /// Only supported commands can enter the executable model.
-  init?(from record: CKRecord) {
-    guard case .supported(let command) = Self.decode(record) else { return nil }
-    self = command
-  }
-
   /// Convert to a CKRecord for saving to CloudKit
   func toCKRecord(in zoneID: CKRecordZone.ID) -> CKRecord {
     let recordName = FamilyCommand.recordName(

@@ -19,7 +19,7 @@
 
 - [x] Establish the focused XCTest baseline through `scripts/xcode-stream.sh --agent build1 --session collab`.
 - [x] Add failing CKRecord tests in `FoqosTests/FamilyShareCompatibilityTests.swift`: malformed known-command envelopes, rejected scope metadata, legacy PIN fixture, cache round-trip. Add pending/absence text regressions to `ParentResetCommandStatusTests`.
-- [x] In `FamilyCommand.swift`, add `DecodeResult` (`supported`, `unsupported`, `malformed`) and `decode(_:)`; keep `init?(from:)` executable-only. Validate every envelope field before classifying an unknown type.
+- [x] In `FamilyCommand.swift`, add `DecodeResult` (`supported`, `unsupported`, `malformed`) and `decode(_:)`; return executable models only for `.supported`. Validate every envelope field before classifying an unknown type.
 - [x] In `CloudKitNetworkService+Commands.swift`, have `resolvePendingCommandFetch(records:hasFailures:hasUserRecordID:)` classify actual row results. Only supported commands enter the returned array. Unsupported records log an inline literal with the capped discriminator and do not disconnect the fetch.
 - [x] In `FamilyLockCode.swift`, default to all children only for absent scope; require valid explicit scope metadata otherwise. In `CloudKitNetworkService+LockCodes.swift`, extract `decodeLockCodeRecords(_:)` for the parent fetch and throw `CloudKitError.fetchFailed` on any failed or unreadable row. Keep the child failure/cache path and writers intact.
 - [x] Add direct classifier/reducer coverage for known+unknown, unknown-only, malformed, failed-row, zone-failure, and missing-identity outcomes. Exercise the actual parent row decoder for both malformed records and CKError failures, including row-level `unknownItem`.
@@ -33,3 +33,5 @@
 - Full recursive Swift formatting lint, log privacy lint (527 sites, no annotations), and diff whitespace checks passed.
 - No live paired parent/child CloudKit test setup was available to this stream; the synthetic-command device walkthrough was not run.
 - Diff review confirms command application/ledger/deletion, stale cleanup, hash/salt and scope writers, private data boundaries, and schema files are unchanged.
+
+Review round one at `847ff62`: no blocking findings; remove the unused failable command initializer and have its assertions call the production classifier directly. The reviewer independently passed 85 tests across 11 classes, including schema drift.

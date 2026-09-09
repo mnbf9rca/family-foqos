@@ -27,7 +27,9 @@ final class FamilyShareCompatibilityTests: XCTestCase {
     for field in ["targetChildId", "createdBy"] {
       let record = commandRecord(now: now)
       record[field] = ""
-      XCTAssertNil(FamilyCommand(from: record), field)
+      if case .supported = FamilyCommand.decode(record) {
+        XCTFail("Empty \(field) must not produce an executable command")
+      }
     }
   }
 
@@ -48,7 +50,9 @@ final class FamilyShareCompatibilityTests: XCTestCase {
       case .unsupported(let discriminator):
         XCTAssertEqual(rawType, "futureOperation")
         XCTAssertEqual(discriminator, "futureOperation")
-        XCTAssertNil(FamilyCommand(from: record))
+        if case .supported = FamilyCommand.decode(record) {
+          XCTFail("Unsupported type must not produce an executable command")
+        }
       case .malformed:
         XCTFail("Valid envelope was rejected")
       }
