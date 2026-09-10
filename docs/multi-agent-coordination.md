@@ -36,6 +36,8 @@ Every agent auto-loads `AGENTS.md` when it starts. The orchestrator's first prom
 orchestrator: you are <role>. Before taking work: read docs/multi-agent-coordination.md for the <role> rules, and load these skills: <skills for the role>. Reply with one line naming what you loaded, your role, and "exact remainder: none". Take no work until a brief arrives.
 ```
 
+The orchestrator clears the reviewer's and build agents' contexts periodically and before each new feature dispatch (/new for Codex, /clear for Claude), never while an agent has in-flight work, then re-sends the startup template.
+
 - planner: herdr, communicating-clearly, writing-clearly, ponytail.
 - build1/build2: herdr, ponytail.
 - reviewer: herdr, communicating-clearly, writing-clearly, ponytail, ponytail-review.
