@@ -81,8 +81,6 @@ Once those checks pass, a nil-duration start uses the same `ManualBlockingStrate
 
 This PR does not add a second transactional start or fix the common lifecycle's persistence ordering. `createSession` inserts/publishes without an explicit save, and the manual strategy's stop currently logs a save failure. Those pre-existing lifecycle limits apply to tap and Shortcut operation alike; do not claim this spec makes every start/stop durable before its dialog. Avoid success after an error the shared path actually reports, without creating parallel session/rollback machinery for Siri.
 
-Preserve the optional start-geofence warning behavior rather than turn it into a hard stop restriction. If the existing warning setting is on and a start needs confirmation, continue in the foreground and use the existing warning flow before committing the start; cancellation has no effect. If location permission is absent, retain the current start-warning policy, which permits starting. After any authentication, warning, or location await, re-read active session and profile eligibility before starting.
-
 Return the successfully resolved current profile name to the intent for its dialog. A renamed entity must not cause a stale success name. A successful response includes the accepted supplied duration for the timed branch, or says the profile started for the ordinary branch. Same-account sync failures retain the established local-session behavior and must not be described as cross-device completion.
 
 ### Session timer end time: completed path analysis
