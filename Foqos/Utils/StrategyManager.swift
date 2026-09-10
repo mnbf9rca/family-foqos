@@ -1154,11 +1154,13 @@ class StrategyManager: ObservableObject {
         let previousTask = sessionSyncTask
         sessionSyncTask = Task {
           await previousTask?.value
+          let expectedStart =
+            Self.isCountdownTag(completedScheduleSession.tag)
+            ? completedScheduleSession.startTime : nil
           let result = await sessionSyncService.stopSession(
             profileId: completedScheduleSession.blockedProfileId,
             endTime: endTime,
-            expectedStart: Self.isCountdownTag(completedScheduleSession.tag)
-              ? completedScheduleSession.startTime : nil
+            expectedStart: expectedStart
           )
 
           switch result {
@@ -1166,8 +1168,18 @@ class StrategyManager: ObservableObject {
             Log.info("Scheduled session stop synced", category: .strategy)
           case .alreadyStopped:
             Log.info("Scheduled session was already stopped", category: .strategy)
-          case .conflict, .error:
-            break  // Handle silently for completed sessions
+          case .conflict:
+            let retry = await sessionSyncService.stopSession(
+              profileId: completedScheduleSession.blockedProfileId,
+              endTime: endTime, expectedStart: expectedStart)
+            switch retry {
+            case .stopped, .alreadyStopped:
+              break
+            case .conflict, .error:
+              Log.warning("Completed session stop retry failed", category: .sync)
+            }
+          case .error:
+            Log.warning("Completed session stop sync failed", category: .sync)
           }
         }
       }
@@ -1630,30 +1642,22 @@ class StrategyManager: ObservableObject {
         withTag: "remote-sync",
         withProfile: profile,
         forceStart: true,
-        startTime: startTime
+        startTime: startTime,
+        timerEndTime: timerEndTime
       )
-
-      activeSession.timerEndTime = timerEndTime
-      guard
-        SharedData.updateSessionTiming(
-          expectedSessionId: activeSession.id, startTime: startTime, timerEndTime: timerEndTime
-        )
-      else {
-        errorMessage = "The remote session started, but its timing could not be saved."
-        return
-      }
-      try context.save()
 
       // Converge on the single activation path so remote-started sessions get the same
       // side effects as local starts. syncSessionStart is suppressed while processingRemoteChange
       // is true, so this does not echo a session record back to CloudKit (#204).
       activateSession(activeSession, context: context)
+      try context.save()
 
       Log.info(
         "Started remote session for profile '\(profile.name)' with synced startTime",
         category: .strategy)
     } catch {
-      errorMessage = "The remote session could not be fully loaded or its timing saved. Open the app and check its state."
+      errorMessage = [errorMessage, "The remote session could not be fully loaded or its timing saved. Open the app and check its state."]
+        .compactMap { $0 }.joined(separator: "\n")
       Log.info("Error starting remote session - \(redactedErrorForLog(error))", category: .strategy)
     }
   }

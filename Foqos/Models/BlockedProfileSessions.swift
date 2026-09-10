@@ -148,7 +148,8 @@ class BlockedProfileSession: BreakDurationCalculable {
     withTag tag: String,
     withProfile profile: BlockedProfiles,
     forceStart: Bool = false,
-    startTime: Date = Date()
+    startTime: Date = Date(),
+    timerEndTime: Date? = nil
   ) -> BlockedProfileSession {
     let newSession = BlockedProfileSession(
       tag: tag,
@@ -157,6 +158,7 @@ class BlockedProfileSession: BreakDurationCalculable {
       startTime: startTime
     )
 
+    newSession.timerEndTime = timerEndTime
     SharedData.createActiveSharedSession(for: newSession.toSnapshot())
 
     context.insert(newSession)

@@ -66,15 +66,52 @@ final class SessionTimerCASTests: XCTestCase {
     XCTAssertEqual(saves.count, 1)
     XCTAssertNil(saves.first?["timerEndTime"])
   }
+
+  @MainActor
+  func testCompletedCountdownRetriesMatchingConflictWithOriginalEndTime() async throws {
+    let now = Date()
+    let suiteName = "CountdownRetry-\(UUID().uuidString)"
+    SharedData.configure(suite: UserDefaults(suiteName: suiteName)!)
+    let sync = ProfileSyncManager.shared
+    let wasEnabled = sync.isEnabled
+    sync.isEnabled = true
+    defer {
+      sync.isEnabled = wasEnabled
+      UserDefaults().removePersistentDomain(forName: suiteName)
+    }
+    let container = try TestModelContainer.create()
+    let context = container.mainContext
+    let profile = BlockedProfiles(name: "Timer")
+    context.insert(profile)
+    let session = BlockedProfileSession.createSession(
+      in: context, withTag: ShortcutTimerBlockingStrategy.id, withProfile: profile, startTime: now)
+    SharedData.endActiveSharedSession()
+    let active = record(profile: profile.id, start: now, owner: SharedData.deviceSyncId.uuidString, deadline: nil)
+    let saved = expectation(description: "conflicting completion retried successfully")
+    let server = TimerCASRecords(records: [active, active, active], failuresRemaining: 1) { saved.fulfill() }
+    let service = SessionSyncService(fetchRecord: { _ in try await server.fetch() }, saveRecord: { try await server.save($0) })
+    let manager = StrategyManager(sessionSyncService: service)
+
+    try manager.loadActiveSession(context: context)
+    await fulfillment(of: [saved], timeout: 5)
+
+    let saves = await server.saves
+    XCTAssertEqual(saves.count, 2)
+    XCTAssertEqual(saves.last?["endTime"] as? Date, session.endTime)
+    XCTAssertEqual(saves.first?["endTime"] as? Date, saves.last?["endTime"] as? Date)
+    XCTAssertEqual(saves.last?["isActive"] as? Int, 0)
+  }
 }
 
 private actor TimerCASRecords {
   var records: [CKRecord]
   var saves: [CKRecord] = []
-  let failSave: Bool
-  init(records: [CKRecord], failSave: Bool = true) {
+  var failuresRemaining: Int
+  let onSave: (@Sendable () -> Void)?
+  init(records: [CKRecord], failSave: Bool = true, failuresRemaining: Int? = nil, onSave: (@Sendable () -> Void)? = nil) {
     self.records = records
-    self.failSave = failSave
+    self.failuresRemaining = failuresRemaining ?? (failSave ? Int.max : 0)
+    self.onSave = onSave
   }
   func fetch() throws -> CKRecord {
     guard !records.isEmpty else { throw CKError(.unknownItem) }
@@ -82,7 +119,11 @@ private actor TimerCASRecords {
   }
   func save(_ record: CKRecord) throws -> CKRecord {
     saves.append(record.copy() as! CKRecord)
-    if failSave { throw CKError(.serverRecordChanged) }
+    if failuresRemaining > 0 {
+      failuresRemaining -= 1
+      throw CKError(.serverRecordChanged)
+    }
+    onSave?()
     return record
   }
 }

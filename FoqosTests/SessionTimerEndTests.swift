@@ -149,6 +149,7 @@ final class SessionTimerEndTests: XCTestCase {
     let session = try XCTUnwrap(manager.activeSession)
     XCTAssertEqual(session.tag, "remote-sync")
     XCTAssertEqual(session.timerEndTime, now.addingTimeInterval(900))
+    XCTAssertEqual(SharedData.getActiveSharedSession()?.timerEndTime, now.addingTimeInterval(900))
     manager.startRemoteSession(
       context: context, profileId: profile.id, sessionId: UUID(), startTime: now,
       timerEndTime: nil, originDevice: "B")
