@@ -31,12 +31,12 @@ final class StrategyManagerBreakOMMTests: XCTestCase {
   }
 
   @discardableResult
-  private func seedActiveSession(breakMinutes: Int = 5) throws -> BlockedProfileSession {
+  private func seedActiveSession(breakMinutes: Int = 5, now: Date = Date()) throws -> BlockedProfileSession {
     let profile = BlockedProfiles(name: "P")
     profile.enableBreaks = true
     profile.breakTimeInMinutes = breakMinutes
     context.insert(profile)
-    let session = BlockedProfileSession.createSession(in: context, withTag: "t", withProfile: profile)
+    let session = BlockedProfileSession.createSession(in: context, withTag: "t", withProfile: profile, startTime: now)
     try context.save()
     try manager.loadActiveSession(context: context)
     applier.clearForAssertion()
@@ -183,4 +183,23 @@ final class StrategyManagerBreakOMMTests: XCTestCase {
     XCTAssertNotNil(manager.errorMessage)
     _ = session
   }
+  func testSessionTimerDeadlineSurvivesGrantPinningAndBackstopRearm() throws {
+    let now = Date()
+    let session = try seedActiveSession(now: now)
+    let deadline = now.addingTimeInterval(1800)
+    session.timerEndTime = deadline
+    XCTAssertTrue(SharedData.updateSessionTiming(expectedSessionId: session.id, startTime: now, timerEndTime: deadline))
+    manager.toggleBreak(context: context)
+    XCTAssertEqual(SharedData.getActiveSharedSession()?.timerEndTime, deadline)
+    manager.reconcileGrants(context: context, now: now.addingTimeInterval(1))
+    XCTAssertEqual(session.timerEndTime, deadline)
+    XCTAssertEqual(SharedData.getActiveSharedSession()?.timerEndTime, deadline)
+    manager.toggleBreak(context: context)
+    manager.startOneMoreMinute(context: context)
+    XCTAssertEqual(SharedData.getActiveSharedSession()?.timerEndTime, deadline)
+    manager.reconcileGrants(context: context, now: now.addingTimeInterval(120))
+    XCTAssertEqual(session.timerEndTime, deadline)
+    XCTAssertEqual(SharedData.getActiveSharedSession()?.timerEndTime, deadline)
+  }
+
 }

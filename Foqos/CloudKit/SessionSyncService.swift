@@ -7,6 +7,17 @@ import os
 actor SessionSyncService {
   static let shared = SessionSyncService()
 
+  private let fetchRecord: (@Sendable (CKRecord.ID) async throws -> CKRecord)?
+  private let saveRecord: (@Sendable (CKRecord) async throws -> CKRecord)?
+
+  init(
+    fetchRecord: (@Sendable (CKRecord.ID) async throws -> CKRecord)? = nil,
+    saveRecord: (@Sendable (CKRecord) async throws -> CKRecord)? = nil
+  ) {
+    self.fetchRecord = fetchRecord
+    self.saveRecord = saveRecord
+  }
+
   // MARK: - CloudKit Configuration
 
   private lazy var container: CKContainer = {
@@ -59,7 +70,8 @@ actor SessionSyncService {
     let recordID = CKRecord.ID(recordName: recordName, zoneID: syncZoneID)
 
     do {
-      let record = try await privateDatabase.record(for: recordID)
+      let record: CKRecord
+      if let fetchRecord { record = try await fetchRecord(recordID) } else { record = try await privateDatabase.record(for: recordID) }
       guard let session = ProfileSessionRecord(from: record) else {
         return .error(SessionSyncError.invalidRecord)
       }
@@ -83,7 +95,7 @@ actor SessionSyncService {
   private static let maxCASRetries = 3
 
   /// Attempt to start a session. Uses CAS with iterative retry loop.
-  func startSession(profileId: UUID, startTime: Date = Date()) async -> StartResult {
+  func startSession(profileId: UUID, startTime: Date = Date(), timerEndTime: Date? = nil) async -> StartResult {
     for attempt in 0..<Self.maxCASRetries {
       // Backoff with jitter on retries (not on first attempt)
       if attempt > 0 {
@@ -118,7 +130,8 @@ actor SessionSyncService {
           isActive: true,
           sequenceNumber: newSequence,
           deviceId: deviceId,
-          startTime: startTime
+          startTime: startTime,
+          timerEndTime: timerEndTime
         )
         updatedSession.updateCKRecord(existingRecord)
 
@@ -143,7 +156,8 @@ actor SessionSyncService {
           isActive: true,
           sequenceNumber: 1,
           deviceId: deviceId,
-          startTime: startTime
+          startTime: startTime,
+          timerEndTime: timerEndTime
         )
         let record = session.toCKRecord(in: syncZoneID)
 
@@ -216,7 +230,7 @@ actor SessionSyncService {
   // MARK: - Stop Session (with CAS)
 
   /// Attempt to stop a session. Uses CAS to handle concurrent stops.
-  func stopSession(profileId: UUID, endTime: Date = Date()) async -> StopResult {
+  func stopSession(profileId: UUID, endTime: Date = Date(), expectedStart: Date? = nil) async -> StopResult {
     // Fetch current state
     let fetchResult = await fetchSession(profileId: profileId)
 
@@ -226,9 +240,13 @@ actor SessionSyncService {
         Log.info("Session already stopped for \(profileId)", category: .sync)
         return .alreadyStopped
       }
-      return await deactivateSession(profileId: profileId, endTime: endTime)
+      if let expectedStart, !existing.matchesTimerStop(expectedStart: expectedStart, deviceId: deviceId) {
+        return .alreadyStopped
+      }
+      return await deactivateSession(profileId: profileId, endTime: endTime, expectedStart: expectedStart)
 
     case .notFound:
+      if expectedStart != nil { return .alreadyStopped }
       // §6: this device stopped a session it believed active — write a stopped record
       // create-if-absent so mirrors converge (do NOT silently drop, the old
       // .notFound -> .alreadyStopped path is removed).
@@ -239,7 +257,7 @@ actor SessionSyncService {
     }
   }
 
-  private func deactivateSession(profileId: UUID, endTime: Date) async -> StopResult {
+  private func deactivateSession(profileId: UUID, endTime: Date, expectedStart: Date?) async -> StopResult {
     guard let cached = cachedRecords[profileId] else {
       return .error(SessionSyncError.noCachedRecord)
     }
@@ -279,6 +297,11 @@ actor SessionSyncService {
         case .found(let current):
           if !current.isActive {
             return .alreadyStopped
+          }
+          if let expectedStart {
+            guard current.matchesTimerStop(expectedStart: expectedStart, deviceId: deviceId) else {
+              return .alreadyStopped
+            }
           }
           return .conflict(currentSession: current)
         case .notFound:
@@ -333,7 +356,8 @@ actor SessionSyncService {
   private func saveRecordWithPolicy(
     _ record: CKRecord, policy: CKModifyRecordsOperation.RecordSavePolicy
   ) async throws -> CKRecord {
-    try await withCheckedThrowingContinuation { continuation in
+    if let saveRecord { return try await saveRecord(record) }
+    return try await withCheckedThrowingContinuation { continuation in
       let operation = CKModifyRecordsOperation(recordsToSave: [record], recordIDsToDelete: nil)
       operation.savePolicy = policy
       operation.qualityOfService = .userInitiated

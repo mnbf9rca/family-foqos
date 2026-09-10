@@ -6,7 +6,7 @@ import SwiftData
 @MainActor
 protocol SessionController: AnyObject {
   var activeSession: BlockedProfileSession? { get }
-  func startRemoteSession(context: ModelContext, profileId: UUID, sessionId: UUID, startTime: Date)
+  func startRemoteSession(context: ModelContext, profileId: UUID, sessionId: UUID, startTime: Date, timerEndTime: Date?, originDevice: String?)
   func stopRemoteSession(context: ModelContext, profileId: UUID)
   func setRemoteSessionActive(_ isActive: Bool, profileId: UUID)
 }

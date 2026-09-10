@@ -29,6 +29,8 @@ struct SettingsView: View {
   @State private var showDebugView = false
   @State private var syncErrorMessage: String?
 
+  @AppStorage(ShortcutsSettings.requireDeviceUnlockKey) private var shortcutsRequireUnlock = true
+
   @AppStorage("family_foqos_warn_when_activating_away_from_location") private var warnWhenActivatingAwayFromLocation =
     true
 
@@ -105,6 +107,14 @@ struct SettingsView: View {
   var body: some View {
     NavigationStack {
       Form {
+        Section {
+          Toggle("Require Device Unlock", isOn: $shortcutsRequireUnlock)
+        } header: {
+          Text("Siri & Shortcuts")
+        } footer: {
+          Text("Require this device to be unlocked before Siri or Shortcuts starts or stops a profile. Turn off to allow eligible actions while locked. Profile start and stop rules still apply.")
+        }
+
         Section("Theme") {
           HStack {
             Image(systemName: "paintpalette.fill")

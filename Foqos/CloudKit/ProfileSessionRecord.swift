@@ -26,6 +26,7 @@ struct ProfileSessionRecord: Codable, Equatable, Sendable {
   private(set) var sequenceNumber: Int = 0
   private(set) var startTime: Date?
   private(set) var endTime: Date?
+  private(set) var timerEndTime: Date?
   private(set) var breakStartTime: Date?
   private(set) var breakEndTime: Date?
 
@@ -50,6 +51,7 @@ struct ProfileSessionRecord: Codable, Equatable, Sendable {
     case sequenceNumber
     case startTime
     case endTime
+    case timerEndTime
     case breakStartTime
     case breakEndTime
     case lastModifiedBy
@@ -76,6 +78,7 @@ struct ProfileSessionRecord: Codable, Equatable, Sendable {
     self.sequenceNumber = record[FieldKey.sequenceNumber.rawValue] as? Int ?? 0
     self.startTime = record[FieldKey.startTime.rawValue] as? Date
     self.endTime = record[FieldKey.endTime.rawValue] as? Date
+    self.timerEndTime = record[FieldKey.timerEndTime.rawValue] as? Date
     self.breakStartTime = record[FieldKey.breakStartTime.rawValue] as? Date
     self.breakEndTime = record[FieldKey.breakEndTime.rawValue] as? Date
     self.lastModifiedBy = record[FieldKey.lastModifiedBy.rawValue] as? String ?? ""
@@ -93,6 +96,7 @@ struct ProfileSessionRecord: Codable, Equatable, Sendable {
     deviceId: String,
     startTime: Date? = nil,
     endTime: Date? = nil,
+    timerEndTime: Date? = nil,
     breakStartTime: Date? = nil,
     breakEndTime: Date? = nil
   ) -> Bool {
@@ -110,12 +114,14 @@ struct ProfileSessionRecord: Codable, Equatable, Sendable {
       // New session starting
       self.startTime = startTime ?? Date()
       self.endTime = nil
+      self.timerEndTime = timerEndTime
       self.sessionOriginDevice = deviceId
       self.breakStartTime = nil
       self.breakEndTime = nil
     } else if !isActive {
       // Session ending
       self.endTime = endTime ?? Date()
+      self.timerEndTime = nil
     }
 
     // Update break times if provided
@@ -132,10 +138,20 @@ struct ProfileSessionRecord: Codable, Equatable, Sendable {
   /// Reset for a new session (clears previous session data)
   mutating func resetForNewSession() {
     self.startTime = nil
+    self.timerEndTime = nil
     self.endTime = nil
     self.breakStartTime = nil
     self.breakEndTime = nil
     self.sessionOriginDevice = nil
+  }
+
+  var validTimerEndTime: Date? {
+    guard isActive, let startTime, let timerEndTime, timerEndTime > startTime else { return nil }
+    return timerEndTime
+  }
+
+  func matchesTimerStop(expectedStart: Date, deviceId: String) -> Bool {
+    sessionOriginDevice == deviceId && startTime.map { abs($0.timeIntervalSince(expectedStart)) < 1 } == true
   }
 
   // MARK: - CloudKit Conversion
@@ -153,6 +169,7 @@ struct ProfileSessionRecord: Codable, Equatable, Sendable {
     record[FieldKey.sequenceNumber.rawValue] = sequenceNumber
     record[FieldKey.startTime.rawValue] = startTime
     record[FieldKey.endTime.rawValue] = endTime
+    record[FieldKey.timerEndTime.rawValue] = isActive ? timerEndTime : nil
     record[FieldKey.breakStartTime.rawValue] = breakStartTime
     record[FieldKey.breakEndTime.rawValue] = breakEndTime
     record[FieldKey.lastModifiedBy.rawValue] = lastModifiedBy

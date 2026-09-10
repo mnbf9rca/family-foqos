@@ -51,9 +51,11 @@ class NFCTimerBlockingStrategy: BlockingStrategy {
           forceStart: forceStart ?? false
         )
 
-        DeviceActivityCenterUtil.startStrategyTimerActivity(for: profile)
+        let timerWarning = DeviceActivityCenterUtil.startStrategyTimerActivity(
+          for: profile, session: activeSession)
 
         self.onSessionCreation?(.started(activeSession))
+        if let timerWarning { self.onErrorMessage?(timerWarning) }
       }
     )
   }

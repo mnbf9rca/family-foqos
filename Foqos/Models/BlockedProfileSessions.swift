@@ -10,6 +10,7 @@ class BlockedProfileSession: BreakDurationCalculable {
 
   var startTime: Date
   var endTime: Date?
+  var timerEndTime: Date?
 
   var breakStartTime: Date?
   var breakEndTime: Date?
@@ -95,6 +96,7 @@ class BlockedProfileSession: BreakDurationCalculable {
     // Set the end time in shared data in case its being saved
     SharedData.setEndTime(date: now, expectedSessionId: id)
     self.endTime = now
+    timerEndTime = nil
 
     // If this was a schedule-started session, record when it stopped.
     // The reader in ScheduleTimerActivity compares this against today's start time.
@@ -115,6 +117,7 @@ class BlockedProfileSession: BreakDurationCalculable {
       blockedProfileId: blockedProfile.id,
       startTime: startTime,
       endTime: endTime,
+      timerEndTime: timerEndTime,
       breakStartTime: breakStartTime,
       breakEndTime: breakEndTime,
       forceStarted: forceStarted,
@@ -179,6 +182,7 @@ class BlockedProfileSession: BreakDurationCalculable {
       existingSession.tag = snapshot.tag
       existingSession.startTime = snapshot.startTime
       existingSession.endTime = snapshot.endTime
+      existingSession.timerEndTime = snapshot.timerEndTime
       existingSession.breakStartTime = snapshot.breakStartTime
       existingSession.breakEndTime = snapshot.breakEndTime
       existingSession.forceStarted = snapshot.forceStarted
@@ -211,6 +215,7 @@ class BlockedProfileSession: BreakDurationCalculable {
     newSession.id = snapshot.id
     newSession.startTime = snapshot.startTime
     newSession.endTime = snapshot.endTime
+    newSession.timerEndTime = snapshot.timerEndTime
     newSession.breakStartTime = snapshot.breakStartTime
     newSession.breakEndTime = snapshot.breakEndTime
     newSession.oneMoreMinuteUsed = snapshot.oneMoreMinuteUsed
