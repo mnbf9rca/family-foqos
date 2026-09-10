@@ -2,6 +2,8 @@ import AppIntents
 import SwiftData
 
 struct StartProfileIntent: AppIntent {
+  static var authenticationPolicy: IntentAuthenticationPolicy { ShortcutsSettings.authenticationPolicy }
+
   @Dependency(key: "ModelContainer")
   private var modelContainer: ModelContainer
 
@@ -17,12 +19,12 @@ struct StartProfileIntent: AppIntent {
   nonisolated(unsafe) static var title: LocalizedStringResource = "Start Family Foqos Profile"  // SAFETY: AppIntents requires static var; immutable after init
 
   nonisolated(unsafe) static var description = IntentDescription(  // SAFETY: AppIntents requires static var; immutable after init
-    "Start a Family Foqos blocking profile. Optionally specify a timer duration between 15 minutes and 23 hours 59 minutes."
+    "Start a Family Foqos blocking profile. Duration applies only to this execution (15 minutes to 23 hours 59 minutes) and is unavailable while profile editing is locked."
   )
 
   @MainActor
   func perform() async throws -> some IntentResult & ProvidesDialog {
-    try StrategyManager.shared.startSessionFromBackground(
+    let currentName = try StrategyManager.shared.startSessionFromBackground(
       profile.id,
       context: modelContext,
       durationInMinutes: durationInMinutes
@@ -30,8 +32,8 @@ struct StartProfileIntent: AppIntent {
 
     let message =
       durationInMinutes != nil
-      ? "\(profile.name) started for \(durationInMinutes!) minutes."
-      : "\(profile.name) started."
+      ? "\(currentName) started for \(durationInMinutes!) minutes."
+      : "\(currentName) started."
     return .result(dialog: .init(stringLiteral: message))
   }
 }

@@ -10,6 +10,8 @@ class ShortcutTimerBlockingStrategy: BlockingStrategy {
   var color: Color = .mint
 
   var hidden: Bool = true
+  var durationInMinutes: Int?
+  var registerTimer: (UUID, Int, Date) throws -> Date = DeviceActivityCenterUtil.registerStrategyTimer
 
   var onSessionCreation: ((SessionStatus) -> Void)?
   var onErrorMessage: ((String) -> Void)?
@@ -25,7 +27,7 @@ class ShortcutTimerBlockingStrategy: BlockingStrategy {
     profile: BlockedProfiles,
     forceStart: Bool?
   ) -> (any View)? {
-    guard profile.strategyData != nil else {
+    guard durationInMinutes != nil || profile.strategyData != nil else {
       self.onErrorMessage?("No timer duration specified for this profile")
       return nil
     }
@@ -37,9 +39,11 @@ class ShortcutTimerBlockingStrategy: BlockingStrategy {
       forceStart: forceStart ?? true
     )
 
-    DeviceActivityCenterUtil.startStrategyTimerActivity(for: profile)
+    let timerWarning = DeviceActivityCenterUtil.startStrategyTimerActivity(
+      for: profile, session: activeSession, durationInMinutes: durationInMinutes, register: registerTimer)
 
     self.onSessionCreation?(.started(activeSession))
+    if let timerWarning { self.onErrorMessage?(timerWarning) }
 
     return nil
   }

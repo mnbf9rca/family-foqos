@@ -811,10 +811,11 @@ final class SyncApplyService {
     }
     sessionController.setRemoteSessionActive(session.isActive, profileId: profileId)
     let localActive = sessionController.activeSession?.blockedProfile.id == profileId
-    if session.isActive && !localActive {
+    if session.isActive {
       if let startTime = session.startTime {
         sessionController.startRemoteSession(
-          context: modelContext, profileId: profileId, sessionId: UUID(), startTime: startTime)
+          context: modelContext, profileId: profileId, sessionId: UUID(), startTime: startTime,
+          timerEndTime: session.validTimerEndTime, originDevice: session.sessionOriginDevice)
         SyncDiagnostics.sessionApply(profileId: profileId, branch: "remote_start_applied")
       }
     } else if !session.isActive && localActive {

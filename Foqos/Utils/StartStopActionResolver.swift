@@ -68,6 +68,9 @@ enum StartStopActionResolver {
       if triggers.deepLink {
         return .deepLinkOnly
       }
+      if triggers.shortcuts {
+        return .cannotStart(reason: "Start this profile with Siri or Shortcuts.")
+      }
       return .cannotStart(reason: "No start triggers configured. Edit the profile to add one.")
     }
 
@@ -116,6 +119,22 @@ enum StartStopActionResolver {
       return scanOptions[0]
     }
     return .showPicker(options: scanOptions)
+  }
+
+  enum StartCredential { case none, nfc, qr }
+
+  /// Match canStop's specific → same → any precedence for each scan modality.
+  static func hasUsableStop(
+    conditions: ProfileStopConditions,
+    disableBackgroundStops: Bool,
+    credential: StartCredential
+  ) -> Bool {
+    conditions.manual
+      || conditions.specificNFC
+      || (conditions.sameNFC ? credential == .nfc : conditions.anyNFC)
+      || conditions.specificQR
+      || (conditions.sameQR ? credential == .qr : conditions.anyQR)
+      || (!disableBackgroundStops && (conditions.schedule || conditions.deepLink))
   }
 
   // MARK: - Stop Validation

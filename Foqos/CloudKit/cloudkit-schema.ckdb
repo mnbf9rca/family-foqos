@@ -223,6 +223,7 @@ DEFINE SCHEMA
         endTime             TIMESTAMP QUERYABLE SORTABLE,
         breakStartTime      TIMESTAMP,
         breakEndTime        TIMESTAMP,
+        timerEndTime        TIMESTAMP,
         lastModifiedBy      STRING,
         sessionOriginDevice STRING QUERYABLE,
         lastModified        TIMESTAMP QUERYABLE SORTABLE,

@@ -575,89 +575,96 @@ class StrategyManager: ObservableObject {
     }
   }
 
+  @discardableResult
   func startSessionFromBackground(
     _ profileId: UUID,
     context: ModelContext,
-    durationInMinutes: Int? = nil
-  ) throws {
+    durationInMinutes: Int? = nil,
+    authorization: AuthorizationRequesting = AuthorizationCenterRequester.shared,
+    mode: AppMode = AppModeManager.shared.currentMode,
+    isUnlocked: (UUID) -> Bool = { LockCodeManager.shared.isUnlocked($0) },
+    canVerifyCode: Bool = LockCodeManager.shared.canVerifyCode,
+    registerTimer: @escaping (UUID, Int, Date) throws -> Date = DeviceActivityCenterUtil.registerStrategyTimer
+  ) throws -> String {
     do {
-      guard
-        let profile = try BlockedProfiles.findProfile(
-          byID: profileId,
-          in: context
-        )
-      else {
-        self.errorMessage = "Could not find that profile."
+      guard let profile = try BlockedProfiles.findProfile(byID: profileId, in: context) else {
         throw IntentError.profileNotFound
       }
-
-      if let localActiveSession = try getActiveSession(context: context) {
-        Log.info(
-          "session is already active for profile: \(localActiveSession.blockedProfile.name), not starting a new one",
-          category: .strategy)
-        self.errorMessage = "A session is already active."
-        throw IntentError.sessionAlreadyActive
+      guard !profile.isNewerSchemaVersion else {
+        throw IntentError.unexpected("Update Family Foqos to use this profile.")
       }
-
-      if profile.needsAppSelection {
-        let message = needsAppSelectionMessage(for: profile)
-        Log.info("Refusing background start: app selection required", category: .strategy)
-        self.errorMessage = message
-        throw IntentError.needsAppSelection(profileName: profile.name)
-      }
-
+      let session = try getActiveSession(context: context)
+      guard session == nil else { throw IntentError.sessionAlreadyActive }
       if let duration = durationInMinutes {
-        if duration < DeviceActivityLimits.minimumIntervalMinutes
-          || duration > DeviceActivityLimits.maximumTimerMinutes
-        {
-          // Plain String → interpolate the min constant and the derived
-          // human-readable max (single-sourced; no bare literals).
-          self.errorMessage =
-            "Duration must be between \(DeviceActivityLimits.minimumIntervalMinutes) minutes "
-            + "and \(DeviceActivityLimits.maximumTimerDescription)."
+        guard
+          !ProfileEditGate.editingDisabled(
+            isBlocking: remotelyActiveProfileIds.contains(profile.id),
+            isManaged: profile.isManaged, isUnlocked: isUnlocked(profile.id),
+            mode: mode, lockActive: canVerifyCode
+          )
+        else {
+          throw IntentError.unexpected("This profile cannot be changed right now. Remove Duration to use its configured stop conditions.")
+        }
+        guard (DeviceActivityLimits.minimumIntervalMinutes...DeviceActivityLimits.maximumTimerMinutes).contains(duration) else {
           throw IntentError.durationOutOfRange
         }
-
-        if let strategyTimerData = StrategyTimerData.toData(
-          from: StrategyTimerData(durationInMinutes: duration)
-        ) {
-          profile.strategyData = strategyTimerData
-          profile.updatedAt = Date()
-          BlockedProfiles.updateSnapshot(for: profile)
-          try context.save()
-        }
-
-        let shortcutTimerStrategy = getStrategy(id: ShortcutTimerBlockingStrategy.id)
-        _ = shortcutTimerStrategy.startBlocking(
-          context: context,
-          profile: profile,
-          forceStart: true
-        )
-      } else {
-        let manualStrategy = getStrategy(id: ManualBlockingStrategy.id)
-        _ = manualStrategy.startBlocking(
-          context: context,
-          profile: profile,
-          forceStart: true
-        )
       }
+      guard !profile.needsAppSelection else {
+        throw IntentError.needsAppSelection(profileName: profile.name)
+      }
+      switch authorization.authorizationStatus {
+      case .approved, .approvedWithDataAccess: break
+      default:
+        throw IntentError.unexpected("Open Family Foqos and authorize Screen Time before starting this profile.")
+      }
+      guard profile.startTriggers.shortcuts else {
+        throw IntentError.unexpected("Siri and Shortcuts start is disabled for this profile. Enable it in the profile editor.")
+      }
+      guard profile.stopConditions.isValid else {
+        throw IntentError.stopConditionsNotMet(reason: "No stop conditions configured. Edit the profile to add one.")
+      }
+      guard
+        durationInMinutes != nil
+          || StartStopActionResolver.hasUsableStop(
+            conditions: profile.stopConditions,
+            disableBackgroundStops: profile.disableBackgroundStops,
+            credential: .none
+          )
+      else {
+        throw IntentError.stopConditionsNotMet(reason: "Use a start method that provides the required stop, or add a usable stop condition.")
+      }
+
+      errorMessage = nil
+      if let duration = durationInMinutes {
+        guard let strategy = getStrategy(id: ShortcutTimerBlockingStrategy.id) as? ShortcutTimerBlockingStrategy else {
+          throw IntentError.unexpected("The timer strategy is unavailable.")
+        }
+        strategy.durationInMinutes = duration
+        strategy.registerTimer = registerTimer
+        _ = strategy.startBlocking(context: context, profile: profile, forceStart: true)
+      } else {
+        _ = getStrategy(id: ManualBlockingStrategy.id).startBlocking(
+          context: context, profile: profile, forceStart: false)
+      }
+      if let errorMessage {
+        throw IntentError.unexpected("The session started, but \(errorMessage)")
+      }
+      return profile.name
     } catch let error as IntentError {
+      self.errorMessage = String(localized: error.localizedStringResource)
       throw error
     } catch {
-      Log.error(
-        "Unexpected error in startSessionFromBackground: \(error.localizedDescription)",
-        category: .strategy
-      )
-      let message = "Something went wrong starting the session"
-      self.errorMessage = message
-      throw IntentError.unexpected(message)
+      Log.error("Failed to start background session", category: .strategy)
+      throw IntentError.unexpected("Something went wrong starting the session.")
     }
   }
 
   func stopSessionFromBackground(
     _ profileId: UUID,
-    context: ModelContext
+    context: ModelContext,
+    requireUnlock: () -> Bool = { ShortcutsSettings.requiresDeviceUnlock() }
   ) async throws {
+    let requiredUnlockAtStart = requireUnlock()
     do {
       guard
         let profile = try BlockedProfiles.findProfile(
@@ -710,14 +717,20 @@ class StrategyManager: ObservableObject {
         geofenceState = .noRule
       }
 
-      // App-side typed guards above preserve existing IntentError mapping; the shared policy
-      // evaluates only stop conditions and geofence for this already-matched, stoppable session.
+      guard requiredUnlockAtStart || !requireUnlock() else {
+        throw IntentError.unexpected("Device unlock is now required. Retry the action under the new setting.")
+      }
+      guard let currentSession = try getActiveSession(context: context),
+        currentSession.id == localActiveSession.id, currentSession.isActive,
+        let currentProfile = try BlockedProfiles.findProfile(byID: profileId, in: context)
+      else { throw IntentError.noActiveSession(profileName: profile.name) }
+
       let decision = BackgroundStopPolicy.evaluate(
         channel: .shortcut,
-        sessionMatchesProfile: true,
-        disableBackgroundStops: false,
+        sessionMatchesProfile: currentSession.blockedProfile.id == profileId,
+        disableBackgroundStops: currentProfile.disableBackgroundStops,
         geofence: geofenceState,
-        stopConditions: profile.stopConditions
+        stopConditions: currentProfile.stopConditions
       )
 
       switch decision {
@@ -752,7 +765,7 @@ class StrategyManager: ObservableObject {
 
       let _ = manualStrategy.stopBlocking(
         context: context,
-        session: localActiveSession
+        session: currentSession
       )
     } catch let error as IntentError {
       throw error
@@ -791,7 +804,8 @@ class StrategyManager: ObservableObject {
       await previousTask?.value
       let result = await sessionSyncService.startSession(
         profileId: session.blockedProfile.id,
-        startTime: session.startTime
+        startTime: session.startTime,
+        timerEndTime: session.timerEndTime
       )
 
       switch result {
@@ -802,23 +816,10 @@ class StrategyManager: ObservableObject {
           "Joined existing session from \(existing.sessionOriginDevice ?? "unknown")",
           category: .strategy
         )
-        // Reconcile local startTime to match authoritative remote startTime
-        // Verify session identity — activeSession may have changed during async call
-        if let remoteStartTime = existing.startTime,
-          let currentSession = self.activeSession,
-          currentSession.id == session.id,
-          currentSession.startTime != remoteStartTime
-        {
-          currentSession.startTime = remoteStartTime
-          do {
-            try context.save()
-          } catch {
-            Log.error(
-              "Failed to save reconciled startTime: \(error.localizedDescription)",
-              category: .strategy)
-          }
-          Log.info("Reconciled local startTime to \(remoteStartTime)", category: .strategy)
-        }
+        reconcileSessionTiming(
+          sessionId: session.id, profileId: existing.profileId,
+          startTime: existing.startTime, timerEndTime: existing.validTimerEndTime,
+          originDevice: existing.sessionOriginDevice, context: context)
       case .error(let error):
         Log.info("Failed to sync session start - \(redactedErrorForLog(error))", category: .strategy)
       }
@@ -979,7 +980,7 @@ class StrategyManager: ObservableObject {
     strategy.onErrorMessage = { message in
       self.dismissView()
 
-      self.errorMessage = message
+      self.errorMessage = [self.errorMessage, message].compactMap { $0 }.joined(separator: "\n")
     }
 
     return strategy
@@ -1092,19 +1093,6 @@ class StrategyManager: ObservableObject {
       .mostRecentActiveSession(in: context)
   }
 
-  /// #226: only reconcile a scheduled session's startTime when the active local session
-  /// belongs to the scheduled profile and the timestamps differ.
-  nonisolated static func shouldReconcileScheduledStartTime(
-    activeProfileId: UUID?,
-    scheduledProfileId: UUID,
-    localStartTime: Date?,
-    remoteStartTime: Date?
-  ) -> Bool {
-    guard let activeProfileId, activeProfileId == scheduledProfileId else { return false }
-    guard let remoteStartTime, let localStartTime else { return false }
-    return localStartTime != remoteStartTime
-  }
-
   private func syncScheduleSessions(context: ModelContext) {
     guard !ScreenshotDemoMode.isActive else { return }
     var hadDanglingGrant = false
@@ -1127,7 +1115,8 @@ class StrategyManager: ObservableObject {
           await previousTask?.value
           let result = await sessionSyncService.startSession(
             profileId: activeScheduledSession.blockedProfileId,
-            startTime: activeScheduledSession.startTime
+            startTime: activeScheduledSession.startTime,
+            timerEndTime: activeScheduledSession.timerEndTime
           )
 
           switch result {
@@ -1138,26 +1127,10 @@ class StrategyManager: ObservableObject {
               "Scheduled session joined existing from \(existing.sessionOriginDevice ?? "unknown")",
               category: .strategy
             )
-            // #226: a late CAS result for another profile must not overwrite its startTime.
-            if let currentSession = self.activeSession,
-              Self.shouldReconcileScheduledStartTime(
-                activeProfileId: currentSession.blockedProfile.id,
-                scheduledProfileId: activeScheduledSession.blockedProfileId,
-                localStartTime: currentSession.startTime,
-                remoteStartTime: existing.startTime),
-              let remoteStartTime = existing.startTime
-            {
-              currentSession.startTime = remoteStartTime
-              do {
-                try context.save()
-              } catch {
-                Log.error(
-                  "Failed to save reconciled scheduled session startTime: \(error.localizedDescription)",
-                  category: .strategy)
-              }
-              Log.info(
-                "Reconciled scheduled session startTime to \(remoteStartTime)", category: .strategy)
-            }
+            reconcileSessionTiming(
+              sessionId: activeScheduledSession.id, profileId: existing.profileId,
+              startTime: existing.startTime, timerEndTime: existing.validTimerEndTime,
+              originDevice: existing.sessionOriginDevice, context: context)
           case .error(let error):
             Log.info("Failed to sync scheduled session - \(redactedErrorForLog(error))", category: .strategy)
           }
@@ -1181,9 +1154,13 @@ class StrategyManager: ObservableObject {
         let previousTask = sessionSyncTask
         sessionSyncTask = Task {
           await previousTask?.value
+          let expectedStart =
+            Self.isCountdownTag(completedScheduleSession.tag)
+            ? completedScheduleSession.startTime : nil
           let result = await sessionSyncService.stopSession(
             profileId: completedScheduleSession.blockedProfileId,
-            endTime: endTime
+            endTime: endTime,
+            expectedStart: expectedStart
           )
 
           switch result {
@@ -1191,8 +1168,18 @@ class StrategyManager: ObservableObject {
             Log.info("Scheduled session stop synced", category: .strategy)
           case .alreadyStopped:
             Log.info("Scheduled session was already stopped", category: .strategy)
-          case .conflict, .error:
-            break  // Handle silently for completed sessions
+          case .conflict:
+            let retry = await sessionSyncService.stopSession(
+              profileId: completedScheduleSession.blockedProfileId,
+              endTime: endTime, expectedStart: expectedStart)
+            switch retry {
+            case .stopped, .alreadyStopped:
+              break
+            case .conflict, .error:
+              Log.warning("Completed session stop retry failed", category: .sync)
+            }
+          case .error:
+            Log.warning("Completed session stop sync failed", category: .sync)
           }
         }
       }
@@ -1553,12 +1540,49 @@ class StrategyManager: ObservableObject {
 
   // MARK: - Remote Session Sync
 
+  static func isCountdownTag(_ tag: String) -> Bool {
+    [ShortcutTimerBlockingStrategy.id, NFCTimerBlockingStrategy.id, QRTimerBlockingStrategy.id].contains(tag)
+  }
+
+  /// CAS joins and remote updates adopt the same canonical timing without registering a timer.
+  func reconcileSessionTiming(
+    sessionId: String, profileId: UUID, startTime: Date?, timerEndTime: Date?,
+    originDevice: String?, context: ModelContext,
+    cancelTimer: (UUID) -> Void = DeviceActivityCenterUtil.removeStrategyTimerActivity
+  ) {
+    guard let startTime,
+      let current = activeSession, current.isActive, current.id == sessionId,
+      current.blockedProfile.id == profileId,
+      SharedData.getActiveSharedSession()?.id == sessionId
+    else { return }
+    let ownsCountdown =
+      originDevice == SharedData.deviceSyncId.uuidString
+      && abs(current.startTime.timeIntervalSince(startTime)) < 1
+    if Self.isCountdownTag(current.tag) && !ownsCountdown { cancelTimer(profileId) }
+    guard
+      SharedData.updateSessionTiming(
+        expectedSessionId: sessionId, startTime: startTime, timerEndTime: timerEndTime
+      )
+    else {
+      errorMessage = "The session timing could not be saved."
+      return
+    }
+    current.startTime = startTime
+    current.timerEndTime = timerEndTime
+    do { try context.save() } catch {
+      errorMessage = "The session timing could not be saved."
+      Log.error("Failed to save adopted session timing", category: .sync)
+    }
+  }
+
   /// Start a session triggered by remote device
   func startRemoteSession(
     context: ModelContext,
     profileId: UUID,
     sessionId: UUID,
-    startTime: Date
+    startTime: Date,
+    timerEndTime: Date? = nil,
+    originDevice: String? = nil
   ) {
     guard !processingRemoteChange else { return }
     processingRemoteChange = true
@@ -1576,6 +1600,14 @@ class StrategyManager: ObservableObject {
         Log.info("Profile needs app selection, cannot start remotely", category: .strategy)
         errorMessage =
           "Profile '\(profile.name)' is active on another device but needs app selection on this device."
+        return
+      }
+
+      if let existing = try getActiveSession(context: context), existing.blockedProfile.id == profileId {
+        activeSession = existing
+        reconcileSessionTiming(
+          sessionId: existing.id, profileId: profileId, startTime: startTime,
+          timerEndTime: timerEndTime, originDevice: originDevice, context: context)
         return
       }
 
@@ -1610,18 +1642,22 @@ class StrategyManager: ObservableObject {
         withTag: "remote-sync",
         withProfile: profile,
         forceStart: true,
-        startTime: startTime
+        startTime: startTime,
+        timerEndTime: timerEndTime
       )
 
       // Converge on the single activation path so remote-started sessions get the same
       // side effects as local starts. syncSessionStart is suppressed while processingRemoteChange
       // is true, so this does not echo a session record back to CloudKit (#204).
       activateSession(activeSession, context: context)
+      try context.save()
 
       Log.info(
         "Started remote session for profile '\(profile.name)' with synced startTime",
         category: .strategy)
     } catch {
+      errorMessage = [errorMessage, "The remote session could not be fully loaded or its timing saved. Open the app and check its state."]
+        .compactMap { $0 }.joined(separator: "\n")
       Log.info("Error starting remote session - \(redactedErrorForLog(error))", category: .strategy)
     }
   }

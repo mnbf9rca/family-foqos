@@ -1,3 +1,4 @@
+import CloudKit
 import XCTest
 
 @testable import FamilyFoqos
@@ -121,4 +122,44 @@ final class ProfileSessionRecordTests: XCTestCase {
     XCTAssertEqual(record.breakStartTime, breakStart)
     XCTAssertEqual(record.breakEndTime, breakEnd)
   }
+  func testTimerDeadlineWireRoundTripClearingAndReaderGuard() throws {
+    let now = Date()
+    var session = ProfileSessionRecord(profileId: UUID())
+    session.applyUpdate(
+      isActive: true, sequenceNumber: 1, deviceId: "A", startTime: now,
+      timerEndTime: now.addingTimeInterval(900))
+    let record = session.toCKRecord(in: CKRecordZone.ID(zoneName: "Test"))
+    XCTAssertEqual(ProfileSessionRecord(from: record)?.validTimerEndTime, now.addingTimeInterval(900))
+    let decoded = try JSONDecoder().decode(ProfileSessionRecord.self, from: JSONEncoder().encode(session))
+    XCTAssertEqual(decoded.validTimerEndTime, session.validTimerEndTime)
+    session.applyUpdate(isActive: true, sequenceNumber: 2, deviceId: "A", breakStartTime: now)
+    XCTAssertEqual(session.validTimerEndTime, now.addingTimeInterval(900))
+    session.applyUpdate(isActive: false, sequenceNumber: 3, deviceId: "A", endTime: now)
+    session.updateCKRecord(record)
+    XCTAssertNil(record["timerEndTime"])
+    session.resetForNewSession()
+    session.applyUpdate(isActive: true, sequenceNumber: 4, deviceId: "B", startTime: now)
+    session.updateCKRecord(record)
+    XCTAssertNil(record["timerEndTime"])
+    for value in [now as NSDate, now.addingTimeInterval(-1) as NSDate, "bad" as NSString] as [CKRecordValue] {
+      record["timerEndTime"] = value
+      XCTAssertNil(ProfileSessionRecord(from: record)?.validTimerEndTime)
+    }
+    record["timerEndTime"] = now.addingTimeInterval(100)
+    record["isActive"] = false
+    XCTAssertNil(ProfileSessionRecord(from: record)?.validTimerEndTime)
+    record["isActive"] = true
+    record["startTime"] = nil
+    XCTAssertNil(ProfileSessionRecord(from: record)?.validTimerEndTime)
+  }
+
+  func testTimerStopUsesOwnerAndSubsecondStartTolerance() {
+    let now = Date()
+    var session = ProfileSessionRecord(profileId: UUID())
+    session.applyUpdate(isActive: true, sequenceNumber: 1, deviceId: "A", startTime: now)
+    XCTAssertTrue(session.matchesTimerStop(expectedStart: now.addingTimeInterval(0.4), deviceId: "A"))
+    XCTAssertFalse(session.matchesTimerStop(expectedStart: now, deviceId: "B"))
+    XCTAssertFalse(session.matchesTimerStop(expectedStart: now.addingTimeInterval(2), deviceId: "A"))
+  }
+
 }
