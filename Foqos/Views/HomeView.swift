@@ -305,6 +305,7 @@ struct HomeView: View {
     .onReceive(strategyManager.$errorMessage) { errorMessage in
       if let message = errorMessage {
         showErrorAlert(message: message)
+        strategyManager.errorMessage = nil
       }
     }
     .onReceive(geofenceEvaluator.$errorMessage) { errorMessage in

@@ -54,7 +54,7 @@ class QRTimerBlockingStrategy: BlockingStrategy {
           for: profile, session: activeSession)
 
         self.onSessionCreation?(.started(activeSession))
-        if let timerWarning { self.onErrorMessage?(timerWarning) }
+        if let timerWarning { self.onErrorMessage?("The session started, but \(timerWarning)") }
       }
     )
   }

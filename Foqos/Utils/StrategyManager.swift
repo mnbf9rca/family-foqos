@@ -598,7 +598,7 @@ class StrategyManager: ObservableObject {
       if let duration = durationInMinutes {
         guard
           !ProfileEditGate.editingDisabled(
-            isBlocking: session != nil || remotelyActiveProfileIds.contains(profile.id),
+            isBlocking: remotelyActiveProfileIds.contains(profile.id),
             isManaged: profile.isManaged, isUnlocked: isUnlocked(profile.id),
             mode: mode, lockActive: canVerifyCode
           )
