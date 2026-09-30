@@ -367,6 +367,10 @@ struct ParentDashboardView: View {
         }
       }
 
+      Text("Each link works once. Send it privately to one child.")
+        .font(.caption)
+        .foregroundColor(.secondary)
+
       let children = cloudKitManager.familyMembers.children
 
       if children.isEmpty {
@@ -395,7 +399,7 @@ struct ParentDashboardView: View {
           .foregroundColor(.secondary)
           .padding(.top, 8)
 
-        ForEach(nonAcceptedParticipants, id: \.userIdentity.userRecordID) { participant in
+        ForEach(nonAcceptedParticipants, id: \.participantID) { participant in
           PendingInvitationCard(
             participant: participant,
             onRemove: {
