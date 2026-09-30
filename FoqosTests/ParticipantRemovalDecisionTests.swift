@@ -4,12 +4,12 @@ import XCTest
 
 final class ParticipantRemovalDecisionTests: XCTestCase {
 
-  private func member(_ recordName: String, _ displayName: String) -> FamilyMember {
-    FamilyMember(userRecordName: recordName, displayName: displayName, role: .child)
+  private func member(_ recordName: String) -> FamilyMember {
+    FamilyMember(userRecordName: recordName, role: .child)
   }
 
   func testGivenAllResolved_WhenMemberAbsentFromParticipants_ThenMemberRemoved() {
-    let existing = [member("rec-A", "Emma"), member("rec-B", "Liam")]
+    let existing = [member("rec-A"), member("rec-B")]
     let accepted: Set<String> = ["rec-A"]
 
     let toRemove = CloudKitNetworkService.familyMembersToRemove(
@@ -22,7 +22,7 @@ final class ParticipantRemovalDecisionTests: XCTestCase {
   }
 
   func testGivenUnresolvedParticipant_WhenMemberAbsentFromParticipants_ThenNothingRemoved() {
-    let existing = [member("rec-A", "Emma"), member("rec-B", "Liam")]
+    let existing = [member("rec-A"), member("rec-B")]
     let accepted: Set<String> = ["rec-A"]
 
     let toRemove = CloudKitNetworkService.familyMembersToRemove(
@@ -37,7 +37,7 @@ final class ParticipantRemovalDecisionTests: XCTestCase {
   }
 
   func testGivenAllResolvedAndAllPresent_WhenNoDepartures_ThenNothingRemoved() {
-    let existing = [member("rec-A", "Emma"), member("rec-B", "Liam")]
+    let existing = [member("rec-A"), member("rec-B")]
     let accepted: Set<String> = ["rec-A", "rec-B"]
 
     let toRemove = CloudKitNetworkService.familyMembersToRemove(

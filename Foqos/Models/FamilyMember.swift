@@ -32,7 +32,6 @@ enum FamilyRole: String, Codable, CaseIterable, Identifiable {
 struct FamilyMember: Codable, Identifiable, Equatable {
   var id: UUID
   var userRecordName: String  // CKRecord.ID.recordName of the member
-  var displayName: String  // Name (e.g., "Emma", "Dad")
   var role: FamilyRole  // Parent or child
   var enrolledAt: Date
   var isActive: Bool
@@ -40,14 +39,12 @@ struct FamilyMember: Codable, Identifiable, Equatable {
   init(
     id: UUID = UUID(),
     userRecordName: String,
-    displayName: String,
     role: FamilyRole,
     enrolledAt: Date = Date(),
     isActive: Bool = true
   ) {
     self.id = id
     self.userRecordName = userRecordName
-    self.displayName = displayName
     self.role = role
     self.enrolledAt = enrolledAt
     self.isActive = isActive
@@ -57,7 +54,7 @@ struct FamilyMember: Codable, Identifiable, Equatable {
 
 extension FamilyMember {
   /// PII-SAFE LOG (#252): the only value permitted in log lines that reference a family member.
-  /// Returns the role and stable UUID prefix, never `displayName` (a real person name) or email.
+  /// Returns the role and stable UUID prefix, never contact information or the user record name.
   var redactedLogLabel: String { "\(role.rawValue)·\(id.uuidString.prefix(8))" }
 }
 
@@ -69,7 +66,6 @@ extension FamilyMember {
   enum RecordKey {
     static let id = "id"
     static let userRecordName = "userRecordName"
-    static let displayName = "displayName"
     static let role = "role"
     static let enrolledAt = "enrolledAt"
     static let isActive = "isActive"
@@ -81,7 +77,6 @@ extension FamilyMember {
       let idString = record[RecordKey.id] as? String,
       let id = UUID(uuidString: idString),
       let userRecordName = record[RecordKey.userRecordName] as? String,
-      let displayName = record[RecordKey.displayName] as? String,
       let enrolledAt = record[RecordKey.enrolledAt] as? Date
     else {
       return nil
@@ -89,7 +84,6 @@ extension FamilyMember {
 
     self.id = id
     self.userRecordName = userRecordName
-    self.displayName = displayName
     self.enrolledAt = enrolledAt
     self.isActive = (record[RecordKey.isActive] as? Int ?? 1) == 1
 
@@ -108,7 +102,6 @@ extension FamilyMember {
 
     record[RecordKey.id] = id.uuidString
     record[RecordKey.userRecordName] = userRecordName
-    record[RecordKey.displayName] = displayName
     record[RecordKey.role] = role.rawValue
     record[RecordKey.enrolledAt] = enrolledAt
     record[RecordKey.isActive] = isActive ? 1 : 0

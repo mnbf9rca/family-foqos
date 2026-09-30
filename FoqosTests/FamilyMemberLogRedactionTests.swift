@@ -8,12 +8,11 @@ final class FamilyMemberLogRedactionTests: XCTestCase {
     let member = FamilyMember(
       id: id,
       userRecordName: "urn_abc",
-      displayName: "Emma",
       role: .child
     )
 
     XCTAssertEqual(member.redactedLogLabel, "child·3F2A9C1B")
-    XCTAssertFalse(member.redactedLogLabel.contains("Emma"), "must not leak displayName")
+    XCTAssertFalse(member.redactedLogLabel.contains("urn_abc"), "must not leak userRecordName")
   }
 
   func testGivenParticipantRecordName_WhenFormattingStatusLog_ThenIncludesOpaqueIdentifier() {

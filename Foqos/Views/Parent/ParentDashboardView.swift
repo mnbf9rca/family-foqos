@@ -30,6 +30,23 @@ struct ParentDashboardView: View {
     mode != .child
   }
 
+  nonisolated static func memberDisplayName(
+    for member: FamilyMember,
+    acceptedIdentities: [(recordName: String?, nameComponents: PersonNameComponents?)]
+  ) -> String {
+    let name = acceptedIdentities.first { $0.recordName == member.userRecordName }?
+      .nameComponents?.formatted().trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let name, !name.isEmpty else { return member.role.displayName }
+    return name
+  }
+
+  private func memberDisplayName(_ member: FamilyMember) -> String {
+    Self.memberDisplayName(
+      for: member,
+      acceptedIdentities: cloudKitManager.shareParticipants.filter { $0.acceptanceStatus == .accepted }
+        .map { ($0.userIdentity.userRecordID?.recordName, $0.userIdentity.nameComponents) })
+  }
+
   /// Whether the page is functional (iCloud signed in and available)
   private var isPageFunctional: Bool {
     cloudKitManager.isSignedIn
@@ -343,6 +360,7 @@ struct ParentDashboardView: View {
         ForEach(parents) { member in
           FamilyMemberCard(
             member: member,
+            displayName: memberDisplayName(member),
             onRemove: {
               removeMember(member)
             })
@@ -379,6 +397,7 @@ struct ParentDashboardView: View {
         ForEach(children) { member in
           FamilyMemberCard(
             member: member,
+            displayName: memberDisplayName(member),
             onRemove: {
               removeMember(member)
             })
@@ -868,6 +887,7 @@ struct HowToUseStep: View {
 
 struct FamilyMemberCard: View {
   let member: FamilyMember
+  let displayName: String
   let onRemove: () -> Void
 
   @State private var showRemoveConfirmation = false
@@ -885,7 +905,7 @@ struct FamilyMemberCard: View {
 
       VStack(alignment: .leading, spacing: 2) {
         HStack(spacing: 6) {
-          Text(member.displayName)
+          Text(displayName)
             .font(.subheadline)
             .fontWeight(.medium)
 
@@ -966,7 +986,7 @@ struct FamilyMemberCard: View {
         .fill(Color(.tertiarySystemBackground))
     )
     .confirmationDialog(
-      "Remove \(member.displayName)",
+      "Remove \(displayName)",
       isPresented: $showRemoveConfirmation,
       titleVisibility: .visible
     ) {
@@ -975,7 +995,7 @@ struct FamilyMemberCard: View {
       }
       Button("Cancel", role: .cancel) {}
     } message: {
-      Text("This will unlink \(member.displayName) from locked Foqos controls. They will no longer receive your lock code.")
+      Text("This will unlink \(displayName) from locked Foqos controls. They will no longer receive your lock code.")
     }
   }
 

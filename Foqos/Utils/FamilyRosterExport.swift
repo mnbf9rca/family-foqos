@@ -7,7 +7,7 @@ enum FamilyRosterExport {
   ) -> String {
     let devicesByMember = Dictionary(grouping: monitoredDevices, by: \.childUserRecordName)
     let lines = members.sorted(by: memberComesBefore).flatMap { member -> [String] in
-      var fields = [member.redactedLogLabel, member.displayName, member.id.uuidString]
+      var fields = [member.redactedLogLabel, member.role.displayName, member.id.uuidString]
       if !member.userRecordName.isEmpty {
         fields.append(member.userRecordName)
       }
@@ -40,9 +40,6 @@ enum FamilyRosterExport {
   private static func memberComesBefore(_ lhs: FamilyMember, _ rhs: FamilyMember) -> Bool {
     if lhs.role.rawValue != rhs.role.rawValue {
       return lhs.role.rawValue < rhs.role.rawValue
-    }
-    if lhs.displayName != rhs.displayName {
-      return lhs.displayName < rhs.displayName
     }
     return lhs.id.uuidString < rhs.id.uuidString
   }
