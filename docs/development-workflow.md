@@ -85,6 +85,8 @@ scripts/xcode-stream.sh --agent <agent> --session <session> -- \
 
 ## Screenshots, Archives, and Uploads
 
+The Family Controls screenshot demo has no live CKShare identities, so its member list shows “Parent”, “Child”, and “Child” rather than the former synthetic names Alex, Emma, and Sam.
+
 The screenshots lane boots a simulator, so gate its entire process tree:
 
 ```bash
