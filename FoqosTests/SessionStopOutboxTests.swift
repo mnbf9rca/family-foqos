@@ -68,12 +68,12 @@ final class SessionStopOutboxTests: XCTestCase {
     outbox.enqueue(profileId: stuckId)
 
     // First drive: resolvedId succeeds (.alreadyStopped ⇒ resolved), stuckId keeps failing.
-    await outbox.drain { id in id == resolvedId }
+    await outbox.drain { id, _ in id == resolvedId }
 
     XCTAssertEqual(outbox.pending, [stuckId], "resolved id cleared, stuck id retained (no loop loss)")
 
     // Second drive: stuckId now resolves.
-    await outbox.drain { _ in true }
+    await outbox.drain { _, _ in true }
     XCTAssertTrue(outbox.pending.isEmpty)
   }
 

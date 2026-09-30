@@ -257,6 +257,7 @@ extension SharedData {
   public static func normalizedForEnd(_ s: SessionSnapshot) -> SessionSnapshot {
     guard let end = s.endTime else { return s }
     var out = s
+    out.timerEndTime = nil
     if out.breakStartTime != nil && out.breakEndTime == nil {
       out.breakEndTime = min(end, out.breakEndDeadline ?? end)
     }

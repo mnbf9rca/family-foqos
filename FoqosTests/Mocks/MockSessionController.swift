@@ -9,14 +9,20 @@ class MockSessionController: SessionController {
   var setRemoteSessionActiveCalls: [(Bool, UUID)] = []
 
   var startRemoteSessionCalled = false
+  var receivedTimerEndTime: Date?
+  var receivedStartTime: Date?
   var startRemoteSessionProfileId: UUID?
   func startRemoteSession(
     context: ModelContext,
     profileId: UUID,
     sessionId: UUID,
-    startTime: Date
+    startTime: Date,
+    timerEndTime: Date?,
+    originDevice: String?
   ) {
     startRemoteSessionCalled = true
+    receivedTimerEndTime = timerEndTime
+    receivedStartTime = startTime
     startRemoteSessionProfileId = profileId
   }
 

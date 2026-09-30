@@ -2,6 +2,8 @@ import AppIntents
 import SwiftData
 
 struct CheckProfileStatusIntent: AppIntent {
+  static let authenticationPolicy: IntentAuthenticationPolicy = .alwaysAllowed
+
   @Dependency(key: "ModelContainer")
   private var modelContainer: ModelContainer
 
@@ -18,28 +20,12 @@ struct CheckProfileStatusIntent: AppIntent {
 
   @MainActor
   func perform() async throws -> some IntentResult & ReturnsValue<Bool> & ProvidesDialog {
-    let strategyManager = StrategyManager.shared
-
-    do {
-      try strategyManager.loadActiveSession(context: modelContext)
-    } catch {
-      Log.error(
-        "Unexpected error in CheckProfileStatusIntent: \(error.localizedDescription)",
-        category: .strategy
-      )
-      throw IntentError.unexpected("Failed to load session data")
-    }
-
-    let isActive = strategyManager.activeSession?.blockedProfile.id == profile.id
-
-    let dialogMessage =
-      isActive
-      ? "\(profile.name) is currently active."
-      : "\(profile.name) is not active."
+    let status = try ShortcutStatus.read(
+      manager: .shared, context: modelContext, askedProfileId: profile.id)
 
     return .result(
-      value: isActive,
-      dialog: .init(stringLiteral: dialogMessage)
+      value: status.isActive,
+      dialog: .init(stringLiteral: status.dialog)
     )
   }
 }

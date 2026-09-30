@@ -2,6 +2,8 @@ import AppIntents
 import SwiftData
 
 struct CheckSessionActiveIntent: AppIntent {
+  static let authenticationPolicy: IntentAuthenticationPolicy = .alwaysAllowed
+
   @Dependency(key: "ModelContainer")
   private var modelContainer: ModelContainer
 
@@ -19,28 +21,12 @@ struct CheckSessionActiveIntent: AppIntent {
 
   @MainActor
   func perform() async throws -> some IntentResult & ReturnsValue<Bool> & ProvidesDialog {
-    let strategyManager = StrategyManager.shared
-
-    do {
-      try strategyManager.loadActiveSession(context: modelContext)
-    } catch {
-      Log.error(
-        "Unexpected error in CheckSessionActiveIntent: \(error.localizedDescription)",
-        category: .strategy
-      )
-      throw IntentError.unexpected("Failed to load session data")
-    }
-
-    let isActive = strategyManager.isBlocking
-
-    let dialogMessage =
-      isActive
-      ? "A Family Foqos session is currently active."
-      : "No Family Foqos session is active."
+    let status = try ShortcutStatus.read(
+      manager: .shared, context: modelContext)
 
     return .result(
-      value: isActive,
-      dialog: .init(stringLiteral: dialogMessage)
+      value: status.isActive,
+      dialog: .init(stringLiteral: status.dialog)
     )
   }
 }

@@ -2,6 +2,8 @@ import AppIntents
 import SwiftData
 
 struct StopProfileIntent: AppIntent {
+  static var authenticationPolicy: IntentAuthenticationPolicy { ShortcutsSettings.authenticationPolicy }
+
   @Dependency(key: "ModelContainer")
   private var modelContainer: ModelContainer
 
@@ -22,6 +24,9 @@ struct StopProfileIntent: AppIntent {
         context: modelContext
       )
 
-    return .result(dialog: "\(profile.name) stopped.")
+    guard let current = try BlockedProfiles.findProfile(byID: profile.id, in: modelContext) else {
+      throw IntentError.profileNotFound
+    }
+    return .result(dialog: "\(current.name) stopped.")
   }
 }

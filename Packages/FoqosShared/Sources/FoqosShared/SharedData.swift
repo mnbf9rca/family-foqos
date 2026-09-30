@@ -363,6 +363,7 @@ public enum SharedData {
 
     public var startTime: Date
     public var endTime: Date?
+    public var timerEndTime: Date?
 
     public var breakStartTime: Date?
     public var breakEndTime: Date?
@@ -384,6 +385,7 @@ public enum SharedData {
       blockedProfileId: UUID,
       startTime: Date,
       endTime: Date? = nil,
+      timerEndTime: Date? = nil,
       breakStartTime: Date? = nil,
       breakEndTime: Date? = nil,
       forceStarted: Bool,
@@ -398,6 +400,7 @@ public enum SharedData {
       self.blockedProfileId = blockedProfileId
       self.startTime = startTime
       self.endTime = endTime
+      self.timerEndTime = timerEndTime
       self.breakStartTime = breakStartTime
       self.breakEndTime = breakEndTime
       self.forceStarted = forceStarted
@@ -495,6 +498,21 @@ public enum SharedData {
   public static func createActiveSharedSession(for session: SessionSnapshot) {
     withLock {
       activeSharedSession = session
+    }
+  }
+
+  @discardableResult
+  public static func updateSessionTiming(
+    expectedSessionId: String, startTime: Date, timerEndTime: Date?
+  ) -> Bool {
+    withLockStatus(blocking: true) { outcome in
+      guard outcome == .acquired else { return false }
+      guard var session = activeSharedSession,
+        session.id == expectedSessionId, session.endTime == nil
+      else { return false }
+      session.startTime = startTime
+      session.timerEndTime = timerEndTime
+      return rawCommitActiveSession(session)
     }
   }
 

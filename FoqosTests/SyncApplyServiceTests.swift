@@ -1391,4 +1391,22 @@ final class SyncApplyServiceTests: XCTestCase {
     XCTAssertEqual(service.drainReenqueues(), [record.recordID])
   }
 
+  func testSameActiveProfileReceivesTimingUpdatesAndClears() throws {
+    let now = Date()
+    let profile = BlockedProfiles(name: "Active")
+    context.insert(profile)
+    sessionController.activeSession = BlockedProfileSession(tag: "remote-sync", blockedProfile: profile, startTime: now)
+    try context.save()
+    let service = makeService()
+    for deadline in [now.addingTimeInterval(900), nil] {
+      var remote = ProfileSessionRecord(profileId: profile.id)
+      remote.applyUpdate(isActive: true, sequenceNumber: 1, deviceId: "device-B", startTime: now, timerEndTime: deadline)
+      sessionController.startRemoteSessionCalled = false
+      XCTAssertEqual(service.applyFetchedModification(remote.toCKRecord(in: zoneID), isPendingDeleteOrTombstoned: noPendingDelete), .applied)
+      XCTAssertTrue(sessionController.startRemoteSessionCalled)
+      XCTAssertEqual(sessionController.receivedTimerEndTime, deadline)
+      XCTAssertEqual(sessionController.receivedStartTime, now)
+    }
+  }
+
 }

@@ -259,37 +259,60 @@ class DeviceActivityCenterUtil {
     }
   }
 
-  static func startStrategyTimerActivity(for profile: BlockedProfiles) {
-    guard let strategyData = profile.strategyData else {
-      Log.info("No strategy data found for profile: \(profile.id.uuidString)", category: .timer)
-      return
+  /// Registers and publishes only to the session created by the caller; grant fields stay intact.
+  static func startStrategyTimerActivity(
+    for profile: BlockedProfiles,
+    session: BlockedProfileSession,
+    durationInMinutes: Int? = nil,
+    now: Date = Date(),
+    register: (UUID, Int, Date) throws -> Date = registerStrategyTimer
+  ) -> String? {
+    let duration =
+      durationInMinutes
+      ?? profile.strategyData.map {
+        StrategyTimerData.toStrategyTimerData(from: $0).durationInMinutes
+      }
+    guard let duration else { return "no timer duration was specified." }
+    guard session.isActive, SharedData.getActiveSharedSession()?.id == session.id else {
+      return "the session changed before its timer could be registered."
     }
-    let timerData = StrategyTimerData.toStrategyTimerData(from: strategyData)
-
-    let center = DeviceActivityCenter()
-    let strategyTimerActivity = StrategyTimerActivity()
-    let deviceActivityName = strategyTimerActivity.getDeviceActivityName(
-      from: profile.id.uuidString
-    )
-
-    let (intervalStart, intervalEnd) = getTimeIntervalStartAndEnd(
-      from: timerData.durationInMinutes
-    )
-
-    let deviceActivitySchedule = DeviceActivitySchedule(
-      intervalStart: intervalStart,
-      intervalEnd: intervalEnd,
-      repeats: false
-    )
-
+    var registrationError: Error?
+    let deadline: Date?
     do {
-      // Remove any existing activity and create a new one
-      stopActivities(for: [deviceActivityName], with: center)
-      try center.startMonitoring(deviceActivityName, during: deviceActivitySchedule)
-      Log.info("Scheduled strategy timer activity", category: .timer)
+      deadline = try register(profile.id, duration, now)
     } catch {
-      Log.info("Failed to start strategy timer activity: \(error.localizedDescription)", category: .timer)
+      deadline = nil
+      registrationError = error
     }
+    guard session.isActive,
+      SharedData.updateSessionTiming(
+        expectedSessionId: session.id, startTime: session.startTime, timerEndTime: deadline
+      )
+    else { return "the session changed or its timer timing could not be saved." }
+    session.timerEndTime = deadline
+    do {
+      guard let context = session.modelContext else { return "its timer timing could not be saved." }
+      try context.save()
+    } catch {
+      Log.error("Failed to save session timer timing", category: .timer)
+      return "its timer timing could not be saved."
+    }
+    if registrationError != nil {
+      Log.error("Failed to register session countdown", category: .timer)
+      return "its timer could not be registered. Open the app to stop or configure the session."
+    }
+    return nil
+  }
+
+  static func registerStrategyTimer(profileId: UUID, minutes: Int, now: Date) throws -> Date {
+    let center = DeviceActivityCenter()
+    let name = StrategyTimerActivity().getDeviceActivityName(from: profileId.uuidString)
+    let interval = timerInterval(from: minutes, now: now)
+    let schedule = DeviceActivitySchedule(
+      intervalStart: interval.start, intervalEnd: interval.end, repeats: false)
+    stopActivities(for: [name], with: center)
+    try center.startMonitoring(name, during: schedule)
+    return interval.deadline
   }
 
   static func removeScheduleTimerActivities(for profile: BlockedProfiles) {
@@ -372,6 +395,10 @@ class DeviceActivityCenterUtil {
     stopActivities(for: oneMoreMinuteActivities, with: center)
   }
 
+  static func removeStrategyTimerActivity(profileId: UUID) {
+    stopActivities(for: [StrategyTimerActivity().getDeviceActivityName(from: profileId.uuidString)])
+  }
+
   static func removeAllStrategyTimerActivities() {
     let center = DeviceActivityCenter()
     let activities = center.activities
@@ -414,30 +441,20 @@ class DeviceActivityCenterUtil {
   static func getTimeIntervalStartAndEnd(from minutes: Int, now: Date = Date()) -> (
     intervalStart: DateComponents, intervalEnd: DateComponents
   ) {
-    // Clamp the upper bound so the computed interval can never collapse to a
-    // zero-length window: exactly 1440 minutes (24h), or any larger multiple,
-    // lands intervalEnd on the same wall-clock minute as intervalStart, which
-    // DeviceActivity silently refuses to monitor and defers ~24h (#212).
-    // NOTE: the lower bound is intentionally NOT clamped here — that would
-    // silently rewrite user-chosen break durations (see MAINTAINER DECISION 3).
-    let clampedMinutes = min(minutes, DeviceActivityLimits.maximumTimerMinutes)
-    if clampedMinutes != minutes {
-      Log.warning(
-        "Timer duration \(minutes)m exceeds DeviceActivity's honorable maximum; "
-          + "clamped to \(clampedMinutes)m",
-        category: .timer
-      )
-    }
+    let interval = timerInterval(from: minutes, now: now)
+    return (interval.start, interval.end)
+  }
 
-    let calendar = Calendar.current
-    let startComponents = calendar.dateComponents([.hour, .minute], from: now)
-    let intervalStart = DateComponents(hour: startComponents.hour, minute: startComponents.minute)
-
-    let endDate = now.addingTimeInterval(Double(clampedMinutes) * 60)
-    let endComponents = calendar.dateComponents([.hour, .minute], from: endDate)
-    let intervalEnd = DateComponents(hour: endComponents.hour, minute: endComponents.minute)
-
-    return (intervalStart: intervalStart, intervalEnd: intervalEnd)
+  static func timerInterval(from minutes: Int, now: Date, calendar: Calendar = .current) -> (
+    start: DateComponents, end: DateComponents, deadline: Date
+  ) {
+    // Keep the existing upper clamp and minute precision, including across midnight.
+    let end = now.addingTimeInterval(Double(min(minutes, DeviceActivityLimits.maximumTimerMinutes)) * 60)
+    let deadline = calendar.dateInterval(of: .minute, for: end)!.start
+    return (
+      calendar.dateComponents([.hour, .minute], from: now),
+      calendar.dateComponents([.hour, .minute], from: deadline), deadline
+    )
   }
 
   /// Computes the DeviceActivity interval for a stop-only schedule.

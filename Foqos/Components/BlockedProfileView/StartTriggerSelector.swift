@@ -24,6 +24,12 @@ struct StartTriggerSelector: View {
       Toggle("Tap to start", isOn: binding(\.manual))
         .disabled(disabled)
 
+      Toggle("Siri and Shortcuts", isOn: binding(\.shortcuts))
+        .disabled(disabled)
+      Text("Allow Siri and Shortcuts to start this profile.")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+
       // NFC picker
       Picker("NFC", selection: $nfcOption) {
         ForEach(NFCStartOption.allCases) { option in

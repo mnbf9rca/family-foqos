@@ -58,6 +58,7 @@ RECORD TYPE ProfileSession.profileId
 RECORD TYPE ProfileSession.isActive
 RECORD TYPE ProfileSession.sequenceNumber
 RECORD TYPE ProfileSession.startTime
+RECORD TYPE ProfileSession.timerEndTime
 RECORD TYPE ProfileSession.endTime
 RECORD TYPE ProfileSession.breakStartTime
 RECORD TYPE ProfileSession.breakEndTime

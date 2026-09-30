@@ -26,9 +26,15 @@ struct BlockedProfileEntity: AppEntity, Identifiable {
   }
 }
 
-struct BlockedProfilesQuery: EntityQuery {
+struct BlockedProfilesQuery: EntityStringQuery {
   @Dependency(key: "ModelContainer")
   private var modelContainer: ModelContainer
+
+  init() {}
+
+  init(modelContainer: ModelContainer) {
+    self.modelContainer = modelContainer
+  }
 
   @MainActor
   private var modelContext: ModelContext {
@@ -44,6 +50,7 @@ struct BlockedProfilesQuery: EntityQuery {
         predicate: #Predicate { identifiers.contains($0.id) }
       )
     )
+    guard Set(results.map(\.id)) == Set(identifiers) else { throw IntentError.profileNotFound }
     return results.map { BlockedProfileEntity(profile: $0) }
   }
 
@@ -55,14 +62,12 @@ struct BlockedProfilesQuery: EntityQuery {
     return results.map { BlockedProfileEntity(profile: $0) }
   }
 
-  func defaultResult() async -> BlockedProfileEntity? {
-    do {
-      return try await suggestedEntities().first
-    } catch {
-      Log.error(
-        "Failed to fetch default profile entity: \(error.localizedDescription)",
-        category: .app)
-      return nil
+  @MainActor
+  func entities(matching string: String) async throws -> [BlockedProfileEntity] {
+    let matches = try await suggestedEntities().filter {
+      $0.name.localizedCaseInsensitiveContains(string)
     }
+    guard !matches.isEmpty else { throw IntentError.profileNotFound }
+    return matches
   }
 }

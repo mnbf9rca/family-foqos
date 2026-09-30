@@ -52,6 +52,7 @@ enum TriggerMigration {
       stop.manual = true
     }
 
+    start.shortcuts = start.manual
     return (start, stop)
   }
 
