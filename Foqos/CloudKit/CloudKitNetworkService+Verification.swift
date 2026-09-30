@@ -85,12 +85,8 @@ extension CloudKitNetworkService {
         }
       }
 
-      let displayName =
-        await fetchCurrentUserDisplayName(userRecordID: userRecordID, in: zone.zoneID)
-        ?? "Family Member"
       let member = FamilyMember(
         userRecordName: userRecordName,
-        displayName: displayName,
         role: role
       )
 
@@ -231,28 +227,4 @@ extension CloudKitNetworkService {
     }
   }
 
-  func fetchCurrentUserDisplayName(
-    userRecordID: CKRecord.ID, in zoneID: CKRecordZone.ID
-  ) async -> String? {
-    do {
-      let rootRecordID = CKRecord.ID(recordName: familyRootRecordName, zoneID: zoneID)
-      let rootRecord = try await sharedDatabase.record(for: rootRecordID)
-      guard let shareRef = rootRecord.share else { return nil }
-      let shareRecord = try await sharedDatabase.record(for: shareRef.recordID)
-      guard let share = shareRecord as? CKShare else {
-        Log.error(
-          "Expected CKShare but received \(type(of: shareRecord)) for share reference \(shareRef)",
-          category: .cloudKit)
-        return nil
-      }
-
-      let me = share.participants.first {
-        $0.userIdentity.userRecordID?.recordName == userRecordID.recordName
-      }
-      return me?.userIdentity.nameComponents?.formatted()
-    } catch {
-      Log.debug("Could not fetch user display name from share: \(redactedErrorForLog(error))", category: .cloudKit)
-      return nil
-    }
-  }
 }

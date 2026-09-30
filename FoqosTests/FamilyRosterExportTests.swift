@@ -8,13 +8,12 @@ final class FamilyRosterExportTests: XCTestCase {
     let member = FamilyMember(
       id: UUID(uuidString: "3F2A9C1B-672E-4C4A-9039-FF6107FBCE91")!,
       userRecordName: "_abc123",
-      displayName: "Emma",
       role: .child
     )
 
     XCTAssertEqual(
       FamilyRosterExport.content(for: [member], monitoredDevices: []),
-      "child·3F2A9C1B — Emma — 3F2A9C1B-672E-4C4A-9039-FF6107FBCE91 — _abc123\n"
+      "child·3F2A9C1B — Child — 3F2A9C1B-672E-4C4A-9039-FF6107FBCE91 — _abc123\n"
     )
   }
 
@@ -22,7 +21,6 @@ final class FamilyRosterExportTests: XCTestCase {
     let member = FamilyMember(
       id: UUID(uuidString: "81D45AA0-DB15-48E2-9E20-0BE031607A19")!,
       userRecordName: "_def456",
-      displayName: "Dad",
       role: .parent,
       isActive: false
     )
@@ -37,7 +35,6 @@ final class FamilyRosterExportTests: XCTestCase {
     let member = FamilyMember(
       id: UUID(uuidString: "3F2A9C1B-672E-4C4A-9039-FF6107FBCE91")!,
       userRecordName: "_abc123",
-      displayName: "Emma",
       role: .child
     )
     let devices = [
@@ -49,7 +46,7 @@ final class FamilyRosterExportTests: XCTestCase {
     XCTAssertEqual(
       FamilyRosterExport.content(for: [member], monitoredDevices: devices),
       """
-      child·3F2A9C1B — Emma — 3F2A9C1B-672E-4C4A-9039-FF6107FBCE91 — _abc123
+      child·3F2A9C1B — Child — 3F2A9C1B-672E-4C4A-9039-FF6107FBCE91 — _abc123
         device — device-a — heartbeat-_abc123-device-a
         device — device-z — heartbeat-_abc123-device-z
 
@@ -57,23 +54,20 @@ final class FamilyRosterExportTests: XCTestCase {
     )
   }
 
-  func testGivenMembersOutOfOrder_WhenFormattingRoster_ThenSortsRoleNameAndUUID() {
+  func testGivenMembersOutOfOrder_WhenFormattingRoster_ThenSortsRoleAndUUID() {
     let parent = FamilyMember(
       id: UUID(uuidString: "00000000-0000-0000-0000-000000000003")!,
       userRecordName: "parent",
-      displayName: "Alex",
       role: .parent
     )
     let laterChild = FamilyMember(
       id: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!,
       userRecordName: "child-b",
-      displayName: "Sam",
       role: .child
     )
     let earlierChild = FamilyMember(
       id: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
       userRecordName: "child-a",
-      displayName: "Sam",
       role: .child
     )
 
@@ -84,9 +78,9 @@ final class FamilyRosterExportTests: XCTestCase {
     XCTAssertEqual(
       lines.map(String.init),
       [
-        "child·00000000 — Sam — 00000000-0000-0000-0000-000000000001 — child-a",
-        "child·00000000 — Sam — 00000000-0000-0000-0000-000000000002 — child-b",
-        "parent·00000000 — Alex — 00000000-0000-0000-0000-000000000003 — parent",
+        "child·00000000 — Child — 00000000-0000-0000-0000-000000000001 — child-a",
+        "child·00000000 — Child — 00000000-0000-0000-0000-000000000002 — child-b",
+        "parent·00000000 — Parent — 00000000-0000-0000-0000-000000000003 — parent",
       ])
   }
 
@@ -94,7 +88,6 @@ final class FamilyRosterExportTests: XCTestCase {
     let member = FamilyMember(
       id: UUID(uuidString: "3F2A9C1B-672E-4C4A-9039-FF6107FBCE91")!,
       userRecordName: "",
-      displayName: "Emma",
       role: .child
     )
 
@@ -103,7 +96,7 @@ final class FamilyRosterExportTests: XCTestCase {
         for: [member],
         monitoredDevices: [monitoredDevice(identifier: "device-a", childRecordName: "")]
       ),
-      "child·3F2A9C1B — Emma — 3F2A9C1B-672E-4C4A-9039-FF6107FBCE91\n"
+      "child·3F2A9C1B — Child — 3F2A9C1B-672E-4C4A-9039-FF6107FBCE91\n"
     )
   }
 

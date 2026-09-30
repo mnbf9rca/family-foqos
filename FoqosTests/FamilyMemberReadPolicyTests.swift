@@ -1,9 +1,27 @@
+import CloudKit
 import Foundation
 import XCTest
 
 @testable import FamilyFoqos
 
 final class FamilyMemberReadPolicyTests: XCTestCase {
+  func testMemberRecordsIgnoreLegacyNamesAndNeverWriteContactNames() throws {
+    let now = Date()
+    let zone = CKRecordZone.ID(zoneName: "FamilyPolicies")
+    let record = CKRecord(recordType: FamilyMember.recordType, recordID: CKRecord.ID(recordName: "member", zoneID: zone))
+    record["id"] = UUID().uuidString
+    record["userRecordName"] = "child-record"
+    record["role"] = FamilyRole.child.rawValue
+    record["enrolledAt"] = now
+    for oldName in ["Legacy Name", nil] as [String?] {
+      record["displayName"] = oldName
+      let member = try XCTUnwrap(FamilyMember(from: record))
+      XCTAssertEqual(member.role, .child)
+      XCTAssertNil(member.toCKRecord(in: zone)["displayName"])
+      XCTAssertFalse(String(decoding: try JSONEncoder().encode(member), as: UTF8.self).contains("Legacy Name"))
+    }
+  }
+
   func testGivenFamilyMemberRead_WhenInspectingImplementation_ThenItDoesNotCreatePolicyZone()
     throws
   {

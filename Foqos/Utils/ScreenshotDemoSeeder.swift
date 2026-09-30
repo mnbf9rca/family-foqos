@@ -77,13 +77,13 @@ import SwiftData
       CloudKitManager.shared.isShareOwner = ScreenshotDemoMode.scenario != .childLocked
       CloudKitManager.shared.familyMembers = [
         FamilyMember(
-          userRecordName: "_demo-alex", displayName: "Alex", role: .parent,
+          userRecordName: "_demo-alex", role: .parent,
           enrolledAt: now.addingTimeInterval(-86400 * 190)),
         FamilyMember(
-          userRecordName: "_demo-emma", displayName: "Emma", role: .child,
+          userRecordName: "_demo-emma", role: .child,
           enrolledAt: now.addingTimeInterval(-86400 * 188)),
         FamilyMember(
-          userRecordName: "_demo-sam", displayName: "Sam", role: .child,
+          userRecordName: "_demo-sam", role: .child,
           enrolledAt: now.addingTimeInterval(-86400 * 92)),
       ]
       LockCodeManager.shared.seedForScreenshots([FamilyLockCode(code: "0000")])
