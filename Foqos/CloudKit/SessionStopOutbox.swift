@@ -7,6 +7,7 @@ import Foundation
 final class SessionStopOutbox {
   private let defaults: UserDefaults
   private let key = "family_foqos_session_stop_outbox"
+  private let expectedStartsKey = "family_foqos_session_stop_outbox_expected_starts"
 
   init(defaults: UserDefaults = .standard) {
     self.defaults = defaults
@@ -16,9 +17,16 @@ final class SessionStopOutbox {
     (defaults.array(forKey: key) as? [String] ?? []).compactMap(UUID.init(uuidString:))
   }
 
-  func enqueue(profileId: UUID) {
+  func expectedStart(for profileId: UUID) -> Date? {
+    defaults.dictionary(forKey: expectedStartsKey)?[profileId.uuidString] as? Date
+  }
+
+  func enqueue(profileId: UUID, expectedStart: Date? = nil) {
     var ids = defaults.array(forKey: key) as? [String] ?? []
     let value = profileId.uuidString
+    var starts = defaults.dictionary(forKey: expectedStartsKey) ?? [:]
+    starts[value] = expectedStart
+    defaults.set(starts, forKey: expectedStartsKey)
     guard !ids.contains(value) else { return }
     ids.append(value)
     defaults.set(ids, forKey: key)
@@ -28,15 +36,19 @@ final class SessionStopOutbox {
     var ids = defaults.array(forKey: key) as? [String] ?? []
     ids.removeAll { $0 == profileId.uuidString }
     defaults.set(ids, forKey: key)
+    var starts = defaults.dictionary(forKey: expectedStartsKey) ?? [:]
+    starts.removeValue(forKey: profileId.uuidString)
+    defaults.set(starts, forKey: expectedStartsKey)
   }
 
   func clear() {
     defaults.removeObject(forKey: key)
+    defaults.removeObject(forKey: expectedStartsKey)
   }
 
   /// Re-drive each pending stop; `stop` returns true when the id is resolved (removed).
-  func drain(stop: (UUID) async -> Bool) async {
-    for id in pending where await stop(id) {
+  func drain(stop: (UUID, Date?) async -> Bool) async {
+    for id in pending where await stop(id, expectedStart(for: id)) {
       remove(profileId: id)
     }
   }

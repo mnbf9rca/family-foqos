@@ -833,7 +833,8 @@ class StrategyManager: ObservableObject {
   /// Extracted from the CAS Task closure so Phase-E tests can exercise the routing without a
   /// live CloudKit round trip.
   func handleStopResult(
-    _ result: SessionSyncService.StopResult, profileId: UUID
+    _ result: SessionSyncService.StopResult, profileId: UUID,
+    endTime: Date = Date(), expectedStart: Date? = nil
   ) async {
     switch result {
     case .stopped:
@@ -843,7 +844,8 @@ class StrategyManager: ObservableObject {
     case .conflict(let current):
       Log.info("Stop conflict, current seq=\(current.sequenceNumber)", category: .strategy)
       // Retry stop once
-      let retryResult = await sessionSyncService.stopSession(profileId: profileId)
+      let retryResult = await sessionSyncService.stopSession(
+        profileId: profileId, endTime: endTime, expectedStart: expectedStart)
       switch retryResult {
       case .stopped:
         Log.info("Stop retry succeeded", category: .strategy)
@@ -852,20 +854,20 @@ class StrategyManager: ObservableObject {
       case .conflict, .error:
         Log.info("Stop retry failed", category: .strategy)
         // #201: persist the dropped stop intent for foreground re-drive instead of losing it.
-        sessionStopOutbox.enqueue(profileId: profileId)
+        sessionStopOutbox.enqueue(profileId: profileId, expectedStart: expectedStart)
       }
     case .error(let error):
       Log.info("Failed to sync session stop - \(redactedErrorForLog(error))", category: .strategy)
       // #201: persist the dropped stop intent for foreground re-drive instead of losing it.
-      sessionStopOutbox.enqueue(profileId: profileId)
+      sessionStopOutbox.enqueue(profileId: profileId, expectedStart: expectedStart)
     }
   }
 
   /// #201: re-drive persisted session-stop intents. Wired to scenePhase `.active` in `FoqosApp`.
   func drainSessionStopOutbox() async {
-    await sessionStopOutbox.drain { [weak self] profileId in
+    await sessionStopOutbox.drain { [weak self] profileId, expectedStart in
       guard let self else { return true }
-      let result = await self.sessionSyncService.stopSession(profileId: profileId)
+      let result = await self.sessionSyncService.stopSession(profileId: profileId, expectedStart: expectedStart)
       switch result {
       case .stopped, .alreadyStopped:
         return true
@@ -1163,24 +1165,9 @@ class StrategyManager: ObservableObject {
             expectedStart: expectedStart
           )
 
-          switch result {
-          case .stopped:
-            Log.info("Scheduled session stop synced", category: .strategy)
-          case .alreadyStopped:
-            Log.info("Scheduled session was already stopped", category: .strategy)
-          case .conflict:
-            let retry = await sessionSyncService.stopSession(
-              profileId: completedScheduleSession.blockedProfileId,
-              endTime: endTime, expectedStart: expectedStart)
-            switch retry {
-            case .stopped, .alreadyStopped:
-              break
-            case .conflict, .error:
-              Log.warning("Completed session stop retry failed", category: .sync)
-            }
-          case .error:
-            Log.warning("Completed session stop sync failed", category: .sync)
-          }
+          await handleStopResult(
+            result, profileId: completedScheduleSession.blockedProfileId,
+            endTime: endTime, expectedStart: expectedStart)
         }
       }
     }

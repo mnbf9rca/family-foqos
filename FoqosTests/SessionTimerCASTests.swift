@@ -68,6 +68,50 @@ final class SessionTimerCASTests: XCTestCase {
   }
 
   @MainActor
+  func testFailedTimerStopsPersistExpectationAndRedriveOnlyMatchingSession() async throws {
+    let now = Date()
+    let owner = SharedData.deviceSyncId.uuidString
+    let outbox = SessionStopOutbox()
+    outbox.clear()
+    defer { outbox.clear() }
+    for conflicts in [false, true] {
+      for (remoteStart, remoteOwner, canStop) in [
+        (now, owner, true), (now.addingTimeInterval(5), owner, false), (now, "other-device", false),
+      ] {
+        let profile = UUID()
+        let active = record(profile: profile, start: now, owner: owner, deadline: now.addingTimeInterval(900))
+        let remote = record(profile: profile, start: remoteStart, owner: remoteOwner, deadline: nil)
+        let server = TimerCASRecords(
+          records: conflicts ? [active, active, remote] : [remote],
+          failuresRemaining: conflicts ? 1 : 0)
+        let service = SessionSyncService(fetchRecord: { _ in try await server.fetch() }, saveRecord: { try await server.save($0) })
+        let manager = StrategyManager(sessionSyncService: service)
+        let failure: SessionSyncService.StopResult =
+          conflicts ? .conflict(currentSession: try XCTUnwrap(ProfileSessionRecord(from: active))) : .error(CKError(.networkUnavailable))
+
+        await manager.handleStopResult(failure, profileId: profile, endTime: now, expectedStart: now)
+
+        let reloaded = SessionStopOutbox()
+        XCTAssertEqual(reloaded.pending, [profile])
+        XCTAssertEqual(reloaded.expectedStart(for: profile), now)
+        let restartedManager = StrategyManager(sessionSyncService: service)
+        await restartedManager.drainSessionStopOutbox()
+        let saves = await server.saves
+        XCTAssertEqual(saves.count, (conflicts ? 1 : 0) + (canStop ? 1 : 0))
+        XCTAssertTrue(reloaded.pending.isEmpty)
+        XCTAssertNil(reloaded.expectedStart(for: profile))
+      }
+    }
+    let legacy = UUID()
+    outbox.enqueue(profileId: legacy)
+    XCTAssertNil(SessionStopOutbox().expectedStart(for: legacy))
+    outbox.enqueue(profileId: legacy, expectedStart: now)
+    XCTAssertEqual(outbox.pending, [legacy])
+    outbox.clear()
+    XCTAssertNil(SessionStopOutbox().expectedStart(for: legacy))
+  }
+
+  @MainActor
   func testCompletedCountdownRetriesMatchingConflictWithOriginalEndTime() async throws {
     let now = Date()
     let suiteName = "CountdownRetry-\(UUID().uuidString)"
