@@ -240,7 +240,7 @@ actor SessionSyncService {
         Log.info("Session already stopped for \(profileId)", category: .sync)
         return .alreadyStopped
       }
-      if let expectedStart, !existing.matchesTimerStop(expectedStart: expectedStart, deviceId: deviceId) {
+      if let expectedStart, !existing.matchesCompletion(expectedStart: expectedStart, deviceId: deviceId) {
         return .alreadyStopped
       }
       return await deactivateSession(profileId: profileId, endTime: endTime, expectedStart: expectedStart)
@@ -299,7 +299,7 @@ actor SessionSyncService {
             return .alreadyStopped
           }
           if let expectedStart {
-            guard current.matchesTimerStop(expectedStart: expectedStart, deviceId: deviceId) else {
+            guard current.matchesCompletion(expectedStart: expectedStart, deviceId: deviceId) else {
               return .alreadyStopped
             }
           }

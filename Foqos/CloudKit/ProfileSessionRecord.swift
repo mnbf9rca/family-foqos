@@ -150,8 +150,9 @@ struct ProfileSessionRecord: Codable, Equatable, Sendable {
     return timerEndTime
   }
 
-  func matchesTimerStop(expectedStart: Date, deviceId: String) -> Bool {
-    sessionOriginDevice == deviceId && startTime.map { abs($0.timeIntervalSince(expectedStart)) < 1 } == true
+  func matchesCompletion(expectedStart: Date, deviceId: String) -> Bool {
+    startTime.map { abs($0.timeIntervalSince(expectedStart)) < 1 } == true
+      && (validTimerEndTime == nil || sessionOriginDevice == deviceId)
   }
 
   // MARK: - CloudKit Conversion

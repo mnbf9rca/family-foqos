@@ -68,19 +68,23 @@ final class SessionTimerCASTests: XCTestCase {
   }
 
   @MainActor
-  func testFailedTimerStopsPersistExpectationAndRedriveOnlyMatchingSession() async throws {
+  func testFailedCompletionStopsPersistExpectationAndRedriveOnlyMatchingSession() async throws {
     let now = Date()
     let owner = SharedData.deviceSyncId.uuidString
     let outbox = SessionStopOutbox()
     outbox.clear()
     defer { outbox.clear() }
     for conflicts in [false, true] {
-      for (remoteStart, remoteOwner, canStop) in [
-        (now, owner, true), (now.addingTimeInterval(5), owner, false), (now, "other-device", false),
+      for (remoteStart, remoteOwner, deadline, canStop) in [
+        (now, owner, Optional(now.addingTimeInterval(900)), true),
+        (now.addingTimeInterval(5), owner, now.addingTimeInterval(900), false),
+        (now, "other-device", now.addingTimeInterval(900), false),
+        (now.addingTimeInterval(5), "other-device", nil, false),
+        (now, "other-device", nil, true),
       ] {
         let profile = UUID()
         let active = record(profile: profile, start: now, owner: owner, deadline: now.addingTimeInterval(900))
-        let remote = record(profile: profile, start: remoteStart, owner: remoteOwner, deadline: nil)
+        let remote = record(profile: profile, start: remoteStart, owner: remoteOwner, deadline: deadline)
         let server = TimerCASRecords(
           records: conflicts ? [active, active, remote] : [remote],
           failuresRemaining: conflicts ? 1 : 0)
@@ -98,6 +102,7 @@ final class SessionTimerCASTests: XCTestCase {
         await restartedManager.drainSessionStopOutbox()
         let saves = await server.saves
         XCTAssertEqual(saves.count, (conflicts ? 1 : 0) + (canStop ? 1 : 0))
+        if canStop { XCTAssertEqual(saves.last?["isActive"] as? Int, 0) }
         XCTAssertTrue(reloaded.pending.isEmpty)
         XCTAssertNil(reloaded.expectedStart(for: profile))
       }
@@ -112,7 +117,7 @@ final class SessionTimerCASTests: XCTestCase {
   }
 
   @MainActor
-  func testCompletedCountdownRetriesMatchingConflictWithOriginalEndTime() async throws {
+  func testCompletedScheduleMirrorRetriesMatchingConflictWithOriginalEndTime() async throws {
     let now = Date()
     let suiteName = "CountdownRetry-\(UUID().uuidString)"
     SharedData.configure(suite: UserDefaults(suiteName: suiteName)!)
@@ -128,9 +133,9 @@ final class SessionTimerCASTests: XCTestCase {
     let profile = BlockedProfiles(name: "Timer")
     context.insert(profile)
     let session = BlockedProfileSession.createSession(
-      in: context, withTag: ShortcutTimerBlockingStrategy.id, withProfile: profile, startTime: now)
+      in: context, withTag: profile.id.uuidString, withProfile: profile, startTime: now)
     SharedData.endActiveSharedSession()
-    let active = record(profile: profile.id, start: now, owner: SharedData.deviceSyncId.uuidString, deadline: nil)
+    let active = record(profile: profile.id, start: now, owner: "other-device", deadline: nil)
     let saved = expectation(description: "conflicting completion retried successfully")
     let server = TimerCASRecords(records: [active, active, active], failuresRemaining: 1) { saved.fulfill() }
     let service = SessionSyncService(fetchRecord: { _ in try await server.fetch() }, saveRecord: { try await server.save($0) })

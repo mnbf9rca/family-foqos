@@ -153,13 +153,17 @@ final class ProfileSessionRecordTests: XCTestCase {
     XCTAssertNil(ProfileSessionRecord(from: record)?.validTimerEndTime)
   }
 
-  func testTimerStopUsesOwnerAndSubsecondStartTolerance() {
+  func testCompletionUsesSubsecondStartToleranceAndOwnerOnlyForCountdown() {
     let now = Date()
     var session = ProfileSessionRecord(profileId: UUID())
     session.applyUpdate(isActive: true, sequenceNumber: 1, deviceId: "A", startTime: now)
-    XCTAssertTrue(session.matchesTimerStop(expectedStart: now.addingTimeInterval(0.4), deviceId: "A"))
-    XCTAssertFalse(session.matchesTimerStop(expectedStart: now, deviceId: "B"))
-    XCTAssertFalse(session.matchesTimerStop(expectedStart: now.addingTimeInterval(2), deviceId: "A"))
+    XCTAssertTrue(session.matchesCompletion(expectedStart: now, deviceId: "B"))
+    XCTAssertFalse(session.matchesCompletion(expectedStart: now.addingTimeInterval(2), deviceId: "B"))
+    session.resetForNewSession()
+    session.applyUpdate(isActive: true, sequenceNumber: 2, deviceId: "A", startTime: now, timerEndTime: now.addingTimeInterval(900))
+    XCTAssertTrue(session.matchesCompletion(expectedStart: now.addingTimeInterval(0.4), deviceId: "A"))
+    XCTAssertFalse(session.matchesCompletion(expectedStart: now, deviceId: "B"))
+    XCTAssertFalse(session.matchesCompletion(expectedStart: now.addingTimeInterval(2), deviceId: "A"))
   }
 
 }

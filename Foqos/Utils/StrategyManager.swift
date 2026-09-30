@@ -1156,9 +1156,7 @@ class StrategyManager: ObservableObject {
         let previousTask = sessionSyncTask
         sessionSyncTask = Task {
           await previousTask?.value
-          let expectedStart =
-            Self.isCountdownTag(completedScheduleSession.tag)
-            ? completedScheduleSession.startTime : nil
+          let expectedStart = completedScheduleSession.startTime
           let result = await sessionSyncService.stopSession(
             profileId: completedScheduleSession.blockedProfileId,
             endTime: endTime,
