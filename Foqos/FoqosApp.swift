@@ -153,6 +153,7 @@ struct FoqosApp: App {
       key: "ModelContainer",
       dependency: asyncDependency
     )
+    FamilyFoqosShortcuts.updateAppShortcutParameters()
   }
 
   var body: some Scene {
