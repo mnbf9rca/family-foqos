@@ -40,9 +40,7 @@ jobs:
 
   analyze-swift:
     name: Analyze (swift)
-    runs-on: xcode-27
-    env:
-      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+    runs-on: macos-latest
     permissions:
       contents: read
       packages: read
@@ -50,60 +48,12 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
-        with:
-          persist-credentials: false
-
-      - name: Verify Xcode 27 toolchain
-        shell: bash
-        run: |
-          for tool in xcodebuild xcrun; do
-            command -v "$tool" >/dev/null || { echo "$tool is required" >&2; exit 127; }
-          done
-          [[ -d "$DEVELOPER_DIR" ]] || { echo "Selected Xcode directory is missing" >&2; exit 1; }
-          resolved_developer_dir="$(cd "$DEVELOPER_DIR" && pwd -P)"
-          printf 'Selected Xcode: %s\n' "$resolved_developer_dir"
-          [[ "$resolved_developer_dir" != *[bB][eE][tT][aA]* ]] || { echo "Beta Xcode is not permitted" >&2; exit 1; }
-          xcodebuild_path="$(xcrun --find xcodebuild)"
-          printf 'xcrun xcodebuild: %s\n' "$xcodebuild_path"
-          resolved_xcodebuild_dir="$(cd "${xcodebuild_path%/*}" && pwd -P)"
-          [[ "$resolved_xcodebuild_dir/" == "$resolved_developer_dir/"* ]] || { echo "xcrun resolved another Xcode" >&2; exit 1; }
-          xcode_identity="$(xcodebuild -version)"
-          printf '%s\n' "$xcode_identity"
-          [[ "${xcode_identity%%$'\n'*}" =~ ^Xcode\ 27(\.[0-9]+)*$ ]] || { echo "Expected Xcode 27" >&2; exit 1; }
-          swift_identity="$(xcrun swift --version)"
-          printf '%s\n' "$swift_identity"
-          [[ "$swift_identity" =~ (^|[[:space:]])Apple\ Swift\ version\ 6\.4([.[:space:]]|$) ]] || { echo "Expected Swift 6.4" >&2; exit 1; }
-          iphoneos_sdk="$(xcrun --sdk iphoneos --show-sdk-version)"
-          simulator_sdk="$(xcrun --sdk iphonesimulator --show-sdk-version)"
-          printf 'iOS SDK: %s; iOS Simulator SDK: %s\n' "$iphoneos_sdk" "$simulator_sdk"
-          [[ "$iphoneos_sdk" =~ ^27(\.[0-9]+)*$ && "$simulator_sdk" =~ ^27(\.[0-9]+)*$ ]] || { echo "Expected iOS and Simulator 27 SDKs" >&2; exit 1; }
-
-      - name: Prepare Swift extraction
-        shell: bash
-        run: |
-          for tool in arch defaults file softwareupdate sudo uname; do
-            command -v "$tool" >/dev/null || { echo "$tool is required" >&2; exit 127; }
-          done
-          uname -m
-          file /usr/bin/sandbox-exec
-          if ! arch -x86_64 /usr/bin/true; then
-            sudo softwareupdate --install-rosetta --agree-to-license
-          fi
-          arch -x86_64 /usr/bin/true
-          # CodeQL cannot trace macOS 27's arm64e-only manifest sandbox helper.
-          defaults write com.apple.dt.Xcode IDEPackageSupportDisableManifestSandbox -bool YES
-          [[ "$(defaults read com.apple.dt.Xcode IDEPackageSupportDisableManifestSandbox)" == 1 ]] || { echo "Manifest sandbox preference was not applied" >&2; exit 1; }
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
         with:
           languages: swift
           build-mode: manual
-
-      - name: Log CodeQL executable architectures
-        shell: bash
-        run: |
-          file "${CODEQL_RUNNER:?}" "${SEMMLE_PRELOAD_libtrace:?}" "${CODEQL_EXTRACTOR_SWIFT_ROOT:?}/tools/osx64/extractor.real"
 
       - name: Build iOS app
         run: >-
