@@ -100,9 +100,16 @@ final class ScreenshotTests: XCTestCase {
     XCTAssertTrue(activity.exists)
     XCTAssertTrue(hide.exists)
     XCTAssertLessThanOrEqual(activity.frame.maxY, hide.frame.minY)
+    let visibleBounds = app.scrollViews.firstMatch.frame.intersection(app.frame)
+    XCTAssertGreaterThanOrEqual(hide.frame.minX, visibleBounds.minX)
+    XCTAssertLessThanOrEqual(hide.frame.maxX, visibleBounds.maxX)
 
     let labels = ["<1h", "1-3h", "3-5h", ">5h"].map { app.staticTexts[$0] }
-    for label in labels { XCTAssertTrue(label.exists) }
+    for label in labels {
+      XCTAssertTrue(label.exists)
+      XCTAssertGreaterThanOrEqual(label.frame.minX, visibleBounds.minX)
+      XCTAssertLessThanOrEqual(label.frame.maxX, visibleBounds.maxX)
+    }
     for (previous, next) in zip(labels, labels.dropFirst()) {
       XCTAssertLessThanOrEqual(previous.frame.maxY, next.frame.minY)
     }
