@@ -94,6 +94,8 @@ scripts/xcode-stream.sh --agent <agent> --session <session> -- \
   scripts/fastlane.sh screenshots
 ```
 
+V1 (release/v1) receives no entitlement changes; fixes such as the iOS 26 share entitlement ship in V2 only.
+
 Archive and upload lanes do not boot simulators. Run them through `scripts/fastlane.sh` without the
 simulator gate:
 
@@ -139,6 +141,8 @@ linked runbook, then reruns the comparison and Production postflight before uplo
 `verify_export`, `beta`, and `release` preflight the standalone xcbeautify binary. The beta lane
 uploads to TestFlight and then publishes dSYMs; the release lane uploads metadata, screenshots,
 and the binary, confirms submission for review, and then publishes dSYMs.
+
+The Require Device Unlock setting for Siri and Shortcuts was accepted without a physical-device test because Siri was unusable on the maintainer's device; enforcement by iOS remains unverified.
 
 `update_screenshots` requires a clean `main` checkout, the framed screenshots validated by the lane,
 and an existing editable App Store Connect version. It uses the ASC credentials from 1Password to
