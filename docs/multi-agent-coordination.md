@@ -11,7 +11,7 @@ The fleet is one Herdr workspace with one agent per tab. Herdr addresses each ag
 | `orchestrator` | Claude | The human's eyes, ears, and proxy. Dispatches work, relays human decisions, owns the quiet-agent heartbeat, arbitrates planner-versus-reviewer disagreements, and merges after asking the human about that specific PR. Produces no repository artifacts: no code, docs, plans, commits (except updating a PR branch from main), or PRs. Does not assign implementation or release work to its own subagents. Briefs, relays, memory notes, and terse issue or PR decisions are fine. |
 | `planner` | Codex (gpt-6-astra, high reasoning) | Writes specs and plans. Does not implement. Runs review rounds directly with the reviewer. |
 | `build1`, `build2` | Codex (gpt-6.1-sol, high reasoning) | Implement in their own worktree and branch with disjoint files. All simulator work goes through `scripts/xcode-stream.sh`. |
-| `reviewer` | Claude (fable, high effort) | Adversarial design review before implementation (correctness, over-engineering, missing cases that matter in practice) and independent code review before every merge. |
+| `reviewer` | Claude (Opus 5.5, high effort) | Adversarial design review before implementation (correctness, over-engineering, missing cases that matter in practice) and independent code review before every merge. |
 
 The reviewer always runs a different model from the planner and builders so review is independent of the model that produced the work.
 
