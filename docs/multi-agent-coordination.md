@@ -8,7 +8,7 @@ The fleet is one Herdr workspace with one agent per tab. Herdr addresses each ag
 
 | Name | Runtime | Role |
 |---|---|---|
-| `orchestrator` | Claude | The human's eyes, ears, and proxy. Dispatches work, relays human decisions, owns the quiet-agent heartbeat, arbitrates planner-versus-reviewer disagreements, and merges after asking the human about that specific PR. Produces no repository artifacts: no code, docs, plans, commits, or PRs. Briefs, relays, memory notes, and terse issue or PR decisions are fine. |
+| `orchestrator` | Claude | The human's eyes, ears, and proxy. Dispatches work, relays human decisions, owns the quiet-agent heartbeat, arbitrates planner-versus-reviewer disagreements, and merges after asking the human about that specific PR. Produces no repository artifacts: no code, docs, plans, commits, or PRs. Does not assign implementation or release work to its own subagents. Briefs, relays, memory notes, and terse issue or PR decisions are fine. |
 | `planner` | Codex (gpt-6-astra, high reasoning) | Writes specs and plans. Does not implement. Runs review rounds directly with the reviewer. |
 | `build1`, `build2` | Codex | Implement in their own worktree and branch with disjoint files. All simulator work goes through `scripts/xcode-stream.sh`. |
 | `reviewer` | Claude (fable, high effort) | Adversarial design review before implementation (correctness, over-engineering, missing cases that matter in practice) and independent code review before every merge. |
@@ -100,6 +100,8 @@ herdr agent prompt orchestrator "build2: blocked on human gate: approve deleting
 
 The orchestrator relays authority the human already supplied or obtains it. Never guess at the human's answer and never answer your own gate.
 
+When a build stream is blocked by credits, credentials, or tooling, the orchestrator presents options to the human. It does not hand the work to its own subagents.
+
 ### How the orchestrator arbitrates
 
 When the planner and the reviewer disagree, the orchestrator decides when one side rests on something checkable (code, an existing invariant, a reproduced result) and the other does not. It applies KISS, YAGNI, and the right-sizing rule with first-hand knowledge of the human's intent, because these disagreements are often gold-plating or unlikely edge cases.
@@ -158,6 +160,10 @@ reviewer: blocked on review gate: waiting for build1 to push the fix commit for 
 A spec or plan PR is never merged alone; the build stream branches from the approved spec head and the spec lands in the same PR as its implementation.
 
 Before reporting a PR approved or merge-ready, verify that it is already ready for review and not a draft. Include the exact head and base, check state, and independent review decision in the handoff. The orchestrator performs the merge, and only after asking the human about that specific PR.
+
+Main requires PR branches to be up to date. When a PR is behind, the orchestrator updates its branch from main without rewriting history. Before merging, confirm the update brought in only main's changes, the reviewed files are byte-identical to the reviewed head, and checks pass. If reviewed files changed, obtain a fresh review.
+
+Only the human approves a fork PR's workflow run; agents never approve it. Version bumps for a fork PR go onto the fork branch through maintainer edits, preserving the contributor's commits.
 
 A PR changing source code gets the `greptile-review` label once, when its author believes it is ready to merge after the reviewer’s findings are addressed, because every push after labelling triggers a paid re-review; never label spec-only, docs-only, version-only, or small follow-up PRs.
 
