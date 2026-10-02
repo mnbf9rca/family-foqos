@@ -5,6 +5,7 @@ This always-loaded file is the invariant sheet for agentic work in Family Foqos.
 ## Engineering Invariants
 
 - Keep implementations DRY and KISS; in general, apply YAGNI.
+- V2 start and stop conditions are independent; V1 strategy behaviour must not be reused. Follow the [V2 conditions rulebook](docs/superpowers/specs/2026-10-02-508-v2-conditions-rulebook.md); legacy data conversion does not give V1 behaviour authority over V2.
 - Never amend or force commits. Put every fix in a new signed commit; revert with a new commit when needed.
 - Obtain independent adversarial design review (correctness, over-engineering, missing cases that matter in practice) before implementation and independent code review before every merge. The orchestrator merges, and only after asking the human about that specific PR.
 - At fleet startup while the human is present, the orchestrator dispatches `scripts/warm-git-credentials.sh` to every implementation stream; each stream runs it in its clean assigned feature worktree before taking implementation work, and reruns it only if signing or SSH approval expires mid-session while the human is present.
