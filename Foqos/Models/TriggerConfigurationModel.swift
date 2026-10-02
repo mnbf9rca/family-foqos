@@ -9,7 +9,16 @@ final class TriggerConfigurationModel: ObservableObject {
   private let validator = TriggerValidator()
 
   @Published var startTriggers = ProfileStartTriggers()
-  @Published var stopConditions = ProfileStopConditions()
+  @Published var stopConditions = ProfileStopConditions() {
+    didSet {
+      if oldValue.nfc != stopConditions.nfc && stopConditions.nfc != .specific {
+        stopNFCTagIds = []
+      }
+      if oldValue.qr != stopConditions.qr && stopConditions.qr != .specific {
+        stopQRCodeIds = []
+      }
+    }
+  }
   @Published var validationErrors: [String] = []
   @Published private(set) var hasLoadedProfile = false
 
@@ -34,8 +43,6 @@ final class TriggerConfigurationModel: ObservableObject {
 
   /// Call when stop conditions change to re-run validation
   func stopConditionsDidChange() {
-    if !stopConditions.specificNFC { stopNFCTagIds = [] }
-    if !stopConditions.specificQR { stopQRCodeIds = [] }
     validate()
   }
 

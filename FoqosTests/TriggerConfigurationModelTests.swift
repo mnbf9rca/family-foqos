@@ -195,6 +195,7 @@ final class TriggerConfigurationModelTests: XCTestCase {
     let now = Date()
     let model = TriggerConfigurationModel()
     model.stopConditions = .init(timer: true, schedule: true, nfc: .same, qr: .specific, timerDurationMinutes: 37, allowChangingTimerBeforeStart: true)
+    model.stopNFCTagIds = ["dormant-nfc"]
     model.stopQRCodeIds = ["stop-qr"]
     model.stopSchedule = .init(days: [.friday], hour: 17, minute: 30, updatedAt: now)
     let encoder = JSONEncoder()
@@ -213,6 +214,7 @@ final class TriggerConfigurationModelTests: XCTestCase {
     model.stopConditions.timer = true
     model.stopConditionsDidChange()
     XCTAssertEqual(try encoder.encode(model.stopConditions), stops)
+    XCTAssertEqual(model.stopNFCTagIds, ["dormant-nfc"])
   }
 
 }
