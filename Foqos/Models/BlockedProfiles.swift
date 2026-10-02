@@ -408,6 +408,9 @@ class BlockedProfiles {
     triggerConfiguration: TriggerConfigurationModel? = nil
   ) throws -> BlockedProfiles {
     try validateEditorConfiguration(triggerConfiguration)
+    if triggerConfiguration != nil && profile.isNewerSchemaVersion {
+      try requireValidConditions(["These settings couldn’t be saved. Please check this profile and try again."])
+    }
     let active = try BlockedProfileSession.mostRecentActiveSession(in: context)
     try ProfileMigrationUtil.migrate(profile, hasActiveSession: active?.blockedProfile.id == profile.id)
     let previous = SyncedProfile(from: profile, originDeviceId: "")
@@ -550,8 +553,6 @@ class BlockedProfiles {
         profile.enableSafariBlocking = previous.enableSafariBlocking
         profile.blockAdultWebsites = previous.blockAdultWebsites == true
         profile.blockAppInstallation = previous.blockAppInstallation == true
-        profile.physicalUnblockNFCTagId = previous.physicalUnblockNFCTagId
-        profile.physicalUnblockQRCodeId = previous.physicalUnblockQRCodeId
         profile.domains = previous.domains
         profile.schedule = previous.schedule
         profile.geofenceRule = previous.geofenceRule
@@ -564,13 +565,17 @@ class BlockedProfiles {
         profile.startScheduleData = previous.startScheduleData
         profile.stopScheduleData = previous.stopScheduleData
         profile.startNFCTagIds = previous.startNFCTagIds
-        profile.startNFCTagId = previous.startNFCTagId
         profile.startQRCodeIds = previous.startQRCodeIds
-        profile.startQRCodeId = previous.startQRCodeId
         profile.stopNFCTagIds = previous.stopNFCTagIds
-        profile.stopNFCTagId = previous.stopNFCTagId
         profile.stopQRCodeIds = previous.stopQRCodeIds
-        profile.stopQRCodeId = previous.stopQRCodeId
+        if previous.profileSchemaVersion < 3 {
+          profile.physicalUnblockNFCTagId = previous.physicalUnblockNFCTagId
+          profile.physicalUnblockQRCodeId = previous.physicalUnblockQRCodeId
+          profile.startNFCTagId = previous.startNFCTagId
+          profile.startQRCodeId = previous.startQRCodeId
+          profile.stopNFCTagId = previous.stopNFCTagId
+          profile.stopQRCodeId = previous.stopQRCodeId
+        }
         profile.stopConditionsData = previousStopData
         profile.preActivationReminderTimesData = previous.preActivationReminderTimesData
         profile.syncVersion = previous.version

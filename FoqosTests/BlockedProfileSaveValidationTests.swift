@@ -154,6 +154,8 @@ final class BlockedProfileSaveValidationTests: XCTestCase {
       let profile = BlockedProfiles(id: id, name: "Original", createdAt: now, updatedAt: now)
       profile.startTriggers = .init(manual: true)
       profile.stopConditions = .init(manual: true)
+      profile.physicalUnblockNFCTagId = "A0FF"
+      profile.stopNFCTagId = "legacy-scalar"
       context.insert(profile)
       try context.save()
     }
@@ -173,6 +175,8 @@ final class BlockedProfileSaveValidationTests: XCTestCase {
     XCTAssertEqual(source.startTriggers, ProfileStartTriggers(manual: true))
     XCTAssertEqual(source.stopConditions, ProfileStopConditions(manual: true))
     XCTAssertEqual(source.updatedAt, now)
+    XCTAssertEqual(source.physicalUnblockNFCTagId, "A0FF")
+    XCTAssertEqual(source.stopNFCTagId, "legacy-scalar")
     XCTAssertEqual(SharedData.snapshot(for: id.uuidString), originalSnapshot)
     XCTAssertThrowsError(try BlockedProfiles.createProfile(in: context, name: "Rejected", triggerConfiguration: draft))
     XCTAssertThrowsError(try BlockedProfiles.cloneProfile(source, in: context, newName: "Rejected"))
@@ -202,6 +206,27 @@ final class BlockedProfileSaveValidationTests: XCTestCase {
     XCTAssertTrue(reloaded.conditionSettingsReadable)
     XCTAssertFalse(reloaded.hasInvalidConditionSettings)
     XCTAssertFalse(reloaded.stopConditions.requiresEditingAfterConversion)
+  }
+
+  func testEditorUpdateCannotOverwriteNewerSchema() throws {
+    let now = Date()
+    let container = try TestModelContainer.create()
+    let context = container.mainContext
+    let source = BlockedProfiles(name: "Newer", createdAt: now, updatedAt: now)
+    source.profileSchemaVersion = 4
+    let opaque = Data("newer-settings".utf8)
+    source.stopConditionsData = opaque
+    context.insert(source)
+    try context.save()
+    let draft = TriggerConfigurationModel()
+    draft.startTriggers = .init(manual: true)
+    draft.stopConditions = .init(manual: true)
+    XCTAssertThrowsError(try BlockedProfiles.updateProfile(source, in: context, now: now, name: "Changed", triggerConfiguration: draft)) { error in
+      XCTAssertEqual(error.localizedDescription, "These settings couldn’t be saved. Please check this profile and try again.")
+    }
+    XCTAssertEqual(source.name, "Newer")
+    XCTAssertEqual(source.stopConditionsData, opaque)
+    XCTAssertEqual(source.profileSchemaVersion, 4)
   }
 
 }

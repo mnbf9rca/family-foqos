@@ -80,8 +80,10 @@ final class ProfileStopConditionsTests: XCTestCase {
         let bad = try legacyFixture([modality: value, legacy: true])
         XCTAssertThrowsError(try JSONDecoder().decode(ProfileStopConditions.self, from: bad))
       }
-      let badFlag = try legacyFixture([legacy: "true"])
-      XCTAssertThrowsError(try JSONDecoder().decode(ProfileStopConditions.self, from: badFlag))
+      for value: Any in ["true", NSNull(), 42] {
+        let badFlag = try legacyFixture([legacy: value])
+        XCTAssertThrowsError(try JSONDecoder().decode(ProfileStopConditions.self, from: badFlag))
+      }
     }
   }
 

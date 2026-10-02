@@ -120,9 +120,9 @@ public struct ProfileStopConditions: Codable, Equatable {
     func kind(_ key: CodingKeys, any: CodingKeys, same: CodingKeys, specific: CodingKeys) throws -> TagStopKind {
       if values.contains(key) { return try values.decode(TagStopKind.self, forKey: key) }
       // Decode every legacy flag so an invalid sibling cannot silently broaden a stop.
-      let anyValue = try values.decodeIfPresent(Bool.self, forKey: any) ?? false
-      let sameValue = try values.decodeIfPresent(Bool.self, forKey: same) ?? false
-      let specificValue = try values.decodeIfPresent(Bool.self, forKey: specific) ?? false
+      let anyValue = try values.contains(any) ? values.decode(Bool.self, forKey: any) : false
+      let sameValue = try values.contains(same) ? values.decode(Bool.self, forKey: same) : false
+      let specificValue = try values.contains(specific) ? values.decode(Bool.self, forKey: specific) : false
       return specificValue ? .specific : sameValue ? .same : anyValue ? .any : .none
     }
     nfc = try kind(.nfc, any: .anyNFC, same: .sameNFC, specific: .specificNFC)
