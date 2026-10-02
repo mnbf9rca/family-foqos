@@ -94,6 +94,8 @@ scripts/xcode-stream.sh --agent <agent> --session <session> -- \
   scripts/fastlane.sh screenshots
 ```
 
+V1 (release/v1) receives no entitlement changes; fixes such as the iOS 26 share entitlement ship in V2 only.
+
 Archive and upload lanes do not boot simulators. Run them through `scripts/fastlane.sh` without the
 simulator gate:
 
@@ -107,9 +109,40 @@ scripts/fastlane.sh release
 scripts/fastlane.sh update_screenshots
 ```
 
+Before every beta, compare the live Production and Development schemas. Development must first
+hold the canonical checked-in schema, as described in step 2 of
+[Release Promotion](cloudkit-production-schema.md#2-release-promotion--maintainer-only).
+Run this read-only comparison from an authenticated `cktool` session:
+
+```bash
+(
+  set -e
+  for tool in xcrun mktemp diff; do
+    command -v "$tool" >/dev/null || { echo "$tool is required" >&2; exit 127; }
+  done
+  schema_dir=$(mktemp -d)
+  xcrun cktool export-schema --team-id BU7526J4QY \
+    --container-id iCloud.com.cynexia.family-foqos --environment production \
+    > "$schema_dir/production.ckdb"
+  xcrun cktool export-schema --team-id BU7526J4QY \
+    --container-id iCloud.com.cynexia.family-foqos --environment development \
+    > "$schema_dir/development.ckdb"
+  test -s "$schema_dir/production.ckdb" && test -s "$schema_dir/development.ckdb" \
+    || { echo "Schema export is empty" >&2; exit 1; }
+  diff -u "$schema_dir/development.ckdb" "$schema_dir/production.ckdb"
+  echo "Production and Development schemas match."
+)
+```
+
+Only matching, nonempty exports pass. An export failure or any difference blocks the beta.
+If the schemas differ, the human reviews and deploys the change in CloudKit Console using the
+linked runbook, then reruns the comparison and Production postflight before uploading.
+
 `verify_export`, `beta`, and `release` preflight the standalone xcbeautify binary. The beta lane
 uploads to TestFlight and then publishes dSYMs; the release lane uploads metadata, screenshots,
 and the binary, confirms submission for review, and then publishes dSYMs.
+
+The Require Device Unlock setting for Siri and Shortcuts was accepted without a physical-device test because Siri was unusable on the maintainer's device; enforcement by iOS remains unverified.
 
 `update_screenshots` requires a clean `main` checkout, the framed screenshots validated by the lane,
 and an existing editable App Store Connect version. It uses the ASC credentials from 1Password to
