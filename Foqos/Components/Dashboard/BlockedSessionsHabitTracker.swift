@@ -3,6 +3,7 @@ import SwiftData
 import SwiftUI
 
 struct BlockedSessionsHabitTracker: View {
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @EnvironmentObject var themeManager: ThemeManager
 
   let sessions: [BlockedProfileSession]
@@ -168,9 +169,13 @@ struct BlockedSessionsHabitTracker: View {
   }
 
   private func legendView() -> some View {
-    HStack {
+    let layout =
+      dynamicTypeSize.isAccessibilitySize
+      ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
+      : AnyLayout(HStackLayout(spacing: 12))
+    return HStack {
       Spacer()
-      HStack(spacing: 12) {
+      layout {
         ForEach(legendData, id: \.0) { label, opacity in
           HStack(spacing: 4) {
             Rectangle()
@@ -181,6 +186,7 @@ struct BlockedSessionsHabitTracker: View {
             Text(label)
               .font(.caption2)
               .foregroundColor(.secondary)
+              .fixedSize(horizontal: true, vertical: false)
           }
         }
       }

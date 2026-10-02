@@ -104,8 +104,6 @@ struct ProfileControlProvider: AppIntentTimelineProvider {
       } else {
         deepLinkURL = URL(string: "https://family-foqos.app/navigate/\(profileId)")
       }
-    } else {
-      deepLinkURL = URL(string: "family-foqos://")
     }
 
     // Get focus message

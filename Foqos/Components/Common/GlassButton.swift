@@ -45,7 +45,10 @@ struct GlassButton: View {
           isPressed = false
         }
       )
-
+      .accessibilityElement(children: .combine)
+      .accessibilityLabel(title)
+      .accessibilityAddTraits(.isButton)
+      .accessibilityAction { action() }
   }
 
   private var buttonContent: some View {
