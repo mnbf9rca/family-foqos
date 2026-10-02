@@ -146,7 +146,7 @@ final class CloudKitCodeSchemaDriftTests: XCTestCase {
       "DeviceHeartbeat": 5,
       "FamilyCommand": 5,
       "FamilyLockCode": 7,
-      "FamilyMember": 6,
+      "FamilyMember": 5,
       "FamilyRoot": 1,
     ]
 
@@ -154,7 +154,7 @@ final class CloudKitCodeSchemaDriftTests: XCTestCase {
 
     XCTAssertEqual(fields.mapValues(\.count), expectedCounts)
     XCTAssertEqual(fields.count, 14)
-    XCTAssertEqual(fields.values.reduce(0) { $0 + $1.count }, 113)
+    XCTAssertEqual(fields.values.reduce(0) { $0 + $1.count }, 112)
     XCTAssertEqual(fields["FamilyRoot"], ["createdAt"])
   }
 
