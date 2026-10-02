@@ -47,4 +47,74 @@ final class ProfileStopConditionsTests: XCTestCase {
 
     XCTAssertEqual(original, decoded)
   }
+  func testLegacyTripletsNormalizeIndependently() throws {
+    let expected = ["none", "any", "same", "same", "specific", "specific", "specific", "specific"]
+    for bits in 0..<8 {
+      for modality in ["NFC", "QR"] {
+        let flags: [String: Bool] = [
+          "any\(modality)": bits & 1 != 0,
+          "same\(modality)": bits & 2 != 0,
+          "specific\(modality)": bits & 4 != 0,
+        ]
+        let data = try legacyFixture(flags)
+        let decoded = try JSONDecoder().decode(ProfileStopConditions.self, from: data)
+        let encoded = try JSONEncoder().encode(decoded)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        XCTAssertEqual(json[modality == "NFC" ? "nfc" : "qr"] as? String, expected[bits])
+        XCTAssertEqual(json[modality == "NFC" ? "qr" : "nfc"] as? String, "none")
+        for key in ["anyNFC", "sameNFC", "specificNFC", "anyQR", "sameQR", "specificQR"] {
+          XCTAssertNil(json[key])
+        }
+      }
+    }
+  }
+
+  func testCanonicalKindWinsAndMalformedKindThrows() throws {
+    for modality in ["nfc", "qr"] {
+      let legacy = modality == "nfc" ? "anyNFC" : "anyQR"
+      let data = try legacyFixture([modality: "specific", legacy: true])
+      let decoded = try JSONDecoder().decode(ProfileStopConditions.self, from: data)
+      XCTAssertTrue(modality == "nfc" ? decoded.specificNFC : decoded.specificQR)
+      XCTAssertFalse(modality == "nfc" ? decoded.anyNFC : decoded.anyQR)
+      for value: Any in [NSNull(), "unknown", 42, true] {
+        let bad = try legacyFixture([modality: value, legacy: true])
+        XCTAssertThrowsError(try JSONDecoder().decode(ProfileStopConditions.self, from: bad))
+      }
+      let badFlag = try legacyFixture([legacy: "true"])
+      XCTAssertThrowsError(try JSONDecoder().decode(ProfileStopConditions.self, from: badFlag))
+    }
+  }
+
+  func testTimerSettingsRoundTripWithoutDefault() throws {
+    for minutes in [37, 1439, 0, -1, 1440] {
+      for allow in [true, false] {
+        let data = try legacyFixture([
+          "timer": true, "timerDurationMinutes": minutes, "allowChangingTimerBeforeStart": allow,
+        ])
+        let decoded = try JSONDecoder().decode(ProfileStopConditions.self, from: data)
+        let encoded = try JSONEncoder().encode(decoded)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        XCTAssertEqual(json["timerDurationMinutes"] as? Int, minutes)
+        XCTAssertEqual(json["allowChangingTimerBeforeStart"] as? Bool, allow)
+      }
+    }
+    let absent = try JSONDecoder().decode(ProfileStopConditions.self, from: Data("{}".utf8))
+    let absentJSON = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(absent)) as? [String: Any])
+    XCTAssertNil(absentJSON["timerDurationMinutes"])
+    XCTAssertEqual(absentJSON["allowChangingTimerBeforeStart"] as? Bool, false)
+    for raw in ["{\"timerDurationMinutes\":37.5}", "{\"timerDurationMinutes\":\"37\"}"] {
+      XCTAssertThrowsError(try JSONDecoder().decode(ProfileStopConditions.self, from: Data(raw.utf8)))
+    }
+  }
+
+  private func legacyFixture(_ fields: [String: Any]) throws -> Data {
+    var json: [String: Any] = [
+      "manual": false, "timer": false, "anyNFC": false, "specificNFC": false,
+      "sameNFC": false, "anyQR": false, "specificQR": false, "sameQR": false,
+      "schedule": false, "deepLink": false,
+    ]
+    json.merge(fields) { _, incoming in incoming }
+    return try JSONSerialization.data(withJSONObject: json)
+  }
+
 }
