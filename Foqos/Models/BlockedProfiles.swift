@@ -923,6 +923,8 @@ extension BlockedProfiles {
       blockingStrategyId
     )
 
+    if stop.timer { stop.timerDurationMinutes = TriggerMigration.validTimerDuration(from: strategyData) }
+
     // Step 2: Migrate physical unlock
     if physicalUnblockNFCTagId != nil || physicalUnblockQRCodeId != nil {
       let (updatedStop, tagId) = TriggerMigration.migratePhysicalUnlock(
