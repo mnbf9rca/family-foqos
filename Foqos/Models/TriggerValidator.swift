@@ -21,9 +21,6 @@ final class TriggerValidator {
   func isStopAvailable(_ stop: StopOption, forStart start: ProfileStartTriggers) -> Bool { true }
   func unavailabilityReason(_ stop: StopOption, forStart start: ProfileStartTriggers) -> String? { nil }
 
-  // Compatibility until the editor drops its old auto-fix call.
-  func autoFix(start: ProfileStartTriggers, stop: inout ProfileStopConditions) {}
-
   func validate(
     start: ProfileStartTriggers,
     stop: ProfileStopConditions,

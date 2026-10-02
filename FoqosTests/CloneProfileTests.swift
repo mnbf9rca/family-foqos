@@ -1,3 +1,4 @@
+import FoqosShared
 import SwiftData
 import XCTest
 
@@ -144,6 +145,8 @@ final class CloneProfileTests: XCTestCase {
   }
   func testCloneKeepsBothSelectedQRCodes() throws {
     let source = BlockedProfiles(name: "Source")
+    source.startTriggers = .init(manual: true)
+    source.stopConditions = .init(manual: true)
     source.startQRCodeIds = ["one", "two"]
     context.insert(source)
     try context.save()
@@ -153,6 +156,8 @@ final class CloneProfileTests: XCTestCase {
 
   func testPendingSelectionSurvivesCloning() throws {
     let source = try BlockedProfiles.createProfile(in: context, name: "Pending")
+    source.startTriggers = .init(manual: true)
+    source.stopConditions = .init(manual: true)
     source.needsAppSelection = true
     try context.save()
 
@@ -166,6 +171,8 @@ final class CloneProfileTests: XCTestCase {
     for mode in [AppMode.child, .parent] {
       for managed in [false, true] {
         let source = try BlockedProfiles.createProfile(in: context, name: "Source")
+        source.startTriggers = .init(manual: true)
+        source.stopConditions = .init(manual: true)
         source.isManaged = managed
         source.managedByChildId = managed ? "child-owner" : nil
         try context.save()
@@ -181,6 +188,44 @@ final class CloneProfileTests: XCTestCase {
         XCTAssertEqual(SharedData.snapshot(for: source.id.uuidString)?.isManaged, managed)
       }
     }
+  }
+
+  func testTimerSaveReopenCloneSyncSnapshot() throws {
+    let draft = TriggerConfigurationModel()
+    draft.startTriggers = .init(manual: true)
+    draft.stopConditions = .init(timer: true, timerDurationMinutes: 37, allowChangingTimerBeforeStart: true)
+    let profile = try BlockedProfiles.createProfile(in: context, name: "Timer", triggerConfiguration: draft)
+    let freshContext = ModelContext(container)
+    let reloaded = try XCTUnwrap(BlockedProfiles.findProfile(byID: profile.id, in: freshContext))
+    let reopened = TriggerConfigurationModel()
+    try reopened.loadFromProfile(reloaded, in: freshContext)
+    XCTAssertEqual(reopened.stopConditions.timerDurationMinutes, 37)
+    XCTAssertTrue(reopened.stopConditions.allowChangingTimerBeforeStart)
+    let clone = try BlockedProfiles.cloneProfile(profile, in: context, newName: "Timer copy")
+    XCTAssertEqual(clone.stopConditions, draft.stopConditions)
+    let synced = SyncedProfile(from: clone, originDeviceId: "local")
+    XCTAssertEqual(synced.stopConditions, draft.stopConditions)
+    let snapshot = try XCTUnwrap(SharedData.snapshot(for: clone.id.uuidString))
+    let decoded = try JSONDecoder().decode(SharedData.ProfileSnapshot.self, from: JSONEncoder().encode(snapshot))
+    XCTAssertEqual(decoded.stopConditions, draft.stopConditions)
+    XCTAssertEqual(profile.updatedAt, reloaded.updatedAt)
+  }
+
+  func testCloneOfActiveV1ConvertsOnlyCandidate() throws {
+    let now = Date()
+    let source = BlockedProfiles(name: "Active V1", createdAt: now, updatedAt: now)
+    source.profileSchemaVersion = 1
+    context.insert(source)
+    let session = BlockedProfileSession.createSession(in: context, withTag: "nfc:A0FF", withProfile: source, startTime: now)
+    try context.save()
+    let clone = try BlockedProfiles.cloneProfile(source, in: context, newName: "Copy")
+    XCTAssertEqual(clone.profileSchemaVersion, 3)
+    XCTAssertTrue(clone.startTriggers.anyNFC)
+    XCTAssertEqual(clone.stopConditions.nfc, .same)
+    XCTAssertEqual(source.profileSchemaVersion, 1)
+    XCTAssertNil(source.startTriggersData)
+    XCTAssertNil(source.stopConditionsData)
+    XCTAssertNil(session.endTime)
   }
 
 }

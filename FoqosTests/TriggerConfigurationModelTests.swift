@@ -1,4 +1,5 @@
 // FoqosTests/TriggerConfigurationModelTests.swift
+import FoqosShared
 import SwiftData
 import XCTest
 
@@ -35,7 +36,7 @@ final class TriggerConfigurationModelTests: XCTestCase {
       XCTAssertEqual(SavedTag.assignments(profiles: [profile]), ["stop-nfc": ["Profile"]])
       NFCStartOption.specific.apply(to: &model.startTriggers)
       model.startTriggersDidChange()
-      XCTAssertTrue(model.validationErrors.contains("Scan an NFC tag to use as the start trigger"))
+      XCTAssertTrue(model.validationErrors.contains("Choose at least one NFC tag."))
     }
   }
 
@@ -68,11 +69,11 @@ final class TriggerConfigurationModelTests: XCTestCase {
       XCTAssertEqual(SavedTag.assignments(profiles: [profile]), ["start-nfc": ["Profile"]])
       QRStopOption.specific.apply(to: &model.stopConditions)
       model.stopConditionsDidChange()
-      XCTAssertTrue(model.validationErrors.contains("Scan a QR code to use as the stop condition"))
+      XCTAssertTrue(model.validationErrors.contains("Choose at least one QR code."))
     }
   }
 
-  func testGivenSameNFCWithNoNFCStart_WhenStartTriggersChange_ThenAutoFixesStop() {
+  func testGivenSameNFCWithNoNFCStart_WhenStartTriggersChange_ThenPreservesStop() {
     let model = TriggerConfigurationModel()
     model.stopConditions.sameNFC = true
 
@@ -80,7 +81,7 @@ final class TriggerConfigurationModelTests: XCTestCase {
     model.startTriggers.manual = true
     model.startTriggersDidChange()
 
-    XCTAssertFalse(model.stopConditions.sameNFC)
+    XCTAssertTrue(model.stopConditions.sameNFC)
   }
 
   func testGivenEmptyTriggers_WhenValidating_ThenShowsErrorsThatClearWhenValid() {
@@ -97,19 +98,19 @@ final class TriggerConfigurationModelTests: XCTestCase {
     XCTAssertTrue(model.validationErrors.isEmpty)
   }
 
-  func testGivenNFCStartTrigger_WhenCheckingStopEnabled_ThenSameNFCEnabledSameQRDisabled() {
+  func testGivenNFCStartTrigger_WhenCheckingStopEnabled_ThenBothSameKindsEnabled() {
     let model = TriggerConfigurationModel()
     model.startTriggers.anyNFC = true
 
     XCTAssertTrue(model.isStopEnabled(.sameNFC))
-    XCTAssertFalse(model.isStopEnabled(.sameQR))
+    XCTAssertTrue(model.isStopEnabled(.sameQR))
   }
 
-  func testGivenManualStartOnly_WhenCheckingReasonDisabled_ThenSameNFCHasReasonManualDoesNot() {
+  func testGivenManualStartOnly_WhenCheckingReasonDisabled_ThenAllChoicesAvailable() {
     let model = TriggerConfigurationModel()
     model.startTriggers.manual = true
 
-    XCTAssertNotNil(model.reasonStopDisabled(.sameNFC))
+    XCTAssertNil(model.reasonStopDisabled(.sameNFC))
     XCTAssertNil(model.reasonStopDisabled(.manual))
   }
 
@@ -120,7 +121,7 @@ final class TriggerConfigurationModelTests: XCTestCase {
 
     // At this point we have a start trigger but no stop condition
     XCTAssertTrue(
-      model.validationErrors.contains { $0.contains("stop condition") },
+      model.validationErrors.contains { $0 == "Add at least one stop before saving this profile." },
       "Should have stop condition error before adding stop"
     )
 
@@ -148,7 +149,7 @@ final class TriggerConfigurationModelTests: XCTestCase {
     model.stopConditionsDidChange()
 
     XCTAssertTrue(
-      model.validationErrors.contains { $0.contains("stop condition") },
+      model.validationErrors.contains { $0 == "Add at least one stop before saving this profile." },
       "Should have stop condition error after removing stop"
     )
   }
@@ -167,7 +168,7 @@ final class TriggerConfigurationModelTests: XCTestCase {
     model.validate()
 
     XCTAssertTrue(
-      model.validationErrors.contains { $0.contains("can't be the same") },
+      model.validationErrors.contains { $0 == "Choose different moments for scheduled start and stop." },
       "Should have error when start and stop schedule times are equal"
     )
   }
@@ -186,8 +187,32 @@ final class TriggerConfigurationModelTests: XCTestCase {
     model.validate()
 
     XCTAssertFalse(
-      model.validationErrors.contains { $0.contains("can't be the same") },
+      model.validationErrors.contains { $0 == "Choose different moments for scheduled start and stop." },
       "Should not have equal-time error when times differ"
     )
   }
+  func testStartChangesPreserveEveryStopOwnedSetting() throws {
+    let now = Date()
+    let model = TriggerConfigurationModel()
+    model.stopConditions = .init(timer: true, schedule: true, nfc: .same, qr: .specific, timerDurationMinutes: 37, allowChangingTimerBeforeStart: true)
+    model.stopQRCodeIds = ["stop-qr"]
+    model.stopSchedule = .init(days: [.friday], hour: 17, minute: 30, updatedAt: now)
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = .sortedKeys
+    let stops = try encoder.encode(model.stopConditions)
+    let schedule = try encoder.encode(model.stopSchedule)
+    for start in [ProfileStartTriggers(anyNFC: true), .init(anyQR: true), .init(manual: true), .init(deepLink: true), .init(schedule: true)] {
+      model.startTriggers = start
+      model.startTriggersDidChange()
+      XCTAssertEqual(try encoder.encode(model.stopConditions), stops)
+      XCTAssertEqual(try encoder.encode(model.stopSchedule), schedule)
+      XCTAssertEqual(model.stopQRCodeIds, ["stop-qr"])
+    }
+    model.stopConditions.timer = false
+    model.stopConditionsDidChange()
+    model.stopConditions.timer = true
+    model.stopConditionsDidChange()
+    XCTAssertEqual(try encoder.encode(model.stopConditions), stops)
+  }
+
 }

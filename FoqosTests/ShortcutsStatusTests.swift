@@ -20,7 +20,7 @@ final class ShortcutsStatusTests: XCTestCase {
     XCTAssertEqual(CheckProfileStatusIntent.authenticationPolicy, .alwaysAllowed)
   }
 
-  func testSharedStopPredicateRespectsCredentialsAndPrecedence() {
+  func testSharedStopPredicateRespectsCredentialsAndPrecedence() throws {
     for credential in [StartStopActionResolver.StartCredential.none, .nfc, .qr] {
       let usable: (ProfileStopConditions, Bool) -> Bool = {
         StartStopActionResolver.hasUsableStop(conditions: $0, disableBackgroundStops: $1, credential: credential)
@@ -30,10 +30,10 @@ final class ShortcutsStatusTests: XCTestCase {
       XCTAssertTrue(usable(ProfileStopConditions(manual: true), true))
       XCTAssertEqual(usable(ProfileStopConditions(sameNFC: true), false), credential == .nfc)
       XCTAssertEqual(usable(ProfileStopConditions(sameQR: true), false), credential == .qr)
-      XCTAssertEqual(usable(ProfileStopConditions(anyNFC: true, sameNFC: true), false), credential == .nfc)
-      XCTAssertEqual(usable(ProfileStopConditions(anyQR: true, sameQR: true), false), credential == .qr)
-      XCTAssertTrue(usable(ProfileStopConditions(specificNFC: true, sameNFC: true), true))
-      XCTAssertTrue(usable(ProfileStopConditions(specificQR: true, sameQR: true), true))
+      XCTAssertEqual(usable(try JSONDecoder().decode(ProfileStopConditions.self, from: Data("{\"anyNFC\":true,\"sameNFC\":true}".utf8)), false), credential == .nfc)
+      XCTAssertEqual(usable(try JSONDecoder().decode(ProfileStopConditions.self, from: Data("{\"anyQR\":true,\"sameQR\":true}".utf8)), false), credential == .qr)
+      XCTAssertTrue(usable(try JSONDecoder().decode(ProfileStopConditions.self, from: Data("{\"specificNFC\":true,\"sameNFC\":true}".utf8)), true))
+      XCTAssertTrue(usable(try JSONDecoder().decode(ProfileStopConditions.self, from: Data("{\"specificQR\":true,\"sameQR\":true}".utf8)), true))
       XCTAssertTrue(usable(ProfileStopConditions(anyQR: true), true))
       XCTAssertTrue(usable(ProfileStopConditions(anyNFC: true), true))
       XCTAssertTrue(usable(ProfileStopConditions(schedule: true), false))

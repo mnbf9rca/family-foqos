@@ -50,24 +50,25 @@ enum NFCStopOption: String, CaseIterable, Identifiable {
   }
 
   static func from(_ conditions: ProfileStopConditions) -> NFCStopOption {
-    if conditions.specificNFC { return .specific }
-    if conditions.sameNFC { return .same }
-    if conditions.anyNFC { return .any }
-    return .none
+    switch conditions.nfc {
+    case .none: return .none
+    case .any: return .any
+    case .same: return .same
+    case .specific: return .specific
+    }
   }
 
   func apply(to conditions: inout ProfileStopConditions) {
-    conditions.anyNFC = (self == .any)
-    conditions.sameNFC = (self == .same)
-    conditions.specificNFC = (self == .specific)
+    switch self {
+    case .none: conditions.nfc = .none
+    case .any: conditions.nfc = .any
+    case .same: conditions.nfc = .same
+    case .specific: conditions.nfc = .specific
+    }
   }
 
-  static func availableOptions(forStart start: ProfileStartTriggers) -> [NFCStopOption] {
-    if start.hasNFC {
-      return [.none, .any, .same, .specific]
-    }
-    return [.none, .any, .specific]
-  }
+  static func availableOptions(forStart start: ProfileStartTriggers) -> [NFCStopOption] { allCases }
+
 }
 
 // MARK: - QR Start
@@ -119,22 +120,23 @@ enum QRStopOption: String, CaseIterable, Identifiable {
   }
 
   static func from(_ conditions: ProfileStopConditions) -> QRStopOption {
-    if conditions.specificQR { return .specific }
-    if conditions.sameQR { return .same }
-    if conditions.anyQR { return .any }
-    return .none
+    switch conditions.qr {
+    case .none: return .none
+    case .any: return .any
+    case .same: return .same
+    case .specific: return .specific
+    }
   }
 
   func apply(to conditions: inout ProfileStopConditions) {
-    conditions.anyQR = (self == .any)
-    conditions.sameQR = (self == .same)
-    conditions.specificQR = (self == .specific)
+    switch self {
+    case .none: conditions.qr = .none
+    case .any: conditions.qr = .any
+    case .same: conditions.qr = .same
+    case .specific: conditions.qr = .specific
+    }
   }
 
-  static func availableOptions(forStart start: ProfileStartTriggers) -> [QRStopOption] {
-    if start.hasQR {
-      return [.none, .any, .same, .specific]
-    }
-    return [.none, .any, .specific]
-  }
+  static func availableOptions(forStart start: ProfileStartTriggers) -> [QRStopOption] { allCases }
+
 }

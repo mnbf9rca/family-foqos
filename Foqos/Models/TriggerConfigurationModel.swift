@@ -25,11 +25,10 @@ final class TriggerConfigurationModel: ObservableObject {
 
   init() {}
 
-  /// Call when start triggers change to auto-fix invalid stop conditions
+  /// Start edits only clean up abandoned start assignments and revalidate.
   func startTriggersDidChange() {
     if !startTriggers.specificNFC { startNFCTagIds = [] }
     if !startTriggers.specificQR { startQRCodeIds = [] }
-    validator.autoFix(start: startTriggers, stop: &stopConditions)
     validate()
   }
 
@@ -42,33 +41,20 @@ final class TriggerConfigurationModel: ObservableObject {
 
   /// Run validation and update error list
   func validate() {
-    var errors = validator.validate(start: startTriggers, stop: stopConditions)
+    var errors = validator.validate(
+      start: startTriggers, stop: stopConditions,
+      startNFCTagIds: startNFCTagIds, startQRCodeIds: startQRCodeIds,
+      stopNFCTagIds: stopNFCTagIds, stopQRCodeIds: stopQRCodeIds,
+      startSchedule: startSchedule, stopSchedule: stopSchedule,
+      settingsReadable: true, forSave: true
+    )
 
-    // Check for missing data when specific toggles are enabled
-    if startTriggers.specificNFC && startNFCTagIds.isEmpty {
-      errors.append("Scan an NFC tag to use as the start trigger")
-    }
-    if startTriggers.specificQR && startQRCodeIds.isEmpty {
-      errors.append("Scan a QR code to use as the start trigger")
-    }
-    if stopConditions.specificNFC && stopNFCTagIds.isEmpty {
-      errors.append("Scan an NFC tag to use as the stop condition")
-    }
-    if stopConditions.specificQR && stopQRCodeIds.isEmpty {
-      errors.append("Scan a QR code to use as the stop condition")
-    }
-    if startTriggers.schedule && (startSchedule == nil || startSchedule?.isActive != true) {
-      errors.append("Configure a start schedule")
-    }
-    if stopConditions.schedule && (stopSchedule == nil || stopSchedule?.isActive != true) {
-      errors.append("Configure a stop schedule")
-    }
     if startTriggers.schedule && stopConditions.schedule,
       let start = startSchedule, let stop = stopSchedule,
       start.isActive, stop.isActive,
       start.hour == stop.hour && start.minute == stop.minute
     {
-      errors.append("Start and stop times can't be the same")
+      errors.append("Choose different moments for scheduled start and stop.")
     }
     if startTriggers.schedule && stopConditions.schedule,
       let start = startSchedule, let stop = stopSchedule,
@@ -135,8 +121,11 @@ final class TriggerConfigurationModel: ObservableObject {
 
   /// Save to profile
   func saveToProfile(_ profile: BlockedProfiles) {
+    validate()
     profile.startTriggers = startTriggers
-    profile.stopConditions = stopConditions
+    var stops = stopConditions
+    if validationErrors.isEmpty { stops.requiresEditingAfterConversion = false }
+    profile.stopConditions = stops
     profile.startNFCTagIds = startNFCTagIds
     profile.startQRCodeIds = startQRCodeIds
     profile.stopNFCTagIds = stopNFCTagIds
@@ -144,11 +133,6 @@ final class TriggerConfigurationModel: ObservableObject {
     profile.startSchedule = startSchedule
     profile.stopSchedule = stopSchedule
 
-    // Refresh the app-group snapshot now that the trigger fields are set on the
-    // in-memory model (SwiftData persistence happens later in the caller) — the
-    // snapshot written earlier by createProfile/updateProfile predates these
-    // fields, and the FoqosDeviceMonitor extension enforces schedules purely
-    // from it (#198)
-    BlockedProfiles.updateSnapshot(for: profile)
+    // The create/update boundary persists before publishing its snapshot.
   }
 }

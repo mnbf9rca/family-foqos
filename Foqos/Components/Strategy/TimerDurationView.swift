@@ -14,12 +14,20 @@ struct TimerDurationView: View {
   // Constants
   private let minMinutes = Double(DeviceActivityLimits.minimumIntervalMinutes)
   private let maxMinutes = Double(DeviceActivityLimits.maximumTimerMinutes)
-  private let smallIncrement: Double = 5
-  private let largeIncrement: Double = 15
 
   // Common snap points (in minutes)
   private let snapPoints: [Double] = [15, 30, 45, 60, 90, 120, 180, 240, 360, 480, 720]
   private let snapThreshold: Double = 10  // How close to snap (in minutes)
+
+  init(
+    profileName: String,
+    initialDurationMinutes: Int? = nil,
+    onDurationSelected: @escaping (StrategyTimerData) -> Void
+  ) {
+    self.profileName = profileName
+    self.onDurationSelected = onDurationSelected
+    _durationMinutes = State(initialValue: Double(initialDurationMinutes ?? 60))
+  }
 
   var body: some View {
     ScrollView {
@@ -106,7 +114,7 @@ struct TimerDurationView: View {
               .font(.caption2)
               .foregroundColor(.secondary)
             Spacer()
-            Text("24h")
+            Text(DeviceActivityLimits.maximumTimerDescription)
               .font(.caption2)
               .foregroundColor(.secondary)
           }
@@ -161,14 +169,20 @@ struct TimerDurationView: View {
 
   private func incrementDuration() {
     withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-      durationMinutes = min(durationMinutes + smallIncrement, maxMinutes)
+      durationMinutes = Self.adjustedDuration(durationMinutes, by: 1)
     }
   }
 
   private func decrementDuration() {
     withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-      durationMinutes = max(durationMinutes - smallIncrement, minMinutes)
+      durationMinutes = Self.adjustedDuration(durationMinutes, by: -1)
     }
+  }
+
+  static func adjustedDuration(_ minutes: Double, by increment: Int) -> Double {
+    min(
+      Double(DeviceActivityLimits.maximumTimerMinutes),
+      max(Double(DeviceActivityLimits.minimumIntervalMinutes), minutes + Double(increment)))
   }
 
   /// Returns the snap target for a slider value: the nearest snap point if one is
@@ -200,7 +214,7 @@ struct TimerDurationView: View {
     }
   }
 
-  private func handleConfirm() {
+  func handleConfirm() {
     let data = StrategyTimerData(durationInMinutes: Int(durationMinutes))
     onDurationSelected(data)
     dismiss()

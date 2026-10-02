@@ -93,6 +93,7 @@ struct BlockedProfileView: View {
   // Trigger schedule picker state (owned by parent to survive child re-renders)
   @State private var showStartSchedulePicker = false
   @State private var showStopSchedulePicker = false
+  @State private var showTimerDurationPicker = false
 
   // Alert for cloning
   @State private var showingClonePrompt = false
@@ -436,7 +437,8 @@ struct BlockedProfileView: View {
             },
             onConfigureSchedule: {
               showStopSchedulePicker = true
-            }
+            },
+            onConfigureTimer: { showTimerDurationPicker = true }
           )
 
           Section("Breaks") {
@@ -834,6 +836,23 @@ struct BlockedProfileView: View {
             )
           )
         }
+        .sheet(isPresented: $showTimerDurationPicker) {
+          NavigationStack {
+            TimerDurationView(
+              profileName: name,
+              initialDurationMinutes: triggerConfig.stopConditions.timerDurationMinutes
+            ) { duration in
+              triggerConfig.stopConditions.timerDurationMinutes = duration.durationInMinutes
+              triggerConfig.validate()
+            }
+            .toolbar {
+              ToolbarItem(placement: .cancellationAction) {
+                Button("Cancel") { showTimerDurationPicker = false }
+              }
+            }
+          }
+          .presentationDetents([.medium, .large])
+        }
         .sheet(isPresented: $showStartSchedulePicker, onDismiss: { triggerConfig.validate() }) {
           ScheduleTimePicker(
             schedule: $triggerConfig.startSchedule,
@@ -1043,15 +1062,8 @@ struct BlockedProfileView: View {
     }
   }
 
-  /// Save trigger config to profile, schedule, and push to sync.
+  /// Register schedules and enqueue sync only after the edit has persisted.
   private func finalizeSave(_ profile: BlockedProfiles) {
-    triggerConfig.saveToProfile(profile)
-    do {
-      try modelContext.save()
-    } catch {
-      Log.error(
-        "Failed to save trigger config: \(error.localizedDescription)", category: .ui)
-    }
     let failures = DeviceActivityCenterUtil.scheduleTimerActivity(for: profile)
     var warnings: [String] = []
     if !failures.isEmpty {
@@ -1123,13 +1135,6 @@ struct BlockedProfileView: View {
         : nil
 
       if let existingProfile = profile {
-        // Set nullable fields directly on the model — these can legitimately be
-        // nil (e.g. user removes a geofence or NFC tag), and updateProfile's
-        // if-let guards can't distinguish "not passed" from "clear to nil".
-        existingProfile.geofenceRule = geofenceRule
-        existingProfile.managedByChildId = managedChildId
-        existingProfile.reminderTimeInSeconds = reminderTimeSeconds
-        existingProfile.customReminderMessage = customReminderMessage
         let needsAppSelectionAfterSave = BlockedProfiles.needsAppSelectionAfterLocalSave(
           currentNeedsAppSelection: existingProfile.needsAppSelection,
           selection: selectedActivity,
@@ -1145,6 +1150,8 @@ struct BlockedProfileView: View {
           selection: selectedActivity,
           blockingStrategyId: nil,
           enableLiveActivity: enableLiveActivity,
+          reminderTime: reminderTimeSeconds,
+          customReminderMessage: customReminderMessage,
           enableBreaks: enableBreaks,
           breakTimeInMinutes: breakTimeInMinutes,
           enableStrictMode: enableStrictMode,
@@ -1155,10 +1162,13 @@ struct BlockedProfileView: View {
           blockAppInstallation: blockAppInstallation,
           domains: domains,
           schedule: nil,
+          geofenceRule: geofenceRule,
           disableBackgroundStops: disableBackgroundStops,
           preActivationReminderTimes: Array(preActivationReminderTimes).sorted(),
           isManaged: isManaged,
-          needsAppSelection: needsAppSelectionAfterSave
+          managedByChildId: managedChildId,
+          needsAppSelection: needsAppSelectionAfterSave,
+          triggerConfiguration: triggerConfig
         )
 
         finalizeSave(updatedProfile)
@@ -1185,7 +1195,8 @@ struct BlockedProfileView: View {
           disableBackgroundStops: disableBackgroundStops,
           preActivationReminderTimes: Array(preActivationReminderTimes).sorted(),
           isManaged: isManaged,
-          managedByChildId: managedChildId
+          managedByChildId: managedChildId,
+          triggerConfiguration: triggerConfig
         )
 
         finalizeSave(newProfile)
