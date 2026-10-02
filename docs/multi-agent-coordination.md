@@ -12,6 +12,7 @@ The fleet is one Herdr workspace with one agent per tab. Herdr addresses each ag
 | `planner` | Codex (gpt-6-astra, high reasoning) | Writes specs and plans. Does not implement. Runs review rounds directly with the reviewer. |
 | `build1`, `build2` | Codex (gpt-6.1-sol, high reasoning) | Implement in their own worktree and branch with disjoint files. All simulator work goes through `scripts/xcode-stream.sh`. |
 | `reviewer` | Claude (Opus 5.5, high effort) | Adversarial design review before implementation (correctness, over-engineering, missing cases that matter in practice) and independent code review before every merge. |
+| `auditor` | Codex (gpt-6-astra, high reasoning) | Read-only systematic audits and coverage checks of plans against findings and human rulings. Produces no repository artifacts; reports findings to the orchestrator for recording on the relevant issue. |
 
 The reviewer always runs a different model from the planner and builders so review is independent of the model that produced the work.
 
@@ -36,19 +37,28 @@ Every agent auto-loads `AGENTS.md` when it starts. The orchestrator's first prom
 orchestrator: you are <role>. Before taking work: read docs/multi-agent-coordination.md for the <role> rules, and load these skills: <skills for the role>. Reply with one line naming what you loaded, your role, and "exact remainder: none". Take no work until a brief arrives.
 ```
 
-The orchestrator clears the reviewer's and build agents' contexts periodically and before each new feature dispatch (/new for Codex, /clear for Claude), never while an agent has in-flight work, then re-sends the startup template.
+The orchestrator resets agents between unrelated work items, never while work is in flight; only the human resets the orchestrator. State carries through docs, issues, and files. Before a reset, the orchestrator records any findings or state held only in the agent's context on the relevant issue, then follows these steps:
+
+1. Record the agent's pane id and name from `herdr agent list`; fleet panes share a cwd, so cwd cannot identify the agent after its name drops.
+2. Send `herdr agent prompt <pane> /new` for Codex or `herdr agent prompt <pane> /clear` for Claude. These bare slash commands are exempt from the role-prefix rule for messages.
+3. For Codex, read the pane with `herdr agent read <pane> --source visible`. At "Where should the new conversation run?", select "Current checkout" using `herdr agent send-keys <pane> up` or `herdr agent send-keys <pane> down` as needed, then `herdr agent send-keys <pane> enter`. This is the orchestrator's authorized reset step; other approval or question dialogs still require the human's say-so.
+4. Re-apply the name with `herdr agent rename <pane> <name>` after session re-registration.
+5. Send the startup template to the pane id: a reset agent starts blank, so name its role again. Re-check its name after this first turn as described below.
 
 - planner: herdr, communicating-clearly, writing-clearly, ponytail.
 - build1/build2: herdr, ponytail.
 - reviewer: herdr, communicating-clearly, writing-clearly, ponytail, ponytail-review.
+- auditor: herdr, communicating-clearly, writing-clearly, ponytail.
 
 A Codex agent loads a skill missing from its catalog by reading that skill's `SKILL.md` directly.
 
 An agent takes no gate, review, or confirmation step that the runbook does not name.
 
-The agent then reads this runbook for that role's rules before taking work.
-
 A Codex agent shows a "Hooks need review" trust prompt on its first start after a Herdr integration install, and Herdr reads that prompt as `idle`; answer it by hand before the first prompt. Codex registers its session with Herdr only on its first turn, so a Codex pane that has never been prompted does not restore after a Herdr restart.
+
+A new tab's shell may still be running startup, such as a dotfiles fetch. If `herdr agent start` fails with `agent_pane_busy`, retry once the shell prompt is ready.
+
+Herdr drops a Codex agent's name when it re-registers its session, including after first turns and `/new`. Before prompting, the orchestrator checks `herdr agent list` and restores missing names with `herdr agent rename <pane> <name>`; re-check after each Codex agent's first turn and every `/new`. Other agents whose prompt fails because a name is unknown report it to the orchestrator rather than renaming panes themselves.
 
 While the human is present, the orchestrator dispatches `scripts/warm-git-credentials.sh` to every implementation stream. Each stream runs it in its clean assigned feature worktree before taking implementation work. If signing or SSH approval expires mid-session, the orchestrator dispatches a rerun only while the human is present; see Development Workflow for the AFK commit fallback.
 
@@ -57,7 +67,7 @@ While the human is present, the orchestrator dispatches `scripts/warm-git-creden
 Send work or a reply to an agent by name. Start every message with your own role and a colon, so the recipient's transcript shows who said what:
 
 ```bash
-herdr agent prompt build1 "orchestrator: implement docs/superpowers/specs/<file>.md in .worktrees/build1-<issue>" --wait --timeout 600000
+herdr agent prompt build1 "orchestrator: implement docs/superpowers/specs/<file>.md in .worktrees/build1-<issue>"
 ```
 
 Read what an agent wrote:
@@ -66,9 +76,11 @@ Read what an agent wrote:
 herdr agent read build1 --source recent-unwrapped --lines 120
 ```
 
-Builders and the reviewer report to the orchestrator, and the orchestrator forwards to other agents as needed. The one exception is the review loop: the planner prompts `reviewer` directly with the path of the document or PR, sends `planner: review requested for <path>` to the orchestrator, and after the verdict sends `planner: review verdict: <n> blocking, <m> non-blocking`. If a planner-reviewer disagreement survives two rounds, the planner escalates it to the orchestrator. Other direct agent-to-agent messaging happens only when the orchestrator asks for it.
+Builders, the reviewer, and the auditor report to the orchestrator, and the orchestrator forwards to other agents as needed. The one exception is the review loop: the planner prompts `reviewer` directly with the path of the document or PR, sends `planner: review requested for <path>` to the orchestrator, and after the verdict sends `planner: review verdict: <n> blocking, <m> non-blocking`. If a planner-reviewer disagreement survives two rounds, the planner escalates it to the orchestrator. Other direct agent-to-agent messaging happens only when the orchestrator asks for it.
 
 ### Delivery and readback
+
+The orchestrator never blocks its own turn on `herdr agent prompt --wait` or `herdr agent wait`: send without waiting, or run the wait in a background job, so the human can still reach it. Other agents may use waits.
 
 `herdr agent prompt --wait` returns at the first settled `idle`, `done`, or `blocked` state. A settled `blocked` state is not completion. If the recipient was already `working`, the wait can be satisfied by the end of its earlier turn, so read its output before treating the wait as an answer to your prompt.
 
@@ -100,9 +112,15 @@ herdr agent prompt orchestrator "build2: blocked on human gate: approve deleting
 
 The orchestrator relays authority the human already supplied or obtains it. Never guess at the human's answer and never answer your own gate.
 
+The orchestrator batches its questions to the human, describing each decision in plain words with a concrete example and a recommendation; omit internal IDs such as C5, G2, or B9. Agents still announce gates immediately. When the human delegates an approval to an agent, act on that agent's verdict without re-escalating it; delegation covers only the named approval and covers the per-PR merge gate only if the human named that specific PR.
+
+The orchestrator records every human ruling on the relevant GitHub issue when it is made, so provenance never lives only in agent prompts.
+
 When a build stream is blocked by credits, credentials, or tooling, the orchestrator presents options to the human. It does not hand the work to its own subagents.
 
 ### How the orchestrator arbitrates
+
+A spec recording existing behaviour is not a product decision. Before treating behaviour as deliberate, find a recorded human ruling; this applies to every agent reading specs, including the planner, reviewer, and auditor.
 
 When the planner and the reviewer disagree, the orchestrator decides when one side rests on something checkable (code, an existing invariant, a reproduced result) and the other does not. It applies KISS, YAGNI, and the right-sizing rule with first-hand knowledge of the human's intent, because these disagreements are often gold-plating or unlikely edge cases.
 
