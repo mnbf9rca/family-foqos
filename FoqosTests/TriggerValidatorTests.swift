@@ -81,9 +81,5 @@ final class TriggerValidatorTests: XCTestCase {
     XCTAssertEqual(validator.validate(start: .init(manual: true), stop: .init(timer: true), forSave: false), [c6])
     XCTAssertEqual(validator.validate(start: .init(manual: true), stop: .init(manual: true, requiresEditingAfterConversion: true), forSave: false), [c12])
     XCTAssertTrue(validator.validate(start: .init(manual: true), stop: .init(manual: true, requiresEditingAfterConversion: true)).isEmpty)
-    for option in StopOption.allCases {
-      XCTAssertTrue(validator.isStopAvailable(option, forStart: .init()))
-      XCTAssertNil(validator.unavailabilityReason(option, forStart: .init()))
-    }
   }
 }

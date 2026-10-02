@@ -220,15 +220,6 @@ class BlockedProfiles {
     }
   }
 
-  /// Supported V2 settings must be readable; unused absent recurrences are allowed.
-  var conditionSettingsReadable: Bool {
-    guard profileSchemaVersion >= 2, !isNewerSchemaVersion else { return profileSchemaVersion == 1 }
-    let synced = SyncedProfile(from: self, originDeviceId: "")
-    return synced.startTriggers != nil && synced.stopConditions != nil
-      && (startScheduleData == nil || synced.startSchedule != nil)
-      && (stopScheduleData == nil || synced.stopSchedule != nil)
-  }
-
   func conditionValidationErrors(forSave: Bool) -> [String] {
     SyncedProfile(from: self, originDeviceId: "").conditionValidationErrors(forSave: forSave)
   }
@@ -534,6 +525,7 @@ class BlockedProfiles {
     } catch {
       context.rollback()
       // A failed SwiftData save can leave the live model changed after rollback.
+      // Keep restoration covered by testReadOnlyStoreSaveFailurePublishesNothingAndRestoresLiveConfiguration.
       if profile.isPersistentModelValid {
         profile.selectedActivity = previousSelection
         profile.needsAppSelection = previousNeedsAppSelection

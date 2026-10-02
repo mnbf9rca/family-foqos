@@ -416,7 +416,6 @@ struct BlockedProfileView: View {
             stopNFCTagIds: $triggerConfig.stopNFCTagIds,
             stopQRCodeIds: $triggerConfig.stopQRCodeIds,
             stopSchedule: $triggerConfig.stopSchedule,
-            startTriggers: triggerConfig.startTriggers,
             nfcTags: savedTags.filter { $0.kind == "nfc" }.map { ($0.id, $0.name) },
             qrTags: savedTags.filter { $0.kind == "qr" }.map { ($0.id, $0.name) },
             disabled: editingDisabled,

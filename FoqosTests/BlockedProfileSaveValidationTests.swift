@@ -203,7 +203,6 @@ final class BlockedProfileSaveValidationTests: XCTestCase {
     draft.stopConditions.manual = true
     _ = try BlockedProfiles.updateProfile(profile, in: context, now: now, triggerConfiguration: draft)
     let reloaded = try XCTUnwrap(BlockedProfiles.findProfile(byID: profile.id, in: ModelContext(container)))
-    XCTAssertTrue(reloaded.conditionSettingsReadable)
     XCTAssertFalse(reloaded.hasInvalidConditionSettings)
     XCTAssertFalse(reloaded.stopConditions.requiresEditingAfterConversion)
   }

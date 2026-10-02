@@ -98,22 +98,6 @@ final class TriggerConfigurationModelTests: XCTestCase {
     XCTAssertTrue(model.validationErrors.isEmpty)
   }
 
-  func testGivenNFCStartTrigger_WhenCheckingStopEnabled_ThenBothSameKindsEnabled() {
-    let model = TriggerConfigurationModel()
-    model.startTriggers.anyNFC = true
-
-    XCTAssertTrue(model.isStopEnabled(.sameNFC))
-    XCTAssertTrue(model.isStopEnabled(.sameQR))
-  }
-
-  func testGivenManualStartOnly_WhenCheckingReasonDisabled_ThenAllChoicesAvailable() {
-    let model = TriggerConfigurationModel()
-    model.startTriggers.manual = true
-
-    XCTAssertNil(model.reasonStopDisabled(.sameNFC))
-    XCTAssertNil(model.reasonStopDisabled(.manual))
-  }
-
   func testGivenStartWithNoStop_WhenAddingStopCondition_ThenValidationErrorsCleared() {
     let model = TriggerConfigurationModel()
     model.startTriggers.manual = true

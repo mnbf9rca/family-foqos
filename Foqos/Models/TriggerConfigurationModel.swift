@@ -92,16 +92,6 @@ final class TriggerConfigurationModel: ObservableObject {
     }
   }
 
-  /// Check if a stop option is enabled given current start triggers
-  func isStopEnabled(_ stop: StopOption) -> Bool {
-    validator.isStopAvailable(stop, forStart: startTriggers)
-  }
-
-  /// Get reason why a stop option is disabled
-  func reasonStopDisabled(_ stop: StopOption) -> String? {
-    validator.unavailabilityReason(stop, forStart: startTriggers)
-  }
-
   /// Load from profile
   func loadFromProfile(
     _ profile: BlockedProfiles, in context: ModelContext, hasActiveSession: Bool = false

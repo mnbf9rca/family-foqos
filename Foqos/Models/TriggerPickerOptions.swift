@@ -67,8 +67,6 @@ enum NFCStopOption: String, CaseIterable, Identifiable {
     }
   }
 
-  static func availableOptions(forStart start: ProfileStartTriggers) -> [NFCStopOption] { allCases }
-
 }
 
 // MARK: - QR Start
@@ -136,7 +134,5 @@ enum QRStopOption: String, CaseIterable, Identifiable {
     case .specific: conditions.qr = .specific
     }
   }
-
-  static func availableOptions(forStart start: ProfileStartTriggers) -> [QRStopOption] { allCases }
 
 }

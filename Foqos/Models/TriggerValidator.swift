@@ -2,25 +2,8 @@ import FoqosShared
 // Foqos/Models/TriggerValidator.swift
 import Foundation
 
-/// Stop condition options for UI binding and validation
-enum StopOption: String, CaseIterable {
-  case manual
-  case timer
-  case anyNFC
-  case specificNFC
-  case sameNFC
-  case anyQR
-  case specificQR
-  case sameQR
-  case schedule
-  case deepLink
-}
-
 /// Validates complete settings without rewriting the user's selections.
 final class TriggerValidator {
-  func isStopAvailable(_ stop: StopOption, forStart start: ProfileStartTriggers) -> Bool { true }
-  func unavailabilityReason(_ stop: StopOption, forStart start: ProfileStartTriggers) -> String? { nil }
-
   func validate(
     start: ProfileStartTriggers,
     stop: ProfileStopConditions,

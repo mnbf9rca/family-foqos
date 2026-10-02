@@ -7,7 +7,6 @@ struct StopConditionSelector: View {
   @Binding var stopNFCTagIds: [String]
   @Binding var stopQRCodeIds: [String]
   @Binding var stopSchedule: ProfileScheduleTime?
-  let startTriggers: ProfileStartTriggers
   let nfcTags: [(id: String, name: String)]
   let qrTags: [(id: String, name: String)]
   let disabled: Bool
@@ -39,7 +38,7 @@ struct StopConditionSelector: View {
       }
       if conditions.timer {
         if let minutes = conditions.timerDurationMinutes {
-          Text("\(minutes / 60)h \(minutes % 60)m")
+          Text(DateFormatters.formatMinutes(minutes))
             .font(.caption)
             .foregroundStyle(.secondary)
         } else {
@@ -56,7 +55,7 @@ struct StopConditionSelector: View {
 
       // NFC picker
       Picker("NFC", selection: $nfcOption) {
-        ForEach(NFCStopOption.availableOptions(forStart: startTriggers)) { option in
+        ForEach(NFCStopOption.allCases) { option in
           Text(option.label).tag(option)
         }
       }
@@ -78,7 +77,7 @@ struct StopConditionSelector: View {
 
       // QR picker
       Picker("QR", selection: $qrOption) {
-        ForEach(QRStopOption.availableOptions(forStart: startTriggers)) { option in
+        ForEach(QRStopOption.allCases) { option in
           Text(option.label).tag(option)
         }
       }
