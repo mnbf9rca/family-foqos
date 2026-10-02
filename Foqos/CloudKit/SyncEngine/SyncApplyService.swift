@@ -1,4 +1,5 @@
 import CloudKit
+import FoqosShared
 import Foundation
 import SwiftData
 
@@ -353,6 +354,7 @@ final class SyncApplyService {
       let created = createLocalProfile(from: synced)
       try commit()
       try migrateIncomingProfile(created)
+      BlockedProfiles.updateSnapshot(for: created)
       storeSystemFields(record)
       store.clearDeleteWatermark(recordName: recordName)
       SyncDiagnostics.profileApply(
@@ -397,9 +399,11 @@ final class SyncApplyService {
         localGeofenceRefCount: localGeofenceRefCount)
       return .applied
     } else if synced.version > existing.syncVersion {
+      try deferInvalidActiveSettings(synced, replacing: existing)
       updateLocalProfile(existing, from: synced)
       try commit()
       try migrateIncomingProfile(existing)
+      BlockedProfiles.updateSnapshot(for: existing)
       SyncConflictManager.shared.clearConflict(profileId: existing.id)
       storeSystemFields(record)
       SyncDiagnostics.profileApply(
@@ -427,9 +431,11 @@ final class SyncApplyService {
       }
       if Self.remoteWinsProfileTie(remote: synced, local: localSynced) {
         // Remote wins: adopt its already-published payload without re-enqueuing.
+        try deferInvalidActiveSettings(synced, replacing: existing)
         updateLocalProfile(existing, from: synced)
         try commit()
         try migrateIncomingProfile(existing)
+        BlockedProfiles.updateSnapshot(for: existing)
         storeSystemFields(record)
         SyncConflictManager.shared.addDivergenceConflict(
           profileId: existing.id, profileName: existing.name)
@@ -466,6 +472,28 @@ final class SyncApplyService {
     }
   }
 
+  private struct ActiveConditionUpdateDeferred: LocalizedError {
+    var errorDescription: String? { "Invalid profile settings deferred until its active session ends." }
+  }
+
+  private func deferInvalidActiveSettings(_ synced: SyncedProfile, replacing profile: BlockedProfiles) throws {
+    guard (2...BlockedProfiles.currentSchemaVersion).contains(synced.profileSchemaVersion),
+      !synced.conditionValidationErrors(forSave: false).isEmpty
+    else { return }
+    let active =
+      try activeSessionFetchOverride.map { try $0() }
+      ?? BlockedProfileSession.mostRecentActiveSession(in: modelContext)
+    if active?.blockedProfile.id == profile.id { throw ActiveConditionUpdateDeferred() }
+  }
+
+  private func applyConditionData(_ synced: SyncedProfile, to profile: BlockedProfiles) {
+    profile.startTriggersData = synced.startTriggersData
+    profile.stopConditionsData = synced.stopConditionsData
+    if let stop = synced.stopConditions { profile.stopConditions = stop }
+    profile.startScheduleData = synced.startScheduleData
+    profile.stopScheduleData = synced.stopScheduleData
+  }
+
   // Verbatim from SyncCoordinator.updateLocalProfile (SyncCoordinator.swift:211-265),
   // adapted to use self.modelContext (the original `context` param was unused).
   private func updateLocalProfile(_ profile: BlockedProfiles, from synced: SyncedProfile) {
@@ -495,18 +523,7 @@ final class SyncApplyService {
     profile.managedByChildId = synced.managedByChildId
     profile.syncVersion = synced.version
     profile.updatedAt = synced.updatedAt
-    if let startTriggers = synced.startTriggers {
-      profile.startTriggers = startTriggers
-    }
-    if let stopConditions = synced.stopConditions {
-      profile.stopConditions = stopConditions
-    }
-    if synced.startScheduleData != nil {
-      profile.startSchedule = synced.startSchedule
-    }
-    if synced.stopScheduleData != nil {
-      profile.stopSchedule = synced.stopSchedule
-    }
+    applyConditionData(synced, to: profile)
     profile.startNFCTagIds = synced.startNFCTagIds
     profile.startNFCTagId = synced.startNFCTagId
     profile.startQRCodeIds = synced.startQRCodeIds
@@ -525,7 +542,6 @@ final class SyncApplyService {
     {
       profile.needsAppSelection = true
     }
-    BlockedProfiles.updateSnapshot(for: profile)
   }
 
   // Verbatim from SyncCoordinator.createLocalProfile (SyncCoordinator.swift:267-318),
@@ -562,14 +578,8 @@ final class SyncApplyService {
       syncVersion: synced.version,
       needsAppSelection: true
     )
-    if let startTriggers = synced.startTriggers {
-      profile.startTriggers = startTriggers
-    }
-    if let stopConditions = synced.stopConditions {
-      profile.stopConditions = stopConditions
-    }
-    profile.startSchedule = synced.startSchedule
-    profile.stopSchedule = synced.stopSchedule
+    profile.blockingStrategyId = synced.blockingStrategyId
+    applyConditionData(synced, to: profile)
     profile.startNFCTagIds = synced.startNFCTagIds
     profile.startNFCTagId = synced.startNFCTagId
     profile.startQRCodeIds = synced.startQRCodeIds
@@ -581,7 +591,6 @@ final class SyncApplyService {
     profile.profileSchemaVersion = synced.profileSchemaVersion
     profile.scheduleLastStoppedAt = synced.scheduleLastStoppedAt
     modelContext.insert(profile)
-    BlockedProfiles.updateSnapshot(for: profile)
     return profile
   }
 

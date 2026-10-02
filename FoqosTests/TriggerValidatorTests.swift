@@ -1,143 +1,89 @@
-// FoqosTests/TriggerValidatorTests.swift
 import FoqosShared
 import XCTest
 
 @testable import FamilyFoqos
 
 final class TriggerValidatorTests: XCTestCase {
-  let validator = TriggerValidator()
+  private let validator = TriggerValidator()
+  private let c5 = "Choose at least one way to start this profile."
+  private let c6 = "Add at least one stop before saving this profile."
+  private let c7NFC = "Same NFC tag only works after an NFC start. Add another stop for other starts."
+  private let c7QR = "Same QR code only works after a QR start. Add another stop for other starts."
+  private let c7Link = "Links can come from NFC tags or QR codes. Add a stop that doesn’t rely on the same tag."
+  private let c8NFC = "Choose at least one NFC tag."
+  private let c8QR = "Choose at least one QR code."
+  private let c9 = "Choose the days and time for this schedule."
+  private let c11 = "Choose a timer from 15 minutes to 23 hours 59 minutes."
+  private let c12 = "These settings couldn’t be saved. Please check this profile and try again."
 
-  // MARK: - Stop Availability
-
-  func testGivenAnyNFCStart_WhenCheckingSameNFCAvailable_ThenReturnsTrue() {
-    var start = ProfileStartTriggers()
-    start.anyNFC = true
-    XCTAssertTrue(validator.isStopAvailable(.sameNFC, forStart: start))
+  func testSaveRequiresRealWellFormedStop() {
+    XCTAssertEqual(validator.validate(start: .init(), stop: .init(manual: true)), [c5])
+    for stop in [ProfileStopConditions(), .init(deepLink: true)] {
+      XCTAssertEqual(validator.validate(start: .init(manual: true), stop: stop), [c6])
+    }
+    XCTAssertEqual(validator.validate(start: .init(manual: true), stop: .init(manual: true), settingsReadable: false), [c12])
+    for ids in [[], [""], [" \n "]] {
+      XCTAssertTrue(validator.validate(start: .init(specificNFC: true), stop: .init(manual: true), startNFCTagIds: ids).contains(c8NFC))
+      XCTAssertTrue(validator.validate(start: .init(specificQR: true), stop: .init(manual: true), startQRCodeIds: ids).contains(c8QR))
+      XCTAssertTrue(validator.validate(start: .init(manual: true), stop: .init(nfc: .specific), stopNFCTagIds: ids).contains(c8NFC))
+      XCTAssertTrue(validator.validate(start: .init(manual: true), stop: .init(qr: .specific), stopQRCodeIds: ids).contains(c8QR))
+    }
+    XCTAssertTrue(validator.validate(start: .init(specificNFC: true), stop: .init(nfc: .specific), startNFCTagIds: ["A0FF"], stopNFCTagIds: ["B0FF"]).isEmpty)
+    XCTAssertTrue(validator.validate(start: .init(manual: true), stop: .init(qr: .specific), stopQRCodeIds: ["qr-digest"]).isEmpty)
   }
 
-  func testGivenSpecificNFCStart_WhenCheckingSameNFCAvailable_ThenReturnsTrue() {
-    var start = ProfileStartTriggers()
-    start.specificNFC = true
-    XCTAssertTrue(validator.isStopAvailable(.sameNFC, forStart: start))
+  func testManualAndNFCWithSameOnlyNeedsAnotherStop() {
+    XCTAssertEqual(validator.validate(start: .init(manual: true, anyNFC: true), stop: .init(sameNFC: true)), [c7NFC])
   }
 
-  func testGivenNoNFCStart_WhenCheckingSameNFCAvailable_ThenReturnsFalse() {
-    var start = ProfileStartTriggers()
-    start.manual = true
-    XCTAssertFalse(validator.isStopAvailable(.sameNFC, forStart: start))
+  func testSameCoverageMatrix() {
+    let now = Date()
+    let schedule = ProfileScheduleTime(days: [.monday], hour: 9, minute: 0, updatedAt: now)
+    XCTAssertTrue(validator.validate(start: .init(anyNFC: true), stop: .init(nfc: .same)).isEmpty)
+    XCTAssertTrue(validator.validate(start: .init(anyQR: true), stop: .init(qr: .same)).isEmpty)
+    let otherStarts: [ProfileStartTriggers] = [.init(manual: true), .init(shortcuts: true), .init(schedule: true), .init(anyQR: true)]
+    for start in otherStarts {
+      XCTAssertEqual(validator.validate(start: start, stop: .init(nfc: .same), startSchedule: schedule), [c7NFC])
+      XCTAssertTrue(validator.validate(start: start, stop: .init(manual: true, nfc: .same), startSchedule: schedule).isEmpty)
+    }
+    XCTAssertEqual(validator.validate(start: .init(anyNFC: true), stop: .init(qr: .same)), [c7QR])
+    XCTAssertEqual(validator.validate(start: .init(anyNFC: true, anyQR: true), stop: .init(nfc: .same, qr: .same)), [c7NFC])
+    XCTAssertEqual(validator.validate(start: .init(anyNFC: true, deepLink: true), stop: .init(nfc: .same)), [c7Link])
+    XCTAssertEqual(validator.validate(start: .init(deepLink: true), stop: .init(qr: .same)), [c7Link])
+    XCTAssertTrue(validator.validate(start: .init(manual: true), stop: .init(nfc: .same, qr: .specific), stopQRCodeIds: ["digest"]).isEmpty)
+    let invalidSpecific = validator.validate(start: .init(manual: true), stop: .init(nfc: .same, qr: .specific))
+    XCTAssertTrue(invalidSpecific.contains(c7NFC))
+    XCTAssertTrue(invalidSpecific.contains(c8QR))
   }
 
-  func testGivenAnyQRStart_WhenCheckingSameQRAvailable_ThenReturnsTrue() {
-    var start = ProfileStartTriggers()
-    start.anyQR = true
-    XCTAssertTrue(validator.isStopAvailable(.sameQR, forStart: start))
-  }
-
-  func testGivenNoQRStart_WhenCheckingSameQRAvailable_ThenReturnsFalse() {
-    var start = ProfileStartTriggers()
-    start.manual = true
-    XCTAssertFalse(validator.isStopAvailable(.sameQR, forStart: start))
-  }
-
-  func testGivenAnyStartTrigger_WhenCheckingManualStopAvailable_ThenReturnsTrue() {
-    let start = ProfileStartTriggers()
-    XCTAssertTrue(validator.isStopAvailable(.manual, forStart: start))
-  }
-
-  func testGivenAnyStartTrigger_WhenCheckingTimerStopAvailable_ThenReturnsTrue() {
-    let start = ProfileStartTriggers()
-    XCTAssertTrue(validator.isStopAvailable(.timer, forStart: start))
-  }
-
-  // MARK: - Unavailability Reasons
-
-  func testGivenNoNFCStart_WhenGettingSameNFCReason_ThenMentionsNFC() {
-    var start = ProfileStartTriggers()
-    start.manual = true
-    let reason = validator.unavailabilityReason(.sameNFC, forStart: start)
-    XCTAssertNotNil(reason)
-    XCTAssertTrue(reason!.contains("NFC"))
-  }
-
-  func testGivenNoQRStart_WhenGettingSameQRReason_ThenMentionsQR() {
-    var start = ProfileStartTriggers()
-    start.manual = true
-    let reason = validator.unavailabilityReason(.sameQR, forStart: start)
-    XCTAssertNotNil(reason)
-    XCTAssertTrue(reason!.contains("QR"))
-  }
-
-  func testGivenNFCStartEnabled_WhenGettingSameNFCReason_ThenReturnsNil() {
-    var start = ProfileStartTriggers()
-    start.anyNFC = true
-    XCTAssertNil(validator.unavailabilityReason(.sameNFC, forStart: start))
-  }
-
-  // MARK: - Auto-Fix
-
-  func testGivenNoNFCStart_WhenAutoFixing_ThenRemovesSameNFC() {
-    var start = ProfileStartTriggers()
-    start.manual = true
-    var stop = ProfileStopConditions()
-    stop.sameNFC = true
-
-    validator.autoFix(start: start, stop: &stop)
-
-    XCTAssertFalse(stop.sameNFC)
-  }
-
-  func testGivenNoQRStart_WhenAutoFixing_ThenRemovesSameQR() {
-    var start = ProfileStartTriggers()
-    start.manual = true
-    var stop = ProfileStopConditions()
-    stop.sameQR = true
-
-    validator.autoFix(start: start, stop: &stop)
-
-    XCTAssertFalse(stop.sameQR)
-  }
-
-  func testGivenNFCStartEnabled_WhenAutoFixing_ThenPreservesSameNFC() {
-    var start = ProfileStartTriggers()
-    start.anyNFC = true
-    var stop = ProfileStopConditions()
-    stop.sameNFC = true
-
-    validator.autoFix(start: start, stop: &stop)
-
-    XCTAssertTrue(stop.sameNFC)
-  }
-
-  // MARK: - Validation Errors
-
-  func testGivenNoStartTrigger_WhenValidating_ThenReturnsStartError() {
-    let start = ProfileStartTriggers()
-    var stop = ProfileStopConditions()
-    stop.manual = true
-
-    let errors = validator.validate(start: start, stop: stop)
-
-    XCTAssertTrue(errors.contains { $0.contains("start trigger") })
-  }
-
-  func testGivenNoStopCondition_WhenValidating_ThenReturnsStopError() {
-    var start = ProfileStartTriggers()
-    start.manual = true
-    let stop = ProfileStopConditions()
-
-    let errors = validator.validate(start: start, stop: stop)
-
-    XCTAssertTrue(errors.contains { $0.contains("stop condition") })
-  }
-
-  func testGivenValidStartAndStop_WhenValidating_ThenReturnsNoErrors() {
-    var start = ProfileStartTriggers()
-    start.manual = true
-    var stop = ProfileStopConditions()
-    stop.manual = true
-
-    let errors = validator.validate(start: start, stop: stop)
-
-    XCTAssertTrue(errors.isEmpty)
+  func testOwnedScheduleAndTimerValidation() throws {
+    let now = Date()
+    for schedule in [
+      nil, ProfileScheduleTime(days: [], hour: 9, minute: 0, updatedAt: now),
+      .init(days: [.monday], hour: -1, minute: 0, updatedAt: now),
+      .init(days: [.monday], hour: 24, minute: 0, updatedAt: now),
+      .init(days: [.monday], hour: 9, minute: -1, updatedAt: now),
+      .init(days: [.monday], hour: 9, minute: 60, updatedAt: now),
+    ] {
+      XCTAssertTrue(validator.validate(start: .init(schedule: true), stop: .init(manual: true), startSchedule: schedule).contains(c9))
+      XCTAssertTrue(validator.validate(start: .init(manual: true), stop: .init(schedule: true), stopSchedule: schedule).contains(c9))
+    }
+    for minutes in [15, 37, 1439] {
+      XCTAssertTrue(validator.validate(start: .init(manual: true), stop: .init(timer: true, timerDurationMinutes: minutes)).isEmpty)
+    }
+    for minutes: Int? in [nil, 0, -1, 14, 1440] {
+      XCTAssertTrue(validator.validate(start: .init(manual: true), stop: .init(manual: true, timer: true, timerDurationMinutes: minutes)).contains(c11))
+      if minutes != nil {
+        XCTAssertTrue(validator.validate(start: .init(manual: true), stop: .init(manual: true, timer: true, timerDurationMinutes: minutes), forSave: false).contains(c11))
+      }
+    }
+    XCTAssertTrue(validator.validate(start: .init(manual: true), stop: .init(timer: true, nfc: .any), forSave: false).isEmpty)
+    XCTAssertEqual(validator.validate(start: .init(manual: true), stop: .init(timer: true), forSave: false), [c6])
+    XCTAssertEqual(validator.validate(start: .init(manual: true), stop: .init(manual: true, requiresEditingAfterConversion: true), forSave: false), [c12])
+    XCTAssertTrue(validator.validate(start: .init(manual: true), stop: .init(manual: true, requiresEditingAfterConversion: true)).isEmpty)
+    for option in StopOption.allCases {
+      XCTAssertTrue(validator.isStopAvailable(option, forStart: .init()))
+      XCTAssertNil(validator.unavailabilityReason(option, forStart: .init()))
+    }
   }
 }

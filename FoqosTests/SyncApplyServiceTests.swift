@@ -1409,4 +1409,130 @@ final class SyncApplyServiceTests: XCTestCase {
     }
   }
 
+  func testIncomingBadSettingsReplaceValidSettingsAsInvalid() throws {
+    let now = Date()
+    for existing in [false, true] {
+      for data: Data? in [nil, Data("bad".utf8), Data("{\"nfc\":\"unknown\"}".utf8), try JSONEncoder().encode(ProfileStopConditions(nfc: .specific))] {
+        let local = BlockedProfiles(name: "Before", createdAt: now, updatedAt: now, syncVersion: 1)
+        local.startTriggers = .init(manual: true)
+        local.stopConditions = .init(manual: true)
+        if existing {
+          context.insert(local)
+          try context.save()
+        }
+        var incoming = SyncedProfile(from: local, originDeviceId: "remote")
+        incoming.name = "Incoming"
+        incoming.version = 2
+        incoming.stopConditionsData = data
+        let record = incoming.toCKRecord(in: zoneID)
+        XCTAssertEqual(makeService().applyFetchedModification(record, isPendingDeleteOrTombstoned: noPendingDelete), .applied)
+        let applied = try XCTUnwrap(BlockedProfiles.findProfile(byID: local.id, in: context))
+        XCTAssertTrue(applied.hasInvalidConditionSettings)
+        if let data, let decoded = try? JSONDecoder().decode(ProfileStopConditions.self, from: data) {
+          XCTAssertEqual(applied.stopConditions, decoded)
+        } else {
+          XCTAssertEqual(applied.stopConditionsData, data)
+        }
+        let exported = SyncedProfile(from: applied, originDeviceId: "local")
+        if let data, let decoded = try? JSONDecoder().decode(ProfileStopConditions.self, from: data) {
+          XCTAssertEqual(exported.stopConditions, decoded)
+        } else {
+          XCTAssertEqual(exported.stopConditionsData, data)
+        }
+        XCTAssertFalse(exported.conditionValidationErrors(forSave: false).isEmpty)
+      }
+    }
+    let local = BlockedProfiles(name: "Legacy flags", createdAt: now, updatedAt: now)
+    local.startTriggers = .init(anyNFC: true)
+    var incoming = SyncedProfile(from: local, originDeviceId: "remote")
+    incoming.stopConditionsData = Data("{\"anyNFC\":true,\"sameNFC\":true,\"specificNFC\":true}".utf8)
+    incoming.stopNFCTagIds = ["A0FF"]
+    XCTAssertEqual(makeService().applyFetchedModification(incoming.toCKRecord(in: zoneID), isPendingDeleteOrTombstoned: noPendingDelete), .applied)
+    let applied = try XCTUnwrap(BlockedProfiles.findProfile(byID: local.id, in: context))
+    XCTAssertEqual(applied.stopConditions.nfc, .specific)
+    let canonical = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(applied.stopConditionsData)) as? [String: Any])
+    XCTAssertNil(canonical["anyNFC"])
+  }
+
+  func testInvalidActiveProfileUpdateDefersAndReplays() throws {
+    let now = Date()
+    let badSettings: [Data?] = [nil, Data("bad".utf8), Data("{\"nfc\":\"unknown\"}".utf8), try JSONEncoder().encode(ProfileStopConditions(nfc: .specific)), try JSONEncoder().encode(ProfileStopConditions())]
+    for data in badSettings {
+      let local = BlockedProfiles(name: "Active", createdAt: now, updatedAt: now, syncVersion: 1)
+      local.startTriggers = .init(manual: true)
+      local.stopConditions = .init(manual: true, schedule: true, nfc: .specific)
+      local.stopNFCTagIds = ["A0FF"]
+      local.stopSchedule = .init(days: [.monday], hour: 17, minute: 0, updatedAt: now)
+      context.insert(local)
+      let session = BlockedProfileSession.createSession(in: context, withTag: "nfc:A0FF", withProfile: local, startTime: now)
+      session.startTime = now
+      try context.save()
+      BlockedProfiles.updateSnapshot(for: local)
+      let oldSnapshot = SharedData.snapshot(for: local.id.uuidString)
+      let oldSettings = local.stopConditionsData
+      let oldFields = Data("old-system-fields".utf8)
+      store.setSystemFields(oldFields, for: local.id.uuidString)
+      var remote = SyncedProfile(from: local, originDeviceId: "remote")
+      remote.version = 2
+      remote.name = "Bad incoming"
+      remote.stopConditionsData = data
+      remote.stopNFCTagIds = []
+      let record = remote.toCKRecord(in: zoneID)
+      for _ in 0..<2 {
+        let service = makeService()
+        XCTAssertEqual(service.applyFetchedModification(record, isPendingDeleteOrTombstoned: noPendingDelete), .failed)
+        XCTAssertEqual(local.name, "Active")
+        XCTAssertEqual(local.syncVersion, 1)
+        XCTAssertEqual(local.stopConditionsData, oldSettings)
+        XCTAssertEqual(local.stopNFCTagIds, ["A0FF"])
+        XCTAssertEqual(SharedData.snapshot(for: local.id.uuidString), oldSnapshot)
+        XCTAssertEqual(store.systemFields(for: local.id.uuidString), oldFields)
+        XCTAssertNil(session.endTime)
+        XCTAssertTrue(service.drainReenqueues().isEmpty)
+        XCTAssertEqual(StartStopActionResolver.determineStopAction(for: local.stopConditions), .stopImmediately)
+        XCTAssertTrue(StartStopActionResolver.canStop(with: .nfc(tag: "A0FF"), conditions: local.stopConditions, sessionTag: session.tag, stopNFCTagIds: local.stopNFCTagIds, stopQRCodeIds: []).allowed)
+        XCTAssertEqual(BackgroundStopPolicy.evaluate(channel: .schedule, sessionMatchesProfile: true, disableBackgroundStops: false, geofence: .noRule, stopConditions: local.stopConditions), .allowed)
+        store = SyncEngineStore(userRecordName: "user-1", defaults: storeDefaults)
+        XCTAssertTrue(store.failedApplies.contains { $0.recordName == local.id.uuidString && $0.op == .upsert })
+      }
+      session.endTime = now.addingTimeInterval(60)
+      try context.save()
+      XCTAssertEqual(makeService().applyFetchedModification(record, isPendingDeleteOrTombstoned: noPendingDelete), .applied)
+      if let data, let decoded = try? JSONDecoder().decode(ProfileStopConditions.self, from: data) {
+        XCTAssertEqual(local.stopConditions, decoded)
+      } else {
+        XCTAssertEqual(local.stopConditionsData, data)
+      }
+      XCTAssertTrue(local.hasInvalidConditionSettings)
+      XCTAssertFalse(store.failedApplies.contains { $0.recordName == local.id.uuidString })
+    }
+  }
+
+  func testActiveSettingsFetchFailureDefersBeforeMutationAndValidSupersessionApplies() throws {
+    struct FetchFailed: Error {}
+    let now = Date()
+    let local = BlockedProfiles(name: "Active", createdAt: now, updatedAt: now, syncVersion: 1)
+    local.startTriggers = .init(manual: true)
+    local.stopConditions = .init(manual: true)
+    context.insert(local)
+    let session = BlockedProfileSession.createSession(in: context, withTag: "manual", withProfile: local, startTime: now)
+    session.startTime = now
+    try context.save()
+    var remote = SyncedProfile(from: local, originDeviceId: "remote")
+    remote.version = 2
+    remote.stopConditionsData = Data("bad".utf8)
+    let service = makeService()
+    service.activeSessionFetchOverride = { throw FetchFailed() }
+    XCTAssertEqual(service.applyFetchedModification(remote.toCKRecord(in: zoneID), isPendingDeleteOrTombstoned: noPendingDelete), .failed)
+    XCTAssertEqual(local.syncVersion, 1)
+    XCTAssertTrue(local.stopConditions.manual)
+    service.activeSessionFetchOverride = nil
+    remote.version = 3
+    remote.stopConditionsData = try JSONEncoder().encode(ProfileStopConditions(manual: true, timer: true, timerDurationMinutes: 37))
+    XCTAssertEqual(service.applyFetchedModification(remote.toCKRecord(in: zoneID), isPendingDeleteOrTombstoned: noPendingDelete), .applied)
+    XCTAssertEqual(local.stopConditions.timerDurationMinutes, 37)
+    XCTAssertTrue(store.failedApplies.isEmpty)
+    XCTAssertNil(session.endTime)
+  }
+
 }

@@ -336,15 +336,14 @@ struct SyncedProfile: Codable, Equatable {
       geofenceRuleData = nil
     }
 
-    // V2 trigger fields
-    startTriggersData = try? JSONEncoder().encode(profile.startTriggers)
-    stopConditionsData = try? JSONEncoder().encode(profile.stopConditions)
-    if let startSchedule = profile.startSchedule {
-      startScheduleData = try? JSONEncoder().encode(startSchedule)
+    // Preserve missing and unreadable blobs instead of exporting empty projections.
+    startTriggersData = profile.startTriggersData
+    stopConditionsData = profile.stopConditionsData
+    if let decoded = profile.stopConditionsData.flatMap({ try? JSONDecoder().decode(ProfileStopConditions.self, from: $0) }) {
+      stopConditionsData = try? JSONEncoder().encode(decoded)
     }
-    if let stopSchedule = profile.stopSchedule {
-      stopScheduleData = try? JSONEncoder().encode(stopSchedule)
-    }
+    startScheduleData = profile.startScheduleData
+    stopScheduleData = profile.stopScheduleData
     startNFCTagIds = profile.startNFCTagIds
     startNFCTagId = profile.profileSchemaVersion < 3 ? profile.startNFCTagId : nil
     startQRCodeIds = profile.startQRCodeIds
@@ -386,6 +385,25 @@ struct SyncedProfile: Codable, Equatable {
   var stopSchedule: ProfileScheduleTime? {
     guard let data = stopScheduleData else { return nil }
     return try? JSONDecoder().decode(ProfileScheduleTime.self, from: data)
+  }
+
+  func conditionValidationErrors(forSave: Bool) -> [String] {
+    guard profileSchemaVersion >= 2 else { return [] }
+    let readable =
+      profileSchemaVersion <= BlockedProfiles.currentSchemaVersion
+      && startTriggers != nil && stopConditions != nil
+      && (startScheduleData == nil || startSchedule != nil)
+      && (stopScheduleData == nil || stopSchedule != nil)
+    func keys(_ list: [String], _ scalar: String?) -> [String] {
+      profileSchemaVersion == 2 ? scalar.map { [$0] } ?? [] : list
+    }
+    return TriggerValidator().validate(
+      start: startTriggers ?? ProfileStartTriggers(), stop: stopConditions ?? ProfileStopConditions(),
+      startNFCTagIds: keys(startNFCTagIds, startNFCTagId), startQRCodeIds: keys(startQRCodeIds, startQRCodeId),
+      stopNFCTagIds: keys(stopNFCTagIds, stopNFCTagId), stopQRCodeIds: keys(stopQRCodeIds, stopQRCodeId),
+      startSchedule: startSchedule, stopSchedule: stopSchedule,
+      settingsReadable: readable, forSave: forSave
+    )
   }
 
   var preActivationReminderTimes: [UInt8] {

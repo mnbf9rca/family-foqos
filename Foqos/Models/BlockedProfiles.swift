@@ -105,10 +105,10 @@ class BlockedProfiles {
   var profileSchemaVersion: Int = 1
 
   /// Start triggers - serialized as JSON in SwiftData
-  private var startTriggersData: Data?
+  var startTriggersData: Data?
 
   /// Stop conditions - serialized as JSON in SwiftData
-  private var stopConditionsData: Data?
+  var stopConditionsData: Data?
 
   /// Computed property for start triggers with JSON serialization
   var startTriggers: ProfileStartTriggers {
@@ -117,7 +117,7 @@ class BlockedProfiles {
       do {
         return try JSONDecoder().decode(ProfileStartTriggers.self, from: data)
       } catch {
-        Log.error("Failed to decode startTriggers: \(error.localizedDescription)", category: .sync)
+        Log.error("Failed to decode startTriggers", category: .sync)
         return ProfileStartTriggers()
       }
     }
@@ -137,7 +137,7 @@ class BlockedProfiles {
       do {
         return try JSONDecoder().decode(ProfileStopConditions.self, from: data)
       } catch {
-        Log.error("Failed to decode stopConditions: \(error.localizedDescription)", category: .sync)
+        Log.error("Failed to decode stopConditions", category: .sync)
         return ProfileStopConditions()
       }
     }
@@ -167,10 +167,10 @@ class BlockedProfiles {
   var stopQRCodeIds: [String] = []
 
   /// Start schedule - serialized as JSON in SwiftData
-  private var startScheduleData: Data?
+  var startScheduleData: Data?
 
   /// Stop schedule - serialized as JSON in SwiftData
-  private var stopScheduleData: Data?
+  var stopScheduleData: Data?
 
   /// Computed property for start schedule with JSON serialization
   var startSchedule: ProfileScheduleTime? {
@@ -179,7 +179,7 @@ class BlockedProfiles {
       do {
         return try JSONDecoder().decode(ProfileScheduleTime.self, from: data)
       } catch {
-        Log.error("Failed to decode startSchedule: \(error.localizedDescription)", category: .sync)
+        Log.error("Failed to decode startSchedule", category: .sync)
         return nil
       }
     }
@@ -203,7 +203,7 @@ class BlockedProfiles {
       do {
         return try JSONDecoder().decode(ProfileScheduleTime.self, from: data)
       } catch {
-        Log.error("Failed to decode stopSchedule: \(error.localizedDescription)", category: .sync)
+        Log.error("Failed to decode stopSchedule", category: .sync)
         return nil
       }
     }
@@ -219,6 +219,21 @@ class BlockedProfiles {
       }
     }
   }
+
+  /// Supported V2 settings must be readable; unused absent recurrences are allowed.
+  var conditionSettingsReadable: Bool {
+    guard profileSchemaVersion >= 2, !isNewerSchemaVersion else { return profileSchemaVersion == 1 }
+    let synced = SyncedProfile(from: self, originDeviceId: "")
+    return synced.startTriggers != nil && synced.stopConditions != nil
+      && (startScheduleData == nil || synced.startSchedule != nil)
+      && (stopScheduleData == nil || synced.stopSchedule != nil)
+  }
+
+  func conditionValidationErrors(forSave: Bool) -> [String] {
+    SyncedProfile(from: self, originDeviceId: "").conditionValidationErrors(forSave: forSave)
+  }
+
+  var hasInvalidConditionSettings: Bool { !conditionValidationErrors(forSave: false).isEmpty }
 
   @Relationship var sessions: [BlockedProfileSession] = []
 

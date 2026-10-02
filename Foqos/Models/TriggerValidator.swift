@@ -16,96 +16,82 @@ enum StopOption: String, CaseIterable {
   case deepLink
 }
 
-/// A validation rule with context-aware checking
-struct TriggerRule: Sendable {
-  let check: @Sendable (ProfileStartTriggers, ProfileStopConditions) -> Bool
-  let message: String
-  let autoFix: (@Sendable (ProfileStartTriggers, inout ProfileStopConditions) -> Void)?
-}
-
-/// Predefined validation rules
-enum TriggerRules {
-  /// "Same NFC" requires an NFC start trigger
-  static let sameNFCRequiresNFCStart = TriggerRule(
-    check: { start, stop in !stop.sameNFC || start.hasNFC },
-    message: "\"Same NFC\" requires an NFC start trigger (Any or Specific)",
-    autoFix: { start, stop in
-      if !start.hasNFC { stop.sameNFC = false }
-    }
-  )
-
-  /// "Same QR" requires a QR start trigger
-  static let sameQRRequiresQRStart = TriggerRule(
-    check: { start, stop in !stop.sameQR || start.hasQR },
-    message: "\"Same QR\" requires a QR start trigger (Any or Specific)",
-    autoFix: { start, stop in
-      if !start.hasQR { stop.sameQR = false }
-    }
-  )
-
-  /// At least one start trigger required
-  static let requiresStartTrigger = TriggerRule(
-    check: { start, _ in start.isValid },
-    message: "At least one start trigger is required",
-    autoFix: nil
-  )
-
-  /// At least one stop condition required
-  static let requiresStopCondition = TriggerRule(
-    check: { _, stop in stop.isValid },
-    message: "At least one stop condition is required",
-    autoFix: nil
-  )
-
-  static let allRules: [TriggerRule] = [
-    sameNFCRequiresNFCStart,
-    sameQRRequiresQRStart,
-    requiresStartTrigger,
-    requiresStopCondition,
-  ]
-}
-
-/// Validates trigger configurations and provides UI integration
+/// Validates complete settings without rewriting the user's selections.
 final class TriggerValidator {
-  private let rules: [TriggerRule]
+  func isStopAvailable(_ stop: StopOption, forStart start: ProfileStartTriggers) -> Bool { true }
+  func unavailabilityReason(_ stop: StopOption, forStart start: ProfileStartTriggers) -> String? { nil }
 
-  init(rules: [TriggerRule] = TriggerRules.allRules) {
-    self.rules = rules
-  }
+  // Compatibility until the editor drops its old auto-fix call.
+  func autoFix(start: ProfileStartTriggers, stop: inout ProfileStopConditions) {}
 
-  /// Check if a stop option is available given current start triggers
-  func isStopAvailable(_ stop: StopOption, forStart start: ProfileStartTriggers) -> Bool {
-    switch stop {
-    case .sameNFC: return start.hasNFC
-    case .sameQR: return start.hasQR
-    default: return true
+  func validate(
+    start: ProfileStartTriggers,
+    stop: ProfileStopConditions,
+    startNFCTagIds: [String] = [],
+    startQRCodeIds: [String] = [],
+    stopNFCTagIds: [String] = [],
+    stopQRCodeIds: [String] = [],
+    startSchedule: ProfileScheduleTime? = nil,
+    stopSchedule: ProfileScheduleTime? = nil,
+    settingsReadable: Bool = true,
+    forSave: Bool = true
+  ) -> [String] {
+    guard settingsReadable, forSave || !stop.requiresEditingAfterConversion else {
+      return ["These settings couldn’t be saved. Please check this profile and try again."]
     }
-  }
-
-  /// Get reason why a stop is unavailable
-  func unavailabilityReason(_ stop: StopOption, forStart start: ProfileStartTriggers) -> String? {
-    switch stop {
-    case .sameNFC where !start.hasNFC:
-      return "Enable an NFC start trigger to use this"
-    case .sameQR where !start.hasQR:
-      return "Enable a QR start trigger to use this"
-    default:
-      return nil
+    var errors: [String] = []
+    func add(_ message: String) {
+      if !errors.contains(message) { errors.append(message) }
     }
-  }
-
-  /// Auto-fix invalid selections when start triggers change
-  func autoFix(start: ProfileStartTriggers, stop: inout ProfileStopConditions) {
-    for rule in rules {
-      rule.autoFix?(start, &stop)
+    func usableKeys(_ ids: [String]) -> Bool {
+      !ids.isEmpty && ids.allSatisfy { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     }
-  }
-
-  /// Get all validation errors
-  func validate(start: ProfileStartTriggers, stop: ProfileStopConditions) -> [String] {
-    rules
-      .filter { !$0.check(start, stop) }
-      .map { $0.message }
+    func validSchedule(_ schedule: ProfileScheduleTime?) -> Bool {
+      guard let schedule else { return false }
+      return schedule.isActive && (0...23).contains(schedule.hour) && (0...59).contains(schedule.minute)
+    }
+    if !start.isValid { add("Choose at least one way to start this profile.") }
+    let nfcKeys = usableKeys(stopNFCTagIds)
+    let qrKeys = usableKeys(stopQRCodeIds)
+    if (start.specificNFC && !usableKeys(startNFCTagIds)) || (stop.nfc == .specific && !nfcKeys) {
+      add("Choose at least one NFC tag.")
+    }
+    if (start.specificQR && !usableKeys(startQRCodeIds)) || (stop.qr == .specific && !qrKeys) {
+      add("Choose at least one QR code.")
+    }
+    let scheduledStop = stop.schedule && validSchedule(stopSchedule)
+    if (start.schedule && !validSchedule(startSchedule)) || (stop.schedule && !scheduledStop) {
+      add("Choose the days and time for this schedule.")
+    }
+    let timerValid =
+      stop.timerDurationMinutes.map {
+        (DeviceActivityLimits.minimumIntervalMinutes...DeviceActivityLimits.maximumTimerMinutes).contains($0)
+      } ?? false
+    if stop.timer && !timerValid && (forSave || stop.timerDurationMinutes != nil) {
+      add("Choose a timer from 15 minutes to 23 hours 59 minutes.")
+    }
+    let nonSameStop =
+      stop.manual || (stop.timer && timerValid) || scheduledStop
+      || stop.nfc == .any || (stop.nfc == .specific && nfcKeys)
+      || stop.qr == .any || (stop.qr == .specific && qrKeys)
+    let hasSame = stop.nfc == .same || stop.qr == .same
+    if !nonSameStop && !hasSame && errors.isEmpty {
+      add("Add at least one stop before saving this profile.")
+    } else if !stop.manual && !stop.timer && !stop.schedule && stop.nfc == .none && stop.qr == .none {
+      add("Add at least one stop before saving this profile.")
+    }
+    if !nonSameStop && hasSame && start.isValid {
+      let nfcUncovered = stop.nfc == .same && (!start.hasNFC || start.manual || start.shortcuts || start.schedule || start.hasQR || start.deepLink)
+      let qrUncovered = stop.qr == .same && (!start.hasQR || start.manual || start.shortcuts || start.schedule || start.hasNFC || start.deepLink)
+      if start.deepLink {
+        add("Links can come from NFC tags or QR codes. Add a stop that doesn’t rely on the same tag.")
+      } else if nfcUncovered {
+        add("Same NFC tag only works after an NFC start. Add another stop for other starts.")
+      } else if qrUncovered {
+        add("Same QR code only works after a QR start. Add another stop for other starts.")
+      }
+    }
+    return errors
   }
 }
 

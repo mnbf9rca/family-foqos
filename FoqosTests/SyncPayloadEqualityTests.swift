@@ -1,3 +1,4 @@
+import FoqosShared
 import XCTest
 
 @testable import FamilyFoqos
@@ -109,4 +110,29 @@ final class SyncPayloadEqualityTests: XCTestCase {
     XCTAssertEqual(b.startTriggers, triggers)
     XCTAssertTrue(SyncPayloadEquality.profilesPayloadEqual(a, b))
   }
+  func testConditionBlobEqualityPreservesMalformedDifferences() throws {
+    let now = Date()
+    let source = BlockedProfiles(name: "Settings", createdAt: now, updatedAt: now)
+    let base = SyncedProfile(from: source, originDeviceId: "local")
+    let fields: [WritableKeyPath<SyncedProfile, Data?>] = [
+      \.startTriggersData, \.stopConditionsData, \.startScheduleData, \.stopScheduleData,
+    ]
+    for field in fields {
+      var a = base
+      var b = base
+      a[keyPath: field] = Data("bad-one".utf8)
+      b[keyPath: field] = Data("bad-two".utf8)
+      XCTAssertFalse(SyncPayloadEquality.profilesPayloadEqual(a, b))
+      b[keyPath: field] = nil
+      XCTAssertFalse(SyncPayloadEquality.profilesPayloadEqual(a, b))
+      b[keyPath: field] = a[keyPath: field]
+      XCTAssertTrue(SyncPayloadEquality.profilesPayloadEqual(a, b))
+    }
+    var canonical = base
+    var legacy = base
+    canonical.stopConditionsData = try JSONEncoder().encode(ProfileStopConditions(nfc: .specific, qr: .same))
+    legacy.stopConditionsData = Data("{\"anyNFC\":true,\"sameNFC\":true,\"specificNFC\":true,\"anyQR\":true,\"sameQR\":true}".utf8)
+    XCTAssertTrue(SyncPayloadEquality.profilesPayloadEqual(canonical, legacy))
+  }
+
 }
