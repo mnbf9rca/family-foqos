@@ -18,6 +18,8 @@ The reviewer always runs a different model from the planner and builders so revi
 
 The orchestrator verifies agent claims (PR diff, CI, grep results) by delegating to its own subagents or workflows, not by reading the material in its own context.
 
+Read-only reviews and evidence collection run from the agent's own working copy or use read-only commands such as `git -C`, `git show`, and `git diff` against SHAs. For dirty-file checks in another agent's worktree, use `git --no-optional-locks -C <worktree> status --porcelain` to avoid refreshing or locking its index. No agent, including the orchestrator, changes another agent's worktree HEAD, branch, or files, or makes another agent's worktree its own working directory.
+
 ### Briefs
 
 A brief from the orchestrator to any agent contains exactly four things:
@@ -179,13 +181,13 @@ A spec or plan PR is never merged alone; the build stream branches from the appr
 
 Before reporting a PR approved or merge-ready, verify that it is already ready for review and not a draft. Include the exact head and base, check state, and independent review decision in the handoff. The orchestrator performs the merge, and only after asking the human about that specific PR.
 
-Main requires PR branches to be up to date. When a PR is behind, the orchestrator updates its branch from main without rewriting history. Before merging, confirm the update brought in only main's changes, the reviewed files are byte-identical to the reviewed head, and checks pass. If reviewed files changed, obtain a fresh review.
+When branch protection requires an up-to-date branch, the orchestrator may update the PR branch from main with a GitHub merge, never a force push, and merge without a new review only after verifying that the PR's diff against main is identical to the approved head's diff against its base and all checks are green on the new head. If the diff changes, obtain a fresh review. Notify the owning agent to fetch and fast-forward or merge the update before its next push. Human approval of that specific PR is still required.
 
 Only the human approves a fork PR's workflow run; agents never approve it. Version bumps for a fork PR go onto the fork branch through maintainer edits, preserving the contributor's commits.
 
 A PR changing source code gets the `greptile-review` label once, when its author believes it is ready to merge after the reviewer’s findings are addressed, because every push after labelling triggers a paid re-review; never label spec-only, docs-only, version-only, or small follow-up PRs.
 
-Greptile writes its result into the PR description as a `greptile_comment` block with a confidence score; any inline findings arrive as review threads. Check with `gh pr view N --json body`. If no result appears within about 30 minutes, the human retriggers the review from the Greptile management portal; do not remove and re-add the label.
+Greptile publishes its review summary in the PR description and completion through the `Greptile Review` status check, so do not wait for a PR review or comment to establish that it ran. A green check does not clear findings: judge the summary's findings and confidence score and any unresolved inline Greptile review threads. Inspect the summary with `gh pr view N --json body`. If no result appears within about 30 minutes, the human retriggers the review from the Greptile management portal; do not remove and re-add the label.
 
 ### Calibrate Operator-Document Sign-Off
 
