@@ -24,10 +24,11 @@ See [Development Workflow](docs/development-workflow.md) for credential fallback
 
 ## Multi-Agent Coordination
 
-- The fleet is one Herdr workspace with agents addressed by name: `orchestrator` (the human's proxy: dispatch, human gates, heartbeat, merges), `planner` (specs and plans only), `build1` and `build2` (implementation in their own worktrees), `reviewer` (design and code review).
+- The fleet is one Herdr workspace with agents addressed by name: `orchestrator` (the human's proxy: dispatch, human gates, heartbeat, merges), `planner` (specs and plans only), `build1` and `build2` (implementation in their own worktrees), `reviewer` (design and code review), `auditor` (read-only audits and plan coverage; no repository artifacts).
 - Every agent loads this file at startup; the orchestrator's first prompt names your role; read `docs/multi-agent-coordination.md` for that role's rules before taking work.
 - Message an agent with `herdr agent prompt <name> "<your role>: <text>"` and read its reply with `herdr agent read <name> --source recent-unwrapped --lines N`. Review rounds run directly between planner and reviewer with a one-line notice to the orchestrator at request and at verdict.
 - Route human gates through the orchestrator: send `<role>: blocked on human gate: <what>` to `orchestrator` and wait.
+- The orchestrator records each human ruling on the relevant GitHub issue when made; every agent requires a recorded ruling before treating existing behaviour in a spec as a deliberate product decision.
 - The orchestrator produces no repository artifacts, verifies claims through its own subagents rather than in its own context, and briefs agents with only the problem, the human's rulings, undiscoverable details, and how to report back.
 - After 30 quiet minutes with in-flight work, the orchestrator checks the agent's Herdr state, has a subagent collect recent output, commit age, dirty files, and CPU delta, then prompts the agent unless it is blocked.
 - Announce every wait for a gate, review, or dependency to the orchestrator when it begins.
