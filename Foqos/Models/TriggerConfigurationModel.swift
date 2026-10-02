@@ -48,37 +48,13 @@ final class TriggerConfigurationModel: ObservableObject {
 
   /// Run validation and update error list
   func validate() {
-    var errors = validator.validate(
+    let errors = validator.validate(
       start: startTriggers, stop: stopConditions,
       startNFCTagIds: startNFCTagIds, startQRCodeIds: startQRCodeIds,
       stopNFCTagIds: stopNFCTagIds, stopQRCodeIds: stopQRCodeIds,
       startSchedule: startSchedule, stopSchedule: stopSchedule,
       settingsReadable: true, forSave: true
     )
-
-    if startTriggers.schedule && stopConditions.schedule,
-      let start = startSchedule, let stop = stopSchedule,
-      start.isActive, stop.isActive,
-      start.hour == stop.hour && start.minute == stop.minute
-    {
-      errors.append("Choose different moments for scheduled start and stop.")
-    }
-    if startTriggers.schedule && stopConditions.schedule,
-      let start = startSchedule, let stop = stopSchedule,
-      start.isActive, stop.isActive
-    {
-      let window = TriggerValidator.scheduleWindowMinutes(
-        startHour: start.hour, startMinute: start.minute,
-        stopHour: stop.hour, stopMinute: stop.minute
-      )
-      // window == 0 is already reported by the same-time rule above.
-      if window > 0 && window < DeviceActivityLimits.minimumIntervalMinutes {
-        errors.append(
-          "A scheduled window must be at least "
-            + "\(DeviceActivityLimits.minimumIntervalMinutes) minutes long"
-        )
-      }
-    }
 
     validationErrors = errors
     if !validationErrors.isEmpty {

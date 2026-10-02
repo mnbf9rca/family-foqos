@@ -228,4 +228,21 @@ final class CloneProfileTests: XCTestCase {
     XCTAssertNil(session.endTime)
   }
 
+  func testInvalidSchedulePairsCannotBeDuplicated() throws {
+    let now = Date()
+    let source = try makeScheduledProfile(now: now)
+    for minute in [0, 14] {
+      source.stopSchedule = .init(days: [.friday], hour: 21, minute: minute, updatedAt: now)
+      try context.save()
+      BlockedProfiles.updateSnapshot(for: source)
+      let snapshot = SharedData.snapshot(for: source.id.uuidString)
+      let expected = minute == 0 ? "Choose different moments for scheduled start and stop." : "A scheduled window must be at least 15 minutes long"
+      XCTAssertThrowsError(try BlockedProfiles.cloneProfile(source, in: context, newName: "Invalid copy")) { error in
+        XCTAssertEqual(error.localizedDescription, expected)
+      }
+      XCTAssertEqual(try BlockedProfiles.fetchProfiles(in: context).map(\.id), [source.id])
+      XCTAssertEqual(SharedData.snapshot(for: source.id.uuidString), snapshot)
+    }
+  }
+
 }

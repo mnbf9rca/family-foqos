@@ -43,6 +43,30 @@ final class TriggerValidator {
     if (start.schedule && !validSchedule(startSchedule)) || (stop.schedule && !scheduledStop) {
       add("Choose the days and time for this schedule.")
     }
+    if start.schedule && stop.schedule,
+      let start = startSchedule, let stop = stopSchedule,
+      start.isActive, stop.isActive,
+      start.hour == stop.hour && start.minute == stop.minute
+    {
+      add("Choose different moments for scheduled start and stop.")
+    }
+    if start.schedule && stop.schedule,
+      let start = startSchedule, let stop = stopSchedule,
+      start.isActive, stop.isActive
+    {
+      let window = TriggerValidator.scheduleWindowMinutes(
+        startHour: start.hour, startMinute: start.minute,
+        stopHour: stop.hour, stopMinute: stop.minute
+      )
+      // window == 0 is already reported by the same-time rule above.
+      if window > 0 && window < DeviceActivityLimits.minimumIntervalMinutes {
+        add(
+          "A scheduled window must be at least "
+            + "\(DeviceActivityLimits.minimumIntervalMinutes) minutes long"
+        )
+      }
+    }
+
     let timerValid =
       stop.timerDurationMinutes.map {
         (DeviceActivityLimits.minimumIntervalMinutes...DeviceActivityLimits.maximumTimerMinutes).contains($0)

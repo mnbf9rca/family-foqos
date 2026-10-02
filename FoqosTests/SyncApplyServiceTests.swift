@@ -1535,4 +1535,97 @@ final class SyncApplyServiceTests: XCTestCase {
     XCTAssertNil(session.endTime)
   }
 
+  func testCurrentSchemaUpdateSkipsMigrationFetchAndPublishesSnapshot() throws {
+    struct FetchFailed: Error {}
+    let now = Date()
+    let profile = BlockedProfiles(name: "Before", createdAt: now, updatedAt: now, syncVersion: 1)
+    profile.startTriggers = .init(manual: true)
+    profile.stopConditions = .init(manual: true)
+    context.insert(profile)
+    try context.save()
+    BlockedProfiles.updateSnapshot(for: profile)
+    var incoming = SyncedProfile(from: profile, originDeviceId: "remote")
+    incoming.name = "After"
+    incoming.version = 2
+    incoming.stopConditionsData = try JSONEncoder().encode(ProfileStopConditions(manual: true, timer: true, timerDurationMinutes: 37))
+    let service = makeService()
+    var fetchCount = 0
+    service.activeSessionFetchOverride = {
+      fetchCount += 1
+      throw FetchFailed()
+    }
+
+    XCTAssertEqual(service.applyFetchedModification(incoming.toCKRecord(in: zoneID), isPendingDeleteOrTombstoned: noPendingDelete), .applied)
+    XCTAssertEqual(fetchCount, 0)
+    let durable = try XCTUnwrap(BlockedProfiles.findProfile(byID: profile.id, in: ModelContext(container)))
+    XCTAssertEqual(durable.syncVersion, 2)
+    XCTAssertEqual(SharedData.snapshot(for: profile.id.uuidString)?.name, "After")
+    XCTAssertEqual(SharedData.snapshot(for: profile.id.uuidString)?.stopConditions?.timerDurationMinutes, 37)
+    XCTAssertTrue(store.failedApplies.isEmpty)
+  }
+
+  func testEqualPayloadRetryPublishesCommittedSettingsAndClearsFailure() throws {
+    let now = Date()
+    let profile = BlockedProfiles(name: "Before", createdAt: now, updatedAt: now, syncVersion: 1)
+    profile.startTriggers = .init(manual: true)
+    profile.stopConditions = .init(manual: true)
+    context.insert(profile)
+    try context.save()
+    BlockedProfiles.updateSnapshot(for: profile)
+    // Reproduce a prior apply committed before snapshot publication failed.
+    profile.name = "Committed"
+    profile.syncVersion = 2
+    profile.stopConditions = .init(manual: true, timer: true, timerDurationMinutes: 37)
+    try context.save()
+    let record = SyncedProfile(from: profile, originDeviceId: "remote").toCKRecord(in: zoneID)
+    store.addFailedApply(FailedApply(recordName: record.recordID.recordName, recordType: SyncedProfile.recordType, op: .upsert))
+    store.setSystemFields(Data("old-fields".utf8), for: record.recordID.recordName)
+    store = SyncEngineStore(userRecordName: "user-1", defaults: storeDefaults)
+    context = ModelContext(container)
+    XCTAssertEqual(SharedData.snapshot(for: profile.id.uuidString)?.name, "Before")
+
+    XCTAssertEqual(makeService().applyFetchedModification(record, isPendingDeleteOrTombstoned: noPendingDelete), .applied)
+    XCTAssertEqual(SharedData.snapshot(for: profile.id.uuidString)?.name, "Committed")
+    XCTAssertEqual(SharedData.snapshot(for: profile.id.uuidString)?.stopConditions?.timerDurationMinutes, 37)
+    XCTAssertNotEqual(store.systemFields(for: record.recordID.recordName), Data("old-fields".utf8))
+    XCTAssertTrue(store.failedApplies.isEmpty)
+  }
+
+  func testInvalidSchedulePairDefersActiveUpdateAndAppliesAfterEnd() throws {
+    let now = Date()
+    for minute in [0, 14] {
+      let profile = BlockedProfiles(name: "Active", createdAt: now, updatedAt: now, syncVersion: 1)
+      profile.startTriggers = .init(manual: true)
+      profile.stopConditions = .init(manual: true)
+      context.insert(profile)
+      let session = BlockedProfileSession.createSession(in: context, withTag: "manual", withProfile: profile, startTime: now)
+      session.startTime = now
+      try context.save()
+      BlockedProfiles.updateSnapshot(for: profile)
+      let oldSnapshot = SharedData.snapshot(for: profile.id.uuidString)
+      var incoming = SyncedProfile(from: profile, originDeviceId: "remote")
+      incoming.name = "Invalid schedules"
+      incoming.version = 2
+      incoming.startTriggersData = try JSONEncoder().encode(ProfileStartTriggers(manual: true, schedule: true))
+      incoming.stopConditionsData = try JSONEncoder().encode(ProfileStopConditions(manual: true, schedule: true))
+      incoming.startScheduleData = try JSONEncoder().encode(ProfileScheduleTime(days: [.monday], hour: 9, minute: 0, updatedAt: now))
+      incoming.stopScheduleData = try JSONEncoder().encode(ProfileScheduleTime(days: [.friday], hour: 9, minute: minute, updatedAt: now))
+      let record = incoming.toCKRecord(in: zoneID)
+      XCTAssertEqual(makeService().applyFetchedModification(record, isPendingDeleteOrTombstoned: noPendingDelete), .failed)
+      XCTAssertEqual(profile.name, "Active")
+      XCTAssertEqual(profile.syncVersion, 1)
+      XCTAssertNil(profile.startSchedule)
+      XCTAssertNil(profile.stopSchedule)
+      XCTAssertEqual(SharedData.snapshot(for: profile.id.uuidString), oldSnapshot)
+      XCTAssertNil(session.endTime)
+      XCTAssertTrue(store.failedApplies.contains { $0.recordName == profile.id.uuidString })
+      session.endTime = now.addingTimeInterval(60)
+      try context.save()
+      XCTAssertEqual(makeService().applyFetchedModification(record, isPendingDeleteOrTombstoned: noPendingDelete), .applied)
+      XCTAssertTrue(profile.hasInvalidConditionSettings)
+      XCTAssertEqual(profile.stopSchedule?.minute, minute)
+      XCTAssertFalse(store.failedApplies.contains { $0.recordName == profile.id.uuidString })
+    }
+  }
+
 }

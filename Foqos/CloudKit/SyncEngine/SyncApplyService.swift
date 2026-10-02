@@ -417,17 +417,17 @@ final class SyncApplyService {
       // Equal-version divergence (§5.1): payload-differing => deterministic tie-break (#218).
       let localSynced = SyncedProfile(from: existing, originDeviceId: deviceId)
       if SyncPayloadEquality.profilesPayloadEqual(synced, localSynced) {
-        if existing.needsMigration {
-          try migrateIncomingProfile(existing)
-          storeSystemFields(record)
-        }
+        try migrateIncomingProfile(existing)
+        // An earlier apply may have committed before publishing its snapshot.
+        BlockedProfiles.updateSnapshot(for: existing)
+        storeSystemFields(record)
         SyncDiagnostics.profileApply(
           profileId: existing.id, branch: "equal_payload_noop",
           remoteVersion: synced.version, localVersion: localVersion,
           remoteSchema: synced.profileSchemaVersion, localSchema: localSchema,
           remoteGeofenceRefCount: remoteGeofenceRefCount,
           localGeofenceRefCount: localGeofenceRefCount)
-        return .applied  // payload-equal echo ⇒ no-op
+        return .applied  // Payload-equal echo leaves the durable model unchanged.
       }
       if Self.remoteWinsProfileTie(remote: synced, local: localSynced) {
         // Remote wins: adopt its already-published payload without re-enqueuing.
@@ -595,6 +595,7 @@ final class SyncApplyService {
   }
 
   private func migrateIncomingProfile(_ profile: BlockedProfiles) throws {
+    guard profile.needsMigration else { return }
     let previousVersion = profile.profileSchemaVersion
     let active =
       try activeSessionFetchOverride.map { try $0() }

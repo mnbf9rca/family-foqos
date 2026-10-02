@@ -82,4 +82,21 @@ final class TriggerValidatorTests: XCTestCase {
     XCTAssertEqual(validator.validate(start: .init(manual: true), stop: .init(manual: true, requiresEditingAfterConversion: true), forSave: false), [c12])
     XCTAssertTrue(validator.validate(start: .init(manual: true), stop: .init(manual: true, requiresEditingAfterConversion: true)).isEmpty)
   }
+  func testSchedulePairChecksApplyToStoredAndSaveValidation() {
+    let now = Date()
+    for forSave in [true, false] {
+      for stopDays in [[Weekday.monday], [.friday]] {
+        let start = ProfileScheduleTime(days: [.monday], hour: 9, minute: 0, updatedAt: now)
+        for (minute, expected) in [(0, "Choose different moments for scheduled start and stop."), (14, "A scheduled window must be at least 15 minutes long"), (15, "")] {
+          let stop = ProfileScheduleTime(days: stopDays, hour: 9, minute: minute, updatedAt: now)
+          let errors = validator.validate(start: .init(schedule: true), stop: .init(schedule: true), startSchedule: start, stopSchedule: stop, forSave: forSave)
+          XCTAssertEqual(errors, expected.isEmpty ? [] : [expected])
+        }
+      }
+      let start = ProfileScheduleTime(days: [.monday], hour: 23, minute: 55, updatedAt: now)
+      let stop = ProfileScheduleTime(days: [.tuesday], hour: 0, minute: 5, updatedAt: now)
+      XCTAssertEqual(validator.validate(start: .init(schedule: true), stop: .init(schedule: true), startSchedule: start, stopSchedule: stop, forSave: forSave), ["A scheduled window must be at least 15 minutes long"])
+    }
+  }
+
 }
