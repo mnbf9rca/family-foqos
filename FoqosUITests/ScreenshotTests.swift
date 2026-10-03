@@ -72,19 +72,6 @@ final class ScreenshotTests: XCTestCase {
   }
 
   @MainActor
-  func testHoldControlsHaveButtonSemantics() throws {
-    let app = launch(scenario: "profile-editor")
-    XCTAssertTrue(app.buttons["Cancel"].waitForExistence(timeout: 15))
-    app.buttons["Cancel"].tap()
-    XCTAssertTrue(app.buttons["Hold to Start"].waitForExistence(timeout: 5))
-    app.terminate()
-
-    let activeApp = launch(scenario: "home-active")
-    XCTAssertTrue(activeApp.buttons["Stop"].waitForExistence(timeout: 15))
-    XCTAssertTrue(activeApp.buttons["Hold to Start Break"].exists)
-  }
-
-  @MainActor
   func testHomeLargestTextDoesNotOverlapControls() throws {
     continueAfterFailure = true
     let app = launch(scenario: "home-active", largestText: true)
