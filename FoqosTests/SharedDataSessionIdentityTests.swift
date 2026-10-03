@@ -72,4 +72,82 @@ final class SharedDataSessionIdentityTests: XCTestCase {
     XCTAssertNil(SharedData.getActiveSharedSession(), "own shared session is flushed on stop")
     XCTAssertEqual(session.endTime, now)
   }
+  func testOriginatingCommitRejectsEncodingLockAndChangedOwnershipWithoutTouchingVictim() throws {
+    let now = Date()
+    let profile = BlockedProfiles(name: "Candidate", createdAt: now, updatedAt: now)
+    profile.startTriggers = .init(manual: true)
+    profile.stopConditions = .init(manual: true)
+    SharedData.setSnapshot(BlockedProfiles.getSnapshot(for: profile), for: profile.id.uuidString)
+    let victim = SharedData.SessionSnapshot(id: UUID().uuidString, tag: "nfc:old", blockedProfileId: UUID(), startTime: now, timerEndTime: now.addingTimeInterval(900), forceStarted: false, origin: .init(kind: .nfc, key: "OLD", namespace: .nfcUID))
+    SharedData.createActiveSharedSession(for: victim)
+    let candidate = SharedData.SessionSnapshot(id: UUID().uuidString, tag: "manual", blockedProfileId: profile.id, startTime: now, forceStarted: false, origin: .init(kind: .manual))
+    var effects = 0
+    XCTAssertFalse(SharedData.commitOriginatingSession(candidate, expectedVictimId: nil, now: now, onCommit: { effects += 1 }))
+    XCTAssertFalse(SharedData.commitOriginatingSession(candidate, expectedVictimId: "stale", now: now, onCommit: { effects += 1 }))
+    XCTAssertFalse(
+      SharedData.commitOriginatingSession(
+        candidate, expectedVictimId: victim.id, now: now,
+        encode: { _ in throw NSError(domain: "encode", code: 1) }, onCommit: { effects += 1 }))
+    SharedData.configureLockPath(nil)
+    XCTAssertFalse(SharedData.commitOriginatingSession(candidate, expectedVictimId: victim.id, now: now, onCommit: { effects += 1 }))
+    SharedData.resetLockPath()
+    XCTAssertEqual(effects, 0)
+    XCTAssertEqual(SharedData.getActiveSharedSession(), victim)
+    XCTAssertTrue(SharedData.completedSessionsInScheduler.isEmpty)
+    XCTAssertTrue(SharedData.commitOriginatingSession(candidate, expectedVictimId: victim.id, now: now, onCommit: { effects += 1 }))
+    XCTAssertEqual(effects, 1)
+    XCTAssertEqual(SharedData.getActiveSharedSession()?.id, candidate.id)
+    let completed = try XCTUnwrap(SharedData.completedSessionsInScheduler.last)
+    XCTAssertEqual(completed.id, victim.id)
+    XCTAssertNil(completed.origin)
+    XCTAssertNil(completed.timerEndTime)
+  }
+
+  func testOriginatingCommitReadbackFailureRestoresPreviousData() throws {
+    let now = Date()
+    let rejecting = RejectingSessionDefaults(suiteName: suiteName)!
+    SharedData.configure(suite: rejecting)
+    let profile = BlockedProfiles(name: "Candidate", createdAt: now, updatedAt: now)
+    profile.startTriggers = .init(manual: true)
+    profile.stopConditions = .init(manual: true)
+    SharedData.setSnapshot(BlockedProfiles.getSnapshot(for: profile), for: profile.id.uuidString)
+    let victim = SharedData.SessionSnapshot(id: UUID().uuidString, tag: "old", blockedProfileId: UUID(), startTime: now, forceStarted: false)
+    SharedData.createActiveSharedSession(for: victim)
+    let candidate = SharedData.SessionSnapshot(id: UUID().uuidString, tag: "manual", blockedProfileId: profile.id, startTime: now, forceStarted: false, origin: .init(kind: .manual))
+    rejecting.refuseActiveWrites = true
+    var effects = 0
+    XCTAssertFalse(SharedData.commitOriginatingSession(candidate, expectedVictimId: victim.id, now: now, onCommit: { effects += 1 }))
+    XCTAssertEqual(SharedData.getActiveSharedSession(), victim)
+    XCTAssertTrue(SharedData.completedSessionsInScheduler.isEmpty)
+    XCTAssertEqual(effects, 0)
+  }
+
+  func testOriginatingCommitRejectsUnusableEncodingAndCorruptAuthoritativeState() throws {
+    let now = Date()
+    let profile = BlockedProfiles(name: "Candidate", createdAt: now, updatedAt: now)
+    profile.startTriggers = .init(manual: true)
+    profile.stopConditions = .init(manual: true)
+    SharedData.setSnapshot(BlockedProfiles.getSnapshot(for: profile), for: profile.id.uuidString)
+    let victim = SharedData.SessionSnapshot(id: UUID().uuidString, tag: "victim", blockedProfileId: UUID(), startTime: now, forceStarted: false)
+    let candidate = SharedData.SessionSnapshot(id: UUID().uuidString, tag: "manual", blockedProfileId: profile.id, startTime: now, forceStarted: false, origin: .init(kind: .manual))
+    SharedData.createActiveSharedSession(for: victim)
+    var effects = 0
+    XCTAssertFalse(SharedData.commitOriginatingSession(candidate, expectedVictimId: victim.id, now: now, encode: { _ in Data("unusable".utf8) }, onCommit: { effects += 1 }))
+    XCTAssertEqual(SharedData.getActiveSharedSession(), victim)
+    XCTAssertEqual(effects, 0)
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defaults.set(Data("corrupt".utf8), forKey: "family_foqos_active_schedule_session")
+    XCTAssertFalse(SharedData.commitOriginatingSession(candidate, expectedVictimId: nil, now: now, onCommit: { effects += 1 }))
+    XCTAssertEqual(defaults.data(forKey: "family_foqos_active_schedule_session"), Data("corrupt".utf8))
+    XCTAssertEqual(effects, 0)
+  }
+
+}
+
+private final class RejectingSessionDefaults: UserDefaults {
+  var refuseActiveWrites = false
+  override func set(_ value: Any?, forKey defaultName: String) {
+    if refuseActiveWrites && defaultName == "family_foqos_active_schedule_session" { return }
+    super.set(value, forKey: defaultName)
+  }
 }

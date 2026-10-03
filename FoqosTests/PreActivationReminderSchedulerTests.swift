@@ -295,4 +295,66 @@ final class PreActivationReminderSchedulerTests: XCTestCase {
     XCTAssertFalse(inactive.scheduleIsOutOfSync(activities: []))
   }
 
+  func testExistingSnapshotsAreRepublishedWithoutCreatingSessions() throws {
+    let now = Date()
+    let profile = BlockedProfiles(name: "Fresh", createdAt: now, updatedAt: now)
+    profile.startTriggers = .init(manual: true)
+    profile.stopConditions = .init(timer: true, timerDurationMinutes: 37)
+    context.insert(profile)
+    try context.save()
+    var stale = BlockedProfiles.getSnapshot(for: profile)
+    stale.name = "Stale"
+    SharedData.setSnapshot(stale, for: profile.id.uuidString)
+
+    PreActivationReminderScheduler.reconcileMissingSnapshots(context: context)
+
+    XCTAssertEqual(SharedData.snapshot(for: profile.id.uuidString)?.name, "Fresh")
+    XCTAssertNil(SharedData.getActiveSharedSession())
+    XCTAssertTrue(try context.fetch(FetchDescriptor<BlockedProfileSession>()).isEmpty)
+  }
+
+  func testRefreshPreservesActiveV1DeferralAndInvalidV2Blobs() throws {
+    let now = Date()
+    let v1 = BlockedProfiles(name: "V1", createdAt: now, updatedAt: now)
+    v1.profileSchemaVersion = 1
+    v1.startTriggersData = nil
+    v1.stopConditionsData = nil
+    context.insert(v1)
+    let session = BlockedProfileSession(tag: "legacy", blockedProfile: v1, startTime: now)
+    context.insert(session)
+    let invalid = BlockedProfiles(name: "Invalid", createdAt: now, updatedAt: now)
+    invalid.startTriggersData = Data("{}".utf8)
+    invalid.stopConditionsData = Data("{\"nfc\":\"unknown\"}".utf8)
+    context.insert(invalid)
+    try context.save()
+    SharedData.setSnapshot(BlockedProfiles.getSnapshot(for: invalid), for: invalid.id.uuidString)
+
+    PreActivationReminderScheduler.reconcileMissingSnapshots(context: context)
+
+    XCTAssertEqual(v1.profileSchemaVersion, 1)
+    XCTAssertEqual(SharedData.snapshot(for: v1.id.uuidString)?.profileSchemaVersion, 1)
+    XCTAssertNil(v1.startTriggersData)
+    XCTAssertEqual(SharedData.snapshot(for: invalid.id.uuidString)?.settingsReadable, false)
+    XCTAssertNil(SharedData.snapshot(for: invalid.id.uuidString)?.stopConditions)
+    XCTAssertNil(SharedData.getActiveSharedSession())
+    XCTAssertEqual(try context.fetch(FetchDescriptor<BlockedProfileSession>()).count, 1)
+  }
+
+  func testRefreshMergesExtensionStopTimeBeforeRepublishing() throws {
+    let now = Date()
+    let profile = BlockedProfiles(name: "Scheduled", createdAt: now, updatedAt: now)
+    profile.scheduleLastStoppedAt = now.addingTimeInterval(-600)
+    context.insert(profile)
+    try context.save()
+    var snapshot = BlockedProfiles.getSnapshot(for: profile)
+    snapshot.scheduleLastStoppedAt = now
+    SharedData.setSnapshot(snapshot, for: profile.id.uuidString)
+
+    PreActivationReminderScheduler.reconcileMissingSnapshots(context: context)
+
+    XCTAssertEqual(profile.scheduleLastStoppedAt, now)
+    XCTAssertEqual(SharedData.snapshot(for: profile.id.uuidString)?.scheduleLastStoppedAt, now)
+    XCTAssertEqual(try context.fetch(FetchDescriptor<BlockedProfiles>()).first?.scheduleLastStoppedAt, now)
+  }
+
 }

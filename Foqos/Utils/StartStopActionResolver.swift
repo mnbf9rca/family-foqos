@@ -45,7 +45,7 @@ enum StartStopActionResolver {
   ) -> StartAction {
     // Guard: don't allow starting if stop conditions are missing
     if let stop = stopConditions, !stop.isValid {
-      return .cannotStart(reason: "No stop conditions configured. Edit the profile to add one.")
+      return .cannotStart(reason: "Please edit this profile before starting. Its start and stop settings need updating.")
     }
 
     var manualOptions: [StartAction] = []
@@ -71,7 +71,7 @@ enum StartStopActionResolver {
       if triggers.shortcuts {
         return .cannotStart(reason: "Start this profile with Siri or Shortcuts.")
       }
-      return .cannotStart(reason: "No start triggers configured. Edit the profile to add one.")
+      return .cannotStart(reason: "Please edit this profile before starting. Its start and stop settings need updating.")
     }
 
     // Single option - do it directly
@@ -121,22 +121,6 @@ enum StartStopActionResolver {
     return .showPicker(options: scanOptions)
   }
 
-  enum StartCredential { case none, nfc, qr }
-
-  /// Match canStop's specific → same → any precedence for each scan modality.
-  static func hasUsableStop(
-    conditions: ProfileStopConditions,
-    disableBackgroundStops: Bool,
-    credential: StartCredential
-  ) -> Bool {
-    conditions.manual
-      || conditions.specificNFC
-      || (conditions.sameNFC ? credential == .nfc : conditions.anyNFC)
-      || conditions.specificQR
-      || (conditions.sameQR ? credential == .qr : conditions.anyQR)
-      || (!disableBackgroundStops && (conditions.schedule || conditions.deepLink))
-  }
-
   // MARK: - Stop Validation
 
   /// Validates whether a stop method is allowed given profile configuration
@@ -145,7 +129,8 @@ enum StartStopActionResolver {
     conditions: ProfileStopConditions,
     sessionTag: String?,
     stopNFCTagIds: [String],
-    stopQRCodeIds: [String]
+    stopQRCodeIds: [String],
+    sessionOrigin: SessionOrigin? = nil, legacySession: Bool = false
   ) -> StopValidationResult {
 
     switch method {
@@ -167,18 +152,19 @@ enum StartStopActionResolver {
         if stopNFCTagIds.contains(scannedTag) {
           return .allowed()
         }
-        return .denied("Scan the correct NFC tag to stop")
+        return .denied("That NFC tag doesn’t match. Scan the required tag.")
       }
 
       // Check same NFC (match session tag - must be NFC type)
       if conditions.sameNFC {
-        if let sessionStartTag = sessionTag,
+        if sessionOrigin?.kind == .nfc, sessionOrigin?.initiatingKey == scannedTag { return .allowed() }
+        if legacySession, let sessionStartTag = sessionTag,
           sessionStartTag.hasPrefix("nfc:"),
           scannedTag == String(sessionStartTag.dropFirst(4))
         {
           return .allowed()
         }
-        return .denied("Scan the same NFC tag you used to start")
+        return .denied("That NFC tag doesn’t match. Scan the required tag.")
       }
 
       // Check any NFC
@@ -194,19 +180,20 @@ enum StartStopActionResolver {
         if stopQRCodeIds.contains(where: { $0 == scannedCode || $0 == rawHash }) {
           return .allowed()
         }
-        return .denied("Scan the correct QR code to stop")
+        return .denied("That QR code doesn’t match. Scan the required code.")
       }
 
       // Check same QR (match session tag - must be QR type)
       if conditions.sameQR {
-        if let sessionStartCode = sessionTag,
+        if sessionOrigin?.kind == .qr, let key = sessionOrigin?.initiatingKey, key == scannedCode || key == rawHash { return .allowed() }
+        if legacySession, let sessionStartCode = sessionTag,
           sessionStartCode.hasPrefix("qr:"),
           scannedCode == String(sessionStartCode.dropFirst(3))
             || rawHash == String(sessionStartCode.dropFirst(3))
         {
           return .allowed()
         }
-        return .denied("Scan the same QR code you used to start")
+        return .denied("That QR code doesn’t match. Scan the required code.")
       }
 
       // Check any QR

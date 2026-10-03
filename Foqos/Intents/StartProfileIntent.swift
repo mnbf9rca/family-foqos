@@ -19,7 +19,7 @@ struct StartProfileIntent: AppIntent {
   nonisolated(unsafe) static var title: LocalizedStringResource = "Start Family Foqos Profile"  // SAFETY: AppIntents requires static var; immutable after init
 
   nonisolated(unsafe) static var description = IntentDescription(  // SAFETY: AppIntents requires static var; immutable after init
-    "Start a Family Foqos blocking profile. Duration applies only to this execution (15 minutes to 23 hours 59 minutes) and is unavailable while profile editing is locked."
+    "This start uses the profile’s saved timer. Remove Duration from the Shortcut or edit the profile’s timer."
   )
 
   @MainActor
@@ -30,10 +30,7 @@ struct StartProfileIntent: AppIntent {
       durationInMinutes: durationInMinutes
     )
 
-    let message =
-      durationInMinutes != nil
-      ? "\(currentName) started for \(durationInMinutes!) minutes."
-      : "\(currentName) started."
+    let message = "\(currentName) started."
     return .result(dialog: .init(stringLiteral: message))
   }
 }

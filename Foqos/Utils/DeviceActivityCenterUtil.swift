@@ -304,6 +304,14 @@ class DeviceActivityCenterUtil {
     return nil
   }
 
+  static func registerStrategyTimer(profileId: UUID, sessionId: String, minutes: Int, now: Date) throws -> Date {
+    try StrategyTimerActivity.register(profileId: profileId, sessionId: sessionId, minutes: minutes, now: now)
+  }
+
+  static func removeStrategyTimerActivity(profileId: UUID, sessionId: String) {
+    StrategyTimerActivity.cancel(profileId: profileId, sessionId: sessionId)
+  }
+
   static func registerStrategyTimer(profileId: UUID, minutes: Int, now: Date) throws -> Date {
     let center = DeviceActivityCenter()
     let name = StrategyTimerActivity().getDeviceActivityName(from: profileId.uuidString)

@@ -58,7 +58,8 @@ final class ProfileSnapshotStopConditionsTests: XCTestCase {
     profile.stopConditionsData = Data("malformed".utf8)
     XCTAssertTrue(profile.hasInvalidConditionSettings)
     let safe = try JSONDecoder().decode(SharedData.ProfileSnapshot.self, from: JSONEncoder().encode(BlockedProfiles.getSnapshot(for: profile)))
-    XCTAssertEqual(safe.stopConditions, ProfileStopConditions())
+    XCTAssertNil(safe.stopConditions)
+    XCTAssertEqual(safe.settingsReadable, false)
 
     let other = BlockedProfiles(name: "Other", createdAt: now, updatedAt: now)
     other.stopConditions = .init(manual: true)

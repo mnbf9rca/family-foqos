@@ -32,6 +32,12 @@ class StrategyManager: ObservableObject {
   private let timersUtil: TimersUtilScheduling
   private let appBlocker: RestrictionApplying
   private let backstopRegistrar: BackstopRegistering
+  private let registerTimer: (UUID, String, Int, Date) throws -> Date
+  private let startSessionActivity: (BlockedProfileSession) -> Void
+  private let cancelPreActivationReminders: (UUID) -> Void
+  private let removeAllStrategyTimers: () -> Void
+  private let cancelTimer: (UUID, String) -> Void
+  private let saveSession: (ModelContext) throws -> Void
   private let scheduleReconciler: @MainActor (ModelContext) -> Void
 
   init(
@@ -45,6 +51,12 @@ class StrategyManager: ObservableObject {
     backstopRegistrar: BackstopRegistering = DeviceActivityBackstopRegistrar(),
     timersUtil: TimersUtilScheduling = TimersUtil(),
     remoteActiveDefaults: UserDefaults = .standard,
+    registerTimer: @escaping (UUID, String, Int, Date) throws -> Date = DeviceActivityCenterUtil.registerStrategyTimer,
+    cancelTimer: @escaping (UUID, String) -> Void = DeviceActivityCenterUtil.removeStrategyTimerActivity,
+    startSessionActivity: ((BlockedProfileSession) -> Void)? = nil,
+    cancelPreActivationReminders: @escaping (UUID) -> Void = TimersUtil.cancelAllPreActivationReminders,
+    removeAllStrategyTimers: @escaping () -> Void = DeviceActivityCenterUtil.removeAllStrategyTimerActivities,
+    saveSession: @escaping (ModelContext) throws -> Void = { try $0.save() },
     scheduleReconciler: @escaping @MainActor (ModelContext) -> Void = {
       PreActivationReminderScheduler.reconcileScheduleRegistrations(context: $0)
     }
@@ -59,8 +71,71 @@ class StrategyManager: ObservableObject {
     self.appBlocker = appBlocker
     self.backstopRegistrar = backstopRegistrar
     self.timersUtil = timersUtil
+    self.registerTimer = registerTimer
+    self.cancelTimer = cancelTimer
+    self.startSessionActivity = startSessionActivity ?? { liveActivityManager.startSessionActivity(session: $0) }
+    self.cancelPreActivationReminders = cancelPreActivationReminders
+    self.removeAllStrategyTimers = removeAllStrategyTimers
+    self.saveSession = saveSession
     self.scheduleReconciler = scheduleReconciler
     self.remotelyActiveProfileIds = RemotelyActiveStore.load(defaults: remoteActiveDefaults)
+  }
+
+  /// A V2 originating start registers its countdown before constructing any session.
+  func startOriginatingSession(
+    context: ModelContext, profile: BlockedProfiles, origin: SessionOrigin,
+    durationOverrideMinutes: Int? = nil, now: Date = Date(), expectedVictimId: String? = nil
+  ) throws -> BlockedProfileSession {
+    let snapshot = BlockedProfiles.getSnapshot(for: profile)
+    func refusal(_ message: String) -> NSError {
+      NSError(domain: "ProfileStart", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
+    }
+    if let message = ProfileConditionValidation.startRejection(for: snapshot, origin: origin) {
+      throw refusal(message)
+    }
+    guard !profile.needsAppSelection else { throw refusal(needsAppSelectionMessage(for: profile)) }
+    if let durationOverrideMinutes {
+      guard origin.kind == .manual, snapshot.stopConditions?.allowChangingTimerBeforeStart == true,
+        snapshot.stopConditions?.timer == true, snapshot.stopConditions?.timerDurationMinutes != nil,
+        (DeviceActivityLimits.minimumIntervalMinutes...DeviceActivityLimits.maximumTimerMinutes).contains(durationOverrideMinutes)
+      else { throw refusal("Choose a timer from 15 minutes to 23 hours 59 minutes.") }
+    }
+    let candidateId = UUID().uuidString
+    let minutes = snapshot.stopConditions?.timer == true ? (durationOverrideMinutes ?? snapshot.stopConditions?.timerDurationMinutes) : nil
+    var deadline: Date?
+    if let minutes {
+      do { deadline = try registerTimer(profile.id, candidateId, minutes, now) } catch {
+        cancelTimer(profile.id, candidateId)
+        throw refusal("This profile couldn’t start because its timer couldn’t be set. Please try again.")
+      }
+    }
+    let candidate = BlockedProfileSession(
+      tag: origin.key.map { origin.kind.rawValue + ":" + $0 } ?? origin.kind.rawValue,
+      blockedProfile: profile, startTime: now, id: candidateId, origin: origin)
+    candidate.timerEndTime = deadline
+    context.insert(candidate)
+    do {
+      try saveSession(context)
+      BlockedProfiles.updateSnapshot(for: profile)
+      guard
+        SharedData.commitOriginatingSession(
+          candidate.toSnapshot(), expectedVictimId: expectedVictimId, now: now,
+          onCommit: {
+            self.appBlocker.activateRestrictions(for: snapshot)
+          })
+      else { throw refusal("Couldn’t start this profile. Please try again.") }
+    } catch {
+      profile.sessions.removeAll { $0.id == candidateId }
+      context.delete(candidate)
+      if minutes != nil { cancelTimer(profile.id, candidateId) }
+      do { try saveSession(context) } catch {
+        Log.error("Failed to persist originating-session compensation: \(error.localizedDescription)", category: .session)
+        throw refusal("Couldn’t start this profile. Please try again.")
+      }
+      throw refusal("Couldn’t start this profile. Please try again.")
+    }
+    activateSession(candidate, context: context)
+    return candidate
   }
 
   // Track if we're currently processing a remote session change
@@ -135,7 +210,7 @@ class StrategyManager: ObservableObject {
       // Start live activity for existing session if one exists
       // live activities can only be started when the app is in the foreground
       if let session = activeSession {
-        liveActivityManager.startSessionActivity(session: session)
+        startSessionActivity(session)
 
         // Re-register stop schedule on app launch
         let failures = DeviceActivityCenterUtil.scheduleStopActivity(for: session.blockedProfile)
@@ -485,9 +560,8 @@ class StrategyManager: ObservableObject {
         // no active session if the new profile isn't configured for deep links
         let isSwitching = localActiveSession.blockedProfile.id != profile.id
         if isSwitching {
-          guard profile.startTriggers.deepLink else {
-            self.errorMessage =
-              "\(profile.name) is not configured to start via written NFC or printed QR"
+          if let rejection = ProfileConditionValidation.startRejection(for: BlockedProfiles.getSnapshot(for: profile), origin: .init(kind: .link)) {
+            self.errorMessage = rejection
             return
           }
           guard !profile.needsAppSelection else {
@@ -501,7 +575,7 @@ class StrategyManager: ObservableObject {
           conditions: localActiveSession.blockedProfile.stopConditions,
           sessionTag: localActiveSession.tag,
           stopNFCTagIds: localActiveSession.blockedProfile.stopNFCTagIds,
-          stopQRCodeIds: localActiveSession.blockedProfile.stopQRCodeIds
+          stopQRCodeIds: localActiveSession.blockedProfile.stopQRCodeIds, sessionOrigin: localActiveSession.origin, legacySession: localActiveSession.blockedProfile.profileSchemaVersion < 2
         )
         guard stopResult.allowed else {
           self.errorMessage =
@@ -537,26 +611,17 @@ class StrategyManager: ObservableObject {
           return
         }
 
-        _ =
-          manualStrategy
-          .stopBlocking(
-            context: context,
-            session: localActiveSession
-          )
-
         if isSwitching {
-          Log.info("User is switching sessions from deep link", category: .strategy)
-
-          _ = manualStrategy.startBlocking(
-            context: context,
-            profile: profile,
-            forceStart: false
-          )
+          _ = try startOriginatingSession(context: context, profile: profile, origin: .init(kind: .link), expectedVictimId: localActiveSession.id)
+          finishDepartingSession(localActiveSession, context: context)
+        } else if localActiveSession.blockedProfile.profileSchemaVersion >= 2 {
+          endV2Session(localActiveSession, context: context)
+        } else {
+          _ = manualStrategy.stopBlocking(context: context, session: localActiveSession)
         }
       } else {
-        guard profile.startTriggers.deepLink else {
-          self.errorMessage =
-            "\(profile.name) is not configured to start via written NFC or printed QR"
+        if let rejection = ProfileConditionValidation.startRejection(for: BlockedProfiles.getSnapshot(for: profile), origin: .init(kind: .link)) {
+          self.errorMessage = rejection
           return
         }
         guard !profile.needsAppSelection else {
@@ -564,14 +629,10 @@ class StrategyManager: ObservableObject {
           return
         }
 
-        _ = manualStrategy.startBlocking(
-          context: context,
-          profile: profile,
-          forceStart: false
-        )
+        _ = try startOriginatingSession(context: context, profile: profile, origin: .init(kind: .link))
       }
     } catch {
-      self.errorMessage = "Something went wrong. Please try again."
+      self.errorMessage = error.localizedDescription
     }
   }
 
@@ -583,79 +644,27 @@ class StrategyManager: ObservableObject {
     authorization: AuthorizationRequesting = AuthorizationCenterRequester.shared,
     mode: AppMode = AppModeManager.shared.currentMode,
     isUnlocked: (UUID) -> Bool = { LockCodeManager.shared.isUnlocked($0) },
-    canVerifyCode: Bool = LockCodeManager.shared.canVerifyCode,
-    registerTimer: @escaping (UUID, Int, Date) throws -> Date = DeviceActivityCenterUtil.registerStrategyTimer
+    canVerifyCode: Bool = LockCodeManager.shared.canVerifyCode
   ) throws -> String {
     do {
-      guard let profile = try BlockedProfiles.findProfile(byID: profileId, in: context) else {
-        throw IntentError.profileNotFound
+      guard durationInMinutes == nil else {
+        throw IntentError.unexpected("This start uses the profile’s saved timer. Remove Duration from the Shortcut or edit the profile’s timer.")
       }
-      guard !profile.isNewerSchemaVersion else {
-        throw IntentError.unexpected("Update Family Foqos to use this profile.")
-      }
-      let session = try getActiveSession(context: context)
-      guard session == nil else { throw IntentError.sessionAlreadyActive }
-      if let duration = durationInMinutes {
-        guard
-          !ProfileEditGate.editingDisabled(
-            isBlocking: remotelyActiveProfileIds.contains(profile.id),
-            isManaged: profile.isManaged, isUnlocked: isUnlocked(profile.id),
-            mode: mode, lockActive: canVerifyCode
-          )
-        else {
-          throw IntentError.unexpected("This profile cannot be changed right now. Remove Duration to use its configured stop conditions.")
-        }
-        guard (DeviceActivityLimits.minimumIntervalMinutes...DeviceActivityLimits.maximumTimerMinutes).contains(duration) else {
-          throw IntentError.durationOutOfRange
-        }
-      }
-      guard !profile.needsAppSelection else {
-        throw IntentError.needsAppSelection(profileName: profile.name)
-      }
+      guard let profile = try BlockedProfiles.findProfile(byID: profileId, in: context) else { throw IntentError.profileNotFound }
+      guard try getActiveSession(context: context) == nil else { throw IntentError.sessionAlreadyActive }
+      guard !profile.needsAppSelection else { throw IntentError.needsAppSelection(profileName: profile.name) }
       switch authorization.authorizationStatus {
       case .approved, .approvedWithDataAccess: break
-      default:
-        throw IntentError.unexpected("Open Family Foqos and authorize Screen Time before starting this profile.")
+      default: throw IntentError.unexpected("Open Family Foqos and authorize Screen Time before starting this profile.")
       }
-      guard profile.startTriggers.shortcuts else {
-        throw IntentError.unexpected("Siri and Shortcuts start is disabled for this profile. Enable it in the profile editor.")
-      }
-      guard profile.stopConditions.isValid else {
-        throw IntentError.stopConditionsNotMet(reason: "No stop conditions configured. Edit the profile to add one.")
-      }
-      guard
-        durationInMinutes != nil
-          || StartStopActionResolver.hasUsableStop(
-            conditions: profile.stopConditions,
-            disableBackgroundStops: profile.disableBackgroundStops,
-            credential: .none
-          )
-      else {
-        throw IntentError.stopConditionsNotMet(reason: "Use a start method that provides the required stop, or add a usable stop condition.")
-      }
-
-      errorMessage = nil
-      if let duration = durationInMinutes {
-        guard let strategy = getStrategy(id: ShortcutTimerBlockingStrategy.id) as? ShortcutTimerBlockingStrategy else {
-          throw IntentError.unexpected("The timer strategy is unavailable.")
-        }
-        strategy.durationInMinutes = duration
-        strategy.registerTimer = registerTimer
-        _ = strategy.startBlocking(context: context, profile: profile, forceStart: true)
-      } else {
-        _ = getStrategy(id: ManualBlockingStrategy.id).startBlocking(
-          context: context, profile: profile, forceStart: false)
-      }
-      if let errorMessage {
-        throw IntentError.unexpected("The session started, but \(errorMessage)")
-      }
+      _ = try startOriginatingSession(context: context, profile: profile, origin: .init(kind: .shortcut))
       return profile.name
     } catch let error as IntentError {
       self.errorMessage = String(localized: error.localizedStringResource)
       throw error
     } catch {
-      Log.error("Failed to start background session", category: .strategy)
-      throw IntentError.unexpected("Something went wrong starting the session.")
+      self.errorMessage = error.localizedDescription
+      throw IntentError.unexpected(error.localizedDescription)
     }
   }
 
@@ -763,10 +772,7 @@ class StrategyManager: ObservableObject {
         throw IntentError.backgroundStopsDisabled(profileName: profile.name)
       }
 
-      let _ = manualStrategy.stopBlocking(
-        context: context,
-        session: currentSession
-      )
+      if currentSession.blockedProfile.profileSchemaVersion >= 2 { endV2Session(currentSession, context: context) } else { _ = manualStrategy.stopBlocking(context: context, session: currentSession) }
     } catch let error as IntentError {
       throw error
     } catch {
@@ -788,45 +794,81 @@ class StrategyManager: ObservableObject {
       context: context,
       activeSession: session
     ) { [weak self] ctx, sess in
-      guard let self else { return }
-      let manualStrategy = self.getStrategy(id: ManualBlockingStrategy.id)
-      // `.ended` already handles the session activity, reminder, and timer cleanup.
-      _ = manualStrategy.stopBlocking(context: ctx, session: sess)
+      guard let self else { return false }
+      if sess.blockedProfile.profileSchemaVersion >= 2 {
+        return self.endV2Session(sess, context: ctx, emergency: true)
+      }
+      _ = self.getStrategy(id: ManualBlockingStrategy.id).stopBlocking(context: ctx, session: sess)
+      return !sess.isActive
     }
   }
 
   /// Sync a session start to CloudKit via CAS. Uses passed context for persistence.
-  private func syncSessionStart(session: BlockedProfileSession, context: ModelContext) {
-    guard shouldSyncSessionChange else { return }
+  private func syncSessionStart(session: BlockedProfileSession, context: ModelContext, confirmRemoteReplacement: Bool = false) {
+    guard shouldSyncSessionChange || (confirmRemoteReplacement && profileSyncManager.isEnabled) else { return }
 
+    session.sessionStartSyncPending = true
+    do { try context.save() } catch { Log.error("Failed to save pending session start", category: .sync) }
+    let candidateId = session.id
+    let candidateStart = session.startTime
+    let candidateDeadline = session.timerEndTime
+    let candidateOrigin = session.origin
     let previousTask = sessionSyncTask
     sessionSyncTask = Task {
       await previousTask?.value
+      let profileId = session.blockedProfile.id
+      guard let pending = sessionStopOutbox.intents else { return }
+      for intent in pending where intent.profileId == profileId && intent.expectedSessionId != nil {
+        let stop = await sessionSyncService.stopSession(
+          profileId: profileId, expectedSessionId: intent.expectedSessionId, expectedStart: intent.expectedStart)
+        switch stop {
+        case .stopped, .alreadyStopped:
+          sessionStopOutbox.resolve(profileId: profileId, expectedSessionId: intent.expectedSessionId, expectedStart: intent.expectedStart)
+        case .conflict, .error:
+          Log.info("Deferred start sync until the previous exact session stop succeeds", category: .sync)
+          return
+        }
+      }
+      guard self.activeSession?.id == candidateId, session.isActive else { return }
       let result = await sessionSyncService.startSession(
-        profileId: session.blockedProfile.id,
-        startTime: session.startTime,
-        timerEndTime: session.timerEndTime
+        profileId: profileId,
+        startTime: candidateStart,
+        timerEndTime: candidateDeadline, sessionId: candidateId, origin: candidateOrigin
       )
 
       switch result {
-      case .started:
+      case .started(let sequence, let confirmed):
+        if self.activeSession?.id == candidateId {
+          session.sessionSequence = sequence
+          session.sessionServerModificationDate = confirmed ?? session.sessionServerModificationDate
+          session.sessionStartSyncPending = false
+          do { try context.save() } catch { Log.error("Failed to save confirmed session start", category: .sync) }
+        }
         Log.info("Session synced", category: .strategy)
       case .alreadyActive(let existing):
+        if sessionStopOutbox.intents?.contains(where: { $0.profileId == profileId && $0.expectedSessionId != nil && $0.expectedSessionId == existing.sessionId }) == true {
+          Log.info("Deferred joining a session with a pending exact stop", category: .sync)
+          return
+        }
         Log.info(
           "Joined existing session from \(existing.sessionOriginDevice ?? "unknown")",
           category: .strategy
         )
-        reconcileSessionTiming(
-          sessionId: session.id, profileId: existing.profileId,
+        if reconcileSessionTiming(
+          sessionId: candidateId, profileId: existing.profileId,
           startTime: existing.startTime, timerEndTime: existing.validTimerEndTime,
-          originDevice: existing.sessionOriginDevice, context: context)
+          originDevice: existing.sessionOriginDevice, context: context, canonicalSessionId: existing.sessionId, origin: existing.origin, sequenceNumber: existing.sequenceNumber, serverModificationDate: existing.serverModificationDate)
+        {
+          session.sessionStartSyncPending = false
+          do { try context.save() } catch { Log.error("Failed to save joined session start", category: .sync) }
+        }
       case .error(let error):
         Log.info("Failed to sync session start - \(redactedErrorForLog(error))", category: .strategy)
       }
     }
   }
 
-  /// #201: process the result of a session-stop CAS attempt. On success, logs. On the terminal
+  /// #201: resolve only the attempted persisted stop on success. On the terminal
   /// outcomes (an immediate `.error`, or `.conflict`/`.error` after one retry), the dropped stop
   /// intent is persisted to the outbox for re-drive on foreground (`drainSessionStopOutbox()` is
   /// wired to scenePhase `.active` in `FoqosApp`).
@@ -834,46 +876,57 @@ class StrategyManager: ObservableObject {
   /// live CloudKit round trip.
   func handleStopResult(
     _ result: SessionSyncService.StopResult, profileId: UUID,
-    endTime: Date = Date(), expectedStart: Date? = nil
+    endTime: Date = Date(), expectedSessionId: String? = nil, expectedStart: Date? = nil
   ) async {
     switch result {
     case .stopped:
+      sessionStopOutbox.resolve(profileId: profileId, expectedSessionId: expectedSessionId, expectedStart: expectedStart)
       Log.info("Session stop synced", category: .strategy)
     case .alreadyStopped:
+      sessionStopOutbox.resolve(profileId: profileId, expectedSessionId: expectedSessionId, expectedStart: expectedStart)
       Log.info("Session was already stopped", category: .strategy)
     case .conflict(let current):
       Log.info("Stop conflict, current seq=\(current.sequenceNumber)", category: .strategy)
       // Retry stop once
       let retryResult = await sessionSyncService.stopSession(
-        profileId: profileId, endTime: endTime, expectedStart: expectedStart)
+        profileId: profileId, endTime: endTime, expectedSessionId: expectedSessionId, expectedStart: expectedStart)
       switch retryResult {
       case .stopped:
+        sessionStopOutbox.resolve(profileId: profileId, expectedSessionId: expectedSessionId, expectedStart: expectedStart)
         Log.info("Stop retry succeeded", category: .strategy)
       case .alreadyStopped:
+        sessionStopOutbox.resolve(profileId: profileId, expectedSessionId: expectedSessionId, expectedStart: expectedStart)
         Log.info("Stop retry found session already stopped", category: .strategy)
       case .conflict, .error:
         Log.info("Stop retry failed", category: .strategy)
         // #201: persist the dropped stop intent for foreground re-drive instead of losing it.
-        sessionStopOutbox.enqueue(profileId: profileId, expectedStart: expectedStart)
+        sessionStopOutbox.enqueue(profileId: profileId, expectedStart: expectedStart, expectedSessionId: expectedSessionId)
       }
     case .error(let error):
       Log.info("Failed to sync session stop - \(redactedErrorForLog(error))", category: .strategy)
       // #201: persist the dropped stop intent for foreground re-drive instead of losing it.
-      sessionStopOutbox.enqueue(profileId: profileId, expectedStart: expectedStart)
+      sessionStopOutbox.enqueue(profileId: profileId, expectedStart: expectedStart, expectedSessionId: expectedSessionId)
     }
   }
 
   /// #201: re-drive persisted session-stop intents. Wired to scenePhase `.active` in `FoqosApp`.
   func drainSessionStopOutbox() async {
-    await sessionStopOutbox.drain { [weak self] profileId, expectedStart in
+    await sessionStopOutbox.drain { [weak self] profileId, expectedSessionId, expectedStart in
       guard let self else { return true }
-      let result = await self.sessionSyncService.stopSession(profileId: profileId, expectedStart: expectedStart)
+      let result = await self.sessionSyncService.stopSession(profileId: profileId, expectedSessionId: expectedSessionId, expectedStart: expectedStart)
       switch result {
       case .stopped, .alreadyStopped:
         return true
       case .conflict, .error:
         return false
       }
+    }
+    if let session = activeSession, session.isActive, session.sessionStartSyncPending,
+      let context = session.modelContext, let pending = sessionStopOutbox.intents,
+      !pending.contains(where: { $0.profileId == session.blockedProfile.id && $0.expectedSessionId != nil })
+    {
+      syncSessionStart(session: session, context: context)
+      await sessionSyncTask?.value
     }
   }
 
@@ -883,9 +936,9 @@ class StrategyManager: ObservableObject {
     _ session: BlockedProfileSession,
     context: ModelContext? = nil
   ) {
-    // A new start supersedes any persisted stop intent for this profile. Otherwise a later
-    // foreground drain could stop the newly-started remote record instead of the old session.
-    sessionStopOutbox.remove(profileId: session.blockedProfile.id)
+    // Keep exact-ID stops: they must retire the previous server session before this start.
+    // A profile-only legacy stop could instead stop this replacement and is superseded.
+    sessionStopOutbox.removeLegacyIntents(profileId: session.blockedProfile.id)
 
     // Cancel stale reminders/notifications from previous sessions
     timersUtil.cancelAll()
@@ -896,14 +949,14 @@ class StrategyManager: ObservableObject {
     errorMessage = nil
     activeSession = session
     startTimer()
-    liveActivityManager.startSessionActivity(session: session)
+    startSessionActivity(session)
 
     // Schedule stop activity if configured
     let failures = DeviceActivityCenterUtil.scheduleStopActivity(for: session.blockedProfile)
     if !failures.isEmpty { errorMessage = failures.joined(separator: "\n") }
 
     // Cancel pre-activation reminders now that profile is active
-    TimersUtil.cancelAllPreActivationReminders(for: session.blockedProfile.id)
+    cancelPreActivationReminders(session.blockedProfile.id)
 
     // Refresh widgets
     WidgetCenter.shared.reloadTimelines(ofKind: "ProfileControlWidget")
@@ -932,38 +985,30 @@ class StrategyManager: ObservableObject {
       case .started(let session):
         self.activateSession(session)
       case .ended(let endedProfile):
-        // Cancel stale reminders/notifications from the ended session
-        self.timersUtil.cancelAll()
+        if endedProfile.profileSchemaVersion < 2 {
+          DeviceActivityCenterUtil.removeStrategyTimerActivity(profileId: endedProfile.id)
+        }
+        // Delayed outgoing callbacks must not clear the replacement's activity or grants.
+        if self.activeSession == nil || self.activeSession?.blockedProfile.id == endedProfile.id {
+          self.timersUtil.cancelAll()
 
-        self.activeSession = nil
-        self.liveActivityManager.endSessionActivity()
-        self.scheduleReminder(profile: endedProfile)
+          self.activeSession = nil
+          self.liveActivityManager.endSessionActivity()
+          self.scheduleReminder(profile: endedProfile)
 
-        self.stopTimer()
-        self.elapsedTime = 0
+          self.stopTimer()
+          self.elapsedTime = 0
 
-        // Refresh widgets when session ends
-        WidgetCenter.shared.reloadTimelines(ofKind: "ProfileControlWidget")
+          // Refresh widgets when session ends
+          WidgetCenter.shared.reloadTimelines(ofKind: "ProfileControlWidget")
 
-        // Remove all break timer activities
-        DeviceActivityCenterUtil.removeAllBreakTimerActivities()
+          DeviceActivityCenterUtil.removeAllBreakTimerActivities()
+        }
 
         // Remove one more minute activity for the ended profile
         DeviceActivityCenterUtil.removeOneMoreMinuteActivity(for: endedProfile)
 
-        // Remove all strategy timer activities
-        DeviceActivityCenterUtil.removeAllStrategyTimerActivities()
-
-        // Migrate and enqueue the profile and newly-created tags after the V1 session ends.
-        do {
-          if try ProfileMigrationUtil.migrate(endedProfile, hasActiveSession: false) {
-            BlockedProfiles.updateSnapshot(for: endedProfile)
-            let failures = DeviceActivityCenterUtil.scheduleTimerActivity(for: endedProfile)
-            if !failures.isEmpty { self.errorMessage = failures.joined(separator: "\n") }
-          }
-        } catch {
-          Log.error("Failed to migrate deferred profile: \(error.localizedDescription)", category: .strategy)
-        }
+        self.migrateDepartingProfile(endedProfile)
 
         // Sync session stop using CAS (if global sync is enabled)
         if self.shouldSyncSessionChange {
@@ -1099,47 +1144,6 @@ class StrategyManager: ObservableObject {
     guard !ScreenshotDemoMode.isActive else { return }
     var hadDanglingGrant = false
 
-    // Process any active scheduled sessions
-    if let activeScheduledSession = SharedData.getActiveSharedSession() {
-      if SharedData.endedSessionHadOpenGrant(activeScheduledSession) {
-        hadDanglingGrant = true
-      }
-      BlockedProfileSession.upsertSessionFromSnapshot(
-        in: context,
-        withSnapshot: activeScheduledSession
-      )
-
-      // Sync scheduled session start using CAS (if global sync is enabled)
-      // This ensures multi-device coordination for scheduled profile activations
-      if profileSyncManager.isEnabled {
-        let previousTask = sessionSyncTask
-        sessionSyncTask = Task {
-          await previousTask?.value
-          let result = await sessionSyncService.startSession(
-            profileId: activeScheduledSession.blockedProfileId,
-            startTime: activeScheduledSession.startTime,
-            timerEndTime: activeScheduledSession.timerEndTime
-          )
-
-          switch result {
-          case .started:
-            Log.info("Scheduled session synced", category: .strategy)
-          case .alreadyActive(let existing):
-            Log.info(
-              "Scheduled session joined existing from \(existing.sessionOriginDevice ?? "unknown")",
-              category: .strategy
-            )
-            reconcileSessionTiming(
-              sessionId: activeScheduledSession.id, profileId: existing.profileId,
-              startTime: existing.startTime, timerEndTime: existing.validTimerEndTime,
-              originDevice: existing.sessionOriginDevice, context: context)
-          case .error(let error):
-            Log.info("Failed to sync scheduled session - \(redactedErrorForLog(error))", category: .strategy)
-          }
-        }
-      }
-    }
-
     // Process any completed scheduled sessions
     let completedScheduleSessions = SharedData.getAndFlushCompletedSessionsForScheduler()
     for completedScheduleSession in completedScheduleSessions {
@@ -1150,9 +1154,18 @@ class StrategyManager: ObservableObject {
         in: context,
         withSnapshot: completedScheduleSession
       )
+      if let profile = try? BlockedProfiles.findProfile(byID: completedScheduleSession.blockedProfileId, in: context),
+        profile.profileSchemaVersion < 2
+      {
+        DeviceActivityCenterUtil.removeStrategyTimerActivity(profileId: profile.id)
+        migrateDepartingProfile(profile)
+      }
 
       // Sync scheduled session end using CAS (if global sync is enabled)
       if profileSyncManager.isEnabled, let endTime = completedScheduleSession.endTime {
+        sessionStopOutbox.enqueue(
+          profileId: completedScheduleSession.blockedProfileId, expectedStart: completedScheduleSession.startTime,
+          expectedSessionId: completedScheduleSession.usesCanonicalIdentity == true ? completedScheduleSession.id : nil)
         let previousTask = sessionSyncTask
         sessionSyncTask = Task {
           await previousTask?.value
@@ -1160,13 +1173,32 @@ class StrategyManager: ObservableObject {
           let result = await sessionSyncService.stopSession(
             profileId: completedScheduleSession.blockedProfileId,
             endTime: endTime,
+            expectedSessionId: completedScheduleSession.usesCanonicalIdentity == true ? completedScheduleSession.id : nil,
             expectedStart: expectedStart
           )
 
           await handleStopResult(
             result, profileId: completedScheduleSession.blockedProfileId,
-            endTime: endTime, expectedStart: expectedStart)
+            endTime: endTime, expectedSessionId: completedScheduleSession.usesCanonicalIdentity == true ? completedScheduleSession.id : nil, expectedStart: expectedStart)
         }
+      }
+    }
+
+    // Process any active scheduled sessions
+    if let activeScheduledSession = SharedData.getActiveSharedSession() {
+      if SharedData.endedSessionHadOpenGrant(activeScheduledSession) {
+        hadDanglingGrant = true
+      }
+      BlockedProfileSession.upsertSessionFromSnapshot(
+        in: context,
+        withSnapshot: activeScheduledSession
+      )
+
+      // Foreground and extension starts share the same exact-stop-before-start ordering.
+      if let profile = try? BlockedProfiles.findProfile(byID: activeScheduledSession.blockedProfileId, in: context),
+        let session = profile.sessions.valid.first(where: { $0.id == activeScheduledSession.id })
+      {
+        syncSessionStart(session: session, context: context)
       }
     }
 
@@ -1196,6 +1228,33 @@ class StrategyManager: ObservableObject {
       return
     }
 
+    if definedProfile.profileSchemaVersion >= 2 {
+      let snapshot = BlockedProfiles.getSnapshot(for: definedProfile)
+      if let rejection = ProfileConditionValidation.startRejection(for: snapshot, origin: .init(kind: .manual)) {
+        errorMessage = rejection
+        return
+      }
+      if definedProfile.stopConditions.timer,
+        definedProfile.stopConditions.allowChangingTimerBeforeStart,
+        let saved = definedProfile.stopConditions.timerDurationMinutes
+      {
+        customStrategyView = TimerDurationView(
+          profileName: definedProfile.name, initialDurationMinutes: saved,
+          adjustmentNote: "This session only; the saved duration stays unchanged."
+        ) { duration in
+          self.dismissView()
+          do {
+            _ = try self.startOriginatingSession(
+              context: context, profile: definedProfile,
+              origin: .init(kind: .manual), durationOverrideMinutes: duration.durationInMinutes)
+          } catch { self.errorMessage = error.localizedDescription }
+        }
+        showCustomStrategyView = true
+      } else {
+        do { _ = try startOriginatingSession(context: context, profile: definedProfile, origin: .init(kind: .manual)) } catch { errorMessage = error.localizedDescription }
+      }
+      return
+    }
     // When bypassStrategy is true, the V2 trigger system has already routed
     // the start action. Use ManualBlockingStrategy to create the session
     // directly, avoiding redundant NFC/QR scans from legacy strategies.
@@ -1229,7 +1288,7 @@ class StrategyManager: ObservableObject {
       }
     }
     let prefixedTag = "nfc:\(tagId)"
-    startWithTag(context: context, profile: profile, tag: prefixedTag)
+    startWithTag(context: context, profile: profile, tag: prefixedTag, origin: .init(kind: .nfc, key: tagId, namespace: .nfcUID))
   }
 
   /// Start blocking with a pre-scanned QR code (for trigger-based start)
@@ -1241,8 +1300,11 @@ class StrategyManager: ObservableObject {
         return
       }
     }
-    let prefixedTag = "qr:\(codeValue)"
-    startWithTag(context: context, profile: profile, tag: prefixedTag)
+    let matchedKey =
+      profile.startTriggers.specificQR
+      ? (profile.startQRCodeIds.first { $0 == codeValue || $0 == rawHash } ?? codeValue) : codeValue
+    let prefixedTag = "qr:\(matchedKey)"
+    startWithTag(context: context, profile: profile, tag: prefixedTag, origin: .init(kind: .qr, key: matchedKey, namespace: .qrDigest))
   }
 
   /// Stop blocking with a scanned NFC tag (for stop-condition-based stop)
@@ -1257,7 +1319,7 @@ class StrategyManager: ObservableObject {
       conditions: session.blockedProfile.stopConditions,
       sessionTag: session.tag,
       stopNFCTagIds: session.blockedProfile.stopNFCTagIds,
-      stopQRCodeIds: session.blockedProfile.stopQRCodeIds
+      stopQRCodeIds: session.blockedProfile.stopQRCodeIds, sessionOrigin: session.origin, legacySession: session.blockedProfile.profileSchemaVersion < 2
     )
 
     if validation.allowed {
@@ -1288,7 +1350,7 @@ class StrategyManager: ObservableObject {
       conditions: session.blockedProfile.stopConditions,
       sessionTag: session.tag,
       stopNFCTagIds: session.blockedProfile.stopNFCTagIds,
-      stopQRCodeIds: session.blockedProfile.stopQRCodeIds
+      stopQRCodeIds: session.blockedProfile.stopQRCodeIds, sessionOrigin: session.origin, legacySession: session.blockedProfile.profileSchemaVersion < 2
     )
 
     if validation.allowed {
@@ -1308,13 +1370,17 @@ class StrategyManager: ObservableObject {
   }
 
   /// Start blocking with a pre-scanned tag (internal helper)
-  private func startWithTag(context: ModelContext, profile: BlockedProfiles, tag: String) {
+  private func startWithTag(context: ModelContext, profile: BlockedProfiles, tag: String, origin: SessionOrigin) {
     if let rejection = rejectionForStart(profile, context: context) {
       errorMessage = rejection
       Log.info("Refusing tag start", category: .strategy)
       return
     }
 
+    if profile.profileSchemaVersion >= 2 {
+      do { _ = try startOriginatingSession(context: context, profile: profile, origin: origin) } catch { errorMessage = error.localizedDescription }
+      return
+    }
     AppBlockerUtil().activateRestrictions(for: BlockedProfiles.getSnapshot(for: profile))
 
     let session = BlockedProfileSession.createSession(
@@ -1361,10 +1427,72 @@ class StrategyManager: ObservableObject {
     IntentError.needsAppSelectionMessage(profileName: profile.name)
   }
 
-  /// Stop the active blocking session.
-  /// - Parameter bypassStrategy: When true, uses ManualBlockingStrategy to end the session
-  ///   directly. Use this when the V2 trigger system has already validated stop conditions
-  ///   (e.g., NFC tag was already scanned) to avoid redundant scanning by legacy strategies.
+  /// Retry deferred V1 migration after its session ends.
+  private func migrateDepartingProfile(_ profile: BlockedProfiles) {
+    do {
+      if try ProfileMigrationUtil.migrate(profile, hasActiveSession: false) {
+        BlockedProfiles.updateSnapshot(for: profile)
+        let failures = DeviceActivityCenterUtil.scheduleTimerActivity(for: profile)
+        if !failures.isEmpty { errorMessage = failures.joined(separator: "\n") }
+      }
+    } catch {
+      Log.error("Failed to migrate deferred profile: \(error.localizedDescription)", category: .strategy)
+    }
+  }
+
+  private func finishDepartingSession(_ session: BlockedProfileSession, context: ModelContext, now: Date = Date(), syncDisplacedSession: Bool = false) {
+    if session.blockedProfile.profileSchemaVersion < 2 {
+      DeviceActivityCenterUtil.removeStrategyTimerActivity(profileId: session.blockedProfile.id)
+    } else {
+      cancelTimer(session.blockedProfile.id, session.id)
+    }
+    session.endSession(now: now)
+    do { try context.save() } catch {
+      Log.error("Failed to save completed local session: \(error.localizedDescription)", category: .session)
+    }
+    if activeSession?.id == session.id {
+      activeSession = nil
+      stopTimer()
+      liveActivityManager.endSessionActivity()
+      timersUtil.cancelAll()
+      elapsedTime = 0
+    }
+    migrateDepartingProfile(session.blockedProfile)
+    scheduleReminder(profile: session.blockedProfile)
+    DeviceActivityCenterUtil.removeStopScheduleActivity(for: session.blockedProfile)
+    DeviceActivityCenterUtil.removeOneMoreMinuteActivity(for: session.blockedProfile)
+    if shouldSyncSessionChange || (syncDisplacedSession && profileSyncManager.isEnabled) {
+      let profileId = session.blockedProfile.id
+      let expectedSessionId = session.usesCanonicalIdentity == true ? session.id : nil
+      let expectedStart = session.startTime
+      sessionStopOutbox.enqueue(profileId: profileId, expectedStart: expectedStart, expectedSessionId: expectedSessionId)
+      let previousTask = sessionSyncTask
+      sessionSyncTask = Task {
+        await previousTask?.value
+        let result = await sessionSyncService.stopSession(profileId: profileId, endTime: now, expectedSessionId: expectedSessionId, expectedStart: expectedStart)
+        await handleStopResult(result, profileId: profileId, endTime: now, expectedSessionId: expectedSessionId, expectedStart: expectedStart)
+      }
+    }
+    WidgetCenter.shared.reloadTimelines(ofKind: "ProfileControlWidget")
+  }
+
+  @discardableResult
+  private func endV2Session(_ session: BlockedProfileSession, context: ModelContext, now: Date = Date(), emergency: Bool = false) -> Bool {
+    guard
+      SharedData.completeSession(
+        expectedSessionId: session.id, now: now, localSession: session.toSnapshot(),
+        allowUndecodableStore: emergency,
+        onComplete: {
+          self.appBlocker.deactivateRestrictions()
+        })
+    else {
+      errorMessage = "This session changed. Please try again."
+      return false
+    }
+    finishDepartingSession(session, context: context, now: now)
+    return true
+  }
+
   private func stopBlocking(context: ModelContext, bypassStrategy: Bool = false) {
     guard let session = activeSession else {
       Log.info(
@@ -1372,6 +1500,10 @@ class StrategyManager: ObservableObject {
       return
     }
 
+    if session.blockedProfile.profileSchemaVersion >= 2 {
+      endV2Session(session, context: context)
+      return
+    }
     // When bypassStrategy is true, the caller has already handled any required
     // NFC/QR scanning and validation. Use ManualBlockingStrategy to end the
     // session directly, avoiding a redundant second scan from legacy strategies.
@@ -1520,7 +1652,7 @@ class StrategyManager: ObservableObject {
     DeviceActivityCenterUtil.removeAllOneMoreMinuteActivities()
 
     // Remove all strategy timer activities
-    DeviceActivityCenterUtil.removeAllStrategyTimerActivities()
+    removeAllStrategyTimers()
   }
 
   // MARK: - Remote Session Sync
@@ -1530,44 +1662,77 @@ class StrategyManager: ObservableObject {
   }
 
   /// CAS joins and remote updates adopt the same canonical timing without registering a timer.
+  @discardableResult
   func reconcileSessionTiming(
     sessionId: String, profileId: UUID, startTime: Date?, timerEndTime: Date?,
-    originDevice: String?, context: ModelContext,
+    originDevice: String?, context: ModelContext, canonicalSessionId: String? = nil, origin: SessionOrigin? = nil, sequenceNumber: Int? = nil, serverModificationDate: Date? = nil,
     cancelTimer: (UUID) -> Void = DeviceActivityCenterUtil.removeStrategyTimerActivity
-  ) {
+  ) -> Bool {
     guard let startTime,
       let current = activeSession, current.isActive, current.id == sessionId,
       current.blockedProfile.id == profileId,
       SharedData.getActiveSharedSession()?.id == sessionId
-    else { return }
-    let ownsCountdown =
-      originDevice == SharedData.deviceSyncId.uuidString
-      && abs(current.startTime.timeIntervalSince(startTime)) < 1
-    if Self.isCountdownTag(current.tag) && !ownsCountdown { cancelTimer(profileId) }
+    else { return false }
+    let newId = canonicalSessionId ?? sessionId
+    if let canonicalSessionId, UUID(uuidString: canonicalSessionId) == nil { return false }
+    let ownsCountdown = newId == sessionId && originDevice == SharedData.deviceSyncId.uuidString
+    var adopted = current.toSnapshot()
+    adopted.id = newId
+    adopted.startTime = startTime
+    adopted.timerEndTime = timerEndTime
+    adopted.origin = origin
+    adopted.usesCanonicalIdentity = canonicalSessionId != nil ? true : nil
+    if newId != sessionId {
+      adopted.breakStartTime = nil
+      adopted.breakEndTime = nil
+      adopted.breakEndDeadline = nil
+      adopted.oneMoreMinuteStartTime = nil
+      adopted.oneMoreMinuteDeadline = nil
+      adopted.oneMoreMinuteUsed = false
+      adopted.pinnedProfileConfig = nil
+    }
     guard
-      SharedData.updateSessionTiming(
-        expectedSessionId: sessionId, startTime: startTime, timerEndTime: timerEndTime
-      )
+      SharedData.adoptAuthoritativeSession(
+        adopted, expectedSessionId: sessionId, now: startTime,
+        onAdopt: {
+          if newId != sessionId { self.appBlocker.activateRestrictions(for: BlockedProfiles.getSnapshot(for: current.blockedProfile)) }
+        })
     else {
       errorMessage = "The session timing could not be saved."
-      return
+      return false
     }
+    if current.usesCanonicalIdentity == true && !ownsCountdown { self.cancelTimer(profileId, sessionId) } else if Self.isCountdownTag(current.tag) && !ownsCountdown { cancelTimer(profileId) }
+    current.sessionServerModificationDate = newId == sessionId ? (serverModificationDate ?? current.sessionServerModificationDate) : serverModificationDate
+    current.id = newId
+    current.origin = origin
+    current.sessionSequence = sequenceNumber ?? current.sessionSequence
+    current.breakStartTime = adopted.breakStartTime
+    current.breakEndTime = adopted.breakEndTime
+    current.breakEndDeadline = adopted.breakEndDeadline
+    current.oneMoreMinuteStartTime = adopted.oneMoreMinuteStartTime
+    current.oneMoreMinuteDeadline = adopted.oneMoreMinuteDeadline
+    current.oneMoreMinuteUsed = adopted.oneMoreMinuteUsed
+    current.pinnedProfileConfigData = adopted.pinnedProfileConfig.flatMap { try? JSONEncoder().encode($0) }
+    current.usesCanonicalIdentity = adopted.usesCanonicalIdentity
     current.startTime = startTime
     current.timerEndTime = timerEndTime
     do { try context.save() } catch {
       errorMessage = "The session timing could not be saved."
       Log.error("Failed to save adopted session timing", category: .sync)
+      return false
     }
+    return true
   }
 
   /// Start a session triggered by remote device
   func startRemoteSession(
     context: ModelContext,
     profileId: UUID,
-    sessionId: UUID,
+    sessionId: UUID?,
     startTime: Date,
     timerEndTime: Date? = nil,
-    originDevice: String? = nil
+    originDevice: String? = nil,
+    origin: SessionOrigin? = nil, sequenceNumber: Int? = nil, serverModificationDate: Date? = nil
   ) {
     guard !processingRemoteChange else { return }
     processingRemoteChange = true
@@ -1588,55 +1753,70 @@ class StrategyManager: ObservableObject {
         return
       }
 
-      if let existing = try getActiveSession(context: context), existing.blockedProfile.id == profileId {
+      let existing = try getActiveSession(context: context)
+      if let existing, existing.blockedProfile.id == profileId {
         activeSession = existing
-        reconcileSessionTiming(
-          sessionId: existing.id, profileId: profileId, startTime: startTime,
-          timerEndTime: timerEndTime, originDevice: originDevice, context: context)
-        return
-      }
-
-      // Arbitrate before activating this profile: ending an older local session deactivates
-      // restrictions globally, so doing this later would leave the incoming winner unblocked.
-      let existing = try BlockedProfileSession.mostRecentActiveSession(in: context)
-      switch ProfileStartArbiter.decide(
-        incomingStartTime: startTime,
-        incomingProfileId: profileId,
-        existingStartTime: existing?.startTime,
-        existingProfileId: existing?.blockedProfile.id
-      ) {
-      case .reject:
-        Log.info(
-          "Remote start for '\(profile.name)' does not supersede the active session; keeping existing",
-          category: .strategy)
-        return
-      case .adopt:
-        if let existing {
-          endLocalSessionAndSyncStop(existing, context: context)
+        if sessionId?.uuidString != existing.id,
+          existing.usesCanonicalIdentity == true || existing.sessionServerModificationDate != nil
+        {
+          guard let confirmed = existing.sessionServerModificationDate,
+            let incoming = serverModificationDate, incoming > confirmed
+          else {
+            // An unconfirmed originating identity must join through CAS, including after restart.
+            if existing.sessionServerModificationDate == nil, serverModificationDate != nil,
+              !existing.sessionStartSyncPending
+            {
+              syncSessionStart(session: existing, context: context, confirmRemoteReplacement: true)
+            }
+            Log.info("Deferred remote replacement without newer server confirmation", category: .sync)
+            return
+          }
         }
-      case .start:
-        break
+        guard
+          reconcileSessionTiming(
+            sessionId: existing.id, profileId: profileId, startTime: startTime,
+            timerEndTime: timerEndTime, originDevice: originDevice, context: context,
+            canonicalSessionId: sessionId?.uuidString, origin: origin, sequenceNumber: sequenceNumber, serverModificationDate: serverModificationDate)
+        else { throw NSError(domain: "RemoteSession", code: 2) }
+        if let sequenceNumber {
+          existing.sessionSequence = sequenceNumber
+          try context.save()
+        }
+        return
       }
-
-      // Activate restrictions
-      appBlocker.activateRestrictions(for: BlockedProfiles.getSnapshot(for: profile))
-
-      // Create session with synced startTime
-      let activeSession = BlockedProfileSession.createSession(
-        in: context,
-        withTag: "remote-sync",
-        withProfile: profile,
-        forceStart: true,
-        startTime: startTime,
-        timerEndTime: timerEndTime
-      )
-
-      // Converge on the single activation path so remote-started sessions get the same
-      // side effects as local starts. syncSessionStart is suppressed while processingRemoteChange
-      // is true, so this does not echo a session record back to CloudKit (#204).
-      activateSession(activeSession, context: context)
+      if let existing,
+        ProfileStartArbiter.decide(
+          incomingStartTime: startTime, incomingProfileId: profileId,
+          existingStartTime: existing.startTime, existingProfileId: existing.blockedProfile.id) == .reject
+      {
+        return
+      }
+      let id = sessionId?.uuidString ?? UUID().uuidString
+      let candidate = SharedData.SessionSnapshot(
+        id: id, tag: "remote-sync", blockedProfileId: profileId,
+        startTime: startTime, timerEndTime: timerEndTime, forceStarted: true, origin: origin,
+        usesCanonicalIdentity: sessionId != nil ? true : nil)
+      let previousSharedId = SharedData.getActiveSharedSession()?.id
+      guard
+        SharedData.adoptAuthoritativeSession(
+          candidate, expectedSessionId: previousSharedId, now: startTime,
+          onAdopt: {
+            self.appBlocker.activateRestrictions(for: BlockedProfiles.getSnapshot(for: profile))
+          })
+      else { throw NSError(domain: "RemoteSession", code: 1) }
+      if let existing {
+        finishDepartingSession(existing, context: context, syncDisplacedSession: true)
+      }
+      let adopted = BlockedProfileSession(
+        tag: "remote-sync", blockedProfile: profile, forceStarted: true,
+        startTime: startTime, id: id, origin: origin)
+      adopted.usesCanonicalIdentity = candidate.usesCanonicalIdentity
+      adopted.sessionSequence = sequenceNumber
+      adopted.sessionServerModificationDate = serverModificationDate
+      adopted.timerEndTime = timerEndTime
+      context.insert(adopted)
       try context.save()
-
+      activateSession(adopted, context: context)
       Log.info(
         "Started remote session for profile '\(profile.name)' with synced startTime",
         category: .strategy)
@@ -1647,22 +1827,8 @@ class StrategyManager: ObservableObject {
     }
   }
 
-  private func endLocalSessionAndSyncStop(
-    _ session: BlockedProfileSession,
-    context: ModelContext
-  ) {
-    let profileId = session.blockedProfile.id
-    let wasProcessingRemoteChange = processingRemoteChange
-    processingRemoteChange = false
-    _ = getStrategy(id: ManualBlockingStrategy.id).stopBlocking(
-      context: context,
-      session: session)
-    processingRemoteChange = wasProcessingRemoteChange
-    sessionStopOutbox.enqueue(profileId: profileId)
-  }
-
   /// Stop a session triggered by remote device
-  func stopRemoteSession(context: ModelContext, profileId: UUID) {
+  func stopRemoteSession(context: ModelContext, profileId: UUID, expectedSessionId: String? = nil, sequenceNumber: Int? = nil) {
     guard !processingRemoteChange else { return }
     processingRemoteChange = true
 
@@ -1675,9 +1841,17 @@ class StrategyManager: ObservableObject {
       return
     }
 
-    // Stop using manual strategy (bypasses NFC/QR requirements)
-    let manualStrategy = getStrategy(id: ManualBlockingStrategy.id)
-    _ = manualStrategy.stopBlocking(context: context, session: session)
+    if let expectedSessionId, session.id != expectedSessionId { return }
+    if sequenceNumber != nil, session.usesCanonicalIdentity == true && expectedSessionId == nil { return }
+    if session.blockedProfile.profileSchemaVersion >= 2 {
+      guard endV2Session(session, context: context) else { return }
+    } else {
+      _ = getStrategy(id: ManualBlockingStrategy.id).stopBlocking(context: context, session: session)
+    }
+    if let sequenceNumber {
+      session.sessionSequence = sequenceNumber
+      do { try context.save() } catch { Log.error("Failed to save remote completion sequence", category: .sync) }
+    }
 
     Log.info("Stopped session via remote trigger", category: .strategy)
   }

@@ -595,6 +595,7 @@ class BlockedProfiles {
     let cancelSessionAndBreakReminders: (UUID) -> Void
     let removeBreakBackstop: (UUID) -> Void
     let removeOneMoreMinuteBackstop: (UUID) -> Void
+    var cancelStrategyTimer: (UUID, String) -> Void = DeviceActivityCenterUtil.removeStrategyTimerActivity
   }
 
   private static func defaultDeleteCleanup() -> DeleteCleanup {
@@ -620,6 +621,8 @@ class BlockedProfiles {
     // First end any active sessions
     for session in profile.sessions {
       if session.endTime == nil {
+        cleanup.cancelStrategyTimer(profile.id, session.id)
+        if profile.profileSchemaVersion < 2 { DeviceActivityCenterUtil.removeStrategyTimerActivity(profileId: profile.id) }
         session.endSession()
       }
     }
@@ -660,6 +663,15 @@ class BlockedProfiles {
   }
 
   static func getSnapshot(for profile: BlockedProfiles) -> SharedData.ProfileSnapshot {
+    let start = profile.startTriggersData.flatMap { try? JSONDecoder().decode(ProfileStartTriggers.self, from: $0) }
+    let stop = profile.stopConditionsData.flatMap { try? JSONDecoder().decode(ProfileStopConditions.self, from: $0) }
+    let readable =
+      !profile.isNewerSchemaVersion
+      && ProfileConditionValidation.settingsAreReadable(
+        start: start, stop: stop, startScheduleData: profile.startScheduleData, stopScheduleData: profile.stopScheduleData)
+    func keys(_ list: [String], _ scalar: String?) -> [String] {
+      ProfileConditionValidation.persistedKeys(schemaVersion: profile.profileSchemaVersion, list: list, scalar: scalar)
+    }
     return SharedData.ProfileSnapshot(
       id: profile.id,
       name: profile.name,
@@ -691,12 +703,19 @@ class BlockedProfiles {
       stopConditionsSchedule: profile.stopConditions.schedule,
       geofenceRule: profile.geofenceRule,
       disableBackgroundStops: profile.disableBackgroundStops,
-      stopConditions: profile.stopConditions,
+      stopConditions: stop,
       isManaged: profile.isManaged,
       managedByChildId: profile.managedByChildId,
       syncVersion: profile.syncVersion,
       needsAppSelection: profile.needsAppSelection,
-      scheduleLastStoppedAt: profile.scheduleLastStoppedAt
+      scheduleLastStoppedAt: profile.scheduleLastStoppedAt,
+      profileSchemaVersion: profile.profileSchemaVersion,
+      startTriggers: start,
+      startNFCTagIds: keys(profile.startNFCTagIds, profile.startNFCTagId),
+      startQRCodeIds: keys(profile.startQRCodeIds, profile.startQRCodeId),
+      stopNFCTagIds: keys(profile.stopNFCTagIds, profile.stopNFCTagId),
+      stopQRCodeIds: keys(profile.stopQRCodeIds, profile.stopQRCodeId),
+      settingsReadable: readable
     )
   }
 

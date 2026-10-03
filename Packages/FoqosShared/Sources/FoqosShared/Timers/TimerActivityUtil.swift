@@ -1,4 +1,5 @@
 import DeviceActivity
+import Foundation
 
 public class TimerActivityUtil {
   /// #238: reload the home-screen widget after every scheduled interval event. Overridable in
@@ -8,6 +9,7 @@ public class TimerActivityUtil {
   public static func startTimerActivity(for activity: DeviceActivityName) {
     defer { Self.reloadWidgets() }
 
+    guard activity.rawValue.split(separator: ":", omittingEmptySubsequences: false).count <= 2 else { return }
     let parts = getTimerParts(from: activity)
 
     guard let timerActivity = getTimerActivity(for: parts.deviceActivityId),
@@ -22,6 +24,13 @@ public class TimerActivityUtil {
   public static func stopTimerActivity(for activity: DeviceActivityName) {
     defer { Self.reloadWidgets() }
 
+    if let identity = StrategyTimerActivity.sessionIdentity(from: activity) {
+      if let profile = getProfile(for: identity.profileId.uuidString) {
+        _ = StrategyTimerActivity().stop(for: profile, sessionId: identity.sessionId, now: Date())
+      }
+      return
+    }
+    guard activity.rawValue.split(separator: ":", omittingEmptySubsequences: false).count <= 2 else { return }
     let parts = getTimerParts(from: activity)
 
     guard let timerActivity = getTimerActivity(for: parts.deviceActivityId),
@@ -46,6 +55,7 @@ public class TimerActivityUtil {
 
     // For versions < 1.24, the activity name format is just "profileId" and only supports schedule timer activity
     // This is to support backward compatibility for older schedules
+    guard UUID(uuidString: activityName) != nil else { return ("", "") }
     return (deviceActivityId: ScheduleTimerActivity.id, profileId: activityName)
   }
 

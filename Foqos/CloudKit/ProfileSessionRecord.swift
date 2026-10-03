@@ -1,4 +1,5 @@
 import CloudKit
+import FoqosShared
 import Foundation
 
 /// Represents the authoritative session state for a single profile.
@@ -26,6 +27,21 @@ struct ProfileSessionRecord: Codable, Equatable, Sendable {
   private(set) var sequenceNumber: Int = 0
   private(set) var startTime: Date?
   private(set) var endTime: Date?
+  private(set) var sessionId: String?
+  private(set) var sessionOrigin: String?
+  private struct IdentityPayload: Codable {
+    let startedAt: Date
+    let origin: SessionOrigin?
+  }
+  private struct StartBinding: Decodable { let startedAt: Date }
+  var origin: SessionOrigin? {
+    guard isActive, let sessionOrigin else { return nil }
+    return (try? JSONDecoder().decode(IdentityPayload.self, from: Data(sessionOrigin.utf8)))?.origin
+  }
+  private mutating func bindIdentity(origin: SessionOrigin?) {
+    sessionOrigin = startTime.flatMap { try? JSONEncoder().encode(IdentityPayload(startedAt: $0, origin: origin)) }
+      .flatMap { String(data: $0, encoding: .utf8) }
+  }
   private(set) var timerEndTime: Date?
   private(set) var breakStartTime: Date?
   private(set) var breakEndTime: Date?
@@ -41,6 +57,9 @@ struct ProfileSessionRecord: Codable, Equatable, Sendable {
   /// When this record was last updated
   private(set) var lastModified: Date = Date()
 
+  /// CloudKit metadata, never a client-authored timestamp or an uploaded field.
+  private(set) var serverModificationDate: Date?
+
   // MARK: - CloudKit
 
   static let recordType = "ProfileSession"
@@ -51,6 +70,8 @@ struct ProfileSessionRecord: Codable, Equatable, Sendable {
     case sequenceNumber
     case startTime
     case endTime
+    case sessionId
+    case sessionOrigin
     case timerEndTime
     case breakStartTime
     case breakEndTime
@@ -74,11 +95,22 @@ struct ProfileSessionRecord: Codable, Equatable, Sendable {
     }
 
     self.profileId = profileId
+    self.serverModificationDate = record.modificationDate
     self.isActive = record[FieldKey.isActive.rawValue] as? Bool ?? false
     self.sequenceNumber = record[FieldKey.sequenceNumber.rawValue] as? Int ?? 0
     self.startTime = record[FieldKey.startTime.rawValue] as? Date
     self.endTime = record[FieldKey.endTime.rawValue] as? Date
-    self.timerEndTime = record[FieldKey.timerEndTime.rawValue] as? Date
+    self.sessionId = record[FieldKey.sessionId.rawValue] as? String
+    self.sessionOrigin = record[FieldKey.sessionOrigin.rawValue] as? String
+    // Older writers retain unknown fields. Identity is valid only for the start that wrote it.
+    let binding = self.sessionOrigin.flatMap { try? JSONDecoder().decode(StartBinding.self, from: Data($0.utf8)) }
+    // CloudKit dates may be rounded to milliseconds; a different start must never inherit identity.
+    let boundToStart = binding.flatMap { binding in self.startTime.map { abs(binding.startedAt.timeIntervalSince($0)) < 0.001 } } == true
+    if !boundToStart {
+      self.sessionId = nil
+      bindIdentity(origin: nil)
+    }
+    self.timerEndTime = self.isActive ? record[FieldKey.timerEndTime.rawValue] as? Date : nil
     self.breakStartTime = record[FieldKey.breakStartTime.rawValue] as? Date
     self.breakEndTime = record[FieldKey.breakEndTime.rawValue] as? Date
     self.lastModifiedBy = record[FieldKey.lastModifiedBy.rawValue] as? String ?? ""
@@ -98,7 +130,8 @@ struct ProfileSessionRecord: Codable, Equatable, Sendable {
     endTime: Date? = nil,
     timerEndTime: Date? = nil,
     breakStartTime: Date? = nil,
-    breakEndTime: Date? = nil
+    breakEndTime: Date? = nil,
+    sessionId: String? = nil, origin: SessionOrigin? = nil
   ) -> Bool {
     // Reject stale updates
     guard sequenceNumber > self.sequenceNumber else {
@@ -115,6 +148,8 @@ struct ProfileSessionRecord: Codable, Equatable, Sendable {
       self.startTime = startTime ?? Date()
       self.endTime = nil
       self.timerEndTime = timerEndTime
+      self.sessionId = sessionId
+      bindIdentity(origin: origin)
       self.sessionOriginDevice = deviceId
       self.breakStartTime = nil
       self.breakEndTime = nil
@@ -122,6 +157,7 @@ struct ProfileSessionRecord: Codable, Equatable, Sendable {
       // Session ending
       self.endTime = endTime ?? Date()
       self.timerEndTime = nil
+      bindIdentity(origin: nil)
     }
 
     // Update break times if provided
@@ -138,6 +174,8 @@ struct ProfileSessionRecord: Codable, Equatable, Sendable {
   /// Reset for a new session (clears previous session data)
   mutating func resetForNewSession() {
     self.startTime = nil
+    self.sessionId = nil
+    self.sessionOrigin = nil
     self.timerEndTime = nil
     self.endTime = nil
     self.breakStartTime = nil
@@ -148,6 +186,12 @@ struct ProfileSessionRecord: Codable, Equatable, Sendable {
   var validTimerEndTime: Date? {
     guard isActive, let startTime, let timerEndTime, timerEndTime > startTime else { return nil }
     return timerEndTime
+  }
+
+  func matchesCompletion(expectedSessionId: String?, expectedStart: Date?, deviceId: String) -> Bool {
+    if let expectedSessionId { return sessionId == expectedSessionId }
+    if let expectedStart { return matchesCompletion(expectedStart: expectedStart, deviceId: deviceId) }
+    return true
   }
 
   func matchesCompletion(expectedStart: Date, deviceId: String) -> Bool {
@@ -170,6 +214,8 @@ struct ProfileSessionRecord: Codable, Equatable, Sendable {
     record[FieldKey.sequenceNumber.rawValue] = sequenceNumber
     record[FieldKey.startTime.rawValue] = startTime
     record[FieldKey.endTime.rawValue] = endTime
+    record[FieldKey.sessionId.rawValue] = sessionId
+    record[FieldKey.sessionOrigin.rawValue] = sessionOrigin
     record[FieldKey.timerEndTime.rawValue] = isActive ? timerEndTime : nil
     record[FieldKey.breakStartTime.rawValue] = breakStartTime
     record[FieldKey.breakEndTime.rawValue] = breakEndTime

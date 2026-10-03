@@ -391,13 +391,12 @@ struct SyncedProfile: Codable, Equatable {
     guard profileSchemaVersion >= 2 else { return [] }
     let readable =
       profileSchemaVersion <= BlockedProfiles.currentSchemaVersion
-      && startTriggers != nil && stopConditions != nil
-      && (startScheduleData == nil || startSchedule != nil)
-      && (stopScheduleData == nil || stopSchedule != nil)
+      && ProfileConditionValidation.settingsAreReadable(
+        start: startTriggers, stop: stopConditions, startScheduleData: startScheduleData, stopScheduleData: stopScheduleData)
     func keys(_ list: [String], _ scalar: String?) -> [String] {
-      profileSchemaVersion == 2 ? scalar.map { [$0] } ?? [] : list
+      ProfileConditionValidation.persistedKeys(schemaVersion: profileSchemaVersion, list: list, scalar: scalar)
     }
-    return TriggerValidator().validate(
+    return ProfileConditionValidation.configurationErrors(
       start: startTriggers ?? ProfileStartTriggers(), stop: stopConditions ?? ProfileStopConditions(),
       startNFCTagIds: keys(startNFCTagIds, startNFCTagId), startQRCodeIds: keys(startQRCodeIds, startQRCodeId),
       stopNFCTagIds: keys(stopNFCTagIds, stopNFCTagId), stopQRCodeIds: keys(stopQRCodeIds, stopQRCodeId),

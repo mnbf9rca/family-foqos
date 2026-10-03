@@ -1,4 +1,5 @@
 // FoqosTests/StrategyManagerStartTests.swift
+import CloudKit
 import FoqosShared
 import SwiftData
 import XCTest
@@ -25,6 +26,13 @@ final class StrategyManagerStartTests: XCTestCase {
     manager.stopTimer()
     UserDefaults().removePersistentDomain(forName: suiteName)
     try await super.tearDown()
+  }
+
+  private func eligibleProfile(name: String, createdAt: Date = Date(), updatedAt: Date = Date()) -> BlockedProfiles {
+    let profile = BlockedProfiles(name: name, createdAt: createdAt, updatedAt: updatedAt)
+    profile.startTriggers = .init(manual: true, anyNFC: true, anyQR: true, deepLink: true, shortcuts: true)
+    profile.stopConditions = .init(manual: true)
+    return profile
   }
 
   private func activeSessions() throws -> [BlockedProfileSession] {
@@ -115,11 +123,7 @@ final class StrategyManagerStartTests: XCTestCase {
 
     let action = StartStopActionResolver.determineStartAction(for: start)
 
-    if case .cannotStart = action {
-      // expected
-    } else {
-      XCTFail("Expected .cannotStart, got \(action)")
-    }
+    XCTAssertEqual(action, .cannotStart(reason: "Please edit this profile before starting. Its start and stop settings need updating."))
   }
 
   func testGivenManualStartWithInvalidStop_WhenDeterminingStartAction_ThenReturnsCannotStart() {
@@ -129,11 +133,7 @@ final class StrategyManagerStartTests: XCTestCase {
 
     let action = StartStopActionResolver.determineStartAction(for: start, stopConditions: stop)
 
-    if case .cannotStart = action {
-      // expected
-    } else {
-      XCTFail("Expected .cannotStart, got \(action)")
-    }
+    XCTAssertEqual(action, .cannotStart(reason: "Please edit this profile before starting. Its start and stop settings need updating."))
   }
 
   func testGivenManualStartWithValidStop_WhenDeterminingStartAction_ThenReturnsStartImmediately() {
@@ -148,8 +148,8 @@ final class StrategyManagerStartTests: XCTestCase {
   }
 
   func testGivenActiveSession_WhenStartWithNFCTag_ThenNoSecondSessionAndErrorSurfaced() throws {
-    let activeProfile = BlockedProfiles(name: "Active")
-    let scannedProfile = BlockedProfiles(name: "Scanned")
+    let activeProfile = eligibleProfile(name: "Active")
+    let scannedProfile = eligibleProfile(name: "Scanned")
     context.insert(activeProfile)
     context.insert(scannedProfile)
     _ = BlockedProfileSession.createSession(
@@ -165,7 +165,7 @@ final class StrategyManagerStartTests: XCTestCase {
   func testGivenProfileNeedsAppSelection_WhenStartWithQRCode_ThenNoSessionAndErrorSurfaced()
     throws
   {
-    let profile = BlockedProfiles(name: "Needs Apps")
+    let profile = eligibleProfile(name: "Needs Apps")
     profile.needsAppSelection = true
     context.insert(profile)
     try context.save()
@@ -180,8 +180,8 @@ final class StrategyManagerStartTests: XCTestCase {
   func testGivenActiveSession_WhenToggleBlockingStart_ThenNoSecondSessionAndErrorSurfaced()
     throws
   {
-    let activeProfile = BlockedProfiles(name: "Active")
-    let nextProfile = BlockedProfiles(name: "Next")
+    let activeProfile = eligibleProfile(name: "Active")
+    let nextProfile = eligibleProfile(name: "Next")
     nextProfile.blockingStrategyId = ManualBlockingStrategy.id
     context.insert(activeProfile)
     context.insert(nextProfile)
@@ -198,7 +198,7 @@ final class StrategyManagerStartTests: XCTestCase {
   func testGivenProfileNeedsAppSelection_WhenToggleBlockingStart_ThenNoSessionAndErrorSurfaced()
     throws
   {
-    let profile = BlockedProfiles(name: "Needs Apps")
+    let profile = eligibleProfile(name: "Needs Apps")
     profile.needsAppSelection = true
     profile.blockingStrategyId = ManualBlockingStrategy.id
     context.insert(profile)
@@ -212,7 +212,7 @@ final class StrategyManagerStartTests: XCTestCase {
   }
 
   func testGivenNoActiveSessionAndAppsSelected_WhenStartWithNFCTag_ThenSessionStarts() throws {
-    let profile = BlockedProfiles(name: "Ready")
+    let profile = eligibleProfile(name: "Ready")
     context.insert(profile)
     try context.save()
 
@@ -225,7 +225,7 @@ final class StrategyManagerStartTests: XCTestCase {
   func testGivenProfileNeedsAppSelection_WhenToggleSessionFromDeeplink_ThenNoSessionAndErrorSurfaced()
     async throws
   {
-    let profile = BlockedProfiles(name: "Needs Apps")
+    let profile = eligibleProfile(name: "Needs Apps")
     profile.needsAppSelection = true
     profile.startTriggers = ProfileStartTriggers(deepLink: true)
     context.insert(profile)
@@ -245,9 +245,9 @@ final class StrategyManagerStartTests: XCTestCase {
   func testGivenProfileNeedsAppSelection_WhenToggleSessionFromDeeplinkSwitching_ThenCurrentSessionRemainsAndErrorSurfaced()
     async throws
   {
-    let activeProfile = BlockedProfiles(name: "Active")
+    let activeProfile = eligibleProfile(name: "Active")
     activeProfile.stopConditions = ProfileStopConditions(deepLink: true)
-    let nextProfile = BlockedProfiles(name: "Needs Apps")
+    let nextProfile = eligibleProfile(name: "Needs Apps")
     nextProfile.needsAppSelection = true
     nextProfile.startTriggers = ProfileStartTriggers(deepLink: true)
     context.insert(activeProfile)
@@ -273,7 +273,7 @@ final class StrategyManagerStartTests: XCTestCase {
     let geofenceEvaluator = GeofenceEvaluator()
     geofenceEvaluator.beginGeofenceCheck()
     manager = StrategyManager(geofenceEvaluator: geofenceEvaluator)
-    let profile = BlockedProfiles(name: "Manual")
+    let profile = eligibleProfile(name: "Manual")
     profile.blockingStrategyId = ManualBlockingStrategy.id
     context.insert(profile)
     try context.save()
@@ -291,7 +291,7 @@ final class StrategyManagerStartTests: XCTestCase {
     let geofenceEvaluator = GeofenceEvaluator()
     geofenceEvaluator.beginGeofenceCheck(now: Date().addingTimeInterval(-120))
     manager = StrategyManager(geofenceEvaluator: geofenceEvaluator)
-    let profile = BlockedProfiles(name: "Manual")
+    let profile = eligibleProfile(name: "Manual")
     profile.blockingStrategyId = ManualBlockingStrategy.id
     context.insert(profile)
     try context.save()
@@ -356,7 +356,7 @@ final class StrategyManagerStartTests: XCTestCase {
   }
 
   func testGivenActiveSessionFetchFails_WhenRejectionForStart_ThenFailsClosed() throws {
-    let profile = BlockedProfiles(name: "Manual")
+    let profile = eligibleProfile(name: "Manual")
     context.insert(profile)
     try context.save()
 
@@ -368,7 +368,7 @@ final class StrategyManagerStartTests: XCTestCase {
   }
 
   func testSpecificNFCStartsWithSpare() throws {
-    let profile = BlockedProfiles(name: "Keys")
+    let profile = eligibleProfile(name: "Keys")
     profile.startTriggers = ProfileStartTriggers(specificNFC: true)
     profile.startNFCTagIds = ["X", "Y"]
     context.insert(profile)
@@ -378,7 +378,7 @@ final class StrategyManagerStartTests: XCTestCase {
   }
 
   func testSpecificNFCRejectsUnknownKey() throws {
-    let profile = BlockedProfiles(name: "Keys")
+    let profile = eligibleProfile(name: "Keys")
     profile.startTriggers = ProfileStartTriggers(specificNFC: true)
     profile.startNFCTagIds = ["X", "Y"]
     context.insert(profile)
@@ -389,7 +389,7 @@ final class StrategyManagerStartTests: XCTestCase {
   }
 
   func testSpecificQRStartsWithSpare() throws {
-    let profile = BlockedProfiles(name: "Keys")
+    let profile = eligibleProfile(name: "Keys")
     profile.startTriggers = ProfileStartTriggers(specificQR: true)
     profile.startQRCodeIds = ["X", "Y"]
     context.insert(profile)
@@ -399,7 +399,7 @@ final class StrategyManagerStartTests: XCTestCase {
   }
 
   func testSpecificQRRejectsUnknownKey() throws {
-    let profile = BlockedProfiles(name: "Keys")
+    let profile = eligibleProfile(name: "Keys")
     profile.startTriggers = ProfileStartTriggers(specificQR: true)
     profile.startQRCodeIds = ["X", "Y"]
     context.insert(profile)
@@ -414,7 +414,7 @@ final class StrategyManagerStartTests: XCTestCase {
     let payload = " \nHTTPS://EXAMPLE.COM/\t"
     let oldHash = "f7bab0e3b417cf24e9a77e97a53fc4cea1084e20398a2e7258281e80239ca6f1"
     for ids in [[oldHash, "other"], ["other", oldHash]] {
-      let profile = BlockedProfiles(name: "Legacy", createdAt: now, updatedAt: now)
+      let profile = eligibleProfile(name: "Legacy", createdAt: now, updatedAt: now)
       profile.startTriggers = ProfileStartTriggers(specificQR: true)
       profile.startQRCodeIds = ids
       context.insert(profile)
@@ -424,7 +424,7 @@ final class StrategyManagerStartTests: XCTestCase {
         codeValue: QRCodeHasher.hash(payload), rawHash: QRCodeHasher.rawHash(payload))
       let session = try XCTUnwrap(manager.activeSession)
       XCTAssertEqual(session.blockedProfile.id, profile.id)
-      XCTAssertEqual(session.tag, "qr:100680ad546ce6a577f42f52df33b4cfdca756859e664b8d7de329b150d09ce9")
+      XCTAssertEqual(session.origin, .init(kind: .qr, key: oldHash, namespace: .qrDigest))
       XCTAssertEqual(profile.startQRCodeIds, ids)
       session.endSession()
       try context.save()
@@ -438,7 +438,7 @@ final class StrategyManagerStartTests: XCTestCase {
     let tag = try SavedTag.findOrCreate(
       id: QRCodeHasher.hash("HTTPS://EXAMPLE.COM/"),
       kind: "qr", name: "New code", in: context)
-    let profile = BlockedProfiles(name: "New", createdAt: now, updatedAt: now)
+    let profile = eligibleProfile(name: "New", createdAt: now, updatedAt: now)
     profile.startTriggers = ProfileStartTriggers(specificQR: true)
     profile.startQRCodeIds = ["other", tag.id]
     context.insert(profile)
@@ -454,7 +454,7 @@ final class StrategyManagerStartTests: XCTestCase {
     let now = Date()
     let scan = " HTTPS://EXAMPLE.COM/ "
     _ = try SavedTag.findOrCreate(id: QRCodeHasher.rawHash(scan), kind: "qr", name: "Unassigned", in: context)
-    let profile = BlockedProfiles(name: "Other", createdAt: now, updatedAt: now)
+    let profile = eligibleProfile(name: "Other", createdAt: now, updatedAt: now)
     profile.startTriggers = ProfileStartTriggers(specificQR: true)
     profile.startQRCodeIds = [QRCodeHasher.hash("https://elsewhere.example")]
     context.insert(profile)
@@ -466,4 +466,341 @@ final class StrategyManagerStartTests: XCTestCase {
     XCTAssertTrue(manager.errorMessage?.contains("doesn't match") == true)
   }
 
+  func testRegistrationPrecedesEveryObservableEffect() async throws {
+    let now = Date()
+    let profile = BlockedProfiles(name: "Timed", createdAt: now, updatedAt: now)
+    profile.startTriggers = .init(manual: true)
+    profile.stopConditions = .init(manual: true, timer: true, timerDurationMinutes: 37)
+    context.insert(profile)
+    try context.save()
+    let sync = ProfileSyncManager.shared
+    let wasEnabled = sync.isEnabled
+    sync.isEnabled = true
+    defer { sync.isEnabled = wasEnabled }
+    let syncSpy = RegistrationSyncSpy()
+    let published = expectation(description: "start published after registration")
+    let service = SessionSyncService(
+      fetchRecord: { _ in try await syncSpy.fetch() },
+      saveRecord: { record in
+        published.fulfill()
+        return record
+      })
+    let applier = StartRestrictionSpy()
+    var registrations = 0
+    let accepted = now.addingTimeInterval(2207)
+    var activities = 0
+    var reminders = 0
+    var sut: StrategyManager!
+    sut = StrategyManager(
+      sessionSyncService: service, appBlocker: applier,
+      registerTimer: { profileId, sessionId, minutes, registeredAt in
+        registrations += 1
+        XCTAssertEqual(profileId, profile.id)
+        XCTAssertNotNil(UUID(uuidString: sessionId))
+        XCTAssertEqual(minutes, 37)
+        XCTAssertEqual(registeredAt, now)
+        XCTAssertTrue(profile.sessions.isEmpty)
+        XCTAssertTrue(try self.activeSessions().isEmpty)
+        XCTAssertNil(SharedData.getActiveSharedSession())
+        XCTAssertEqual(applier.activations, 0)
+        XCTAssertNil(sut.timerTask)
+        XCTAssertEqual(activities, 0)
+        XCTAssertEqual(reminders, 0)
+        XCTAssertEqual(syncSpy.fetches, 0)
+        return accepted
+      }, startSessionActivity: { _ in activities += 1 },
+      cancelPreActivationReminders: { _ in reminders += 1 })
+    defer {
+      sut.stopTimer()
+      sut = nil
+    }
+    let started = try sut.startOriginatingSession(context: context, profile: profile, origin: .init(kind: .manual), now: now)
+    await fulfillment(of: [published], timeout: 5)
+    XCTAssertEqual(syncSpy.fetches, 1)
+    XCTAssertEqual(registrations, 1)
+    XCTAssertEqual(activities, 1)
+    XCTAssertEqual(reminders, 1)
+    XCTAssertEqual(started.timerEndTime, accepted)
+    XCTAssertEqual(SharedData.getActiveSharedSession()?.timerEndTime, accepted)
+    XCTAssertEqual(SharedData.getActiveSharedSession()?.id, started.id)
+    XCTAssertEqual(started.origin, .init(kind: .manual))
+    XCTAssertEqual(applier.activations, 1)
+  }
+
+  func testRegistrationFailureEvenWithManualLeavesNoEffects() throws {
+    let now = Date()
+    let profile = BlockedProfiles(name: "Timed", createdAt: now, updatedAt: now)
+    profile.startTriggers = .init(manual: true)
+    profile.stopConditions = .init(manual: true, timer: true, timerDurationMinutes: 37)
+    context.insert(profile)
+    try context.save()
+    let applier = StartRestrictionSpy()
+    var cancelled: [(UUID, String)] = []
+    let sut = StrategyManager(
+      appBlocker: applier,
+      registerTimer: { _, _, _, _ in throw NSError(domain: "registrar", code: 1) },
+      cancelTimer: { cancelled.append(($0, $1)) })
+    XCTAssertThrowsError(try sut.startOriginatingSession(context: context, profile: profile, origin: .init(kind: .manual), now: now)) {
+      XCTAssertEqual($0.localizedDescription, "This profile couldn’t start because its timer couldn’t be set. Please try again.")
+    }
+    XCTAssertTrue(profile.sessions.isEmpty)
+    XCTAssertTrue(try activeSessions().isEmpty)
+    XCTAssertNil(SharedData.getActiveSharedSession())
+    XCTAssertEqual(applier.activations, 0)
+    XCTAssertEqual(cancelled.count, 1)
+    XCTAssertEqual(cancelled.first?.0, profile.id)
+    XCTAssertNotNil(UUID(uuidString: try XCTUnwrap(cancelled.first?.1)))
+  }
+
+  func testSaveFailureCompensatesOnlyCandidateAndKeepsUnrelatedEdit() throws {
+    let now = Date()
+    let profile = BlockedProfiles(name: "Timed", createdAt: now, updatedAt: now)
+    profile.startTriggers = .init(manual: true)
+    profile.stopConditions = .init(timer: true, timerDurationMinutes: 37)
+    let unrelated = BlockedProfiles(name: "Before", createdAt: now, updatedAt: now)
+    context.insert(profile)
+    context.insert(unrelated)
+    try context.save()
+    unrelated.name = "Pending edit"
+    let applier = StartRestrictionSpy()
+    var saves = 0
+    var cancelled: [String] = []
+    let sut = StrategyManager(
+      appBlocker: applier,
+      registerTimer: { _, _, _, _ in now.addingTimeInterval(2207) },
+      cancelTimer: { _, id in cancelled.append(id) },
+      saveSession: { context in
+        saves += 1
+        if saves == 1 { throw NSError(domain: "save", code: 1) }
+        try context.save()
+      })
+    XCTAssertThrowsError(try sut.startOriginatingSession(context: context, profile: profile, origin: .init(kind: .manual), now: now)) {
+      XCTAssertEqual($0.localizedDescription, "Couldn’t start this profile. Please try again.")
+    }
+    XCTAssertEqual(saves, 2)
+    XCTAssertEqual(unrelated.name, "Pending edit")
+    XCTAssertTrue(profile.sessions.isEmpty)
+    XCTAssertTrue(try activeSessions().isEmpty)
+    XCTAssertNil(SharedData.getActiveSharedSession())
+    XCTAssertEqual(applier.activations, 0)
+    XCTAssertEqual(cancelled.count, 1)
+  }
+
+  func testReplacementBetweenRegistrationAndCommitSurvivesCandidateCleanup() throws {
+    let now = Date()
+    let profile = BlockedProfiles(name: "Timed", createdAt: now, updatedAt: now)
+    profile.startTriggers = .init(manual: true)
+    profile.stopConditions = .init(timer: true, timerDurationMinutes: 37)
+    context.insert(profile)
+    try context.save()
+    let winner = SharedData.SessionSnapshot(id: UUID().uuidString, tag: "winner", blockedProfileId: UUID(), startTime: now, forceStarted: false)
+    let applier = StartRestrictionSpy()
+    var cancelled: [String] = []
+    let sut = StrategyManager(
+      appBlocker: applier,
+      registerTimer: { _, _, _, _ in
+        SharedData.createActiveSharedSession(for: winner)
+        return now.addingTimeInterval(2207)
+      }, cancelTimer: { _, id in cancelled.append(id) })
+    XCTAssertThrowsError(try sut.startOriginatingSession(context: context, profile: profile, origin: .init(kind: .manual), now: now))
+    XCTAssertEqual(SharedData.getActiveSharedSession(), winner)
+    XCTAssertTrue(profile.sessions.isEmpty)
+    XCTAssertTrue(try activeSessions().isEmpty)
+    XCTAssertEqual(applier.activations, 0)
+    XCTAssertEqual(applier.deactivations, 0)
+    XCTAssertEqual(cancelled.count, 1)
+    XCTAssertNotEqual(cancelled.first, winner.id)
+  }
+
+  func testConcreteStartsUseSavedTimer() async throws {
+    let now = Date()
+    for kind in [SessionOrigin.Kind.manual, .nfc, .qr, .shortcut, .link] {
+      let profile = BlockedProfiles(name: "Saved37", createdAt: now, updatedAt: now)
+      profile.startTriggers = .init(manual: true, anyNFC: true, anyQR: true, deepLink: true, shortcuts: true)
+      profile.stopConditions = .init(manual: true, timer: true, timerDurationMinutes: 37, allowChangingTimerBeforeStart: true)
+      context.insert(profile)
+      try context.save()
+      var minutes: [Int] = []
+      let sut = StrategyManager(
+        registerTimer: { _, _, duration, _ in
+          minutes.append(duration)
+          return now.addingTimeInterval(2207)
+        }, cancelTimer: { _, _ in })
+      switch kind {
+      case .manual:
+        profile.stopConditions.allowChangingTimerBeforeStart = false
+        sut.toggleBlocking(context: context, activeProfile: profile)
+      case .nfc: sut.startWithNFCTag(context: context, profile: profile, tagId: "UID")
+      case .qr: sut.startWithQRCode(context: context, profile: profile, codeValue: "DIGEST")
+      case .shortcut:
+        _ = try sut.startSessionFromBackground(profile.id, context: context, authorization: MockAuthorizationRequesting(initialStatus: .approved))
+      case .link: await sut.toggleSessionFromDeeplink(profile.id.uuidString, url: URL(string: "familyfoqos://profile/\(profile.id)")!, context: context)
+      case .schedule: break
+      }
+      let session = try XCTUnwrap(sut.activeSession)
+      XCTAssertEqual(minutes, [37])
+      XCTAssertEqual(session.timerEndTime, now.addingTimeInterval(2207))
+      XCTAssertEqual(session.origin?.kind, kind)
+      XCTAssertFalse(sut.showCustomStrategyView)
+      session.endSession(now: now)
+      try context.save()
+      sut.stopTimer()
+    }
+  }
+
+  func testManualAdjustmentIsSessionOnlyAndCannotBypassOption() throws {
+    let now = Date()
+    let profile = BlockedProfiles(name: "Saved37", createdAt: now, updatedAt: now)
+    profile.startTriggers = .init(manual: true)
+    profile.stopConditions = .init(manual: true, timer: true, timerDurationMinutes: 37, allowChangingTimerBeforeStart: true)
+    profile.isManaged = true
+    context.insert(profile)
+    try context.save()
+    var minutes: [Int] = []
+    let sut = StrategyManager(
+      registerTimer: { _, _, duration, _ in
+        minutes.append(duration)
+        return now.addingTimeInterval(Double(duration) * 60)
+      }, cancelTimer: { _, _ in })
+    sut.toggleBlocking(context: context, activeProfile: profile)
+    XCTAssertTrue(sut.showCustomStrategyView)
+    XCTAssertTrue(minutes.isEmpty)
+    XCTAssertTrue(profile.sessions.isEmpty)
+    sut.showCustomStrategyView = false
+    sut.customStrategyView = nil  // Sheet cancellation has no originating effect.
+    XCTAssertTrue(minutes.isEmpty)
+    XCTAssertTrue(profile.sessions.isEmpty)
+    for duration in [41, 15, 1439] {
+      let session = try sut.startOriginatingSession(context: context, profile: profile, origin: .init(kind: .manual), durationOverrideMinutes: duration, now: now)
+      XCTAssertEqual(minutes.last, duration)
+      XCTAssertEqual(profile.stopConditions.timerDurationMinutes, 37)
+      session.endSession(now: now)
+      sut.activeSession = nil
+      sut.stopTimer()
+      try context.save()
+    }
+    XCTAssertThrowsError(try sut.startOriginatingSession(context: context, profile: profile, origin: .init(kind: .manual), durationOverrideMinutes: 14, now: now)) {
+      XCTAssertEqual($0.localizedDescription, "Choose a timer from 15 minutes to 23 hours 59 minutes.")
+    }
+    profile.stopConditions.allowChangingTimerBeforeStart = false
+    XCTAssertThrowsError(try sut.startOriginatingSession(context: context, profile: profile, origin: .init(kind: .manual), durationOverrideMinutes: 41, now: now))
+    XCTAssertEqual(minutes, [41, 15, 1439])
+  }
+
+  func testLinkInvalidAndRegistrationFailureLeaveVictimUntouched() async throws {
+    let now = Date()
+    let victimProfile = BlockedProfiles(name: "Victim", createdAt: now, updatedAt: now)
+    victimProfile.stopConditions = .init(manual: true, deepLink: true)
+    let candidate = BlockedProfiles(name: "Candidate", createdAt: now, updatedAt: now)
+    candidate.startTriggers = .init(deepLink: true)
+    candidate.stopConditions = .init(manual: true, timer: true, timerDurationMinutes: 14)
+    context.insert(victimProfile)
+    context.insert(candidate)
+    let victim = BlockedProfileSession.createSession(in: context, withTag: "victim", withProfile: victimProfile, startTime: now)
+    try context.save()
+    let spy = StartRestrictionSpy()
+    var registrations = 0
+    let sut = StrategyManager(
+      appBlocker: spy,
+      registerTimer: { _, _, _, _ in
+        registrations += 1
+        throw NSError(domain: "registration", code: 1)
+      }, cancelTimer: { _, _ in })
+    sut.activeSession = victim
+    let original = SharedData.getActiveSharedSession()
+    await sut.toggleSessionFromDeeplink(candidate.id.uuidString, url: URL(string: "familyfoqos://profile/\(candidate.id)")!, context: context)
+    XCTAssertEqual(sut.errorMessage, "Please edit this profile before starting. Its start and stop settings need updating.")
+    XCTAssertEqual(registrations, 0)
+    XCTAssertTrue(victim.isActive)
+    XCTAssertTrue(candidate.sessions.isEmpty)
+    candidate.stopConditions.timerDurationMinutes = 37
+    await sut.toggleSessionFromDeeplink(candidate.id.uuidString, url: URL(string: "familyfoqos://profile/\(candidate.id)")!, context: context)
+    XCTAssertEqual(sut.errorMessage, "This profile couldn’t start because its timer couldn’t be set. Please try again.")
+    XCTAssertEqual(registrations, 1)
+    XCTAssertEqual(SharedData.getActiveSharedSession(), original)
+    XCTAssertTrue(victim.isActive)
+    XCTAssertEqual(spy.activations, 0)
+    XCTAssertEqual(spy.deactivations, 0)
+  }
+
+  func testTakeoverReplacementTimerSurvivesOutgoingEndHandling() async throws {
+    let now = Date()
+    let profileA = eligibleProfile(name: "A", createdAt: now, updatedAt: now)
+    profileA.stopConditions = .init(manual: true, timer: true, deepLink: true, timerDurationMinutes: 37)
+    let profileB = eligibleProfile(name: "B", createdAt: now, updatedAt: now)
+    profileB.stopConditions = .init(manual: true, timer: true, timerDurationMinutes: 37)
+    context.insert(profileA)
+    context.insert(profileB)
+    try context.save()
+    var registered: Set<String> = []
+    var canceled: [String] = []
+    let sut = StrategyManager(
+      registerTimer: { _, id, _, _ in
+        registered.insert(id)
+        return now.addingTimeInterval(2207)
+      },
+      cancelTimer: { _, id in
+        canceled.append(id)
+        registered.remove(id)
+      })
+    let old = try sut.startOriginatingSession(context: context, profile: profileA, origin: .init(kind: .manual), now: now)
+    await sut.toggleSessionFromDeeplink(profileB.id.uuidString, url: URL(string: "familyfoqos://profile/\(profileB.id)")!, context: context)
+    let replacement = try XCTUnwrap(sut.activeSession)
+    XCTAssertEqual(replacement.blockedProfile.id, profileB.id)
+    XCTAssertFalse(old.isActive)
+    XCTAssertEqual(canceled, [old.id])
+    XCTAssertEqual(registered, [replacement.id])
+    XCTAssertEqual(SharedData.getActiveSharedSession()?.id, replacement.id)
+    sut.stopTimer()
+  }
+
+  func testDelayedLegacyEndedCallbackCannotClearReplacementOrRemoveItsTimers() throws {
+    let now = Date()
+    let legacy = eligibleProfile(name: "Old", createdAt: now, updatedAt: now)
+    legacy.profileSchemaVersion = 1
+    legacy.blockingStrategyId = ManualBlockingStrategy.id
+    let replacement = eligibleProfile(name: "New", createdAt: now, updatedAt: now)
+    replacement.stopConditions = .init(timer: true, timerDurationMinutes: 37)
+    context.insert(legacy)
+    context.insert(replacement)
+    try context.save()
+    var bulkRemovals = 0
+    let sut = StrategyManager(
+      registerTimer: { _, _, _, _ in now.addingTimeInterval(2207) },
+      removeAllStrategyTimers: { bulkRemovals += 1 })
+    defer { sut.stopTimer() }
+    let strategy = sut.getStrategy(id: ManualBlockingStrategy.id)
+    let started = try sut.startOriginatingSession(
+      context: context, profile: replacement,
+      origin: .init(kind: .manual), now: now)
+    strategy.onSessionCreation?(.ended(legacy))
+    XCTAssertEqual(sut.activeSession?.id, started.id)
+    XCTAssertEqual(SharedData.getActiveSharedSession()?.id, started.id)
+    XCTAssertEqual(bulkRemovals, 0)
+  }
+
+}
+
+@MainActor
+private final class StartRestrictionSpy: RestrictionApplying {
+  var activations = 0
+  var deactivations = 0
+  nonisolated func activateRestrictions(for profile: SharedData.ProfileSnapshot) {
+    MainActor.assumeIsolated { activations += 1 }
+  }
+  nonisolated func deactivateRestrictions() {
+    MainActor.assumeIsolated { deactivations += 1 }
+  }
+  nonisolated func deactivateRestrictions(keepingSafeguardsFor profile: SharedData.ProfileSnapshot?) {
+    deactivateRestrictions()
+  }
+}
+
+@MainActor
+private final class RegistrationSyncSpy {
+  var fetches = 0
+  func fetch() throws -> CKRecord {
+    fetches += 1
+    throw CKError(.unknownItem)
+  }
 }

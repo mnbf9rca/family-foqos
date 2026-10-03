@@ -256,6 +256,15 @@ public enum SharedData {
 
     public var schedule: BlockedProfileSchedule?
 
+    // Full admission fields are absent only on the shipped pre-update V1 wire.
+    public var profileSchemaVersion: Int?
+    public var startTriggers: ProfileStartTriggers?
+    public var startNFCTagIds: [String]?
+    public var startQRCodeIds: [String]?
+    public var stopNFCTagIds: [String]?
+    public var stopQRCodeIds: [String]?
+    public var settingsReadable: Bool?
+
     // V2 trigger system
     public var startSchedule: ProfileScheduleTime?
     public var stopSchedule: ProfileScheduleTime?
@@ -313,7 +322,14 @@ public enum SharedData {
       managedByChildId: String? = nil,
       syncVersion: Int? = nil,
       needsAppSelection: Bool? = nil,
-      scheduleLastStoppedAt: Date? = nil
+      scheduleLastStoppedAt: Date? = nil,
+      profileSchemaVersion: Int? = nil,
+      startTriggers: ProfileStartTriggers? = nil,
+      startNFCTagIds: [String]? = nil,
+      startQRCodeIds: [String]? = nil,
+      stopNFCTagIds: [String]? = nil,
+      stopQRCodeIds: [String]? = nil,
+      settingsReadable: Bool? = nil
     ) {
       self.id = id
       self.name = name
@@ -351,6 +367,13 @@ public enum SharedData {
       self.syncVersion = syncVersion
       self.needsAppSelection = needsAppSelection
       self.scheduleLastStoppedAt = scheduleLastStoppedAt
+      self.profileSchemaVersion = profileSchemaVersion
+      self.startTriggers = startTriggers
+      self.startNFCTagIds = startNFCTagIds
+      self.startQRCodeIds = startQRCodeIds
+      self.stopNFCTagIds = stopNFCTagIds
+      self.stopQRCodeIds = stopQRCodeIds
+      self.settingsReadable = settingsReadable
     }
   }
 
@@ -362,8 +385,17 @@ public enum SharedData {
     public var blockedProfileId: UUID
 
     public var startTime: Date
-    public var endTime: Date?
+    public var endTime: Date? {
+      didSet {
+        if endTime != nil {
+          origin = nil
+          timerEndTime = nil
+        }
+      }
+    }
     public var timerEndTime: Date?
+    public var usesCanonicalIdentity: Bool?
+    public var origin: SessionOrigin?
 
     public var breakStartTime: Date?
     public var breakEndTime: Date?
@@ -393,7 +425,9 @@ public enum SharedData {
       oneMoreMinuteStartTime: Date? = nil,
       breakEndDeadline: Date? = nil,
       oneMoreMinuteDeadline: Date? = nil,
-      pinnedProfileConfig: ProfileSnapshot? = nil
+      pinnedProfileConfig: ProfileSnapshot? = nil,
+      origin: SessionOrigin? = nil,
+      usesCanonicalIdentity: Bool? = nil
     ) {
       self.id = id
       self.tag = tag
@@ -409,7 +443,36 @@ public enum SharedData {
       self.breakEndDeadline = breakEndDeadline
       self.oneMoreMinuteDeadline = oneMoreMinuteDeadline
       self.pinnedProfileConfig = pinnedProfileConfig
+      self.usesCanonicalIdentity = usesCanonicalIdentity ?? (origin != nil ? true : nil)
+      self.origin = endTime == nil ? origin : nil
     }
+    private enum CodingKeys: String, CodingKey {
+      case usesCanonicalIdentity, id, tag, blockedProfileId, startTime, endTime, timerEndTime, breakStartTime, breakEndTime, forceStarted, oneMoreMinuteUsed, oneMoreMinuteStartTime, breakEndDeadline, oneMoreMinuteDeadline, pinnedProfileConfig, origin
+    }
+    public init(from decoder: Decoder) throws {
+      let values = try decoder.container(keyedBy: CodingKeys.self)
+      self.id = try values.decode(String.self, forKey: .id)
+      self.tag = try values.decode(String.self, forKey: .tag)
+      self.blockedProfileId = try values.decode(UUID.self, forKey: .blockedProfileId)
+      self.startTime = try values.decode(Date.self, forKey: .startTime)
+      self.endTime = try values.decodeIfPresent(Date.self, forKey: .endTime)
+      self.timerEndTime = try values.decodeIfPresent(Date.self, forKey: .timerEndTime)
+      self.breakStartTime = try values.decodeIfPresent(Date.self, forKey: .breakStartTime)
+      self.breakEndTime = try values.decodeIfPresent(Date.self, forKey: .breakEndTime)
+      self.forceStarted = try values.decode(Bool.self, forKey: .forceStarted)
+      self.oneMoreMinuteUsed = try values.decode(Bool.self, forKey: .oneMoreMinuteUsed)
+      self.oneMoreMinuteStartTime = try values.decodeIfPresent(Date.self, forKey: .oneMoreMinuteStartTime)
+      self.breakEndDeadline = try values.decodeIfPresent(Date.self, forKey: .breakEndDeadline)
+      self.oneMoreMinuteDeadline = try values.decodeIfPresent(Date.self, forKey: .oneMoreMinuteDeadline)
+      self.pinnedProfileConfig = try values.decodeIfPresent(ProfileSnapshot.self, forKey: .pinnedProfileConfig)
+      self.usesCanonicalIdentity = try values.decodeIfPresent(Bool.self, forKey: .usesCanonicalIdentity)
+      self.origin = try? values.decode(SessionOrigin.self, forKey: .origin)
+      if endTime != nil {
+        origin = nil
+        timerEndTime = nil
+      }
+    }
+
   }
 
   // MARK: – Persisted snapshots keyed by profile ID (UUID string)
@@ -483,8 +546,156 @@ public enum SharedData {
     }
   }
 
+  /// Effects passed here must be lock-free; they run only after verified publication.
+  @discardableResult
+  public static func commitOriginatingSession(
+    _ candidate: SessionSnapshot, expectedVictimId: String?, now: Date,
+    encode: (SessionSnapshot) throws -> Data = { try JSONEncoder().encode($0) },
+    onCommit: () -> Void = {}
+  ) -> Bool {
+    withLockStatus(blocking: true) { outcome in
+      guard outcome == .acquired, candidate.endTime == nil,
+        UUID(uuidString: candidate.id) != nil, let origin = candidate.origin,
+        let profile = profileSnapshots[candidate.blockedProfileId.uuidString],
+        ProfileConditionValidation.startRejection(for: profile, origin: origin) == nil,
+        let current = checkedActiveSession(),
+        current?.id == expectedVictimId,
+        current?.endTime == nil,
+        candidate.id != current?.id
+      else { return false }
+      if profile.stopConditions?.timer == true,
+        profile.stopConditions?.timerDurationMinutes != nil,
+        candidate.timerEndTime.map({ $0 > now }) != true
+      {
+        return false
+      }
+      guard var completed = checkedCompletedSessions() else { return false }
+      if var victim = current {
+        victim.endTime = now
+        completed.append(normalizedForEnd(victim))
+      }
+      guard commitSessionTransition(candidate, completed: completed, encode: encode) else { return false }
+      onCommit()
+      return true
+    }
+  }
+
+  /// Optional-optional distinguishes an idle store from corrupt authoritative state.
+  private static func checkedActiveSession() -> SessionSnapshot?? {
+    guard let raw = data(forKey: .activeScheduleSession, legacyKey: .activeScheduleSession) else {
+      return .some(nil)
+    }
+    do {
+      return .some(try JSONDecoder().decode(SessionSnapshot?.self, from: raw))
+    } catch {
+      return nil
+    }
+  }
+
+  private static func checkedCompletedSessions() -> [SessionSnapshot]? {
+    guard let raw = data(forKey: .completedScheduleSessions, legacyKey: .completedScheduleSessions) else { return [] }
+    return try? JSONDecoder().decode([SessionSnapshot].self, from: raw)
+  }
+
+  /// Stage all encodings before writes, then verify exact bytes before ownership effects.
+  private static func commitSessionTransition(
+    _ active: SessionSnapshot?, completed: [SessionSnapshot],
+    encode: (SessionSnapshot) throws -> Data = { try JSONEncoder().encode($0) },
+    profiles: [String: ProfileSnapshot]? = nil
+  ) -> Bool {
+    var writes: [(Key, Data)] = []
+    do {
+      let activeData = try active.map(encode) ?? JSONEncoder().encode(Optional<SessionSnapshot>.none)
+      let completedData = try completed.map(encode)
+      var array = Data("[".utf8)
+      for (index, item) in completedData.enumerated() {
+        if index > 0 { array.append(Data(",".utf8)) }
+        array.append(item)
+      }
+      array.append(Data("]".utf8))
+      guard try JSONDecoder().decode(SessionSnapshot?.self, from: activeData) == active,
+        try JSONDecoder().decode([SessionSnapshot].self, from: array) == completed
+      else { return false }
+      writes = [(.activeScheduleSession, activeData), (.completedScheduleSessions, array)]
+      if let profiles { writes.append((.profileSnapshots, try JSONEncoder().encode(profiles))) }
+    } catch {
+      Log.error("Session transition encoding failed", category: .session)
+      return false
+    }
+    let previous = writes.map { suite.object(forKey: $0.0.rawValue) }
+    for (key, bytes) in writes { suite.set(bytes, forKey: key.rawValue) }
+    guard writes.allSatisfy({ suite.data(forKey: $0.0.rawValue) == $0.1 }) else {
+      for (index, write) in writes.enumerated() {
+        if let value = previous[index] { suite.set(value, forKey: write.0.rawValue) } else { suite.removeObject(forKey: write.0.rawValue) }
+      }
+      Log.error("Session transition readback failed; previous values restored", category: .session)
+      return false
+    }
+    clearLegacy(.activeScheduleSession)
+    clearLegacy(.completedScheduleSessions)
+    if profiles != nil { clearLegacy(.profileSnapshots) }
+    return true
+  }
+
+  @discardableResult
+  public static func completeSession(
+    expectedSessionId: String, now: Date, requireTimerDeadline: Bool = false,
+    localSession: SessionSnapshot? = nil, allowUndecodableStore: Bool = false,
+    onComplete: () -> Void = {}
+  ) -> Bool {
+    withLockStatus(blocking: true) { outcome in
+      guard outcome == .acquired else { return false }
+      let checked = checkedActiveSession()
+      guard checked != nil || allowUndecodableStore else { return false }
+      let live = checked.flatMap { $0 }.flatMap { $0.endTime == nil ? $0 : nil }
+      guard var current = live ?? localSession,
+        current.id == expectedSessionId, current.endTime == nil,
+        var completed = checkedCompletedSessions()
+      else { return false }
+      if requireTimerDeadline {
+        guard let deadline = current.timerEndTime, now >= deadline else { return false }
+      }
+      let scheduled = current.origin?.kind == .schedule
+      current.endTime = now
+      completed.append(normalizedForEnd(current))
+      var updatedProfiles: [String: ProfileSnapshot]?
+      if scheduled {
+        var profiles = profileSnapshots
+        if var profile = profiles[current.blockedProfileId.uuidString] {
+          profile.scheduleLastStoppedAt = now
+          profiles[current.blockedProfileId.uuidString] = profile
+          updatedProfiles = profiles
+        }
+      }
+      guard commitSessionTransition(nil, completed: completed, profiles: updatedProfiles) else { return false }
+      onComplete()
+      return true
+    }
+  }
+
+  @discardableResult
+  public static func adoptAuthoritativeSession(
+    _ candidate: SessionSnapshot, expectedSessionId: String?, now: Date,
+    onAdopt: () -> Void = {}
+  ) -> Bool {
+    withLockStatus(blocking: true) { outcome in
+      guard outcome == .acquired, candidate.endTime == nil,
+        let checked = checkedActiveSession(), checked?.id == expectedSessionId,
+        var completed = checkedCompletedSessions()
+      else { return false }
+      if var previous = checked, previous.blockedProfileId != candidate.blockedProfileId {
+        previous.endTime = now
+        completed.append(normalizedForEnd(previous))
+      }
+      guard commitSessionTransition(candidate, completed: completed) else { return false }
+      onAdopt()
+      return true
+    }
+  }
+
   public static func createSessionForScheduler(for profileID: UUID) {
     withLock {
+      guard (profileSnapshots[profileID.uuidString]?.profileSchemaVersion ?? 1) < 2 else { return }
       activeSharedSession = SessionSnapshot(
         id: UUID().uuidString,
         tag: profileID.uuidString,
@@ -552,6 +763,7 @@ public enum SharedData {
     expectedVictimId: String?
   ) -> Bool {
     withLock {
+      guard (profileSnapshots[profileId.uuidString]?.profileSchemaVersion ?? 1) < 2 else { return false }
       if let current = activeSharedSession {
         if current.blockedProfileId == profileId {
           return true

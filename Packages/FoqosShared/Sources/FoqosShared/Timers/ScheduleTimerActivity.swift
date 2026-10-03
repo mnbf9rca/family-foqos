@@ -1,4 +1,5 @@
 import DeviceActivity
+import Foundation
 import UserNotifications
 
 public class ScheduleTimerActivity: TimerActivity {
@@ -9,9 +10,26 @@ public class ScheduleTimerActivity: TimerActivity {
   /// to cancel stale pre-activation reminder notifications.
   public static let allReminderCleanupRange: ClosedRange<Int> = 1...5
 
-  private let appBlocker: AppBlockerUtil
+  private let appBlocker: RestrictionApplying
+  private let registerTimer: (UUID, String, Int, Date) throws -> Date
+  private let cancelTimer: (UUID, String) -> Void
+  private let cancelReminders: (UUID) -> Void
 
-  public init() { self.appBlocker = AppBlockerUtil() }
+  public init(
+    applier: RestrictionApplying = AppBlockerUtil(),
+    registerTimer: @escaping (UUID, String, Int, Date) throws -> Date = StrategyTimerActivity.register,
+    cancelTimer: @escaping (UUID, String) -> Void = StrategyTimerActivity.cancel,
+    cancelReminders: @escaping (UUID) -> Void = { id in
+      let ids = allReminderCleanupRange.map { "pre-activation-reminder-\(id.uuidString)-\($0)" }
+      UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ids)
+      UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: ids)
+    }
+  ) {
+    self.appBlocker = applier
+    self.registerTimer = registerTimer
+    self.cancelTimer = cancelTimer
+    self.cancelReminders = cancelReminders
+  }
 
   public func getDeviceActivityName(from profileId: String) -> DeviceActivityName {
     // Since schedules were implemented before the timer activities, the profile id is used as the device activity name for
@@ -38,15 +56,21 @@ public class ScheduleTimerActivity: TimerActivity {
   public func start(for profile: SharedData.ProfileSnapshot) {
     let profileId = profile.id.uuidString
 
-    // Cancel any pre-activation reminders now that the start time has arrived,
-    // regardless of whether the profile actually starts (early returns below).
-    let reminderIds = Self.allReminderCleanupRange.map { "pre-activation-reminder-\(profile.id.uuidString)-\($0)" }
-    UNUserNotificationCenter.current().removePendingNotificationRequests(
-      withIdentifiers: reminderIds
-    )
-    UNUserNotificationCenter.current().removeDeliveredNotifications(
-      withIdentifiers: reminderIds
-    )
+    let isV2 = (profile.profileSchemaVersion ?? 1) >= 2
+    if isV2 {
+      if let rejection = ProfileConditionValidation.startRejection(for: profile, origin: .init(kind: .schedule)) {
+        // The privacy analyzer requires literal log messages.
+        switch rejection {
+        case "Please edit this profile before starting. Its start and stop settings need updating.": Log.warning("Please edit this profile before starting. Its start and stop settings need updating.", category: .timer)
+        case "This profile isn’t set to start this way. Please edit its start settings.": Log.warning("This profile isn’t set to start this way. Please edit its start settings.", category: .timer)
+        case "This profile has no stop for this start. Please edit it before starting.": Log.warning("This profile has no stop for this start. Please edit it before starting.", category: .timer)
+        default: Log.warning("Couldn’t start this profile. Please try again.", category: .timer)
+        }
+        return
+      }
+    } else {
+      cancelReminders(profile.id)
+    }
 
     guard profile.needsAppSelection != true else {
       Log.info("Skipping scheduled start until profile selection is confirmed", category: .timer)
@@ -61,16 +85,16 @@ public class ScheduleTimerActivity: TimerActivity {
         stopSchedule: activeStopSchedule,
         lastStoppedAt: profile.scheduleLastStoppedAt)
       {
-        Log.info("Start schedule timer activity for \(profileId), should not be active now", category: .timer)
+        Log.info("Start schedule timer activity for \(profile.id.uuidString), should not be active now", category: .timer)
         return
       }
     } else if let schedule = profile.schedule {
       guard schedule.isTodayScheduled() else {
-        Log.info("Start schedule timer activity for \(profileId), not scheduled for today", category: .timer)
+        Log.info("Start schedule timer activity for \(profile.id.uuidString), not scheduled for today", category: .timer)
         return
       }
       guard schedule.olderThanOneMinute() else {
-        Log.info("Start schedule timer activity for \(profileId), schedule is too new", category: .timer)
+        Log.info("Start schedule timer activity for \(profile.id.uuidString), schedule is too new", category: .timer)
         return
       }
       if let stoppedAt = profile.scheduleLastStoppedAt,
@@ -78,20 +102,20 @@ public class ScheduleTimerActivity: TimerActivity {
         windowStart <= stoppedAt
       {
         Log.info(
-          "Start schedule timer activity for \(profileId), window already stopped — suppressing (#229)",
+          "Start schedule timer activity for \(profile.id.uuidString), window already stopped — suppressing (#229)",
           category: .timer)
         return
       }
     } else {
-      Log.info("Start schedule timer activity for \(profileId), no schedule found", category: .timer)
+      Log.info("Start schedule timer activity for \(profile.id.uuidString), no schedule found", category: .timer)
       return
     }
 
-    Log.info("Start schedule timer activity for \(profileId)", category: .timer)
+    Log.info("Start schedule timer activity for \(profile.id.uuidString)", category: .timer)
 
     let existingSession = SharedData.getActiveSharedSession()
     if let existingSession, existingSession.blockedProfileId == profile.id {
-      Log.info("Start schedule timer for \(profileId), continuing active session", category: .timer)
+      Log.info("Start schedule timer for \(profile.id.uuidString), continuing active session", category: .timer)
       return
     }
     if let existingSession {
@@ -107,7 +131,7 @@ public class ScheduleTimerActivity: TimerActivity {
       )
       guard case .allowed = decision else {
         Log.info(
-          "Start schedule timer for \(profileId), NOT taking over protected session for "
+          "Start schedule timer for \(profile.id.uuidString), NOT taking over protected session for "
             + "\(existingSession.blockedProfileId.uuidString): \(decision)",
           category: .timer)
         Self.postSkippedStartNotification(
@@ -118,6 +142,43 @@ public class ScheduleTimerActivity: TimerActivity {
       }
     }
 
+    if isV2 {
+      let now = Date()
+      let sessionId = UUID().uuidString
+      let minutes = profile.stopConditions?.timer == true ? profile.stopConditions?.timerDurationMinutes : nil
+      var deadline: Date?
+      if let minutes {
+        do { deadline = try registerTimer(profile.id, sessionId, minutes, now) } catch {
+          cancelTimer(profile.id, sessionId)
+          Log.warning("This profile couldn’t start because its timer couldn’t be set. Please try again.", category: .timer)
+          return
+        }
+      }
+      let candidate = SharedData.SessionSnapshot(
+        id: sessionId, tag: profileId, blockedProfileId: profile.id,
+        startTime: now, timerEndTime: deadline, forceStarted: true, origin: .init(kind: .schedule))
+      guard
+        SharedData.commitOriginatingSession(
+          candidate, expectedVictimId: existingSession?.id, now: now,
+          onCommit: {
+            self.appBlocker.activateRestrictions(for: profile)
+          })
+      else {
+        if minutes != nil { cancelTimer(profile.id, sessionId) }
+        Log.warning("Couldn’t start this profile. Please try again.", category: .timer)
+        return
+      }
+      if let existingSession {
+        if (SharedData.snapshot(for: existingSession.blockedProfileId.uuidString)?.profileSchemaVersion ?? 1) < 2 {
+          DeviceActivityCenter().stopMonitoring([StrategyTimerActivity().getDeviceActivityName(from: existingSession.blockedProfileId.uuidString)])
+        } else {
+          cancelTimer(existingSession.blockedProfileId, existingSession.id)
+        }
+      }
+      cancelReminders(profile.id)
+      return
+    }
+
     guard
       SharedData.startSchedulerSessionTakingOver(
         profileId: profile.id,
@@ -125,7 +186,7 @@ public class ScheduleTimerActivity: TimerActivity {
       )
     else {
       Log.info(
-        "Start schedule timer for \(profileId), aborting takeover — active session changed under us",
+        "Start schedule timer for \(profile.id.uuidString), aborting takeover — active session changed under us",
         category: .timer)
       return
     }
@@ -136,7 +197,7 @@ public class ScheduleTimerActivity: TimerActivity {
     let profileId = profile.id.uuidString
 
     guard let activeSession = SharedData.getActiveSharedSession() else {
-      Log.info("Stop schedule timer activity for \(profileId), no active session found", category: .timer)
+      Log.info("Stop schedule timer activity for \(profile.id.uuidString), no active session found", category: .timer)
       return
     }
 
@@ -149,14 +210,19 @@ public class ScheduleTimerActivity: TimerActivity {
     )
     guard case .allowed = decision else {
       Log.info(
-        "Stop schedule timer activity for \(profileId) refused by policy",
+        "Stop schedule timer activity for \(profile.id.uuidString) refused by policy",
         category: .timer
       )
       return
     }
 
-    if SharedData.endActiveSharedSession(expectedSessionId: activeSession.id) {
-      appBlocker.deactivateRestrictions()
+    if SharedData.completeSession(
+      expectedSessionId: activeSession.id, now: Date(),
+      onComplete: {
+        self.appBlocker.deactivateRestrictions()
+      })
+    {
+      cancelTimer(profile.id, activeSession.id)
     }
   }
 

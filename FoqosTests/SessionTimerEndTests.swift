@@ -67,6 +67,7 @@ final class SessionTimerEndTests: XCTestCase {
   func testSnapshotColdReconstructionUpdatesAndEndClear() throws {
     let now = Date()
     let session = makeSession(now: now)
+    session.origin = .init(kind: .nfc, key: "UID", namespace: .nfcUID)
     XCTAssertNil(session.timerEndTime)
     session.timerEndTime = now.addingTimeInterval(900)
     let data = try JSONEncoder().encode(session.toSnapshot())
@@ -77,6 +78,7 @@ final class SessionTimerEndTests: XCTestCase {
     BlockedProfileSession.upsertSessionFromSnapshot(in: cold.mainContext, withSnapshot: snapshot)
     let restored = try XCTUnwrap(BlockedProfileSession.findSession(byID: session.id, in: cold.mainContext))
     XCTAssertEqual(restored.timerEndTime, session.timerEndTime)
+    XCTAssertEqual(restored.origin, session.origin)
     var updated = snapshot
     updated.timerEndTime = nil
     BlockedProfileSession.upsertSessionFromSnapshot(in: cold.mainContext, withSnapshot: updated)
@@ -88,7 +90,13 @@ final class SessionTimerEndTests: XCTestCase {
     session.endSession(now: now)
     XCTAssertNil(session.timerEndTime)
     var legacy = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    legacy["origin"] = ["kind": "unknown"]
+    let malformed = try JSONDecoder().decode(SharedData.SessionSnapshot.self, from: JSONSerialization.data(withJSONObject: legacy))
+    XCTAssertEqual(malformed.id, session.id)
+    XCTAssertNil(malformed.origin)
     legacy.removeValue(forKey: "timerEndTime")
+    legacy.removeValue(forKey: "origin")
+    legacy.removeValue(forKey: "usesCanonicalIdentity")
     XCTAssertNil(
       try JSONDecoder().decode(
         SharedData.SessionSnapshot.self,
@@ -143,16 +151,18 @@ final class SessionTimerEndTests: XCTestCase {
     context.insert(profile)
     try context.save()
     let manager = StrategyManager()
+    defer { manager.stopTimer() }
+    let id = UUID()
     manager.startRemoteSession(
-      context: context, profileId: profile.id, sessionId: UUID(), startTime: now,
-      timerEndTime: now.addingTimeInterval(900), originDevice: "B")
+      context: context, profileId: profile.id, sessionId: id, startTime: now,
+      timerEndTime: now.addingTimeInterval(900), originDevice: "B", serverModificationDate: now)
     let session = try XCTUnwrap(manager.activeSession)
     XCTAssertEqual(session.tag, "remote-sync")
     XCTAssertEqual(session.timerEndTime, now.addingTimeInterval(900))
     XCTAssertEqual(SharedData.getActiveSharedSession()?.timerEndTime, now.addingTimeInterval(900))
     manager.startRemoteSession(
-      context: context, profileId: profile.id, sessionId: UUID(), startTime: now,
-      timerEndTime: nil, originDevice: "B")
+      context: context, profileId: profile.id, sessionId: id, startTime: now,
+      timerEndTime: nil, originDevice: "B", serverModificationDate: now)
     XCTAssertEqual(manager.activeSession?.id, session.id)
     XCTAssertNil(session.timerEndTime)
     XCTAssertNil(SharedData.getActiveSharedSession()?.timerEndTime)
@@ -172,6 +182,10 @@ final class SessionTimerEndTests: XCTestCase {
       let profile = BlockedProfiles(name: "Persisted")
       context.insert(profile)
       let session = BlockedProfileSession(tag: "timer", blockedProfile: profile, startTime: now)
+      session.origin = .init(kind: .qr, key: "DIGEST", namespace: .qrDigest)
+      session.usesCanonicalIdentity = true
+      session.sessionServerModificationDate = now
+      session.sessionStartSyncPending = true
       session.timerEndTime = now.addingTimeInterval(900)
       context.insert(session)
       try context.save()
@@ -183,5 +197,43 @@ final class SessionTimerEndTests: XCTestCase {
       configurations: [ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)])
     let restored = try XCTUnwrap(BlockedProfileSession.findSession(byID: id, in: reopened.mainContext))
     XCTAssertEqual(restored.timerEndTime, now.addingTimeInterval(900))
+    XCTAssertEqual(restored.origin, .init(kind: .qr, key: "DIGEST", namespace: .qrDigest))
+    XCTAssertEqual(restored.usesCanonicalIdentity, true)
+    XCTAssertEqual(restored.sessionServerModificationDate, now)
+    XCTAssertTrue(restored.sessionStartSyncPending)
   }
+  func testCASWinnerReplacesIdentityAndCancelsOnlyCandidateTimer() throws {
+    let now = Date()
+    let candidate = makeSession(now: now)
+    candidate.origin = .init(kind: .nfc, key: "LOSER", namespace: .nfcUID)
+    candidate.usesCanonicalIdentity = true
+    candidate.timerEndTime = now.addingTimeInterval(900)
+    SharedData.createActiveSharedSession(for: candidate.toSnapshot())
+    let oldId = candidate.id
+    let winnerId = UUID().uuidString
+    let winnerOrigin = SessionOrigin(kind: .qr, key: "WINNER", namespace: .qrDigest)
+    var canceled: [String] = []
+    let sut = StrategyManager(
+      registerTimer: { _, _, _, _ in
+        XCTFail("Adoption never registers")
+        return now
+      }, cancelTimer: { _, id in canceled.append(id) })
+    sut.activeSession = candidate
+    sut.reconcileSessionTiming(
+      sessionId: oldId, profileId: candidate.blockedProfile.id, startTime: now,
+      timerEndTime: now.addingTimeInterval(2207), originDevice: "other-owner", context: context, canonicalSessionId: winnerId, origin: winnerOrigin)
+    XCTAssertEqual(candidate.id, winnerId)
+    XCTAssertEqual(candidate.origin, winnerOrigin)
+    XCTAssertEqual(SharedData.getActiveSharedSession()?.id, winnerId)
+    XCTAssertEqual(SharedData.getActiveSharedSession()?.origin, winnerOrigin)
+    XCTAssertEqual(canceled, [oldId])
+    XCTAssertEqual(candidate.timerEndTime, now.addingTimeInterval(2207))
+    sut.reconcileSessionTiming(
+      sessionId: oldId, profileId: candidate.blockedProfile.id, startTime: now,
+      timerEndTime: nil, originDevice: "stale-owner", context: context, canonicalSessionId: UUID().uuidString, origin: nil)
+    XCTAssertEqual(candidate.id, winnerId)
+    XCTAssertEqual(candidate.origin, winnerOrigin)
+    XCTAssertEqual(canceled, [oldId])
+  }
+
 }
