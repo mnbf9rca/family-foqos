@@ -397,7 +397,7 @@ struct SyncedProfile: Codable, Equatable {
     func keys(_ list: [String], _ scalar: String?) -> [String] {
       profileSchemaVersion == 2 ? scalar.map { [$0] } ?? [] : list
     }
-    return TriggerValidator().validate(
+    return ProfileConditionValidation.configurationErrors(
       start: startTriggers ?? ProfileStartTriggers(), stop: stopConditions ?? ProfileStopConditions(),
       startNFCTagIds: keys(startNFCTagIds, startNFCTagId), startQRCodeIds: keys(startQRCodeIds, startQRCodeId),
       stopNFCTagIds: keys(stopNFCTagIds, stopNFCTagId), stopQRCodeIds: keys(stopQRCodeIds, stopQRCodeId),

@@ -660,6 +660,15 @@ class BlockedProfiles {
   }
 
   static func getSnapshot(for profile: BlockedProfiles) -> SharedData.ProfileSnapshot {
+    let start = profile.startTriggersData.flatMap { try? JSONDecoder().decode(ProfileStartTriggers.self, from: $0) }
+    let stop = profile.stopConditionsData.flatMap { try? JSONDecoder().decode(ProfileStopConditions.self, from: $0) }
+    let readable =
+      !profile.isNewerSchemaVersion && start != nil && stop != nil
+      && (profile.startScheduleData == nil || profile.startSchedule != nil)
+      && (profile.stopScheduleData == nil || profile.stopSchedule != nil)
+    func keys(_ list: [String], _ scalar: String?) -> [String] {
+      profile.profileSchemaVersion == 2 ? scalar.map { [$0] } ?? [] : list
+    }
     return SharedData.ProfileSnapshot(
       id: profile.id,
       name: profile.name,
@@ -691,12 +700,19 @@ class BlockedProfiles {
       stopConditionsSchedule: profile.stopConditions.schedule,
       geofenceRule: profile.geofenceRule,
       disableBackgroundStops: profile.disableBackgroundStops,
-      stopConditions: profile.stopConditions,
+      stopConditions: stop,
       isManaged: profile.isManaged,
       managedByChildId: profile.managedByChildId,
       syncVersion: profile.syncVersion,
       needsAppSelection: profile.needsAppSelection,
-      scheduleLastStoppedAt: profile.scheduleLastStoppedAt
+      scheduleLastStoppedAt: profile.scheduleLastStoppedAt,
+      profileSchemaVersion: profile.profileSchemaVersion,
+      startTriggers: start,
+      startNFCTagIds: keys(profile.startNFCTagIds, profile.startNFCTagId),
+      startQRCodeIds: keys(profile.startQRCodeIds, profile.startQRCodeId),
+      stopNFCTagIds: keys(profile.stopNFCTagIds, profile.stopNFCTagId),
+      stopQRCodeIds: keys(profile.stopQRCodeIds, profile.stopQRCodeId),
+      settingsReadable: readable
     )
   }
 

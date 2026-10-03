@@ -248,4 +248,19 @@ final class ScheduleTimerActivityTests: XCTestCase {
 
     XCTAssertEqual(spy.count, 1)
   }
+  func testPreUpdateV1SnapshotSurvivesBeforeFirstAppLaunch() throws {
+    let now = Date()
+    var old = snapshot(id: UUID())
+    old.schedule = BlockedProfileSchedule(
+      days: Weekday.allCases, startHour: 0, startMinute: 0, endHour: 23, endMinute: 59,
+      updatedAt: now.addingTimeInterval(-3600))
+    let data = try JSONEncoder().encode(old)
+    let decoded = try JSONDecoder().decode(SharedData.ProfileSnapshot.self, from: data)
+    XCTAssertNil(decoded.profileSchemaVersion)
+    XCTAssertNil(decoded.startTriggers)
+    XCTAssertNil(decoded.settingsReadable)
+    ScheduleTimerActivity().start(for: decoded)
+    XCTAssertEqual(SharedData.getActiveSharedSession()?.blockedProfileId, old.id)
+  }
+
 }

@@ -256,6 +256,15 @@ public enum SharedData {
 
     public var schedule: BlockedProfileSchedule?
 
+    // Full admission fields are absent only on the shipped pre-update V1 wire.
+    public var profileSchemaVersion: Int?
+    public var startTriggers: ProfileStartTriggers?
+    public var startNFCTagIds: [String]?
+    public var startQRCodeIds: [String]?
+    public var stopNFCTagIds: [String]?
+    public var stopQRCodeIds: [String]?
+    public var settingsReadable: Bool?
+
     // V2 trigger system
     public var startSchedule: ProfileScheduleTime?
     public var stopSchedule: ProfileScheduleTime?
@@ -313,7 +322,14 @@ public enum SharedData {
       managedByChildId: String? = nil,
       syncVersion: Int? = nil,
       needsAppSelection: Bool? = nil,
-      scheduleLastStoppedAt: Date? = nil
+      scheduleLastStoppedAt: Date? = nil,
+      profileSchemaVersion: Int? = nil,
+      startTriggers: ProfileStartTriggers? = nil,
+      startNFCTagIds: [String]? = nil,
+      startQRCodeIds: [String]? = nil,
+      stopNFCTagIds: [String]? = nil,
+      stopQRCodeIds: [String]? = nil,
+      settingsReadable: Bool? = nil
     ) {
       self.id = id
       self.name = name
@@ -351,6 +367,13 @@ public enum SharedData {
       self.syncVersion = syncVersion
       self.needsAppSelection = needsAppSelection
       self.scheduleLastStoppedAt = scheduleLastStoppedAt
+      self.profileSchemaVersion = profileSchemaVersion
+      self.startTriggers = startTriggers
+      self.startNFCTagIds = startNFCTagIds
+      self.startQRCodeIds = startQRCodeIds
+      self.stopNFCTagIds = stopNFCTagIds
+      self.stopQRCodeIds = stopQRCodeIds
+      self.settingsReadable = settingsReadable
     }
   }
 

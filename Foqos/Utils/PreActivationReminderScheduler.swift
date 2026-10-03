@@ -37,7 +37,7 @@ enum PreActivationReminderScheduler {
   static func reconcileMissingSnapshots(context: ModelContext) {
     do {
       let profiles = try BlockedProfiles.fetchProfiles(in: context).valid
-      for profile in profiles where SharedData.snapshot(for: profile.id.uuidString) == nil {
+      for profile in profiles {
         BlockedProfiles.updateSnapshot(for: profile)
       }
     } catch {
