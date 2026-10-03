@@ -11,8 +11,7 @@ Reset Sync again.
       blocked-app selections; profiles/locations/emergency settings converge (§8.5, §8.1).
 - [ ] **Reset Sync — Clear App Selections:** other device's profiles show
       `needsAppSelection`; must re-select apps; origin keeps its own selections (§8.5 E-2).
-- [ ] **Concurrent edit:** edit the same profile on both devices; both converge, the
-      loser surfaces a conflict banner, no data lost (branch E, I8).
+- [ ] **Concurrent edit:** edit the same profile field on both devices while offline, then reconnect and sync one device at a time; both converge on the deterministic winner. The device that syncs second shows the conflict banner whichever edit wins; the other may show none. Check before relaunching because the banner is held in memory only. Fields other than the conflicting edit remain unchanged (branch E, I8).
 - [ ] **Device offline across a reset:** offline device rejoins → applies the current
       command once (§8.3), re-seeds its local data (I11); nothing deleted (N1).
 - [ ] **Toggle off → local delete → on:** delete propagates on re-enable via the surviving

@@ -183,7 +183,7 @@ final class ProfileSessionRecordTests: XCTestCase {
       let malformed = try XCTUnwrap(ProfileSessionRecord(from: wire))
       XCTAssertTrue(malformed.isActive)
       XCTAssertNil(malformed.origin)
-      XCTAssertEqual(malformed.sessionId, id)
+      XCTAssertNil(malformed.sessionId)
       session.applyUpdate(isActive: false, sequenceNumber: 2, deviceId: "mirror", endTime: now)
       XCTAssertEqual(session.sessionId, id)
       XCTAssertNil(session.origin)
@@ -192,6 +192,28 @@ final class ProfileSessionRecordTests: XCTestCase {
       XCTAssertNil(session.sessionId)
       XCTAssertNil(session.origin)
     }
+  }
+
+  func testOlderWriterNewStartCannotReusePreviousCanonicalIdentityOrSameKey() throws {
+    let now = Date()
+    let oldId = UUID().uuidString
+    var session = ProfileSessionRecord(profileId: UUID())
+    session.applyUpdate(
+      isActive: true, sequenceNumber: 10, deviceId: "new-build", startTime: now,
+      sessionId: oldId, origin: .init(kind: .nfc, key: "OLD", namespace: .nfcUID))
+    let record = session.toCKRecord(in: CKRecordZone.ID(zoneName: "Test"))
+    // Old clients change known fields but leave new, unknown fields on the fetched CKRecord.
+    record["startTime"] = now.addingTimeInterval(600)
+    record["sequenceNumber"] = 12
+    record["lastModifiedBy"] = "old-build"
+    let newerStart = try XCTUnwrap(ProfileSessionRecord(from: record))
+
+    XCTAssertTrue(newerStart.isActive)
+    XCTAssertNil(newerStart.sessionId)
+    XCTAssertNil(newerStart.origin)
+    XCTAssertEqual(newerStart.startTime, now.addingTimeInterval(600))
+    record["isActive"] = false
+    XCTAssertNil(ProfileSessionRecord(from: record)?.sessionId)
   }
 
 }
