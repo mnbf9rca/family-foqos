@@ -34,6 +34,7 @@ struct BlockedProfileCardData {
   let strategyData: Data?
   let profileSchemaVersion: Int
   let scheduleIsOutOfSync: Bool
+  let timerEndTime: Date?
 }
 
 extension BlockedProfiles {
@@ -72,7 +73,8 @@ extension BlockedProfiles {
       stopSchedule: stopSchedule,
       strategyData: strategyData,
       profileSchemaVersion: profileSchemaVersion,
-      scheduleIsOutOfSync: scheduleIsOutOfSync
+      scheduleIsOutOfSync: scheduleIsOutOfSync,
+      timerEndTime: sessions.valid.first(where: { $0.isActive })?.timerEndTime
     )
   }
 }
