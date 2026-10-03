@@ -81,7 +81,15 @@ struct QRCodeView: View {
     }
   }
 
+  static func makePayload(for profile: BlockedProfiles) throws -> ProfileTagPayload {
+    try ProfileTagPayload.prepare(for: profile, type: .qr)
+  }
+
   private func generateQRCode(from string: String) {
+    qrCodeImage = Self.image(for: string)
+  }
+
+  static func image(for string: String) -> UIImage? {
     // Create the QR code filter
     let context = CIContext()
     let filter = CIFilter.qrCodeGenerator()
@@ -99,8 +107,9 @@ struct QRCodeView: View {
 
       // Convert to UIImage
       if let cgImage = context.createCGImage(scaledImage, from: scaledImage.extent) {
-        self.qrCodeImage = UIImage(cgImage: cgImage)
+        return UIImage(cgImage: cgImage)
       }
     }
+    return nil
   }
 }

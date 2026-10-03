@@ -21,6 +21,17 @@ class SavedTag {
     self.syncVersion = syncVersion
   }
 
+  static func enroll(event: TagEvent, name: String, in context: ModelContext) throws -> SavedTag {
+    guard let id = event.matchingKey else { throw ProfileTagLink.Failure.invalidTag }
+    let existing = try find(byID: id, in: context)
+    let tag = try findOrCreate(id: id, kind: event.type.rawValue, name: name, in: context)
+    do { try context.save() } catch {
+      if existing == nil { context.delete(tag) }
+      throw error
+    }
+    return tag
+  }
+
   static func recordName(for id: String) -> String {
     "SavedTag_" + QRCodeHasher.rawHash(id)
   }

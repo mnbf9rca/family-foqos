@@ -24,17 +24,3 @@ final class TriggerValidator {
     )
   }
 }
-
-extension TriggerValidator {
-  /// Length, in minutes, of the repeating DeviceActivity window a start/stop
-  /// time pair produces. Computed modulo a 24h day so it is correct for both
-  /// same-day windows (stop after start) and cross-midnight windows (stop before
-  /// start). Returns 0 when the two times are identical.
-  static func scheduleWindowMinutes(
-    startHour: Int, startMinute: Int, stopHour: Int, stopMinute: Int
-  ) -> Int {
-    ProfileConditionValidation.scheduleWindowMinutes(
-      startHour: startHour, startMinute: startMinute, stopHour: stopHour, stopMinute: stopMinute
-    )
-  }
-}

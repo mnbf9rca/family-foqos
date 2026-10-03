@@ -403,10 +403,10 @@ final class StrategyManagerStopTests: XCTestCase {
       var rejection: String?
       strategy.onErrorMessage = { rejection = $0 }
       let scanner = try XCTUnwrap(strategy.stopBlocking(context: context, session: session) as? LabeledCodeScannerView)
-      scanner.onScanResult(.success((hash: "wrong", rawHash: "also-wrong")))
+      scanner.onScanResult(.success(QRScanResult(hash: "wrong", rawHash: "also-wrong")))
       XCTAssertTrue(session.isActive)
       XCTAssertNotNil(rejection)
-      scanner.onScanResult(.success((hash: QRCodeHasher.hash(payload), rawHash: QRCodeHasher.rawHash(payload))))
+      scanner.onScanResult(.success(QRScanResult(hash: QRCodeHasher.hash(payload), rawHash: QRCodeHasher.rawHash(payload))))
       XCTAssertFalse(session.isActive)
     }
   }

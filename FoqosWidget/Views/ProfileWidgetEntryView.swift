@@ -194,10 +194,7 @@ struct ProfileWidgetEntryView: View {
     if profile.reminderTimeInSeconds != nil { count += 1 }
     if profile.physicalUnblockNFCTagId != nil { count += 1 }
     if profile.physicalUnblockQRCodeId != nil { count += 1 }
-    let hasSchedule =
-      (profile.startTriggersSchedule == true && profile.startSchedule?.isActive == true)
-      || (profile.stopConditionsSchedule == true && profile.stopSchedule?.isActive == true)
-    if hasSchedule { count += 1 }
+    if profile.hasActiveSchedule { count += 1 }
     return count
   }
 }

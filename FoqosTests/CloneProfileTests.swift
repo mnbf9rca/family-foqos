@@ -228,19 +228,36 @@ final class CloneProfileTests: XCTestCase {
     XCTAssertNil(session.endTime)
   }
 
-  func testInvalidSchedulePairsCannotBeDuplicated() throws {
+  func testIndependentSchedulePairCloneMatrix() throws {
     let now = Date()
     let source = try makeScheduledProfile(now: now)
-    for minute in [0, 14] {
-      source.stopSchedule = .init(days: [.friday], hour: 21, minute: minute, updatedAt: now)
+    let cases: [([Weekday], Int, Int, String?)] = [
+      ([.monday], 21, 0, "Choose different moments for scheduled start and stop."),
+      ([], 21, 0, "Choose the days and time for this schedule."),
+      ([.monday], 24, 0, "Choose the days and time for this schedule."),
+      ([.friday], 21, 0, nil),
+      ([.monday], 21, 1, nil),
+      ([.monday], 21, 14, nil),
+    ]
+    for (days, hour, minute, expectedError) in cases {
+      source.stopSchedule = .init(days: days, hour: hour, minute: minute, updatedAt: now)
       try context.save()
       BlockedProfiles.updateSnapshot(for: source)
       let snapshot = SharedData.snapshot(for: source.id.uuidString)
-      let expected = minute == 0 ? "Choose different moments for scheduled start and stop." : "A scheduled window must be at least 15 minutes long"
-      XCTAssertThrowsError(try BlockedProfiles.cloneProfile(source, in: context, newName: "Invalid copy")) { error in
-        XCTAssertEqual(error.localizedDescription, expected)
+      let existingIds = Set(try BlockedProfiles.fetchProfiles(in: context).map(\.id))
+      if let expectedError {
+        XCTAssertThrowsError(try BlockedProfiles.cloneProfile(source, in: context, newName: "Invalid copy")) { error in
+          XCTAssertEqual(error.localizedDescription, expectedError)
+        }
+        XCTAssertEqual(Set(try BlockedProfiles.fetchProfiles(in: context).map(\.id)), existingIds)
+      } else {
+        let clone = try BlockedProfiles.cloneProfile(source, in: context, newName: "Copy")
+        XCTAssertFalse(clone.hasInvalidConditionSettings)
+        XCTAssertEqual(clone.stopSchedule?.days, days)
+        XCTAssertEqual(clone.stopSchedule?.hour, hour)
+        XCTAssertEqual(clone.stopSchedule?.minute, minute)
+        XCTAssertNotNil(SharedData.snapshot(for: clone.id.uuidString))
       }
-      XCTAssertEqual(try BlockedProfiles.fetchProfiles(in: context).map(\.id), [source.id])
       XCTAssertEqual(SharedData.snapshot(for: source.id.uuidString), snapshot)
     }
   }

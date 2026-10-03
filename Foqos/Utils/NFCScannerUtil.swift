@@ -1,9 +1,19 @@
 @preconcurrency import CoreNFC  // NFCTagReaderSession, NFCNDEFReaderSession, tag types lack Sendable
 import SwiftUI
 
-struct NFCResult: Equatable {
+struct NFCResult: Equatable, Sendable {
   var id: String
   var dateScanned: Date
+  var event: TagEvent? = nil
+
+  static func read(id: String, message: NFCNDEFMessage?, error: Error?, now: Date) throws -> NFCResult {
+    let blank = (error as? NFCReaderError)?.code == .ndefReaderSessionErrorZeroLengthMessage
+    guard error == nil || blank else { throw ProfileTagLink.Failure.read(.nfc) }
+    return NFCResult(
+      id: id, dateScanned: now,
+      event: try ProfileTagLink.scannedEvent(
+        type: .nfc, urls: try ProfileTagLink.uriURLs(blank ? nil : message, requireValidRecords: false), legacyKey: id))
+  }
 }
 
 @MainActor
@@ -11,6 +21,7 @@ class NFCScannerUtil: NSObject, ObservableObject {
   // Callback closures for handling results and errors
   var onTagScanned: ((NFCResult) -> Void)?
   var onError: ((String) -> Void)?
+  var onCancel: (() -> Void)?
 
   private var nfcSession: NFCReaderSession?
   private var urlToWrite: String?
@@ -60,6 +71,7 @@ class NFCScannerUtil: NSObject, ObservableObject {
 
 private struct ScannerSessionBox: @unchecked Sendable {  // SAFETY: NFCTagReaderSession is only used on CoreNFC's internal queue
   let session: NFCTagReaderSession
+  var identity: ObjectIdentifier { ObjectIdentifier(session) }
 
   func connect(to tag: NFCTag, completionHandler: @escaping @Sendable (Error?) -> Void) {
     session.connect(to: tag, completionHandler: completionHandler)
@@ -107,6 +119,10 @@ private struct ScannerMiFareTagBox: @unchecked Sendable {  // SAFETY: NFCMiFareT
   func readNDEF(completionHandler: @escaping @Sendable (NFCNDEFMessage?, (any Error)?) -> Void) {
     tag.readNDEF(completionHandler: completionHandler)
   }
+  func queryNDEFStatus(completionHandler: @escaping @Sendable (NFCNDEFStatus, Int, (any Error)?) -> Void) {
+    tag.queryNDEFStatus(completionHandler: completionHandler)
+  }
+
 }
 
 private struct ScannerISO15693TagBox: @unchecked Sendable {  // SAFETY: NFCISO15693Tag is only used on CoreNFC's internal queue
@@ -117,6 +133,10 @@ private struct ScannerISO15693TagBox: @unchecked Sendable {  // SAFETY: NFCISO15
   func readNDEF(completionHandler: @escaping @Sendable (NFCNDEFMessage?, (any Error)?) -> Void) {
     tag.readNDEF(completionHandler: completionHandler)
   }
+  func queryNDEFStatus(completionHandler: @escaping @Sendable (NFCNDEFStatus, Int, (any Error)?) -> Void) {
+    tag.queryNDEFStatus(completionHandler: completionHandler)
+  }
+
 }
 
 private struct ScannerNDEFTagBox: @unchecked Sendable {  // SAFETY: NFCNDEFTag is only used on CoreNFC's internal queue
@@ -143,7 +163,9 @@ extension NFCScannerUtil: NFCTagReaderSessionDelegate {
 
   nonisolated func tagReaderSession(_ session: NFCTagReaderSession, didInvalidateWithError error: Error) {
     let readerError = error as? NFCReaderError
+    let identity = ObjectIdentifier(session)
     Task { @MainActor in
+      guard self.nfcSession.map({ ObjectIdentifier($0) }) == identity else { return }
       // After a successful tag read, any invalidation error is expected and benign
       // (e.g., systemIsBusy during teardown, userCanceled from programmatic invalidate)
       guard !self.scanCompleted else { return }
@@ -151,12 +173,12 @@ extension NFCScannerUtil: NFCTagReaderSessionDelegate {
       if let readerError = readerError {
         switch readerError.code {
         case .readerSessionInvalidationErrorUserCanceled:
-          break  // User dismissed the NFC sheet without scanning
+          self.onCancel?()
         default:
-          self.onError?(readerError.localizedDescription)
+          self.onError?(ProfileTagLink.Failure.read(.nfc).localizedDescription)
         }
       } else {
-        self.onError?(error.localizedDescription)
+        self.onError?(ProfileTagLink.Failure.read(.nfc).localizedDescription)
       }
     }
   }
@@ -168,8 +190,13 @@ extension NFCScannerUtil: NFCTagReaderSessionDelegate {
     let tagBox = ScannerTagBox(tag: tag)
 
     sessionBox.connect(to: tagBox.tag) { error in
-      if let error = error {
-        sessionBox.invalidate(errorMessage: "Connection error: \(error.localizedDescription)")
+      if error != nil {
+        Task { @MainActor in
+          guard self.nfcSession.map({ ObjectIdentifier($0) }) == sessionBox.identity else { return }
+          self.scanCompleted = true
+          self.onError?(ProfileTagLink.Failure.read(.nfc).localizedDescription)
+        }
+        sessionBox.invalidate(errorMessage: ProfileTagLink.Failure.read(.nfc).localizedDescription)
         return
       }
 
@@ -187,48 +214,59 @@ extension NFCScannerUtil: NFCTagReaderSessionDelegate {
   // MARK: - NFC Read Operations (nonisolated - all work happens on CoreNFC's queue)
 
   nonisolated private func readMiFareTag(_ tagBox: ScannerMiFareTagBox, sessionBox: ScannerSessionBox) {
-    let tagIdentifier = tagBox.identifier.hexEncodedString()
-    let redactedTagIdentifier = DebugRedaction.physicalUnblockNFCTagIdForLog(tagIdentifier)
-    tagBox.readNDEF { (message: NFCNDEFMessage?, error: Error?) in
-      if error != nil || message == nil {
-        if let error = error {
-          Log.info("⚠️ NDEF read failed (non-critical): \(error.localizedDescription). using tag id: \(redactedTagIdentifier)", category: .nfc)
-        }
-
-        // Still use the identifier - works for all tag types
-        self.completeTagScan(id: tagIdentifier, sessionBox: sessionBox)
+    let id = tagBox.identifier.hexEncodedString()
+    tagBox.queryNDEFStatus { status, _, error in
+      if let error {
+        self.completeTagRead(id: id, message: nil, error: error, sessionBox: sessionBox)
         return
       }
-
-      self.completeTagScan(id: tagIdentifier, sessionBox: sessionBox)
+      if status == .notSupported {
+        self.completeTagRead(id: id, message: nil, error: nil, sessionBox: sessionBox)
+      } else {
+        tagBox.readNDEF { message, error in
+          self.completeTagRead(id: id, message: message, error: error, sessionBox: sessionBox)
+        }
+      }
     }
   }
 
   nonisolated private func readISO15693Tag(_ tagBox: ScannerISO15693TagBox, sessionBox: ScannerSessionBox) {
-    let tagIdentifier = tagBox.identifier.hexEncodedString()
-    let redactedTagIdentifier = DebugRedaction.physicalUnblockNFCTagIdForLog(tagIdentifier)
-    tagBox.readNDEF { (message: NFCNDEFMessage?, error: Error?) in
-      if error != nil || message == nil {
-        if let error = error {
-          Log.info("⚠️ ISO15693 NDEF read failed (non-critical): \(error.localizedDescription). using tag id: \(redactedTagIdentifier)", category: .nfc)
-        }
-
-        self.completeTagScan(id: tagIdentifier, sessionBox: sessionBox)
+    let id = tagBox.identifier.hexEncodedString()
+    tagBox.queryNDEFStatus { status, _, error in
+      if let error {
+        self.completeTagRead(id: id, message: nil, error: error, sessionBox: sessionBox)
         return
       }
-
-      self.completeTagScan(id: tagIdentifier, sessionBox: sessionBox)
+      if status == .notSupported {
+        self.completeTagRead(id: id, message: nil, error: nil, sessionBox: sessionBox)
+      } else {
+        tagBox.readNDEF { message, error in
+          self.completeTagRead(id: id, message: message, error: error, sessionBox: sessionBox)
+        }
+      }
     }
   }
 
-  nonisolated private func completeTagScan(id: String, sessionBox: ScannerSessionBox) {
-    let result = NFCResult(id: id, dateScanned: Date())
-    Task { @MainActor in
-      self.scanCompleted = true
-      self.onTagScanned?(result)
+  nonisolated private func completeTagRead(id: String, message: NFCNDEFMessage?, error: Error?, sessionBox: ScannerSessionBox) {
+    do {
+      let result = try NFCResult.read(id: id, message: message, error: error, now: Date())
+      Task { @MainActor in
+        guard self.nfcSession.map({ ObjectIdentifier($0) }) == sessionBox.identity else { return }
+        self.scanCompleted = true
+        self.onTagScanned?(result)
+      }
+      sessionBox.invalidate()
+    } catch {
+      let message = error.localizedDescription
+      Task { @MainActor in
+        guard self.nfcSession.map({ ObjectIdentifier($0) }) == sessionBox.identity else { return }
+        self.scanCompleted = true
+        self.onError?(message)
+      }
+      sessionBox.invalidate(errorMessage: message)
     }
-    sessionBox.invalidate()
   }
+
 }
 
 // MARK: - NFCNDEFReaderSessionDelegate (NDEF Writing Support)

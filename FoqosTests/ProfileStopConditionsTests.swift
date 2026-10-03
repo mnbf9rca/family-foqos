@@ -19,6 +19,34 @@ final class ProfileStopConditionsTests: XCTestCase {
     XCTAssertFalse(conditions.deepLink)
   }
 
+  @MainActor
+  func testOldLinkStopNeverAuthorizesV2Completion() throws {
+    let old = try JSONDecoder().decode(ProfileStopConditions.self, from: Data("{\"deepLink\":true}".utf8))
+    XCTAssertFalse(old.isValid)
+    XCTAssertFalse(
+      StartStopActionResolver.canStop(
+        with: .deepLink, conditions: old, sessionTag: nil,
+        stopNFCTagIds: [], stopQRCodeIds: []
+      ).allowed)
+    XCTAssertTrue(
+      StartStopActionResolver.canStop(
+        with: .deepLink, conditions: old, sessionTag: nil,
+        stopNFCTagIds: [], stopQRCodeIds: [], legacySession: true
+      ).allowed)
+    let combined = try JSONDecoder().decode(ProfileStopConditions.self, from: Data("{\"manual\":true,\"deepLink\":true}".utf8))
+    XCTAssertTrue(combined.isValid)
+    XCTAssertFalse(
+      StartStopActionResolver.canStop(
+        with: .deepLink, conditions: combined, sessionTag: nil,
+        stopNFCTagIds: [], stopQRCodeIds: []
+      ).allowed)
+    XCTAssertTrue(
+      StartStopActionResolver.canStop(
+        with: .manual, conditions: combined, sessionTag: nil,
+        stopNFCTagIds: [], stopQRCodeIds: []
+      ).allowed)
+  }
+
   func testGivenEmptyConditions_WhenCheckingIsValid_ThenFalse() {
     let conditions = ProfileStopConditions()
     XCTAssertFalse(conditions.isValid)

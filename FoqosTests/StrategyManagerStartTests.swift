@@ -233,7 +233,7 @@ final class StrategyManagerStartTests: XCTestCase {
 
     await manager.toggleSessionFromDeeplink(
       profile.id.uuidString,
-      url: URL(string: "familyfoqos://profile/\(profile.id.uuidString)")!,
+      url: URL(string: "https://family-foqos.app/profile/\(profile.id.uuidString)")!,
       context: context
     )
 
@@ -258,7 +258,7 @@ final class StrategyManagerStartTests: XCTestCase {
 
     await manager.toggleSessionFromDeeplink(
       nextProfile.id.uuidString,
-      url: URL(string: "familyfoqos://profile/\(nextProfile.id.uuidString)")!,
+      url: URL(string: "https://family-foqos.app/profile/\(nextProfile.id.uuidString)")!,
       context: context
     )
 
@@ -634,7 +634,7 @@ final class StrategyManagerStartTests: XCTestCase {
       case .qr: sut.startWithQRCode(context: context, profile: profile, codeValue: "DIGEST")
       case .shortcut:
         _ = try sut.startSessionFromBackground(profile.id, context: context, authorization: MockAuthorizationRequesting(initialStatus: .approved))
-      case .link: await sut.toggleSessionFromDeeplink(profile.id.uuidString, url: URL(string: "familyfoqos://profile/\(profile.id)")!, context: context)
+      case .link: await sut.toggleSessionFromDeeplink(profile.id.uuidString, url: URL(string: "https://family-foqos.app/profile/\(profile.id)")!, context: context)
       case .schedule: break
       }
       let session = try XCTUnwrap(sut.activeSession)
@@ -687,10 +687,10 @@ final class StrategyManagerStartTests: XCTestCase {
     XCTAssertEqual(minutes, [41, 15, 1439])
   }
 
-  func testLinkInvalidAndRegistrationFailureLeaveVictimUntouched() async throws {
+  func testTagTargetInvalidAndRegistrationFailureLeaveVictimUntouched() async throws {
     let now = Date()
     let victimProfile = BlockedProfiles(name: "Victim", createdAt: now, updatedAt: now)
-    victimProfile.stopConditions = .init(manual: true, deepLink: true)
+    victimProfile.stopConditions = .init(manual: true, anyNFC: true)
     let candidate = BlockedProfiles(name: "Candidate", createdAt: now, updatedAt: now)
     candidate.startTriggers = .init(deepLink: true)
     candidate.stopConditions = .init(manual: true, timer: true, timerDurationMinutes: 14)
@@ -708,13 +708,13 @@ final class StrategyManagerStartTests: XCTestCase {
       }, cancelTimer: { _, _ in })
     sut.activeSession = victim
     let original = SharedData.getActiveSharedSession()
-    await sut.toggleSessionFromDeeplink(candidate.id.uuidString, url: URL(string: "familyfoqos://profile/\(candidate.id)")!, context: context)
+    await sut.handleTagEvent(TagEvent(type: .nfc, namespace: .nfcUID, key: "UID", targetProfileId: candidate.id), operation: .scan, context: context, now: now)
     XCTAssertEqual(sut.errorMessage, "Please edit this profile before starting. Its start and stop settings need updating.")
     XCTAssertEqual(registrations, 0)
     XCTAssertTrue(victim.isActive)
     XCTAssertTrue(candidate.sessions.isEmpty)
     candidate.stopConditions.timerDurationMinutes = 37
-    await sut.toggleSessionFromDeeplink(candidate.id.uuidString, url: URL(string: "familyfoqos://profile/\(candidate.id)")!, context: context)
+    await sut.handleTagEvent(TagEvent(type: .nfc, namespace: .nfcUID, key: "UID", targetProfileId: candidate.id), operation: .scan, context: context, now: now)
     XCTAssertEqual(sut.errorMessage, "This profile couldn’t start because its timer couldn’t be set. Please try again.")
     XCTAssertEqual(registrations, 1)
     XCTAssertEqual(SharedData.getActiveSharedSession(), original)
@@ -726,7 +726,7 @@ final class StrategyManagerStartTests: XCTestCase {
   func testTakeoverReplacementTimerSurvivesOutgoingEndHandling() async throws {
     let now = Date()
     let profileA = eligibleProfile(name: "A", createdAt: now, updatedAt: now)
-    profileA.stopConditions = .init(manual: true, timer: true, deepLink: true, timerDurationMinutes: 37)
+    profileA.stopConditions = .init(manual: true, timer: true, anyNFC: true, timerDurationMinutes: 37)
     let profileB = eligibleProfile(name: "B", createdAt: now, updatedAt: now)
     profileB.stopConditions = .init(manual: true, timer: true, timerDurationMinutes: 37)
     context.insert(profileA)
@@ -744,7 +744,7 @@ final class StrategyManagerStartTests: XCTestCase {
         registered.remove(id)
       })
     let old = try sut.startOriginatingSession(context: context, profile: profileA, origin: .init(kind: .manual), now: now)
-    await sut.toggleSessionFromDeeplink(profileB.id.uuidString, url: URL(string: "familyfoqos://profile/\(profileB.id)")!, context: context)
+    await sut.handleTagEvent(TagEvent(type: .nfc, namespace: .nfcUID, key: "UID", targetProfileId: profileB.id), operation: .scan, context: context, now: now)
     let replacement = try XCTUnwrap(sut.activeSession)
     XCTAssertEqual(replacement.blockedProfile.id, profileB.id)
     XCTAssertFalse(old.isActive)

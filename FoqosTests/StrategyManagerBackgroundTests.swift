@@ -238,7 +238,7 @@ final class StrategyManagerBackgroundTests: XCTestCase {
     XCTAssertFalse(converted.isActive)
   }
 
-  func testConfiguredLinkStopIgnoresV2FlagWithoutBroadeningAdmission() async throws {
+  func testOrdinaryLinkNeverStopsV2AndV1FlagRemainsVersionGated() async throws {
     for version in [1, 3] {
       for enabled in [false, true] {
         let profile = try eligibleProfile()
@@ -250,7 +250,7 @@ final class StrategyManagerBackgroundTests: XCTestCase {
         await manager.toggleSessionFromDeeplink(
           profile.id.uuidString,
           url: URL(string: BlockedProfiles.getProfileDeepLink(profile))!, context: context)
-        XCTAssertEqual(session.isActive, version == 1 || !enabled)
+        XCTAssertTrue(session.isActive)
         if session.isActive { session.endSession() }
       }
     }

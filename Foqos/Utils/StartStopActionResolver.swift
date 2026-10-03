@@ -109,9 +109,7 @@ enum StartStopActionResolver {
         return .cannotStop(reason: "This profile can only be stopped when the timer runs out")
       } else if conditions.schedule {
         return .cannotStop(reason: "This profile stops at its scheduled time")
-      } else if conditions.deepLink {
-        return .cannotStop(
-          reason: "This profile can only be stopped via a programmed NFC tag or QR code")
+
       }
       return .cannotStop(reason: "This profile has no manual stop method configured")
     }
@@ -146,62 +144,18 @@ enum StartStopActionResolver {
       }
       return .denied("Timer stop is not enabled for this profile")
 
-    case .nfc(let scannedTag):
-      // Check specific NFC first (highest priority)
-      if conditions.specificNFC {
-        if stopNFCTagIds.contains(scannedTag) {
-          return .allowed()
-        }
-        return .denied("That NFC tag doesn’t match. Scan the required tag.")
-      }
-
-      // Check same NFC (match session tag - must be NFC type)
-      if conditions.sameNFC {
-        if sessionOrigin?.kind == .nfc, sessionOrigin?.initiatingKey == scannedTag { return .allowed() }
-        if legacySession, let sessionStartTag = sessionTag,
-          sessionStartTag.hasPrefix("nfc:"),
-          scannedTag == String(sessionStartTag.dropFirst(4))
-        {
-          return .allowed()
-        }
-        return .denied("That NFC tag doesn’t match. Scan the required tag.")
-      }
-
-      // Check any NFC
-      if conditions.anyNFC {
-        return .allowed()
-      }
-
-      return .denied("NFC stop is not enabled for this profile")
-
-    case .qr(let scannedCode, let rawHash):
-      // Check specific QR first
-      if conditions.specificQR {
-        if stopQRCodeIds.contains(where: { $0 == scannedCode || $0 == rawHash }) {
-          return .allowed()
-        }
-        return .denied("That QR code doesn’t match. Scan the required code.")
-      }
-
-      // Check same QR (match session tag - must be QR type)
-      if conditions.sameQR {
-        if sessionOrigin?.kind == .qr, let key = sessionOrigin?.initiatingKey, key == scannedCode || key == rawHash { return .allowed() }
-        if legacySession, let sessionStartCode = sessionTag,
-          sessionStartCode.hasPrefix("qr:"),
-          scannedCode == String(sessionStartCode.dropFirst(3))
-            || rawHash == String(sessionStartCode.dropFirst(3))
-        {
-          return .allowed()
-        }
-        return .denied("That QR code doesn’t match. Scan the required code.")
-      }
-
-      // Check any QR
-      if conditions.anyQR {
-        return .allowed()
-      }
-
-      return .denied("QR code stop is not enabled for this profile")
+    case .nfc(let key):
+      return canStopTag(
+        TagEvent(type: .nfc, namespace: .nfcUID, key: key), conditions: conditions,
+        sessionTag: sessionTag, nfcKeys: stopNFCTagIds, qrKeys: stopQRCodeIds, origin: sessionOrigin, legacySession: legacySession)
+    case .qr(let key, let raw):
+      return canStopTag(
+        TagEvent(type: .qr, namespace: .qrDigest, key: key, rawKey: raw), conditions: conditions,
+        sessionTag: sessionTag, nfcKeys: stopNFCTagIds, qrKeys: stopQRCodeIds, origin: sessionOrigin, legacySession: legacySession)
+    case .tag(let event):
+      return canStopTag(
+        event, conditions: conditions, sessionTag: sessionTag,
+        nfcKeys: stopNFCTagIds, qrKeys: stopQRCodeIds, origin: sessionOrigin, legacySession: legacySession)
 
     case .schedule:
       if conditions.schedule {
@@ -210,12 +164,45 @@ enum StartStopActionResolver {
       return .denied("Scheduled stop is not enabled for this profile")
 
     case .deepLink:
-      if conditions.deepLink {
+      if legacySession && conditions.deepLink {
         return .allowed()
       }
       return .denied("Deep link stop is not enabled for this profile")
     }
   }
+  private static func canStopTag(
+    _ event: TagEvent, conditions: ProfileStopConditions,
+    sessionTag: String?, nfcKeys: [String], qrKeys: [String], origin: SessionOrigin?, legacySession: Bool
+  ) -> StopValidationResult {
+    let kind = event.type == .nfc ? conditions.nfc : conditions.qr
+    let keys = event.type == .nfc ? nfcKeys : qrKeys
+    let originKind: SessionOrigin.Kind = event.type == .nfc ? .nfc : .qr
+    let wrong = event.type == .nfc ? "That NFC tag doesn’t match. Scan the required tag." : "That QR code doesn’t match. Scan the required code."
+    switch kind {
+    case .none:
+      return .denied(event.type == .nfc ? "NFC stop is not enabled for this profile" : "QR code stop is not enabled for this profile")
+    case .any: return .allowed()
+    case .specific:
+      if let key = event.matchingKey, keys.contains(key) || (event.namespace == .qrDigest && event.rawKey.map { keys.contains($0) } == true) { return .allowed() }
+    case .same:
+      if origin?.kind == originKind {
+        if origin?.isUnidentifiedLegacyTag == true { return .allowed() }
+        if origin?.namespace == event.namespace, let key = origin?.initiatingKey,
+          key == event.matchingKey || (event.namespace == .qrDigest && key == event.rawKey)
+        {
+          return .allowed()
+        }
+      }
+      if legacySession, let tag = sessionTag, tag.hasPrefix(event.type.rawValue + ":"),
+        event.namespace == (event.type == .nfc ? .nfcUID : .qrDigest)
+      {
+        let key = String(tag.dropFirst(event.type.rawValue.count + 1))
+        if key == event.key || key == event.rawKey { return .allowed() }
+      }
+    }
+    return .denied(wrong)
+  }
+
 }
 
 /// Action to take when user taps Start button
@@ -240,6 +227,7 @@ enum StopAction: Equatable, Hashable {
 
 /// How a stop was triggered
 enum StopMethod {
+  case tag(TagEvent)
   case manual
   case timer
   case nfc(tag: String)

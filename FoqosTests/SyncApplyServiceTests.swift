@@ -1646,9 +1646,13 @@ final class SyncApplyServiceTests: XCTestCase {
     XCTAssertTrue(store.failedApplies.isEmpty)
   }
 
-  func testInvalidSchedulePairDefersActiveUpdateAndAppliesAfterEnd() throws {
+  func testIndependentSchedulePairActiveSyncMatrix() throws {
     let now = Date()
-    for minute in [0, 14] {
+    let cases: [([Weekday], Int, Bool)] = [
+      ([.monday, .friday], 0, true), ([], 0, true),
+      ([.friday], 0, false), ([.monday], 1, false),
+    ]
+    for (days, minute, invalid) in cases {
       let profile = BlockedProfiles(name: "Active", createdAt: now, updatedAt: now, syncVersion: 1)
       profile.startTriggers = .init(manual: true)
       profile.stopConditions = .init(manual: true)
@@ -1664,22 +1668,77 @@ final class SyncApplyServiceTests: XCTestCase {
       incoming.startTriggersData = try JSONEncoder().encode(ProfileStartTriggers(manual: true, schedule: true))
       incoming.stopConditionsData = try JSONEncoder().encode(ProfileStopConditions(manual: true, schedule: true))
       incoming.startScheduleData = try JSONEncoder().encode(ProfileScheduleTime(days: [.monday], hour: 9, minute: 0, updatedAt: now))
-      incoming.stopScheduleData = try JSONEncoder().encode(ProfileScheduleTime(days: [.friday], hour: 9, minute: minute, updatedAt: now))
+      incoming.stopScheduleData = try JSONEncoder().encode(ProfileScheduleTime(days: days, hour: 9, minute: minute, updatedAt: now))
       let record = incoming.toCKRecord(in: zoneID)
-      XCTAssertEqual(makeService().applyFetchedModification(record, isPendingDeleteOrTombstoned: noPendingDelete), .failed)
-      XCTAssertEqual(profile.name, "Active")
-      XCTAssertEqual(profile.syncVersion, 1)
-      XCTAssertNil(profile.startSchedule)
-      XCTAssertNil(profile.stopSchedule)
-      XCTAssertEqual(SharedData.snapshot(for: profile.id.uuidString), oldSnapshot)
-      XCTAssertNil(session.endTime)
-      XCTAssertTrue(store.failedApplies.contains { $0.recordName == profile.id.uuidString })
-      session.endTime = now.addingTimeInterval(60)
-      try context.save()
+      if invalid {
+        XCTAssertEqual(makeService().applyFetchedModification(record, isPendingDeleteOrTombstoned: noPendingDelete), .failed)
+        XCTAssertEqual(profile.name, "Active")
+        XCTAssertEqual(profile.syncVersion, 1)
+        XCTAssertNil(profile.startSchedule)
+        XCTAssertNil(profile.stopSchedule)
+        XCTAssertEqual(SharedData.snapshot(for: profile.id.uuidString), oldSnapshot)
+        XCTAssertNil(session.endTime)
+        XCTAssertTrue(store.failedApplies.contains { $0.recordName == profile.id.uuidString })
+        session.endTime = now.addingTimeInterval(60)
+        try context.save()
+      }
       XCTAssertEqual(makeService().applyFetchedModification(record, isPendingDeleteOrTombstoned: noPendingDelete), .applied)
-      XCTAssertTrue(profile.hasInvalidConditionSettings)
+      XCTAssertEqual(profile.hasInvalidConditionSettings, invalid)
+      XCTAssertEqual(profile.stopSchedule?.days, days)
       XCTAssertEqual(profile.stopSchedule?.minute, minute)
+      XCTAssertEqual(profile.syncVersion, 2)
+      if !invalid { XCTAssertNil(session.endTime) }
       XCTAssertFalse(store.failedApplies.contains { $0.recordName == profile.id.uuidString })
+    }
+  }
+
+  func testOpaqueAndUnidentifiedOriginsSurviveActualSessionSyncApplication() throws {
+    let now = Date()
+    for type in [TagType.nfc, .qr] {
+      for unidentified in [false, true] {
+        let profile = BlockedProfiles(name: "Mirror", createdAt: now, updatedAt: now)
+        profile.startTriggers = type == .nfc ? .init(anyNFC: true) : .init(anyQR: true)
+        profile.stopConditions = type == .nfc ? .init(sameNFC: true) : .init(sameQR: true)
+        context.insert(profile)
+        try context.save()
+        var registrations = 0
+        let manager = StrategyManager(
+          registerTimer: { _, _, _, _ in
+            registrations += 1
+            return now
+          }, cancelTimer: { _, _ in })
+        defer { manager.stopTimer() }
+        let service = SyncApplyService(modelContext: context, store: store, sessionController: manager, emergencyManager: emergencyManager, deviceId: deviceId)
+        let key = "0123456789abcdef0123456789abcdef"
+        let origin = SessionOrigin(
+          kind: type == .nfc ? .nfc : .qr, key: unidentified ? nil : key,
+          namespace: unidentified ? nil : .opaque, unidentifiedLegacyTag: unidentified)
+        var remote = ProfileSessionRecord(profileId: profile.id)
+        let id = UUID().uuidString
+        remote.applyUpdate(isActive: true, sequenceNumber: 1, deviceId: "device-B", startTime: now, sessionId: id, origin: origin)
+        let record = SessionServerDatedRecord(copying: remote.toCKRecord(in: zoneID), modifiedAt: now)
+        _ = service.applyFetchedModification(record, isPendingDeleteOrTombstoned: noPendingDelete)
+        let session = try XCTUnwrap(manager.activeSession)
+        XCTAssertEqual(session.id, id)
+        XCTAssertEqual(session.origin, origin)
+        XCTAssertEqual(SharedData.getActiveSharedSession()?.origin, origin)
+        XCTAssertEqual(registrations, 0)
+        let matching = TagEvent(type: type, namespace: .opaque, key: key)
+        XCTAssertTrue(
+          StartStopActionResolver.canStop(
+            with: .tag(matching), conditions: profile.stopConditions, sessionTag: nil,
+            stopNFCTagIds: [], stopQRCodeIds: [], sessionOrigin: session.origin
+          ).allowed)
+        XCTAssertFalse(
+          StartStopActionResolver.canStop(
+            with: .tag(matching), conditions: .init(nfc: .specific, qr: .specific), sessionTag: nil,
+            stopNFCTagIds: ["other"], stopQRCodeIds: ["other"], sessionOrigin: session.origin
+          ).allowed)
+        manager.stopRemoteSession(context: context, profileId: profile.id, expectedSessionId: id)
+        XCTAssertNil(manager.activeSession)
+        XCTAssertNil(session.origin)
+        XCTAssertNil(SharedData.getActiveSharedSession())
+      }
     }
   }
 
