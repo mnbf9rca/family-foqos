@@ -1781,7 +1781,7 @@ class StrategyManager: ObservableObject {
     }
 
     if let expectedSessionId, session.id != expectedSessionId { return }
-    if let sequenceNumber, session.usesCanonicalIdentity == true && expectedSessionId == nil { return }
+    if sequenceNumber != nil, session.usesCanonicalIdentity == true && expectedSessionId == nil { return }
     if let sequenceNumber {
       guard SharedData.updateSessionSequence(expectedSessionId: session.id, sequenceNumber: sequenceNumber) else { return }
       session.sessionSequence = sequenceNumber

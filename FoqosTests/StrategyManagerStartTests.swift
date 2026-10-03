@@ -122,11 +122,7 @@ final class StrategyManagerStartTests: XCTestCase {
 
     let action = StartStopActionResolver.determineStartAction(for: start)
 
-    if case .cannotStart = action {
-      // expected
-    } else {
-      XCTFail("Expected .cannotStart, got \(action)")
-    }
+    XCTAssertEqual(action, .cannotStart(reason: "Please edit this profile before starting. Its start and stop settings need updating."))
   }
 
   func testGivenManualStartWithInvalidStop_WhenDeterminingStartAction_ThenReturnsCannotStart() {
@@ -136,11 +132,7 @@ final class StrategyManagerStartTests: XCTestCase {
 
     let action = StartStopActionResolver.determineStartAction(for: start, stopConditions: stop)
 
-    if case .cannotStart = action {
-      // expected
-    } else {
-      XCTFail("Expected .cannotStart, got \(action)")
-    }
+    XCTAssertEqual(action, .cannotStart(reason: "Please edit this profile before starting. Its start and stop settings need updating."))
   }
 
   func testGivenManualStartWithValidStop_WhenDeterminingStartAction_ThenReturnsStartImmediately() {

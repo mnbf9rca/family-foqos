@@ -45,7 +45,7 @@ enum StartStopActionResolver {
   ) -> StartAction {
     // Guard: don't allow starting if stop conditions are missing
     if let stop = stopConditions, !stop.isValid {
-      return .cannotStart(reason: "No stop conditions configured. Edit the profile to add one.")
+      return .cannotStart(reason: "Please edit this profile before starting. Its start and stop settings need updating.")
     }
 
     var manualOptions: [StartAction] = []
@@ -71,7 +71,7 @@ enum StartStopActionResolver {
       if triggers.shortcuts {
         return .cannotStart(reason: "Start this profile with Siri or Shortcuts.")
       }
-      return .cannotStart(reason: "No start triggers configured. Edit the profile to add one.")
+      return .cannotStart(reason: "Please edit this profile before starting. Its start and stop settings need updating.")
     }
 
     // Single option - do it directly
