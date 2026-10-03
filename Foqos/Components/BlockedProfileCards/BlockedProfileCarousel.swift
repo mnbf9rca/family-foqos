@@ -210,7 +210,7 @@ struct BlockedProfileCarousel: View {
         .scrollDisabled(isBlocking)
         .scrollIndicators(.hidden)
         .contentMargins(.horizontal, 16)
-        .frame(height: cardHeight * heightScale)
+        .frame(height: cardHeight * max(1, heightScale))
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: cardHeight)
         .padding(.bottom, 10)
 
