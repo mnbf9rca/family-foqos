@@ -65,17 +65,24 @@ final class ScheduleTimerActivityTests: XCTestCase {
   }
 
   func testOldTrueFlagDoesNotVetoEitherConfiguredScheduleAdapter() {
-    let now = Date()
+    let calendar = Calendar.current
+    let now = calendar.date(from: DateComponents(year: 2026, month: 6, day: 15, hour: 18))!
     for stopOnly in [false, true] {
       for oldFlag in [false, true] {
         var snap = snapshot(id: UUID(), disableBackgroundStops: oldFlag)
         snap.profileSchemaVersion = 3
+        snap.stopConditionsSchedule = true
+        SharedData.setSnapshot(snap, for: snap.id.uuidString)
         SharedData.createActiveSharedSession(
           for: .init(
             id: UUID().uuidString, tag: "manual", blockedProfileId: snap.id,
-            startTime: now, forceStarted: false, origin: .init(kind: .manual)))
-        if stopOnly { StopScheduleTimerActivity().stop(for: snap) } else { ScheduleTimerActivity().stop(for: snap) }
-        XCTAssertNil(SharedData.getActiveSharedSession(), "A configured V2 schedule ignores the retained flag")
+            startTime: now.addingTimeInterval(-7200), forceStarted: false, origin: .init(kind: .manual)))
+        if stopOnly { StopScheduleTimerActivity().stop(for: snap, now: now, calendar: calendar) } else { ScheduleTimerActivity().stop(for: snap) }
+        if stopOnly {
+          XCTAssertNil(SharedData.getActiveSharedSession(), "A configured V2 stop ignores the retained flag")
+        } else {
+          XCTAssertNotNil(SharedData.getActiveSharedSession(), "The V2 start interval end is artificial")
+        }
       }
     }
   }
@@ -369,6 +376,30 @@ final class ScheduleTimerActivityTests: XCTestCase {
     ).start(for: incoming)
     XCTAssertEqual(registrations, 0)
     XCTAssertEqual(reminders, 0)
+    XCTAssertNil(SharedData.getActiveSharedSession())
+  }
+
+  func testV2StartIntervalEndIsArtificialEvenWithRetainedLegacySchedule() {
+    let now = Date(timeIntervalSince1970: 1_800_000_000)
+    var profile = snapshot(id: UUID(), disableBackgroundStops: true)
+    profile.profileSchemaVersion = 3
+    profile.schedule = .init(days: Weekday.allCases, startHour: 9, startMinute: 0, endHour: 17, endMinute: 0, updatedAt: .distantPast)
+    let session = SharedData.SessionSnapshot(id: UUID().uuidString, tag: "manual", blockedProfileId: profile.id, startTime: now, forceStarted: false, origin: .init(kind: .manual))
+    SharedData.createActiveSharedSession(for: session)
+    ScheduleTimerActivity().stop(for: profile)
+    XCTAssertEqual(SharedData.getActiveSharedSession(), session)
+  }
+
+  func testV2StartCannotFallBackToRetainedLegacySchedule() {
+    var profile = snapshot(id: UUID(), stopConditions: .init(manual: true))
+    profile.profileSchemaVersion = 3
+    profile.settingsReadable = true
+    profile.startTriggers = .init(schedule: true)
+    profile.startTriggersSchedule = false
+    profile.startSchedule = .init(days: Weekday.allCases, hour: 0, minute: 0, updatedAt: .distantPast)
+    profile.schedule = .init(days: Weekday.allCases, startHour: 0, startMinute: 0, endHour: 23, endMinute: 59, updatedAt: .distantPast)
+    SharedData.setSnapshot(profile, for: profile.id.uuidString)
+    ScheduleTimerActivity(cancelReminders: { _ in }).start(for: profile)
     XCTAssertNil(SharedData.getActiveSharedSession())
   }
 

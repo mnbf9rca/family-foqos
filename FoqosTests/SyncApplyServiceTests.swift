@@ -1646,9 +1646,13 @@ final class SyncApplyServiceTests: XCTestCase {
     XCTAssertTrue(store.failedApplies.isEmpty)
   }
 
-  func testInvalidSchedulePairDefersActiveUpdateAndAppliesAfterEnd() throws {
+  func testIndependentSchedulePairActiveSyncMatrix() throws {
     let now = Date()
-    for minute in [0, 14] {
+    let cases: [([Weekday], Int, Bool)] = [
+      ([.monday, .friday], 0, true), ([], 0, true),
+      ([.friday], 0, false), ([.monday], 1, false),
+    ]
+    for (days, minute, invalid) in cases {
       let profile = BlockedProfiles(name: "Active", createdAt: now, updatedAt: now, syncVersion: 1)
       profile.startTriggers = .init(manual: true)
       profile.stopConditions = .init(manual: true)
@@ -1664,21 +1668,26 @@ final class SyncApplyServiceTests: XCTestCase {
       incoming.startTriggersData = try JSONEncoder().encode(ProfileStartTriggers(manual: true, schedule: true))
       incoming.stopConditionsData = try JSONEncoder().encode(ProfileStopConditions(manual: true, schedule: true))
       incoming.startScheduleData = try JSONEncoder().encode(ProfileScheduleTime(days: [.monday], hour: 9, minute: 0, updatedAt: now))
-      incoming.stopScheduleData = try JSONEncoder().encode(ProfileScheduleTime(days: [.friday], hour: 9, minute: minute, updatedAt: now))
+      incoming.stopScheduleData = try JSONEncoder().encode(ProfileScheduleTime(days: days, hour: 9, minute: minute, updatedAt: now))
       let record = incoming.toCKRecord(in: zoneID)
-      XCTAssertEqual(makeService().applyFetchedModification(record, isPendingDeleteOrTombstoned: noPendingDelete), .failed)
-      XCTAssertEqual(profile.name, "Active")
-      XCTAssertEqual(profile.syncVersion, 1)
-      XCTAssertNil(profile.startSchedule)
-      XCTAssertNil(profile.stopSchedule)
-      XCTAssertEqual(SharedData.snapshot(for: profile.id.uuidString), oldSnapshot)
-      XCTAssertNil(session.endTime)
-      XCTAssertTrue(store.failedApplies.contains { $0.recordName == profile.id.uuidString })
-      session.endTime = now.addingTimeInterval(60)
-      try context.save()
+      if invalid {
+        XCTAssertEqual(makeService().applyFetchedModification(record, isPendingDeleteOrTombstoned: noPendingDelete), .failed)
+        XCTAssertEqual(profile.name, "Active")
+        XCTAssertEqual(profile.syncVersion, 1)
+        XCTAssertNil(profile.startSchedule)
+        XCTAssertNil(profile.stopSchedule)
+        XCTAssertEqual(SharedData.snapshot(for: profile.id.uuidString), oldSnapshot)
+        XCTAssertNil(session.endTime)
+        XCTAssertTrue(store.failedApplies.contains { $0.recordName == profile.id.uuidString })
+        session.endTime = now.addingTimeInterval(60)
+        try context.save()
+      }
       XCTAssertEqual(makeService().applyFetchedModification(record, isPendingDeleteOrTombstoned: noPendingDelete), .applied)
-      XCTAssertTrue(profile.hasInvalidConditionSettings)
+      XCTAssertEqual(profile.hasInvalidConditionSettings, invalid)
+      XCTAssertEqual(profile.stopSchedule?.days, days)
       XCTAssertEqual(profile.stopSchedule?.minute, minute)
+      XCTAssertEqual(profile.syncVersion, 2)
+      if !invalid { XCTAssertNil(session.endTime) }
       XCTAssertFalse(store.failedApplies.contains { $0.recordName == profile.id.uuidString })
     }
   }

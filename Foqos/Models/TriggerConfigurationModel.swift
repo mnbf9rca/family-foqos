@@ -93,8 +93,10 @@ final class TriggerConfigurationModel: ObservableObject {
   }
 
   /// Save to profile
-  func saveToProfile(_ profile: BlockedProfiles) {
+  func saveToProfile(_ profile: BlockedProfiles, now: Date = Date()) {
     validate()
+    if !profile.startTriggers.schedule && startTriggers.schedule { startSchedule?.updatedAt = now }
+    if !profile.stopConditions.schedule && stopConditions.schedule { stopSchedule?.updatedAt = now }
     profile.startTriggers = startTriggers
     var stops = stopConditions
     if validationErrors.isEmpty { stops.requiresEditingAfterConversion = false }

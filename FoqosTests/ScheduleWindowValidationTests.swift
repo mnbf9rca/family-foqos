@@ -1,92 +1,84 @@
+import FoqosShared
 import XCTest
 
 @testable import FamilyFoqos
 
-final class ScheduleWindowValidationTests: XCTestCase {
-
-  // MARK: - Pure modular window math
-
-  func testGivenSameDayTenMinuteWindow_WhenComputingWindow_ThenReturnsTen() {
-    XCTAssertEqual(
-      TriggerValidator.scheduleWindowMinutes(
-        startHour: 9, startMinute: 0, stopHour: 9, stopMinute: 10), 10)
-  }
-
-  func testGivenSameDayFifteenMinuteWindow_WhenComputingWindow_ThenReturnsFifteen() {
-    XCTAssertEqual(
-      TriggerValidator.scheduleWindowMinutes(
-        startHour: 9, startMinute: 0, stopHour: 9, stopMinute: 15), 15)
-  }
-
-  func testGivenCrossMidnightNearBoundary_WhenComputingWindow_ThenReturnsSubFifteen() {
-    // 23:59 -> 00:00 is a 1-minute window, NOT ~24h.
-    XCTAssertEqual(
-      TriggerValidator.scheduleWindowMinutes(
-        startHour: 23, startMinute: 59, stopHour: 0, stopMinute: 0), 1)
-  }
-
-  func testGivenLegitimateOvernightWindow_WhenComputingWindow_ThenReturns480() {
-    XCTAssertEqual(
-      TriggerValidator.scheduleWindowMinutes(
-        startHour: 22, startMinute: 0, stopHour: 6, stopMinute: 0), 480)
-  }
-
-  func testGivenIdenticalTimes_WhenComputingWindow_ThenReturnsZero() {
-    XCTAssertEqual(
-      TriggerValidator.scheduleWindowMinutes(
-        startHour: 9, startMinute: 0, stopHour: 9, stopMinute: 0), 0)
-  }
-}
-
 @MainActor
-final class ScheduleWindowValidationIntegrationTests: XCTestCase {
-  private let minimumWindowErrorFragment =
-    "at least \(DeviceActivityLimits.minimumIntervalMinutes) minutes"
+final class ScheduleWindowValidationTests: XCTestCase {
+  func testIndependentValidationMatrix() {
+    let now = Date(timeIntervalSince1970: 1_800_000_000)
+    let cases: [([Weekday], Int, Int, [Weekday], Int, Int, [String])] = [
+      ([.monday], 9, 0, [.friday], 9, 0, []),
+      ([.monday], 9, 0, [.friday], 9, 10, []),
+      ([.monday], 9, 0, [.monday], 9, 1, []),
+      ([.sunday], 23, 59, [.monday], 0, 0, []),
+      ([.monday], 9, 0, [.monday, .friday], 9, 0, ["Choose different moments for scheduled start and stop."]),
+      ([], 9, 0, [.friday], 17, 0, ["Choose the days and time for this schedule."]),
+      ([.monday], -1, 0, [.friday], 17, 0, ["Choose the days and time for this schedule."]),
+      ([.monday], 9, 60, [.friday], 17, 0, ["Choose the days and time for this schedule."]),
+    ]
+    for (startDays, startHour, startMinute, stopDays, stopHour, stopMinute, expected) in cases {
+      let model = TriggerConfigurationModel()
+      model.startTriggers = .init(schedule: true)
+      model.stopConditions = .init(manual: true, schedule: true)
+      model.startSchedule = .init(days: startDays, hour: startHour, minute: startMinute, updatedAt: now)
+      model.stopSchedule = .init(days: stopDays, hour: stopHour, minute: stopMinute, updatedAt: now)
+      model.validate()
+      XCTAssertEqual(model.validationErrors, expected)
+    }
+  }
 
-  private func makeModel(
-    startHour: Int,
-    startMinute: Int,
-    stopHour: Int,
-    stopMinute: Int,
-    days: [Weekday] = [.monday]
-  ) -> TriggerConfigurationModel {
+  func testDisabledSchedulesCannotConflictAndTimerLimitsRemainIndependent() {
+    let now = Date(timeIntervalSince1970: 1_800_000_000)
     let model = TriggerConfigurationModel()
-    model.startTriggers.schedule = true
-    model.stopConditions.schedule = true
-    model.startSchedule = ProfileScheduleTime(
-      days: days, hour: startHour, minute: startMinute, updatedAt: .distantPast)
-    model.stopSchedule = ProfileScheduleTime(
-      days: days, hour: stopHour, minute: stopMinute, updatedAt: .distantPast)
-    return model
+    model.startTriggers = .init(manual: true)
+    model.stopConditions = .init(manual: true, schedule: true)
+    model.startSchedule = .init(days: [.monday], hour: 9, minute: 0, updatedAt: now)
+    model.stopSchedule = model.startSchedule
+    model.validate()
+    XCTAssertEqual(model.validationErrors, [])
+    model.stopConditions.timer = true
+    model.stopConditions.timerDurationMinutes = 1
+    model.validate()
+    XCTAssertEqual(model.validationErrors, ["Choose a timer from 15 minutes to 23 hours 59 minutes."])
   }
 
-  func testGivenSubFifteenSameDayWindow_WhenValidating_ThenAppendsWindowError() {
-    let model = makeModel(startHour: 9, startMinute: 0, stopHour: 9, stopMinute: 10)
-    model.validate()
-    XCTAssertTrue(model.validationErrors.contains { $0.contains(minimumWindowErrorFragment) })
+  func testSchedulePickerSavePreservesUnchangedRecurrenceAndStampsOnlyActualChanges() throws {
+    let now = Date(timeIntervalSince1970: 1_800_000_000)
+    let stored = ProfileScheduleTime(days: [.friday, .monday], hour: 17, minute: 0, updatedAt: now.addingTimeInterval(-3600))
+    let cases: [(Set<Weekday>, Int, Int, Bool)] = [
+      ([.monday, .friday], 17, 0, false),
+      ([.friday], 17, 0, true),
+      ([.monday, .friday], 18, 0, true),
+      ([.monday, .friday], 17, 1, true),
+    ]
+    for (days, hour, minute, changed) in cases {
+      let saved = try XCTUnwrap(
+        ScheduleTimePicker.scheduleAfterSaving(
+          existing: stored, days: days, hour: hour, minute: minute, now: now))
+      if changed {
+        XCTAssertEqual(Set(saved.days), days)
+        XCTAssertEqual(saved.hour, hour)
+        XCTAssertEqual(saved.minute, minute)
+        XCTAssertEqual(saved.updatedAt, now)
+      } else {
+        XCTAssertEqual(saved, stored, "An unchanged save preserves the timestamp and stored value")
+      }
+    }
+    var toggled = Set(stored.days)
+    toggled.remove(.monday)
+    toggled.insert(.monday)
+    XCTAssertEqual(
+      ScheduleTimePicker.scheduleAfterSaving(
+        existing: stored, days: toggled, hour: 17, minute: 0, now: now), stored)
+    let created = try XCTUnwrap(
+      ScheduleTimePicker.scheduleAfterSaving(
+        existing: nil, days: [.friday], hour: 17, minute: 0, now: now))
+    XCTAssertEqual(created.updatedAt, now)
+    XCTAssertEqual(Set(created.days), [.friday])
+    XCTAssertNil(
+      ScheduleTimePicker.scheduleAfterSaving(
+        existing: stored, days: [], hour: 17, minute: 0, now: now))
   }
 
-  func testGivenCrossMidnightSubFifteenWindow_WhenValidating_ThenAppendsWindowError() {
-    let model = makeModel(startHour: 23, startMinute: 55, stopHour: 0, stopMinute: 5)
-    model.validate()
-    XCTAssertTrue(model.validationErrors.contains { $0.contains(minimumWindowErrorFragment) })
-  }
-
-  func testGivenFifteenMinuteWindow_WhenValidating_ThenNoWindowError() {
-    let model = makeModel(startHour: 9, startMinute: 0, stopHour: 9, stopMinute: 15)
-    model.validate()
-    XCTAssertFalse(model.validationErrors.contains { $0.contains(minimumWindowErrorFragment) })
-  }
-
-  func testGivenLegitimateOvernightWindow_WhenValidating_ThenNoWindowError() {
-    let model = makeModel(startHour: 22, startMinute: 0, stopHour: 6, stopMinute: 0)
-    model.validate()
-    XCTAssertFalse(model.validationErrors.contains { $0.contains(minimumWindowErrorFragment) })
-  }
-
-  func testGivenInactiveMatchingSchedules_WhenValidating_ThenNoSameTimeError() {
-    let model = makeModel(startHour: 9, startMinute: 0, stopHour: 9, stopMinute: 0, days: [])
-    model.validate()
-    XCTAssertFalse(model.validationErrors.contains { $0.contains("can't be the same") })
-  }
 }

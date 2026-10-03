@@ -512,7 +512,7 @@ class BlockedProfiles {
     if let customReminderMessage {
       profile.customReminderMessage = customReminderMessage
     }
-    triggerConfiguration?.saveToProfile(profile)
+    triggerConfiguration?.saveToProfile(profile, now: now)
     profile.updatedAt = now
     do {
       try context.save()

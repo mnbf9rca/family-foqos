@@ -177,6 +177,50 @@ public enum SharedData {
     return true
   }
 
+  /// Device-local metadata; never included in synced profile snapshots.
+  public static func startRegistrationNotBefore(for profileId: UUID) -> Date? {
+    suite.object(forKey: startRegistrationKey(for: profileId)) as? Date
+  }
+
+  @discardableResult
+  public static func setStartRegistrationNotBefore(_ date: Date?, for profileId: UUID) -> Bool {
+    withLockStatus(blocking: true) { outcome in
+      guard outcome == .acquired else { return false }
+      let key = startRegistrationKey(for: profileId)
+      let previous = suite.object(forKey: key)
+      if let date { suite.set(date, forKey: key) } else { suite.removeObject(forKey: key) }
+      guard (suite.object(forKey: key) as? Date) == date else {
+        if let previous { suite.set(previous, forKey: key) } else { suite.removeObject(forKey: key) }
+        return false
+      }
+      return true
+    }
+  }
+
+  private static func startRegistrationKey(for profileId: UUID) -> String {
+    "family_foqos_start_registration_not_before_\(profileId.uuidString)"
+  }
+
+  /// Resolve only the most recent daily OS start; never search back for a rescued weekday.
+  public static func scheduledStartOccurrence(
+    for profile: ProfileSnapshot, now: Date, calendar: Calendar = .current
+  ) -> Date? {
+    guard (profile.profileSchemaVersion ?? 1) >= 2,
+      profile.startTriggersSchedule == true, let start = profile.startSchedule,
+      let occurrence = start.previousDailyClockOccurrence(atOrBefore: now, calendar: calendar),
+      start.isTodayScheduled(now: occurrence, calendar: calendar), occurrence >= start.updatedAt,
+      occurrence >= (startRegistrationNotBefore(for: profile.id) ?? .distantPast),
+      occurrence > (profile.scheduleLastStoppedAt ?? .distantPast)
+    else { return nil }
+    if profile.stopConditionsSchedule == true,
+      profile.stopConditions?.schedule == true,
+      profile.stopSchedule?.hasOccurrence(from: occurrence, through: now, calendar: calendar) == true
+    {
+      return nil
+    }
+    return occurrence
+  }
+
   // MARK: – Keys
 
   private enum Key: String {
@@ -226,6 +270,12 @@ public enum SharedData {
   // MARK: – Serializable snapshot of a profile (no sessions)
 
   public struct ProfileSnapshot: Codable, Equatable {
+    public var hasActiveSchedule: Bool {
+      if (profileSchemaVersion ?? 1) < 2 { return schedule?.isActive == true }
+      return (startTriggersSchedule == true && startSchedule?.isActive == true)
+        || (stopConditionsSchedule == true && stopSchedule?.isActive == true)
+    }
+
     public var id: UUID
     public var name: String
     public var selectedActivity: FamilyActivitySelection
@@ -551,6 +601,7 @@ public enum SharedData {
   @discardableResult
   public static func commitOriginatingSession(
     _ candidate: SessionSnapshot, expectedVictimId: String?, now: Date,
+    scheduleOccurrence: Date? = nil, calendar: Calendar = .current,
     encode: (SessionSnapshot) throws -> Data = { try JSONEncoder().encode($0) },
     onCommit: () -> Void = {}
   ) -> Bool {
@@ -564,6 +615,11 @@ public enum SharedData {
         current?.endTime == nil,
         candidate.id != current?.id
       else { return false }
+      if origin.kind == .schedule {
+        guard let scheduleOccurrence,
+          scheduledStartOccurrence(for: profile, now: now, calendar: calendar) == scheduleOccurrence
+        else { return false }
+      }
       if profile.stopConditions?.timer == true,
         profile.stopConditions?.timerDurationMinutes != nil,
         candidate.timerEndTime.map({ $0 > now }) != true
@@ -571,11 +627,21 @@ public enum SharedData {
         return false
       }
       guard var completed = checkedCompletedSessions() else { return false }
+      var updatedProfiles: [String: ProfileSnapshot]?
       if var victim = current {
+        let wasScheduled = victim.origin?.kind == .schedule
         victim.endTime = now
         completed.append(normalizedForEnd(victim))
+        if wasScheduled {
+          var profiles = profileSnapshots
+          if var previousProfile = profiles[victim.blockedProfileId.uuidString] {
+            previousProfile.scheduleLastStoppedAt = max(previousProfile.scheduleLastStoppedAt ?? .distantPast, now)
+            profiles[victim.blockedProfileId.uuidString] = previousProfile
+            updatedProfiles = profiles
+          }
+        }
       }
-      guard commitSessionTransition(candidate, completed: completed, encode: encode) else { return false }
+      guard commitSessionTransition(candidate, completed: completed, encode: encode, profiles: updatedProfiles) else { return false }
       onCommit()
       return true
     }
@@ -642,6 +708,7 @@ public enum SharedData {
   public static func completeSession(
     expectedSessionId: String, now: Date, requireTimerDeadline: Bool = false,
     localSession: SessionSnapshot? = nil, allowUndecodableStore: Bool = false,
+    scheduledStopAt: Date? = nil, expectedProfileId: UUID? = nil, calendar: Calendar = .current,
     onComplete: () -> Void = {}
   ) -> Bool {
     withLockStatus(blocking: true) { outcome in
@@ -653,6 +720,15 @@ public enum SharedData {
         current.id == expectedSessionId, current.endTime == nil,
         var completed = checkedCompletedSessions()
       else { return false }
+      if let scheduledStopAt {
+        guard current.blockedProfileId == expectedProfileId, current.startTime <= scheduledStopAt,
+          scheduledStopAt <= now,
+          let profile = profileSnapshots[current.blockedProfileId.uuidString],
+          profile.stopConditionsSchedule == true, profile.stopConditions?.schedule == true,
+          let stopSchedule = profile.stopSchedule, scheduledStopAt >= stopSchedule.updatedAt,
+          stopSchedule.previousOccurrence(atOrBefore: now, calendar: calendar) == scheduledStopAt
+        else { return false }
+      }
       if requireTimerDeadline {
         guard let deadline = current.timerEndTime, now >= deadline else { return false }
       }
@@ -663,7 +739,7 @@ public enum SharedData {
       if scheduled {
         var profiles = profileSnapshots
         if var profile = profiles[current.blockedProfileId.uuidString] {
-          profile.scheduleLastStoppedAt = now
+          profile.scheduleLastStoppedAt = max(profile.scheduleLastStoppedAt ?? .distantPast, now)
           profiles[current.blockedProfileId.uuidString] = profile
           updatedProfiles = profiles
         }
