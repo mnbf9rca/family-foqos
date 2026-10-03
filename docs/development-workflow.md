@@ -85,6 +85,10 @@ scripts/xcode-stream.sh --agent <agent> --session <session> -- \
 
 After a failing test run, `xcodebuild` can appear stalled while an asynchronous `simctl diagnose` collection waits up to ten minutes; waiting for it to finish is a safe alternative to stopping it. Confirm XCTest has finished, then trace the diagnose/collector PIDs through their parent chain to your own gate-owned `xcodebuild`, matching its owner DerivedData path and simulator UUID. Send `kill <pid>` (SIGTERM) only to the exact diagnose/collector PIDs whose ownership you proved; never match processes by name. Never stop another stream's processes, the `xcodebuild`, or the gate wrapper; if ownership cannot be established, do not stop the process. Wait for the original command to exit and preserve its exit status; completed test output alone is not a successful command result.
 
+## Agent Acceptance Runbooks
+
+For source-built V1 → V2 upgrade acceptance, an agent follows the [V1 → V2 upgrade runbook](v1-v2-upgrade-runbook.md). It generates the profile matrix, checks fixture compilation before touching data, and reports evidence to the orchestrator. The human performs only the separate checks that require real devices.
+
 ## Screenshots, Archives, and Uploads
 
 The Family Controls screenshot demo has no live CKShare identities, so its member list shows “Parent”, “Child”, and “Child” rather than the former synthetic names Alex, Emma, and Sam.
