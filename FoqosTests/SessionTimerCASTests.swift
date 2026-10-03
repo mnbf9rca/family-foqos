@@ -6,6 +6,246 @@ import XCTest
 @testable import FamilyFoqos
 
 final class SessionTimerCASTests: XCTestCase {
+  @MainActor
+  func testScheduledReplacementStopsOldSessionBeforePublishingNewStart() async throws {
+    let now = Date()
+    let suite = "ScheduledReplacement-" + UUID().uuidString
+    let defaults = UserDefaults(suiteName: suite)!
+    SharedData.configure(suite: defaults)
+    let sync = ProfileSyncManager.shared
+    let wasEnabled = sync.isEnabled
+    sync.isEnabled = true
+    defer {
+      sync.isEnabled = wasEnabled
+      defaults.removePersistentDomain(forName: suite)
+    }
+    let container = try TestModelContainer.create()
+    let context = container.mainContext
+    let profile = BlockedProfiles(name: "Scheduled")
+    context.insert(profile)
+    let old = BlockedProfileSession(tag: "schedule", blockedProfile: profile, startTime: now.addingTimeInterval(-600))
+    old.usesCanonicalIdentity = true
+    old.origin = .init(kind: .schedule)
+    context.insert(old)
+    try context.save()
+    SharedData.createActiveSharedSession(for: old.toSnapshot())
+    SharedData.endActiveSharedSession()
+    let replacementId = UUID().uuidString
+    SharedData.createActiveSharedSession(
+      for: .init(
+        id: replacementId, tag: "schedule", blockedProfileId: profile.id, startTime: now,
+        timerEndTime: now.addingTimeInterval(2220), forceStarted: true, origin: .init(kind: .schedule), usesCanonicalIdentity: true))
+    var active = ProfileSessionRecord(profileId: profile.id)
+    active.applyUpdate(
+      isActive: true, sequenceNumber: 1, deviceId: SharedData.deviceSyncId.uuidString,
+      startTime: old.startTime, sessionId: old.id, origin: .init(kind: .schedule))
+    let saved = expectation(description: "old completion and replacement publication")
+    saved.expectedFulfillmentCount = 2
+    let server = OrderingCASRecords(record: active.toCKRecord(in: CKRecordZone.ID(zoneName: "Test"))) { saved.fulfill() }
+    let service = SessionSyncService(fetchRecord: { try await server.fetch($0) }, saveRecord: { await server.save($0) })
+    let manager = StrategyManager(sessionSyncService: service)
+    manager.sessionStopOutbox.clear()
+    defer {
+      manager.stopTimer()
+      manager.sessionStopOutbox.clear()
+    }
+    try manager.loadActiveSession(context: context)
+    await fulfillment(of: [saved], timeout: 3)
+    let saves = await server.saves
+    XCTAssertEqual(saves.map { $0["isActive"] as? Int }, [0, 1])
+    XCTAssertEqual(saves.last?["startTime"] as? Date, now)
+    XCTAssertNotNil(manager.activeSession?.sessionServerModificationDate)
+    XCTAssertEqual(manager.activeSession?.sessionServerModificationDate, saves.last?.modificationDate)
+    XCTAssertEqual(manager.activeSession?.timerEndTime, now.addingTimeInterval(2220))
+  }
+
+  @MainActor
+  func testDisplacedLocalSessionStopsRemotelyWithoutAnotherForeground() async throws {
+    let now = Date()
+    let suite = "DisplacedSession-" + UUID().uuidString
+    let defaults = UserDefaults(suiteName: suite)!
+    SharedData.configure(suite: defaults)
+    let sync = ProfileSyncManager.shared
+    let wasEnabled = sync.isEnabled
+    sync.isEnabled = true
+    defer {
+      sync.isEnabled = wasEnabled
+      defaults.removePersistentDomain(forName: suite)
+    }
+    let container = try TestModelContainer.create()
+    let context = container.mainContext
+    let profile = BlockedProfiles(name: "Local")
+    let incoming = BlockedProfiles(name: "Incoming")
+    context.insert(profile)
+    context.insert(incoming)
+    let old = BlockedProfileSession(tag: "local", blockedProfile: profile, startTime: now.addingTimeInterval(-60))
+    old.usesCanonicalIdentity = true
+    old.origin = .init(kind: .schedule)
+    context.insert(old)
+    try context.save()
+    SharedData.createActiveSharedSession(for: old.toSnapshot())
+    var active = ProfileSessionRecord(profileId: profile.id)
+    active.applyUpdate(
+      isActive: true, sequenceNumber: 1, deviceId: SharedData.deviceSyncId.uuidString,
+      startTime: old.startTime, sessionId: old.id, origin: .init(kind: .schedule))
+    let stopped = expectation(description: "displaced local session retired while foregrounded")
+    let server = OrderingCASRecords(record: active.toCKRecord(in: CKRecordZone.ID(zoneName: "Test"))) { stopped.fulfill() }
+    let service = SessionSyncService(fetchRecord: { try await server.fetch($0) }, saveRecord: { await server.save($0) })
+    let manager = StrategyManager(sessionSyncService: service)
+    manager.sessionStopOutbox.clear()
+    defer {
+      manager.stopTimer()
+      manager.sessionStopOutbox.clear()
+    }
+    manager.activeSession = old
+    manager.startRemoteSession(context: context, profileId: incoming.id, sessionId: UUID(), startTime: now)
+    await fulfillment(of: [stopped], timeout: 3)
+    let saves = await server.saves
+    XCTAssertEqual(saves.count, 1)
+    XCTAssertEqual(saves.first?["isActive"] as? Int, 0)
+    XCTAssertEqual(saves.first?["profileId"] as? String, profile.id.uuidString)
+    XCTAssertEqual(manager.activeSession?.blockedProfile.id, incoming.id)
+  }
+
+  @MainActor
+  func testFailedExactStopDefersRemoteIdentityUntilDrainRetriesStartCAS() async throws {
+    let now = Date()
+    let suite = "DeferredStart-" + UUID().uuidString
+    let defaults = UserDefaults(suiteName: suite)!
+    SharedData.configure(suite: defaults)
+    let sync = ProfileSyncManager.shared
+    let wasEnabled = sync.isEnabled
+    sync.isEnabled = true
+    defer {
+      sync.isEnabled = wasEnabled
+      defaults.removePersistentDomain(forName: suite)
+    }
+    let container = try TestModelContainer.create()
+    let context = container.mainContext
+    let profile = BlockedProfiles(name: "Deferred")
+    profile.startTriggers = .init(manual: true)
+    profile.stopConditions = .init(timer: true, timerDurationMinutes: 37)
+    context.insert(profile)
+    try context.save()
+    let oldId = UUID().uuidString
+    var remote = ProfileSessionRecord(profileId: profile.id)
+    remote.applyUpdate(
+      isActive: true, sequenceNumber: 1, deviceId: "other-device",
+      startTime: now.addingTimeInterval(-60), sessionId: oldId, origin: .init(kind: .manual))
+    let failed = expectation(description: "pending exact stop fails offline")
+    let server = DeferredStartCASRecord(record: remote.toCKRecord(in: CKRecordZone.ID(zoneName: "Test")), onFailure: { failed.fulfill() })
+    let service = SessionSyncService(fetchRecord: { _ in try await server.fetch() }, saveRecord: { await server.save($0) })
+    let manager = StrategyManager(
+      sessionSyncService: service,
+      registerTimer: { _, _, _, _ in now.addingTimeInterval(2220) }, cancelTimer: { _, _ in })
+    manager.sessionStopOutbox.clear()
+    defer {
+      manager.stopTimer()
+      manager.sessionStopOutbox.clear()
+    }
+    manager.sessionStopOutbox.enqueue(profileId: profile.id, expectedStart: now.addingTimeInterval(-60), expectedSessionId: oldId)
+    let candidate = try manager.startOriginatingSession(context: context, profile: profile, origin: .init(kind: .manual), now: now)
+    let candidateId = candidate.id
+    await fulfillment(of: [failed], timeout: 3)
+    XCTAssertTrue(candidate.sessionStartSyncPending)
+    let winner = UUID()
+    remote.resetForNewSession()
+    remote.applyUpdate(
+      isActive: true, sequenceNumber: 2, deviceId: "other-device",
+      startTime: now.addingTimeInterval(-3600), timerEndTime: now.addingTimeInterval(1200),
+      sessionId: winner.uuidString, origin: .init(kind: .schedule))
+    let wire = SessionServerDatedRecord(copying: remote.toCKRecord(in: CKRecordZone.ID(zoneName: "Test")), modifiedAt: now.addingTimeInterval(1))
+    manager.startRemoteSession(
+      context: context, profileId: profile.id, sessionId: winner,
+      startTime: remote.startTime!, timerEndTime: remote.validTimerEndTime,
+      origin: remote.origin, sequenceNumber: 2, serverModificationDate: wire.modificationDate)
+    XCTAssertEqual(manager.activeSession?.id, candidateId)
+    await server.reconnect(record: wire)
+    await manager.drainSessionStopOutbox()
+    XCTAssertEqual(manager.activeSession?.id, winner.uuidString)
+    XCTAssertEqual(manager.activeSession?.timerEndTime, now.addingTimeInterval(1200))
+    XCTAssertEqual(manager.activeSession?.sessionServerModificationDate, now.addingTimeInterval(1))
+    XCTAssertFalse(candidate.sessionStartSyncPending)
+    XCTAssertTrue(manager.sessionStopOutbox.pending.isEmpty)
+    let fetches = await server.fetchCount
+    XCTAssertEqual(fetches, 3, "failed stop, resolved exact stop, and authoritative start CAS join")
+  }
+
+  @MainActor
+  func testReconnectRetiresOriginalRemoteSessionAfterTwoOfflineLocalStops() async {
+    let now = Date()
+    let profile = UUID()
+    let original = UUID().uuidString
+    let replacement = UUID().uuidString
+    var active = ProfileSessionRecord(profileId: profile)
+    active.applyUpdate(
+      isActive: true, sequenceNumber: 1, deviceId: SharedData.deviceSyncId.uuidString,
+      startTime: now, sessionId: original, origin: .init(kind: .manual))
+    let server = OrderingCASRecords(record: active.toCKRecord(in: CKRecordZone.ID(zoneName: "Test"))) {}
+    let service = SessionSyncService(fetchRecord: { try await server.fetch($0) }, saveRecord: { await server.save($0) })
+    let manager = StrategyManager(sessionSyncService: service)
+    manager.sessionStopOutbox.clear()
+    defer { manager.sessionStopOutbox.clear() }
+    manager.sessionStopOutbox.enqueue(profileId: profile, expectedStart: now, expectedSessionId: original)
+    manager.sessionStopOutbox.enqueue(profileId: profile, expectedStart: now.addingTimeInterval(1), expectedSessionId: replacement)
+    await manager.drainSessionStopOutbox()
+    let saves = await server.saves
+    XCTAssertEqual(saves.count, 1)
+    XCTAssertEqual(saves.first?["isActive"] as? Int, 0)
+    XCTAssertEqual(saves.first?["sessionId"] as? String, original)
+    XCTAssertTrue(manager.sessionStopOutbox.pending.isEmpty)
+  }
+
+  @MainActor
+  func testUnconfirmedIdentityAfterRestartObtainsCASConfirmation() async throws {
+    let now = Date()
+    let suite = "RestartConfirmation-" + UUID().uuidString
+    let defaults = UserDefaults(suiteName: suite)!
+    SharedData.configure(suite: defaults)
+    let sync = ProfileSyncManager.shared
+    let wasEnabled = sync.isEnabled
+    sync.isEnabled = true
+    defer {
+      sync.isEnabled = wasEnabled
+      defaults.removePersistentDomain(forName: suite)
+    }
+    let container = try TestModelContainer.create()
+    let context = container.mainContext
+    let profile = BlockedProfiles(name: "Unconfirmed")
+    context.insert(profile)
+    let local = BlockedProfileSession(tag: "local", blockedProfile: profile, startTime: now)
+    local.usesCanonicalIdentity = true
+    context.insert(local)
+    try context.save()
+    SharedData.createActiveSharedSession(for: local.toSnapshot())
+    let winner = UUID()
+    var active = ProfileSessionRecord(profileId: profile.id)
+    active.applyUpdate(
+      isActive: true, sequenceNumber: 1, deviceId: "other-device",
+      startTime: now.addingTimeInterval(-3600), sessionId: winner.uuidString, origin: .init(kind: .manual))
+    let wire = SessionServerDatedRecord(copying: active.toCKRecord(in: CKRecordZone.ID(zoneName: "Test")), modifiedAt: now)
+    let server = DeferredStartCASRecord(record: wire, onFailure: { XCTFail("Server is online") })
+    await server.reconnect(record: wire)
+    let service = SessionSyncService(fetchRecord: { _ in try await server.fetch() }, saveRecord: { await server.save($0) })
+    let manager = StrategyManager(sessionSyncService: service)
+    manager.sessionStopOutbox.clear()
+    defer {
+      manager.stopTimer()
+      manager.sessionStopOutbox.clear()
+    }
+    manager.activeSession = local
+    manager.startRemoteSession(
+      context: context, profileId: profile.id, sessionId: winner,
+      startTime: active.startTime!, sequenceNumber: 1, serverModificationDate: now)
+    XCTAssertTrue(local.sessionStartSyncPending)
+    await manager.drainSessionStopOutbox()
+    XCTAssertEqual(manager.activeSession?.id, winner.uuidString)
+    XCTAssertEqual(manager.activeSession?.sessionServerModificationDate, now)
+    XCTAssertFalse(local.sessionStartSyncPending)
+    let fetches = await server.fetchCount
+    XCTAssertEqual(fetches, 1)
+  }
+
   private func record(profile: UUID, start: Date, owner: String, deadline: Date?) -> CKRecord {
     var session = ProfileSessionRecord(profileId: profile)
     session.applyUpdate(isActive: true, sequenceNumber: 1, deviceId: owner, startTime: start, timerEndTime: deadline)
@@ -302,5 +542,53 @@ private actor RestartCASRecord {
     saves.append(record)
     if value["isActive"] as? Int == 1 { onStart() }
     return value
+  }
+}
+
+private actor OrderingCASRecords {
+  var record: CKRecord
+  var saves: [CKRecord] = []
+  let onSave: @Sendable () -> Void
+  init(record: CKRecord, onSave: @escaping @Sendable () -> Void) {
+    self.record = record
+    self.onSave = onSave
+  }
+  func fetch(_ id: CKRecord.ID) throws -> CKRecord {
+    guard id.recordName == record.recordID.recordName else { throw CKError(.unknownItem) }
+    return record.copy() as! CKRecord
+  }
+  func save(_ value: CKRecord) -> CKRecord {
+    record = SessionServerDatedRecord(copying: value, modifiedAt: Date(timeIntervalSinceReferenceDate: 9000 + Double(saves.count)))
+    saves.append(record)
+    onSave()
+    return record
+  }
+}
+
+private actor DeferredStartCASRecord {
+  var record: CKRecord
+  var offline = true
+  var fetchCount = 0
+  let onFailure: @Sendable () -> Void
+  init(record: CKRecord, onFailure: @escaping @Sendable () -> Void) {
+    self.record = record
+    self.onFailure = onFailure
+  }
+  func fetch() throws -> CKRecord {
+    fetchCount += 1
+    if offline {
+      onFailure()
+      throw CKError(.networkUnavailable)
+    }
+    return record
+  }
+  func save(_ value: CKRecord) -> CKRecord {
+    let saved = SessionServerDatedRecord(copying: value, modifiedAt: Date(timeIntervalSinceReferenceDate: 9000))
+    record = saved
+    return saved
+  }
+  func reconnect(record: CKRecord) {
+    self.record = record
+    offline = false
   }
 }

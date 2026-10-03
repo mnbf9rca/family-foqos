@@ -45,7 +45,7 @@ actor SessionSyncService {
   // MARK: - Result Types
 
   enum StartResult {
-    case started(sequenceNumber: Int)
+    case started(sequenceNumber: Int, serverModificationDate: Date? = nil)
     case alreadyActive(session: ProfileSessionRecord)
     case error(Error)
   }
@@ -142,8 +142,8 @@ actor SessionSyncService {
           newSequence: newSequence
         )
         switch saveResult {
-        case .success:
-          return .started(sequenceNumber: newSequence)
+        case .success(let serverDate):
+          return .started(sequenceNumber: newSequence, serverModificationDate: serverDate)
         case .conflict:
           continue  // Retry the loop
         case .error(let error):
@@ -168,8 +168,8 @@ actor SessionSyncService {
           newSequence: 1
         )
         switch saveResult {
-        case .success:
-          return .started(sequenceNumber: 1)
+        case .success(let serverDate):
+          return .started(sequenceNumber: 1, serverModificationDate: serverDate)
         case .conflict:
           continue  // Retry the loop
         case .error(let error):
@@ -190,7 +190,7 @@ actor SessionSyncService {
 
   /// Internal CAS save result (not exposed publicly)
   private enum CASSaveResult {
-    case success
+    case success(serverModificationDate: Date?)
     case conflict
     case error(Error)
   }
@@ -213,7 +213,7 @@ actor SessionSyncService {
         "CAS save succeeded for \(profileId) with seq=\(newSequence)",
         category: .sync
       )
-      return .success
+      return .success(serverModificationDate: savedRecord.modificationDate)
     } catch let error as CKError {
       if error.code == .serverRecordChanged {
         Log.info(

@@ -804,9 +804,11 @@ class StrategyManager: ObservableObject {
   }
 
   /// Sync a session start to CloudKit via CAS. Uses passed context for persistence.
-  private func syncSessionStart(session: BlockedProfileSession, context: ModelContext) {
-    guard shouldSyncSessionChange else { return }
+  private func syncSessionStart(session: BlockedProfileSession, context: ModelContext, confirmRemoteReplacement: Bool = false) {
+    guard shouldSyncSessionChange || (confirmRemoteReplacement && profileSyncManager.isEnabled) else { return }
 
+    session.sessionStartSyncPending = true
+    do { try context.save() } catch { Log.error("Failed to save pending session start", category: .sync) }
     let candidateId = session.id
     let candidateStart = session.startTime
     let candidateDeadline = session.timerEndTime
@@ -815,24 +817,19 @@ class StrategyManager: ObservableObject {
     sessionSyncTask = Task {
       await previousTask?.value
       let profileId = session.blockedProfile.id
-      if let pendingId = sessionStopOutbox.expectedSessionId(for: profileId) {
-        let pendingStart = sessionStopOutbox.expectedStart(for: profileId)
+      guard let pending = sessionStopOutbox.intents else { return }
+      for intent in pending where intent.profileId == profileId && intent.expectedSessionId != nil {
         let stop = await sessionSyncService.stopSession(
-          profileId: profileId,
-          expectedSessionId: pendingId, expectedStart: pendingStart)
+          profileId: profileId, expectedSessionId: intent.expectedSessionId, expectedStart: intent.expectedStart)
         switch stop {
         case .stopped, .alreadyStopped:
-          if sessionStopOutbox.expectedSessionId(for: profileId) == pendingId,
-            sessionStopOutbox.expectedStart(for: profileId) == pendingStart
-          {
-            sessionStopOutbox.remove(profileId: profileId)
-          }
+          sessionStopOutbox.resolve(profileId: profileId, expectedSessionId: intent.expectedSessionId, expectedStart: intent.expectedStart)
         case .conflict, .error:
-          // Stay locally active with this candidate's accepted timer; retry the exact stop later.
           Log.info("Deferred start sync until the previous exact session stop succeeds", category: .sync)
           return
         }
       }
+      guard self.activeSession?.id == candidateId, session.isActive else { return }
       let result = await sessionSyncService.startSession(
         profileId: profileId,
         startTime: candidateStart,
@@ -840,16 +837,16 @@ class StrategyManager: ObservableObject {
       )
 
       switch result {
-      case .started(let sequence):
+      case .started(let sequence, let confirmed):
         if self.activeSession?.id == candidateId {
           session.sessionSequence = sequence
-          try? context.save()
+          session.sessionServerModificationDate = confirmed ?? session.sessionServerModificationDate
+          session.sessionStartSyncPending = false
+          do { try context.save() } catch { Log.error("Failed to save confirmed session start", category: .sync) }
         }
         Log.info("Session synced", category: .strategy)
       case .alreadyActive(let existing):
-        if let pendingId = sessionStopOutbox.expectedSessionId(for: profileId),
-          existing.sessionId == pendingId
-        {
+        if sessionStopOutbox.intents?.contains(where: { $0.profileId == profileId && $0.expectedSessionId != nil && $0.expectedSessionId == existing.sessionId }) == true {
           Log.info("Deferred joining a session with a pending exact stop", category: .sync)
           return
         }
@@ -857,17 +854,21 @@ class StrategyManager: ObservableObject {
           "Joined existing session from \(existing.sessionOriginDevice ?? "unknown")",
           category: .strategy
         )
-        reconcileSessionTiming(
+        if reconcileSessionTiming(
           sessionId: candidateId, profileId: existing.profileId,
           startTime: existing.startTime, timerEndTime: existing.validTimerEndTime,
-          originDevice: existing.sessionOriginDevice, context: context, canonicalSessionId: existing.sessionId, origin: existing.origin, sequenceNumber: existing.sequenceNumber)
+          originDevice: existing.sessionOriginDevice, context: context, canonicalSessionId: existing.sessionId, origin: existing.origin, sequenceNumber: existing.sequenceNumber, serverModificationDate: existing.serverModificationDate)
+        {
+          session.sessionStartSyncPending = false
+          do { try context.save() } catch { Log.error("Failed to save joined session start", category: .sync) }
+        }
       case .error(let error):
         Log.info("Failed to sync session start - \(redactedErrorForLog(error))", category: .strategy)
       }
     }
   }
 
-  /// #201: process the result of a session-stop CAS attempt. On success, logs. On the terminal
+  /// #201: resolve only the attempted persisted stop on success. On the terminal
   /// outcomes (an immediate `.error`, or `.conflict`/`.error` after one retry), the dropped stop
   /// intent is persisted to the outbox for re-drive on foreground (`drainSessionStopOutbox()` is
   /// wired to scenePhase `.active` in `FoqosApp`).
@@ -879,8 +880,10 @@ class StrategyManager: ObservableObject {
   ) async {
     switch result {
     case .stopped:
+      sessionStopOutbox.resolve(profileId: profileId, expectedSessionId: expectedSessionId, expectedStart: expectedStart)
       Log.info("Session stop synced", category: .strategy)
     case .alreadyStopped:
+      sessionStopOutbox.resolve(profileId: profileId, expectedSessionId: expectedSessionId, expectedStart: expectedStart)
       Log.info("Session was already stopped", category: .strategy)
     case .conflict(let current):
       Log.info("Stop conflict, current seq=\(current.sequenceNumber)", category: .strategy)
@@ -889,8 +892,10 @@ class StrategyManager: ObservableObject {
         profileId: profileId, endTime: endTime, expectedSessionId: expectedSessionId, expectedStart: expectedStart)
       switch retryResult {
       case .stopped:
+        sessionStopOutbox.resolve(profileId: profileId, expectedSessionId: expectedSessionId, expectedStart: expectedStart)
         Log.info("Stop retry succeeded", category: .strategy)
       case .alreadyStopped:
+        sessionStopOutbox.resolve(profileId: profileId, expectedSessionId: expectedSessionId, expectedStart: expectedStart)
         Log.info("Stop retry found session already stopped", category: .strategy)
       case .conflict, .error:
         Log.info("Stop retry failed", category: .strategy)
@@ -916,6 +921,13 @@ class StrategyManager: ObservableObject {
         return false
       }
     }
+    if let session = activeSession, session.isActive, session.sessionStartSyncPending,
+      let context = session.modelContext, let pending = sessionStopOutbox.intents,
+      !pending.contains(where: { $0.profileId == session.blockedProfile.id && $0.expectedSessionId != nil })
+    {
+      syncSessionStart(session: session, context: context)
+      await sessionSyncTask?.value
+    }
   }
 
   /// Single source of truth for session activation — all start paths converge here.
@@ -926,9 +938,7 @@ class StrategyManager: ObservableObject {
   ) {
     // Keep exact-ID stops: they must retire the previous server session before this start.
     // A profile-only legacy stop could instead stop this replacement and is superseded.
-    if sessionStopOutbox.expectedSessionId(for: session.blockedProfile.id) == nil {
-      sessionStopOutbox.remove(profileId: session.blockedProfile.id)
-    }
+    sessionStopOutbox.removeLegacyIntents(profileId: session.blockedProfile.id)
 
     // Cancel stale reminders/notifications from previous sessions
     timersUtil.cancelAll()
@@ -1134,24 +1144,6 @@ class StrategyManager: ObservableObject {
     guard !ScreenshotDemoMode.isActive else { return }
     var hadDanglingGrant = false
 
-    // Process any active scheduled sessions
-    if let activeScheduledSession = SharedData.getActiveSharedSession() {
-      if SharedData.endedSessionHadOpenGrant(activeScheduledSession) {
-        hadDanglingGrant = true
-      }
-      BlockedProfileSession.upsertSessionFromSnapshot(
-        in: context,
-        withSnapshot: activeScheduledSession
-      )
-
-      // Foreground and extension starts share the same exact-stop-before-start ordering.
-      if let profile = try? BlockedProfiles.findProfile(byID: activeScheduledSession.blockedProfileId, in: context),
-        let session = profile.sessions.valid.first(where: { $0.id == activeScheduledSession.id })
-      {
-        syncSessionStart(session: session, context: context)
-      }
-    }
-
     // Process any completed scheduled sessions
     let completedScheduleSessions = SharedData.getAndFlushCompletedSessionsForScheduler()
     for completedScheduleSession in completedScheduleSessions {
@@ -1171,6 +1163,9 @@ class StrategyManager: ObservableObject {
 
       // Sync scheduled session end using CAS (if global sync is enabled)
       if profileSyncManager.isEnabled, let endTime = completedScheduleSession.endTime {
+        sessionStopOutbox.enqueue(
+          profileId: completedScheduleSession.blockedProfileId, expectedStart: completedScheduleSession.startTime,
+          expectedSessionId: completedScheduleSession.usesCanonicalIdentity == true ? completedScheduleSession.id : nil)
         let previousTask = sessionSyncTask
         sessionSyncTask = Task {
           await previousTask?.value
@@ -1186,6 +1181,24 @@ class StrategyManager: ObservableObject {
             result, profileId: completedScheduleSession.blockedProfileId,
             endTime: endTime, expectedSessionId: completedScheduleSession.usesCanonicalIdentity == true ? completedScheduleSession.id : nil, expectedStart: expectedStart)
         }
+      }
+    }
+
+    // Process any active scheduled sessions
+    if let activeScheduledSession = SharedData.getActiveSharedSession() {
+      if SharedData.endedSessionHadOpenGrant(activeScheduledSession) {
+        hadDanglingGrant = true
+      }
+      BlockedProfileSession.upsertSessionFromSnapshot(
+        in: context,
+        withSnapshot: activeScheduledSession
+      )
+
+      // Foreground and extension starts share the same exact-stop-before-start ordering.
+      if let profile = try? BlockedProfiles.findProfile(byID: activeScheduledSession.blockedProfileId, in: context),
+        let session = profile.sessions.valid.first(where: { $0.id == activeScheduledSession.id })
+      {
+        syncSessionStart(session: session, context: context)
       }
     }
 
@@ -1427,7 +1440,7 @@ class StrategyManager: ObservableObject {
     }
   }
 
-  private func finishDepartingSession(_ session: BlockedProfileSession, context: ModelContext, now: Date = Date()) {
+  private func finishDepartingSession(_ session: BlockedProfileSession, context: ModelContext, now: Date = Date(), syncDisplacedSession: Bool = false) {
     if session.blockedProfile.profileSchemaVersion < 2 {
       DeviceActivityCenterUtil.removeStrategyTimerActivity(profileId: session.blockedProfile.id)
     } else {
@@ -1448,10 +1461,11 @@ class StrategyManager: ObservableObject {
     scheduleReminder(profile: session.blockedProfile)
     DeviceActivityCenterUtil.removeStopScheduleActivity(for: session.blockedProfile)
     DeviceActivityCenterUtil.removeOneMoreMinuteActivity(for: session.blockedProfile)
-    if shouldSyncSessionChange {
+    if shouldSyncSessionChange || (syncDisplacedSession && profileSyncManager.isEnabled) {
       let profileId = session.blockedProfile.id
       let expectedSessionId = session.usesCanonicalIdentity == true ? session.id : nil
       let expectedStart = session.startTime
+      sessionStopOutbox.enqueue(profileId: profileId, expectedStart: expectedStart, expectedSessionId: expectedSessionId)
       let previousTask = sessionSyncTask
       sessionSyncTask = Task {
         await previousTask?.value
@@ -1651,7 +1665,7 @@ class StrategyManager: ObservableObject {
   @discardableResult
   func reconcileSessionTiming(
     sessionId: String, profileId: UUID, startTime: Date?, timerEndTime: Date?,
-    originDevice: String?, context: ModelContext, canonicalSessionId: String? = nil, origin: SessionOrigin? = nil, sequenceNumber: Int? = nil,
+    originDevice: String?, context: ModelContext, canonicalSessionId: String? = nil, origin: SessionOrigin? = nil, sequenceNumber: Int? = nil, serverModificationDate: Date? = nil,
     cancelTimer: (UUID) -> Void = DeviceActivityCenterUtil.removeStrategyTimerActivity
   ) -> Bool {
     guard let startTime,
@@ -1688,6 +1702,7 @@ class StrategyManager: ObservableObject {
       return false
     }
     if current.usesCanonicalIdentity == true && !ownsCountdown { self.cancelTimer(profileId, sessionId) } else if Self.isCountdownTag(current.tag) && !ownsCountdown { cancelTimer(profileId) }
+    current.sessionServerModificationDate = newId == sessionId ? (serverModificationDate ?? current.sessionServerModificationDate) : serverModificationDate
     current.id = newId
     current.origin = origin
     current.sessionSequence = sequenceNumber ?? current.sessionSequence
@@ -1717,7 +1732,7 @@ class StrategyManager: ObservableObject {
     startTime: Date,
     timerEndTime: Date? = nil,
     originDevice: String? = nil,
-    origin: SessionOrigin? = nil, sequenceNumber: Int? = nil
+    origin: SessionOrigin? = nil, sequenceNumber: Int? = nil, serverModificationDate: Date? = nil
   ) {
     guard !processingRemoteChange else { return }
     processingRemoteChange = true
@@ -1741,11 +1756,27 @@ class StrategyManager: ObservableObject {
       let existing = try getActiveSession(context: context)
       if let existing, existing.blockedProfile.id == profileId {
         activeSession = existing
+        if sessionId?.uuidString != existing.id,
+          existing.usesCanonicalIdentity == true || existing.sessionServerModificationDate != nil
+        {
+          guard let confirmed = existing.sessionServerModificationDate,
+            let incoming = serverModificationDate, incoming > confirmed
+          else {
+            // An unconfirmed originating identity must join through CAS, including after restart.
+            if existing.sessionServerModificationDate == nil, serverModificationDate != nil,
+              !existing.sessionStartSyncPending
+            {
+              syncSessionStart(session: existing, context: context, confirmRemoteReplacement: true)
+            }
+            Log.info("Deferred remote replacement without newer server confirmation", category: .sync)
+            return
+          }
+        }
         guard
           reconcileSessionTiming(
             sessionId: existing.id, profileId: profileId, startTime: startTime,
             timerEndTime: timerEndTime, originDevice: originDevice, context: context,
-            canonicalSessionId: sessionId?.uuidString, origin: origin, sequenceNumber: sequenceNumber)
+            canonicalSessionId: sessionId?.uuidString, origin: origin, sequenceNumber: sequenceNumber, serverModificationDate: serverModificationDate)
         else { throw NSError(domain: "RemoteSession", code: 2) }
         if let sequenceNumber {
           existing.sessionSequence = sequenceNumber
@@ -1774,16 +1805,14 @@ class StrategyManager: ObservableObject {
           })
       else { throw NSError(domain: "RemoteSession", code: 1) }
       if let existing {
-        finishDepartingSession(existing, context: context)
-        sessionStopOutbox.enqueue(
-          profileId: existing.blockedProfile.id, expectedStart: existing.startTime,
-          expectedSessionId: existing.usesCanonicalIdentity == true ? existing.id : nil)
+        finishDepartingSession(existing, context: context, syncDisplacedSession: true)
       }
       let adopted = BlockedProfileSession(
         tag: "remote-sync", blockedProfile: profile, forceStarted: true,
         startTime: startTime, id: id, origin: origin)
       adopted.usesCanonicalIdentity = candidate.usesCanonicalIdentity
       adopted.sessionSequence = sequenceNumber
+      adopted.sessionServerModificationDate = serverModificationDate
       adopted.timerEndTime = timerEndTime
       context.insert(adopted)
       try context.save()

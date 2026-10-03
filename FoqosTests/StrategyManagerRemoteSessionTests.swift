@@ -30,6 +30,74 @@ final class StrategyManagerRemoteSessionTests: XCTestCase {
     try await super.tearDown()
   }
 
+  func testOlderSameProfileRemoteStartCannotReplaceNewerSession() throws {
+    let now = Date()
+    let profile = BlockedProfiles(name: "Replacement")
+    context.insert(profile)
+    let existing = BlockedProfileSession(tag: "local", blockedProfile: profile, startTime: now)
+    existing.usesCanonicalIdentity = true
+    existing.origin = .init(kind: .manual)
+    existing.sessionSequence = 20
+    existing.sessionServerModificationDate = now
+    existing.timerEndTime = now.addingTimeInterval(2220)
+    context.insert(existing)
+    try context.save()
+    SharedData.createActiveSharedSession(for: existing.toSnapshot())
+    manager.activeSession = existing
+    let originalId = existing.id
+    manager.startRemoteSession(
+      context: context, profileId: profile.id, sessionId: UUID(),
+      startTime: now.addingTimeInterval(-60), timerEndTime: now.addingTimeInterval(120), origin: .init(kind: .schedule), sequenceNumber: 2, serverModificationDate: now.addingTimeInterval(-1))
+    XCTAssertEqual(manager.activeSession?.id, originalId)
+    XCTAssertEqual(manager.activeSession?.startTime, now)
+    XCTAssertEqual(manager.activeSession?.timerEndTime, now.addingTimeInterval(2220))
+    XCTAssertEqual(SharedData.getActiveSharedSession()?.id, originalId)
+    XCTAssertEqual(SharedData.getActiveSharedSession()?.timerEndTime, now.addingTimeInterval(2220))
+  }
+
+  func testNewerServerReplacementFromSlowClockAndResetIsAdopted() throws {
+    let now = Date()
+    let profile = BlockedProfiles(name: "Skew")
+    context.insert(profile)
+    let current = BlockedProfileSession(tag: "local", blockedProfile: profile, startTime: now)
+    current.usesCanonicalIdentity = true
+    current.sessionSequence = 20
+    current.sessionServerModificationDate = now
+    context.insert(current)
+    try context.save()
+    SharedData.createActiveSharedSession(for: current.toSnapshot())
+    manager.activeSession = current
+    let replacement = UUID()
+    manager.startRemoteSession(
+      context: context, profileId: profile.id, sessionId: replacement,
+      startTime: now.addingTimeInterval(-3600), origin: .init(kind: .manual), sequenceNumber: 1,
+      serverModificationDate: now.addingTimeInterval(1))
+    XCTAssertEqual(manager.activeSession?.id, replacement.uuidString)
+    XCTAssertEqual(manager.activeSession?.sessionSequence, 1)
+    XCTAssertEqual(manager.activeSession?.sessionServerModificationDate, now.addingTimeInterval(1))
+    XCTAssertEqual(SharedData.getActiveSharedSession()?.id, replacement.uuidString)
+  }
+
+  func testConfirmedIdentityRejectsDifferentIdWithMissingOrEqualServerDate() throws {
+    let now = Date()
+    let profile = BlockedProfiles(name: "Confirmed")
+    context.insert(profile)
+    let current = BlockedProfileSession(tag: "local", blockedProfile: profile, startTime: now)
+    current.usesCanonicalIdentity = true
+    current.sessionServerModificationDate = now
+    context.insert(current)
+    try context.save()
+    SharedData.createActiveSharedSession(for: current.toSnapshot())
+    manager.activeSession = current
+    let original = current.id
+    for date in [nil, now] as [Date?] {
+      manager.startRemoteSession(
+        context: context, profileId: profile.id, sessionId: UUID(),
+        startTime: now.addingTimeInterval(3600), sequenceNumber: 999, serverModificationDate: date)
+      XCTAssertEqual(manager.activeSession?.id, original)
+    }
+  }
+
   // #204: a remote start must converge on activateSession, not hand-roll a subset.
   // timerTask is the synchronous discriminator for activateSession's startTimer().
   func testGivenRemoteStart_WhenStartRemoteSession_ThenActiveSessionAndTimerStarted() throws {
@@ -149,7 +217,7 @@ final class StrategyManagerRemoteSessionTests: XCTestCase {
     XCTAssertEqual(manager.activeSession?.blockedProfile.id, profileB.id)
     XCTAssertEqual(try activeSessions().map(\.blockedProfile.id), [profileB.id])
     XCTAssertNotNil(sessionA.endTime)
-    XCTAssertEqual(manager.sessionStopOutbox.pending, [profileA.id])
+    XCTAssertNil(manager.errorMessage)
     XCTAssertEqual(appBlocker.calls, [.activate(profileId: profileB.id)])
   }
 
