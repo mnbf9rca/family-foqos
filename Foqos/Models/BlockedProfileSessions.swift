@@ -1,3 +1,4 @@
+import FoqosShared
 import Foundation
 @preconcurrency import SwiftData  // ReferenceWritableKeyPath in SortDescriptor lacks Sendable conformance
 
@@ -11,6 +12,11 @@ class BlockedProfileSession: BreakDurationCalculable {
   var startTime: Date
   var endTime: Date?
   var timerEndTime: Date?
+  var sessionOriginData: Data?
+  var origin: SessionOrigin? {
+    get { sessionOriginData.flatMap { try? JSONDecoder().decode(SessionOrigin.self, from: $0) } }
+    set { sessionOriginData = newValue.flatMap { try? JSONEncoder().encode($0) } }
+  }
 
   var breakStartTime: Date?
   var breakEndTime: Date?
@@ -60,13 +66,16 @@ class BlockedProfileSession: BreakDurationCalculable {
     tag: String,
     blockedProfile: BlockedProfiles,
     forceStarted: Bool = false,
-    startTime: Date = Date()
+    startTime: Date = Date(),
+    id: String = UUID().uuidString,
+    origin: SessionOrigin? = nil
   ) {
-    self.id = UUID().uuidString
+    self.id = id
     self.tag = tag
     self.blockedProfile = blockedProfile
     self.startTime = startTime
     self.forceStarted = forceStarted
+    self.origin = origin
 
     // Add this session to the profile's sessions array
     blockedProfile.sessions.append(self)
@@ -95,13 +104,15 @@ class BlockedProfileSession: BreakDurationCalculable {
 
     // Set the end time in shared data in case its being saved
     SharedData.setEndTime(date: now, expectedSessionId: id)
+    let wasScheduleOrigin = origin?.kind == .schedule
     self.endTime = now
+    origin = nil
     timerEndTime = nil
 
     // If this was a schedule-started session, record when it stopped.
     // The reader in ScheduleTimerActivity compares this against today's start time.
     // Schedule-started sessions have tag == profile UUID (set by createSessionForScheduler).
-    let isScheduleStarted = (tag == blockedProfile.id.uuidString)
+    let isScheduleStarted = wasScheduleOrigin || (blockedProfile.profileSchemaVersion < 2 && tag == blockedProfile.id.uuidString)
     if isScheduleStarted, modelContext != nil {
       blockedProfile.scheduleLastStoppedAt = now
       BlockedProfiles.updateSnapshot(for: blockedProfile)
@@ -127,7 +138,8 @@ class BlockedProfileSession: BreakDurationCalculable {
       oneMoreMinuteDeadline: oneMoreMinuteDeadline,
       pinnedProfileConfig: pinnedProfileConfigData.flatMap {
         try? JSONDecoder().decode(SharedData.ProfileSnapshot.self, from: $0)
-      }
+      },
+      origin: endTime == nil ? origin : nil
     )
   }
 
@@ -181,6 +193,7 @@ class BlockedProfileSession: BreakDurationCalculable {
 
     // Try to find an existing session by id
     if let existingSession = try? findSession(byID: snapshot.id, in: context) {
+      existingSession.origin = snapshot.origin
       existingSession.tag = snapshot.tag
       existingSession.startTime = snapshot.startTime
       existingSession.endTime = snapshot.endTime
@@ -214,6 +227,7 @@ class BlockedProfileSession: BreakDurationCalculable {
       forceStarted: snapshot.forceStarted
     )
     // Override auto-generated values with snapshot-provided ones
+    newSession.origin = snapshot.origin
     newSession.id = snapshot.id
     newSession.startTime = snapshot.startTime
     newSession.endTime = snapshot.endTime

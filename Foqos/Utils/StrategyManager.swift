@@ -32,6 +32,9 @@ class StrategyManager: ObservableObject {
   private let timersUtil: TimersUtilScheduling
   private let appBlocker: RestrictionApplying
   private let backstopRegistrar: BackstopRegistering
+  private let registerTimer: (UUID, String, Int, Date) throws -> Date
+  private let cancelTimer: (UUID, String) -> Void
+  private let saveSession: (ModelContext) throws -> Void
   private let scheduleReconciler: @MainActor (ModelContext) -> Void
 
   init(
@@ -45,6 +48,9 @@ class StrategyManager: ObservableObject {
     backstopRegistrar: BackstopRegistering = DeviceActivityBackstopRegistrar(),
     timersUtil: TimersUtilScheduling = TimersUtil(),
     remoteActiveDefaults: UserDefaults = .standard,
+    registerTimer: @escaping (UUID, String, Int, Date) throws -> Date = DeviceActivityCenterUtil.registerStrategyTimer,
+    cancelTimer: @escaping (UUID, String) -> Void = DeviceActivityCenterUtil.removeStrategyTimerActivity,
+    saveSession: @escaping (ModelContext) throws -> Void = { try $0.save() },
     scheduleReconciler: @escaping @MainActor (ModelContext) -> Void = {
       PreActivationReminderScheduler.reconcileScheduleRegistrations(context: $0)
     }
@@ -59,8 +65,61 @@ class StrategyManager: ObservableObject {
     self.appBlocker = appBlocker
     self.backstopRegistrar = backstopRegistrar
     self.timersUtil = timersUtil
+    self.registerTimer = registerTimer
+    self.cancelTimer = cancelTimer
+    self.saveSession = saveSession
     self.scheduleReconciler = scheduleReconciler
     self.remotelyActiveProfileIds = RemotelyActiveStore.load(defaults: remoteActiveDefaults)
+  }
+
+  /// A V2 originating start registers its countdown before constructing any session.
+  func startOriginatingSession(
+    context: ModelContext, profile: BlockedProfiles, origin: SessionOrigin,
+    now: Date = Date(), expectedVictimId: String? = nil, timerMinutes: Int? = nil
+  ) throws -> BlockedProfileSession {
+    let snapshot = BlockedProfiles.getSnapshot(for: profile)
+    func refusal(_ message: String) -> NSError {
+      NSError(domain: "ProfileStart", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
+    }
+    if let message = ProfileConditionValidation.startRejection(for: snapshot, origin: origin) {
+      throw refusal(message)
+    }
+    let candidateId = UUID().uuidString
+    let minutes = snapshot.stopConditions?.timer == true ? (timerMinutes ?? snapshot.stopConditions?.timerDurationMinutes) : nil
+    var deadline: Date?
+    if let minutes {
+      do { deadline = try registerTimer(profile.id, candidateId, minutes, now) } catch {
+        cancelTimer(profile.id, candidateId)
+        throw refusal("This profile couldn’t start because its timer couldn’t be set. Please try again.")
+      }
+    }
+    let candidate = BlockedProfileSession(
+      tag: origin.key ?? origin.kind.rawValue,
+      blockedProfile: profile, startTime: now, id: candidateId, origin: origin)
+    candidate.timerEndTime = deadline
+    context.insert(candidate)
+    do {
+      try saveSession(context)
+      BlockedProfiles.updateSnapshot(for: profile)
+      guard
+        SharedData.commitOriginatingSession(
+          candidate.toSnapshot(), expectedVictimId: expectedVictimId, now: now,
+          onCommit: {
+            self.appBlocker.activateRestrictions(for: snapshot)
+          })
+      else { throw refusal("Couldn’t start this profile. Please try again.") }
+    } catch {
+      profile.sessions.removeAll { $0.id == candidateId }
+      context.delete(candidate)
+      if minutes != nil { cancelTimer(profile.id, candidateId) }
+      do { try saveSession(context) } catch {
+        Log.error("Failed to persist originating-session compensation: \(error.localizedDescription)", category: .session)
+        throw refusal("Couldn’t start this profile. Please try again. " + error.localizedDescription)
+      }
+      throw refusal("Couldn’t start this profile. Please try again.")
+    }
+    activateSession(candidate, context: context)
+    return candidate
   }
 
   // Track if we're currently processing a remote session change

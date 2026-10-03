@@ -466,4 +466,139 @@ final class StrategyManagerStartTests: XCTestCase {
     XCTAssertTrue(manager.errorMessage?.contains("doesn't match") == true)
   }
 
+  func testRegistrationPrecedesEveryObservableEffect() throws {
+    let now = Date()
+    let profile = BlockedProfiles(name: "Timed", createdAt: now, updatedAt: now)
+    profile.startTriggers = .init(manual: true)
+    profile.stopConditions = .init(manual: true, timer: true, timerDurationMinutes: 37)
+    context.insert(profile)
+    try context.save()
+    let applier = StartRestrictionSpy()
+    var registrations = 0
+    let accepted = now.addingTimeInterval(2207)
+    let sut = StrategyManager(
+      appBlocker: applier,
+      registerTimer: { profileId, sessionId, minutes, registeredAt in
+        registrations += 1
+        XCTAssertEqual(profileId, profile.id)
+        XCTAssertNotNil(UUID(uuidString: sessionId))
+        XCTAssertEqual(minutes, 37)
+        XCTAssertEqual(registeredAt, now)
+        XCTAssertTrue(profile.sessions.isEmpty)
+        XCTAssertTrue(try self.activeSessions().isEmpty)
+        XCTAssertNil(SharedData.getActiveSharedSession())
+        XCTAssertEqual(applier.activations, 0)
+        XCTAssertNil(self.manager.timerTask)
+        return accepted
+      })
+    defer { sut.stopTimer() }
+    let started = try sut.startOriginatingSession(context: context, profile: profile, origin: .init(kind: .manual), now: now)
+    XCTAssertEqual(registrations, 1)
+    XCTAssertEqual(started.timerEndTime, accepted)
+    XCTAssertEqual(SharedData.getActiveSharedSession()?.timerEndTime, accepted)
+    XCTAssertEqual(SharedData.getActiveSharedSession()?.id, started.id)
+    XCTAssertEqual(started.origin, .init(kind: .manual))
+    XCTAssertEqual(applier.activations, 1)
+  }
+
+  func testRegistrationFailureEvenWithManualLeavesNoEffects() throws {
+    let now = Date()
+    let profile = BlockedProfiles(name: "Timed", createdAt: now, updatedAt: now)
+    profile.startTriggers = .init(manual: true)
+    profile.stopConditions = .init(manual: true, timer: true, timerDurationMinutes: 37)
+    context.insert(profile)
+    try context.save()
+    let applier = StartRestrictionSpy()
+    var cancelled: [(UUID, String)] = []
+    let sut = StrategyManager(
+      appBlocker: applier,
+      registerTimer: { _, _, _, _ in throw NSError(domain: "registrar", code: 1) },
+      cancelTimer: { cancelled.append(($0, $1)) })
+    XCTAssertThrowsError(try sut.startOriginatingSession(context: context, profile: profile, origin: .init(kind: .manual), now: now)) {
+      XCTAssertEqual($0.localizedDescription, "This profile couldn’t start because its timer couldn’t be set. Please try again.")
+    }
+    XCTAssertTrue(profile.sessions.isEmpty)
+    XCTAssertTrue(try activeSessions().isEmpty)
+    XCTAssertNil(SharedData.getActiveSharedSession())
+    XCTAssertEqual(applier.activations, 0)
+    XCTAssertEqual(cancelled.count, 1)
+    XCTAssertEqual(cancelled.first?.0, profile.id)
+    XCTAssertNotNil(UUID(uuidString: try XCTUnwrap(cancelled.first?.1)))
+  }
+
+  func testSaveFailureCompensatesOnlyCandidateAndKeepsUnrelatedEdit() throws {
+    let now = Date()
+    let profile = BlockedProfiles(name: "Timed", createdAt: now, updatedAt: now)
+    profile.startTriggers = .init(manual: true)
+    profile.stopConditions = .init(timer: true, timerDurationMinutes: 37)
+    let unrelated = BlockedProfiles(name: "Before", createdAt: now, updatedAt: now)
+    context.insert(profile)
+    context.insert(unrelated)
+    try context.save()
+    unrelated.name = "Pending edit"
+    let applier = StartRestrictionSpy()
+    var saves = 0
+    var cancelled: [String] = []
+    let sut = StrategyManager(
+      appBlocker: applier,
+      registerTimer: { _, _, _, _ in now.addingTimeInterval(2207) },
+      cancelTimer: { _, id in cancelled.append(id) },
+      saveSession: { context in
+        saves += 1
+        if saves == 1 { throw NSError(domain: "save", code: 1) }
+        try context.save()
+      })
+    XCTAssertThrowsError(try sut.startOriginatingSession(context: context, profile: profile, origin: .init(kind: .manual), now: now)) {
+      XCTAssertEqual($0.localizedDescription, "Couldn’t start this profile. Please try again.")
+    }
+    XCTAssertEqual(saves, 2)
+    XCTAssertEqual(unrelated.name, "Pending edit")
+    XCTAssertTrue(profile.sessions.isEmpty)
+    XCTAssertTrue(try activeSessions().isEmpty)
+    XCTAssertNil(SharedData.getActiveSharedSession())
+    XCTAssertEqual(applier.activations, 0)
+    XCTAssertEqual(cancelled.count, 1)
+  }
+
+  func testReplacementBetweenRegistrationAndCommitSurvivesCandidateCleanup() throws {
+    let now = Date()
+    let profile = BlockedProfiles(name: "Timed", createdAt: now, updatedAt: now)
+    profile.startTriggers = .init(manual: true)
+    profile.stopConditions = .init(timer: true, timerDurationMinutes: 37)
+    context.insert(profile)
+    try context.save()
+    let winner = SharedData.SessionSnapshot(id: UUID().uuidString, tag: "winner", blockedProfileId: UUID(), startTime: now, forceStarted: false)
+    let applier = StartRestrictionSpy()
+    var cancelled: [String] = []
+    let sut = StrategyManager(
+      appBlocker: applier,
+      registerTimer: { _, _, _, _ in
+        SharedData.createActiveSharedSession(for: winner)
+        return now.addingTimeInterval(2207)
+      }, cancelTimer: { _, id in cancelled.append(id) })
+    XCTAssertThrowsError(try sut.startOriginatingSession(context: context, profile: profile, origin: .init(kind: .manual), now: now))
+    XCTAssertEqual(SharedData.getActiveSharedSession(), winner)
+    XCTAssertTrue(profile.sessions.isEmpty)
+    XCTAssertTrue(try activeSessions().isEmpty)
+    XCTAssertEqual(applier.activations, 0)
+    XCTAssertEqual(applier.deactivations, 0)
+    XCTAssertEqual(cancelled.count, 1)
+    XCTAssertNotEqual(cancelled.first, winner.id)
+  }
+
+}
+
+@MainActor
+private final class StartRestrictionSpy: RestrictionApplying {
+  var activations = 0
+  var deactivations = 0
+  nonisolated func activateRestrictions(for profile: SharedData.ProfileSnapshot) {
+    MainActor.assumeIsolated { activations += 1 }
+  }
+  nonisolated func deactivateRestrictions() {
+    MainActor.assumeIsolated { deactivations += 1 }
+  }
+  nonisolated func deactivateRestrictions(keepingSafeguardsFor profile: SharedData.ProfileSnapshot?) {
+    deactivateRestrictions()
+  }
 }
