@@ -810,7 +810,9 @@ final class SyncApplyService {
       return .ignored
     }
     if let profile = try? BlockedProfiles.findProfile(byID: session.profileId, in: modelContext),
-      let applied = profile.sessions.valid.compactMap(\.sessionSequence).max(), applied >= session.sequenceNumber
+      let active = profile.sessions.valid.first(where: { $0.isActive }),
+      session.sessionId == nil || session.sessionId == active.id,
+      let applied = active.sessionSequence, applied >= session.sequenceNumber
     {
       return .ignored
     }

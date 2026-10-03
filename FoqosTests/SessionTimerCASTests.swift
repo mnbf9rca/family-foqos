@@ -1,5 +1,6 @@
 import CloudKit
 import FoqosShared
+import SwiftData
 import XCTest
 
 @testable import FamilyFoqos
@@ -190,7 +191,74 @@ final class SessionTimerCASTests: XCTestCase {
     let saved = await server.saves
     let record = try XCTUnwrap(saved.last)
     XCTAssertEqual(record["sessionId"] as? String, id)
-    XCTAssertEqual(try JSONDecoder().decode(SessionOrigin.self, from: Data(try XCTUnwrap(record["sessionOrigin"] as? String).utf8)), origin)
+    XCTAssertEqual(ProfileSessionRecord(from: record)?.origin, origin)
+  }
+
+  @MainActor
+  func testOfflineStopThenStartResolvesExactOldIntentBeforePublishingNewCountdown() async throws {
+    let now = Date()
+    let name = "OfflineRestart-" + UUID().uuidString
+    let defaults = UserDefaults(suiteName: name)!
+    SharedData.configure(suite: defaults)
+    let sync = ProfileSyncManager.shared
+    let wasEnabled = sync.isEnabled
+    sync.isEnabled = true
+    defer {
+      sync.isEnabled = wasEnabled
+      defaults.removePersistentDomain(forName: name)
+    }
+    let container = try TestModelContainer.create()
+    let context = container.mainContext
+    let profile = BlockedProfiles(name: "Timer", createdAt: now, updatedAt: now)
+    profile.startTriggers = .init(manual: true)
+    profile.stopConditions = .init(timer: true, timerDurationMinutes: 37)
+    context.insert(profile)
+    let old = BlockedProfileSession(
+      tag: "manual", blockedProfile: profile,
+      startTime: now.addingTimeInterval(-600), origin: .init(kind: .manual))
+    context.insert(old)
+    old.endSession(now: now.addingTimeInterval(-1))
+    try context.save()
+    var record = ProfileSessionRecord(profileId: profile.id)
+    record.applyUpdate(
+      isActive: true, sequenceNumber: 1, deviceId: SharedData.deviceSyncId.uuidString,
+      startTime: old.startTime, timerEndTime: now.addingTimeInterval(1600),
+      sessionId: old.id, origin: .init(kind: .manual))
+    let published = expectation(description: "old stop followed by new canonical start")
+    let server = RestartCASRecord(record: record.toCKRecord(in: CKRecordZone.ID(zoneName: "Test"))) {
+      published.fulfill()
+    }
+    let service = SessionSyncService(
+      fetchRecord: { _ in await server.fetch() },
+      saveRecord: { await server.save($0) })
+    var canceled: [String] = []
+    let manager = StrategyManager(
+      sessionSyncService: service,
+      registerTimer: { _, _, _, _ in now.addingTimeInterval(2207) },
+      cancelTimer: { _, id in canceled.append(id) })
+    defer {
+      manager.stopTimer()
+      manager.sessionStopOutbox.clear()
+    }
+    manager.sessionStopOutbox.clear()
+    manager.sessionStopOutbox.enqueue(profileId: profile.id, expectedStart: old.startTime, expectedSessionId: old.id)
+
+    let candidate = try manager.startOriginatingSession(
+      context: context, profile: profile,
+      origin: .init(kind: .manual), now: now)
+    let candidateId = candidate.id
+    await fulfillment(of: [published], timeout: 5)
+
+    let saves = await server.saves
+    XCTAssertEqual(saves.count, 2)
+    XCTAssertEqual(saves.first?["isActive"] as? Int, 0)
+    XCTAssertEqual(saves.last?["sessionId"] as? String, candidateId)
+    XCTAssertNotEqual(candidateId, old.id)
+    XCTAssertEqual(manager.activeSession?.id, candidateId)
+    XCTAssertEqual(manager.activeSession?.timerEndTime, now.addingTimeInterval(2207))
+    XCTAssertTrue(canceled.isEmpty)
+    XCTAssertTrue(manager.sessionStopOutbox.pending.isEmpty)
+    XCTAssertEqual(try context.fetch(FetchDescriptor<BlockedProfileSession>()).count, 2)
   }
 
 }
@@ -217,5 +285,22 @@ private actor TimerCASRecords {
     }
     onSave?()
     return record
+  }
+}
+
+private actor RestartCASRecord {
+  var record: CKRecord
+  var saves: [CKRecord] = []
+  let onStart: @Sendable () -> Void
+  init(record: CKRecord, onStart: @escaping @Sendable () -> Void) {
+    self.record = record
+    self.onStart = onStart
+  }
+  func fetch() -> CKRecord { record.copy() as! CKRecord }
+  func save(_ value: CKRecord) -> CKRecord {
+    record = value.copy() as! CKRecord
+    saves.append(record)
+    if value["isActive"] as? Int == 1 { onStart() }
+    return value
   }
 }

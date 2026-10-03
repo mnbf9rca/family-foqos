@@ -389,11 +389,7 @@ final class StrategyManagerBackgroundTests: XCTestCase {
     XCTAssertThrowsError(
       try manager.startSessionFromBackground(
         profile.id, context: context, durationInMinutes: 30,
-        authorization: MockAuthorizationRequesting(initialStatus: .approved),
-        registerTimer: { _, _, _ in
-          XCTFail("Must not register")
-          return Date.distantFuture
-        }))
+        authorization: MockAuthorizationRequesting(initialStatus: .approved)))
     XCTAssertTrue(try context.fetch(FetchDescriptor<BlockedProfileSession>()).isEmpty)
   }
 

@@ -1772,6 +1772,95 @@ final class SyncApplyServiceTests: XCTestCase {
     XCTAssertEqual(registrations, 0)
   }
 
+  func testSyncResetNewIdentityStartsAtOneDespiteHistoricalAndActiveSequence() throws {
+    let now = Date()
+    let profile = BlockedProfiles(name: "Reset", createdAt: now, updatedAt: now)
+    context.insert(profile)
+    let old = BlockedProfileSession(tag: "old", blockedProfile: profile, startTime: now.addingTimeInterval(-900))
+    old.sessionSequence = 99
+    old.endSession(now: now.addingTimeInterval(-600))
+    context.insert(old)
+    try context.save()
+    let manager = StrategyManager(cancelTimer: { _, _ in })
+    defer { manager.stopTimer() }
+    let service = SyncApplyService(
+      modelContext: context, store: store, sessionController: manager,
+      emergencyManager: emergencyManager, deviceId: deviceId)
+    var remote = ProfileSessionRecord(profileId: profile.id)
+    let id = UUID().uuidString
+    remote.applyUpdate(
+      isActive: true, sequenceNumber: 1, deviceId: "device-B", startTime: now,
+      sessionId: id, origin: .init(kind: .manual))
+    XCTAssertEqual(
+      service.applyFetchedModification(
+        remote.toCKRecord(in: zoneID),
+        isPendingDeleteOrTombstoned: noPendingDelete), .applied)
+    XCTAssertEqual(manager.activeSession?.id, id)
+    let replacement = UUID().uuidString
+    remote.resetForNewSession()
+    remote.applyUpdate(
+      isActive: true, sequenceNumber: 20, deviceId: "device-B", startTime: now.addingTimeInterval(1),
+      sessionId: replacement, origin: .init(kind: .manual))
+    _ = service.applyFetchedModification(remote.toCKRecord(in: zoneID), isPendingDeleteOrTombstoned: noPendingDelete)
+    var reset = ProfileSessionRecord(profileId: profile.id)
+    let resetId = UUID().uuidString
+    reset.applyUpdate(
+      isActive: true, sequenceNumber: 1, deviceId: "device-B", startTime: now.addingTimeInterval(2),
+      sessionId: resetId, origin: .init(kind: .manual))
+    XCTAssertEqual(
+      service.applyFetchedModification(
+        reset.toCKRecord(in: zoneID),
+        isPendingDeleteOrTombstoned: noPendingDelete), .applied)
+    XCTAssertEqual(manager.activeSession?.id, resetId)
+    XCTAssertEqual(
+      service.applyFetchedModification(
+        reset.toCKRecord(in: zoneID),
+        isPendingDeleteOrTombstoned: noPendingDelete), .ignored)
+  }
+
+  func testOlderWriterStartAdoptsBlockingWithoutPreviousIdOrSameOrigin() throws {
+    let now = Date()
+    let profile = BlockedProfiles(name: "Mixed versions", createdAt: now, updatedAt: now)
+    profile.startTriggers = .init(anyNFC: true)
+    profile.stopConditions = .init(sameNFC: true)
+    context.insert(profile)
+    let previous = BlockedProfileSession(
+      tag: "old", blockedProfile: profile,
+      startTime: now.addingTimeInterval(-600), origin: .init(kind: .nfc, key: "OLD", namespace: .nfcUID))
+    context.insert(previous)
+    previous.endSession(now: now.addingTimeInterval(-300))
+    try context.save()
+    var remote = ProfileSessionRecord(profileId: profile.id)
+    remote.applyUpdate(
+      isActive: true, sequenceNumber: 1, deviceId: "device-B", startTime: previous.startTime,
+      sessionId: previous.id, origin: .init(kind: .nfc, key: "OLD", namespace: .nfcUID))
+    let wire = remote.toCKRecord(in: zoneID)
+    wire["startTime"] = now
+    wire["sequenceNumber"] = 3
+    let manager = StrategyManager(
+      registerTimer: { _, _, _, _ in
+        XCTFail("Mirror never registers")
+        return now
+      },
+      cancelTimer: { _, _ in })
+    defer { manager.stopTimer() }
+    let service = SyncApplyService(
+      modelContext: context, store: store, sessionController: manager,
+      emergencyManager: emergencyManager, deviceId: deviceId)
+    XCTAssertEqual(service.applyFetchedModification(wire, isPendingDeleteOrTombstoned: noPendingDelete), .applied)
+    let active = try XCTUnwrap(manager.activeSession)
+    XCTAssertTrue(manager.isBlocking)
+    XCTAssertEqual(active.startTime, now)
+    XCTAssertNotEqual(active.id, previous.id)
+    XCTAssertNil(active.origin)
+    XCTAssertFalse(
+      StartStopActionResolver.canStop(
+        with: .nfc(tag: "OLD"), conditions: profile.stopConditions,
+        sessionTag: active.tag, stopNFCTagIds: [], stopQRCodeIds: [], sessionOrigin: active.origin
+      ).allowed)
+    XCTAssertEqual(try context.fetch(FetchDescriptor<BlockedProfileSession>()).count, 2)
+  }
+
   func testFailedAdoptionDoesNotAdvanceSequenceAndCanRetryAfterLockRecovery() throws {
     let now = Date()
     let profile = BlockedProfiles(name: "Mirror", createdAt: now, updatedAt: now)

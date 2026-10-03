@@ -20,6 +20,89 @@ final class ProfileScheduleRowDataTests: XCTestCase {
     try await super.tearDown()
   }
 
+  func testIndependentRecurrencesIgnoreRetainedLegacySchedule() throws {
+    let now = Date()
+    let profile = BlockedProfiles(name: "Independent", blockingStrategyId: NFCTimerBlockingStrategy.id)
+    profile.startTriggers = ProfileStartTriggers(schedule: true)
+    profile.stopConditions = ProfileStopConditions(timer: true, schedule: true, timerDurationMinutes: 45)
+    profile.startSchedule = .init(days: [.monday], hour: 9, minute: 0, updatedAt: now)
+    profile.stopSchedule = .init(days: [.friday], hour: 17, minute: 0, updatedAt: now)
+    profile.schedule = .init(days: [.sunday], startHour: 1, startMinute: 0, endHour: 2, endMinute: 0, updatedAt: now)
+    profile.strategyData = StrategyTimerData.toData(from: StrategyTimerData(durationInMinutes: 90))
+    context.insert(profile)
+
+    let row = ProfileScheduleRow(data: profile.cardData, isActive: false)
+    XCTAssertEqual(row.scheduleLines, ["Start: Mo 9:00 AM", "Stop: Fr 5:00 PM"])
+    XCTAssertEqual(row.timerDurationMinutes, 45)
+    XCTAssertNil(row.countdownInterval(now: now))
+  }
+
+  func testDisabledV2SchedulesNeverReviveLegacyOrMergeDays() throws {
+    let now = Date()
+    let profile = BlockedProfiles(name: "Disabled", blockingStrategyId: NFCBlockingStrategy.id)
+    profile.startTriggers = ProfileStartTriggers(manual: true)
+    profile.stopConditions = ProfileStopConditions(manual: true, schedule: true)
+    profile.startSchedule = .init(days: [.monday], hour: 9, minute: 0, updatedAt: now)
+    profile.stopSchedule = .init(days: [.friday], hour: 17, minute: 0, updatedAt: now)
+    profile.schedule = .init(days: [.sunday], startHour: 1, startMinute: 0, endHour: 2, endMinute: 0, updatedAt: now)
+    context.insert(profile)
+    XCTAssertEqual(ProfileScheduleRow(data: profile.cardData, isActive: false).scheduleLines, ["Stop: Fr 5:00 PM"])
+
+    profile.stopConditions = ProfileStopConditions(manual: true)
+    XCTAssertTrue(ProfileScheduleRow(data: profile.cardData, isActive: false).scheduleLines.isEmpty)
+  }
+
+  func testActiveTimerUsesAcceptedDeadlineAndClampsAfterExpiry() throws {
+    let now = Date()
+    let profile = BlockedProfiles(name: "Adjusted", blockingStrategyId: NFCBlockingStrategy.id)
+    profile.startTriggers = ProfileStartTriggers(manual: true)
+    profile.stopConditions = ProfileStopConditions(timer: true, timerDurationMinutes: 90)
+    context.insert(profile)
+    let session = BlockedProfileSession(tag: "manual", blockedProfile: profile, startTime: now)
+    let deadline = now.addingTimeInterval(30 * 60)
+    session.timerEndTime = deadline
+    context.insert(session)
+
+    let row = ProfileScheduleRow(data: profile.cardData, isActive: true)
+    XCTAssertEqual(row.countdownInterval(now: now), now...deadline)
+    XCTAssertEqual(row.countdownInterval(now: deadline.addingTimeInterval(60)), deadline...deadline)
+    XCTAssertNil(row.timerDurationMinutes)
+    XCTAssertNil(ProfileScheduleRow(data: profile.cardData, isActive: false).countdownInterval(now: now))
+  }
+
+  func testActiveSessionWithoutDeadlineNeverSuggestsConfiguredCountdown() throws {
+    let now = Date()
+    let profile = BlockedProfiles(name: "No countdown", blockingStrategyId: NFCTimerBlockingStrategy.id)
+    profile.stopConditions = ProfileStopConditions(manual: true, timer: true, timerDurationMinutes: 90)
+    profile.strategyData = StrategyTimerData.toData(from: StrategyTimerData(durationInMinutes: 60))
+    context.insert(profile)
+    let row = ProfileScheduleRow(data: profile.cardData, isActive: true)
+    XCTAssertNil(row.countdownInterval(now: now))
+    XCTAssertNil(row.timerDurationMinutes)
+  }
+
+  func testMissingOrInvalidDurationIsInertWithoutLegacyFallback() throws {
+    let profile = BlockedProfiles(name: "Inert", blockingStrategyId: NFCTimerBlockingStrategy.id)
+    profile.strategyData = StrategyTimerData.toData(from: StrategyTimerData(durationInMinutes: 60))
+    context.insert(profile)
+    for duration in [nil, 0, 14, 1440] as [Int?] {
+      profile.stopConditions = ProfileStopConditions(manual: true, timer: true, timerDurationMinutes: duration)
+      XCTAssertNil(ProfileScheduleRow(data: profile.cardData, isActive: false).timerDurationMinutes)
+    }
+  }
+
+  func testGenuinelyUnmigratedProfileKeepsLegacyScheduleAndDuration() throws {
+    let now = Date()
+    let profile = BlockedProfiles(name: "V1", blockingStrategyId: NFCTimerBlockingStrategy.id)
+    profile.profileSchemaVersion = 1
+    profile.strategyData = StrategyTimerData.toData(from: StrategyTimerData(durationInMinutes: 60))
+    profile.schedule = .init(days: [.monday], startHour: 9, startMinute: 0, endHour: 17, endMinute: 0, updatedAt: now)
+    context.insert(profile)
+    let row = ProfileScheduleRow(data: profile.cardData, isActive: false)
+    XCTAssertEqual(row.scheduleLines, ["Mo", "9:00 AM - 5:00 PM"])
+    XCTAssertEqual(row.timerDurationMinutes, 60)
+  }
+
   func testGivenLegacyScheduleProfile_WhenCardData_ThenScheduleFlagsMatchModel() throws {
     let now = Date()
     let profile = BlockedProfiles(

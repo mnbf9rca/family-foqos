@@ -36,7 +36,8 @@ final class StrategyTimerActivityTests: XCTestCase {
     let now = Date()
     let profile = profile(now: now)
     let applier = TimerRestrictionSpy()
-    let timer = StrategyTimerActivity(applier: applier)
+    var cancellations: [String] = []
+    let timer = StrategyTimerActivity(applier: applier, cancelTimer: { _, id in cancellations.append(id) })
     var current = SharedData.SessionSnapshot(id: UUID().uuidString, tag: "not-a-profile-id", blockedProfileId: profile.id, startTime: now, timerEndTime: now.addingTimeInterval(2207), breakStartTime: now, forceStarted: true, oneMoreMinuteUsed: true, oneMoreMinuteStartTime: now, origin: .init(kind: .schedule))
     current.oneMoreMinuteDeadline = now.addingTimeInterval(60)
     SharedData.setSnapshot(profile, for: profile.id.uuidString)
@@ -50,6 +51,7 @@ final class StrategyTimerActivityTests: XCTestCase {
     XCTAssertFalse(timer.stop(for: profile, sessionId: current.id, now: now.addingTimeInterval(2208)))
     XCTAssertNil(SharedData.getActiveSharedSession())
     XCTAssertEqual(applier.deactivations, 1)
+    XCTAssertEqual(cancellations, [current.id])
     let ended = try XCTUnwrap(SharedData.completedSessionsInScheduler.last)
     XCTAssertEqual(ended.id, current.id)
     XCTAssertNil(ended.timerEndTime)
@@ -96,6 +98,49 @@ final class StrategyTimerActivityTests: XCTestCase {
     XCTAssertNoThrow(try StrategyTimerActivity.timerInterval(minutes: 15, now: now, calendar: calendar))
     XCTAssertNoThrow(try StrategyTimerActivity.timerInterval(minutes: 1439, now: now, calendar: calendar))
   }
+  func testLegacyTimerStartStillAppliesOnlyForAnActiveV1Session() {
+    let now = Date()
+    var legacy = profile(now: now)
+    legacy.profileSchemaVersion = 1
+    let applier = TimerRestrictionSpy()
+    let timer = StrategyTimerActivity(applier: applier)
+    timer.start(for: legacy)
+    XCTAssertEqual(applier.activations, 0)
+    let active = SharedData.SessionSnapshot(
+      id: UUID().uuidString, tag: "legacy-timer",
+      blockedProfileId: legacy.id, startTime: now, forceStarted: false)
+    SharedData.createActiveSharedSession(for: active)
+    timer.start(for: legacy)
+    XCTAssertEqual(applier.activations, 1)
+    legacy.profileSchemaVersion = 3
+    timer.start(for: legacy)
+    XCTAssertEqual(applier.activations, 1)
+  }
+
+  func testFullTimerDateComponentsKeepAcceptedDeadlineAcrossSpringForward() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Europe/London"))
+    let now = try XCTUnwrap(calendar.date(from: DateComponents(year: 2027, month: 3, day: 27, hour: 23, minute: 30)))
+    let interval = try StrategyTimerActivity.timerInterval(minutes: 1439, now: now, calendar: calendar)
+    XCTAssertEqual(calendar.date(from: interval.start), now)
+    XCTAssertEqual(calendar.date(from: interval.end), interval.deadline)
+    XCTAssertEqual(interval.deadline.timeIntervalSince(now), 1439 * 60)
+  }
+
+  func testScheduleCompletionPreservesUndecodableProfileSnapshots() throws {
+    let now = Date()
+    let profile = profile(now: now)
+    let bytes = Data("corrupt-profile-snapshots".utf8)
+    defaults.set(bytes, forKey: "family_foqos_profile_snapshots")
+    let active = SharedData.SessionSnapshot(
+      id: UUID().uuidString, tag: "schedule",
+      blockedProfileId: profile.id, startTime: now, timerEndTime: now, forceStarted: true,
+      origin: .init(kind: .schedule))
+    SharedData.createActiveSharedSession(for: active)
+    XCTAssertTrue(StrategyTimerActivity().stop(for: profile, sessionId: active.id, now: now))
+    XCTAssertEqual(defaults.data(forKey: "family_foqos_profile_snapshots"), bytes)
+  }
+
 }
 
 private final class TimerRestrictionSpy: RestrictionApplying {

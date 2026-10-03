@@ -1,4 +1,5 @@
 // FoqosTests/StrategyManagerStartTests.swift
+import CloudKit
 import FoqosShared
 import SwiftData
 import XCTest
@@ -465,18 +466,33 @@ final class StrategyManagerStartTests: XCTestCase {
     XCTAssertTrue(manager.errorMessage?.contains("doesn't match") == true)
   }
 
-  func testRegistrationPrecedesEveryObservableEffect() throws {
+  func testRegistrationPrecedesEveryObservableEffect() async throws {
     let now = Date()
     let profile = BlockedProfiles(name: "Timed", createdAt: now, updatedAt: now)
     profile.startTriggers = .init(manual: true)
     profile.stopConditions = .init(manual: true, timer: true, timerDurationMinutes: 37)
     context.insert(profile)
     try context.save()
+    let sync = ProfileSyncManager.shared
+    let wasEnabled = sync.isEnabled
+    sync.isEnabled = true
+    defer { sync.isEnabled = wasEnabled }
+    let syncSpy = RegistrationSyncSpy()
+    let published = expectation(description: "start published after registration")
+    let service = SessionSyncService(
+      fetchRecord: { _ in try await syncSpy.fetch() },
+      saveRecord: { record in
+        published.fulfill()
+        return record
+      })
     let applier = StartRestrictionSpy()
     var registrations = 0
     let accepted = now.addingTimeInterval(2207)
-    let sut = StrategyManager(
-      appBlocker: applier,
+    var activities = 0
+    var reminders = 0
+    var sut: StrategyManager!
+    sut = StrategyManager(
+      sessionSyncService: service, appBlocker: applier,
       registerTimer: { profileId, sessionId, minutes, registeredAt in
         registrations += 1
         XCTAssertEqual(profileId, profile.id)
@@ -487,12 +503,23 @@ final class StrategyManagerStartTests: XCTestCase {
         XCTAssertTrue(try self.activeSessions().isEmpty)
         XCTAssertNil(SharedData.getActiveSharedSession())
         XCTAssertEqual(applier.activations, 0)
-        XCTAssertNil(self.manager.timerTask)
+        XCTAssertNil(sut.timerTask)
+        XCTAssertEqual(activities, 0)
+        XCTAssertEqual(reminders, 0)
+        XCTAssertEqual(syncSpy.fetches, 0)
         return accepted
-      })
-    defer { sut.stopTimer() }
+      }, startSessionActivity: { _ in activities += 1 },
+      cancelPreActivationReminders: { _ in reminders += 1 })
+    defer {
+      sut.stopTimer()
+      sut = nil
+    }
     let started = try sut.startOriginatingSession(context: context, profile: profile, origin: .init(kind: .manual), now: now)
+    await fulfillment(of: [published], timeout: 5)
+    XCTAssertEqual(syncSpy.fetches, 1)
     XCTAssertEqual(registrations, 1)
+    XCTAssertEqual(activities, 1)
+    XCTAssertEqual(reminders, 1)
     XCTAssertEqual(started.timerEndTime, accepted)
     XCTAssertEqual(SharedData.getActiveSharedSession()?.timerEndTime, accepted)
     XCTAssertEqual(SharedData.getActiveSharedSession()?.id, started.id)
@@ -727,6 +754,31 @@ final class StrategyManagerStartTests: XCTestCase {
     sut.stopTimer()
   }
 
+  func testDelayedLegacyEndedCallbackCannotClearReplacementOrRemoveItsTimers() throws {
+    let now = Date()
+    let legacy = eligibleProfile(name: "Old", createdAt: now, updatedAt: now)
+    legacy.profileSchemaVersion = 1
+    legacy.blockingStrategyId = ManualBlockingStrategy.id
+    let replacement = eligibleProfile(name: "New", createdAt: now, updatedAt: now)
+    replacement.stopConditions = .init(timer: true, timerDurationMinutes: 37)
+    context.insert(legacy)
+    context.insert(replacement)
+    try context.save()
+    var bulkRemovals = 0
+    let sut = StrategyManager(
+      registerTimer: { _, _, _, _ in now.addingTimeInterval(2207) },
+      removeAllStrategyTimers: { bulkRemovals += 1 })
+    defer { sut.stopTimer() }
+    let strategy = sut.getStrategy(id: ManualBlockingStrategy.id)
+    let started = try sut.startOriginatingSession(
+      context: context, profile: replacement,
+      origin: .init(kind: .manual), now: now)
+    strategy.onSessionCreation?(.ended(legacy))
+    XCTAssertEqual(sut.activeSession?.id, started.id)
+    XCTAssertEqual(SharedData.getActiveSharedSession()?.id, started.id)
+    XCTAssertEqual(bulkRemovals, 0)
+  }
+
 }
 
 @MainActor
@@ -741,5 +793,14 @@ private final class StartRestrictionSpy: RestrictionApplying {
   }
   nonisolated func deactivateRestrictions(keepingSafeguardsFor profile: SharedData.ProfileSnapshot?) {
     deactivateRestrictions()
+  }
+}
+
+@MainActor
+private final class RegistrationSyncSpy {
+  var fetches = 0
+  func fetch() throws -> CKRecord {
+    fetches += 1
+    throw CKError(.unknownItem)
   }
 }

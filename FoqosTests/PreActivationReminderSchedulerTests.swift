@@ -340,4 +340,21 @@ final class PreActivationReminderSchedulerTests: XCTestCase {
     XCTAssertEqual(try context.fetch(FetchDescriptor<BlockedProfileSession>()).count, 1)
   }
 
+  func testRefreshMergesExtensionStopTimeBeforeRepublishing() throws {
+    let now = Date()
+    let profile = BlockedProfiles(name: "Scheduled", createdAt: now, updatedAt: now)
+    profile.scheduleLastStoppedAt = now.addingTimeInterval(-600)
+    context.insert(profile)
+    try context.save()
+    var snapshot = BlockedProfiles.getSnapshot(for: profile)
+    snapshot.scheduleLastStoppedAt = now
+    SharedData.setSnapshot(snapshot, for: profile.id.uuidString)
+
+    PreActivationReminderScheduler.reconcileMissingSnapshots(context: context)
+
+    XCTAssertEqual(profile.scheduleLastStoppedAt, now)
+    XCTAssertEqual(SharedData.snapshot(for: profile.id.uuidString)?.scheduleLastStoppedAt, now)
+    XCTAssertEqual(try context.fetch(FetchDescriptor<BlockedProfiles>()).first?.scheduleLastStoppedAt, now)
+  }
+
 }

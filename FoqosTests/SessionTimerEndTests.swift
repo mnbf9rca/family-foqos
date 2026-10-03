@@ -199,6 +199,7 @@ final class SessionTimerEndTests: XCTestCase {
       context.insert(profile)
       let session = BlockedProfileSession(tag: "timer", blockedProfile: profile, startTime: now)
       session.origin = .init(kind: .qr, key: "DIGEST", namespace: .qrDigest)
+      session.usesCanonicalIdentity = true
       session.timerEndTime = now.addingTimeInterval(900)
       context.insert(session)
       try context.save()
@@ -217,6 +218,7 @@ final class SessionTimerEndTests: XCTestCase {
     let now = Date()
     let candidate = makeSession(now: now)
     candidate.origin = .init(kind: .nfc, key: "LOSER", namespace: .nfcUID)
+    candidate.usesCanonicalIdentity = true
     candidate.timerEndTime = now.addingTimeInterval(900)
     SharedData.createActiveSharedSession(for: candidate.toSnapshot())
     let oldId = candidate.id

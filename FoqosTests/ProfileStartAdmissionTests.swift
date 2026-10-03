@@ -122,4 +122,20 @@ final class ProfileStartAdmissionTests: XCTestCase {
     profile.stopConditions = .init(manual: true)
     XCTAssertEqual(ProfileConditionValidation.startRejection(for: BlockedProfiles.getSnapshot(for: profile), origin: .init(kind: .manual)), c18)
   }
+  func testSpecificStartRequiresAKeyAndMayUseTheSameSpecificStopKey() {
+    let now = Date()
+    for kind in [SessionOrigin.Kind.nfc, .qr] {
+      var snap = snapshot(now: now)
+      snap.startTriggers = kind == .nfc ? .init(specificNFC: true) : .init(specificQR: true)
+      snap.stopConditions = kind == .nfc ? .init(nfc: .specific) : .init(qr: .specific)
+      snap.stopNFCTagIds = ["KEY"]
+      snap.stopQRCodeIds = ["KEY"]
+      let origin = SessionOrigin(kind: kind, key: "KEY", namespace: kind == .nfc ? .nfcUID : .qrDigest)
+      XCTAssertEqual(ProfileConditionValidation.startRejection(for: snap, origin: origin), c18)
+      snap.startNFCTagIds = ["KEY"]
+      snap.startQRCodeIds = ["KEY"]
+      XCTAssertNil(ProfileConditionValidation.startRejection(for: snap, origin: origin))
+    }
+  }
+
 }
