@@ -124,11 +124,13 @@ public class ScheduleTimerActivity: TimerActivity {
       let decision = BackgroundStopPolicy.evaluate(
         channel: .takeover,
         sessionMatchesProfile: true,
-        disableBackgroundStops: victimSnapshot?.disableBackgroundStops ?? false,
         geofence: victimGeofence,
         stopConditions: victimSnapshot?.stopConditions
       )
-      guard case .allowed = decision else {
+      let legacyVeto =
+        (victimSnapshot?.profileSchemaVersion ?? 1) < 2
+        && victimSnapshot?.disableBackgroundStops == true
+      guard !legacyVeto, case .allowed = decision else {
         Log.info(
           "Start schedule timer for \(profile.id.uuidString), NOT taking over protected session for "
             + "\(existingSession.blockedProfileId.uuidString): \(decision)",
@@ -194,10 +196,12 @@ public class ScheduleTimerActivity: TimerActivity {
       return
     }
 
+    // Pre-update snapshots and deferred V1 sessions retain their old lifecycle.
+    guard (profile.profileSchemaVersion ?? 1) >= 2 || profile.disableBackgroundStops != true else { return }
+
     let decision = BackgroundStopPolicy.evaluate(
       channel: .schedule,
       sessionMatchesProfile: activeSession.blockedProfileId == profile.id,
-      disableBackgroundStops: profile.disableBackgroundStops ?? false,
       geofence: .noRule,
       stopConditions: profile.stopConditions
     )

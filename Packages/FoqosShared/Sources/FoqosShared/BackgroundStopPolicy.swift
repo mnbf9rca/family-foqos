@@ -20,7 +20,6 @@ public enum BackgroundStopPolicy {
 
   public enum Denial: Equatable {
     case noMatchingSession
-    case backgroundStopsDisabled
     case geofenceNotSatisfied(reason: String)
     case geofenceUnavailable
     case stopConditionNotMet(reason: String)
@@ -34,21 +33,20 @@ public enum BackgroundStopPolicy {
   public static func evaluate(
     channel: Channel,
     sessionMatchesProfile: Bool,
-    disableBackgroundStops: Bool,
     geofence: GeofenceState,
     stopConditions: ProfileStopConditions?
   ) -> Decision {
     guard sessionMatchesProfile else { return .denied(.noMatchingSession) }
 
-    if disableBackgroundStops { return .denied(.backgroundStopsDisabled) }
-
-    switch geofence {
-    case .noRule, .satisfied:
-      break
-    case .notSatisfied(let reason):
-      return .denied(.geofenceNotSatisfied(reason: reason))
-    case .unavailable:
-      return .denied(.geofenceUnavailable)
+    if channel != .schedule {
+      switch geofence {
+      case .noRule, .satisfied:
+        break
+      case .notSatisfied(let reason):
+        return .denied(.geofenceNotSatisfied(reason: reason))
+      case .unavailable:
+        return .denied(.geofenceUnavailable)
+      }
     }
 
     let conditions = stopConditions ?? ProfileStopConditions()

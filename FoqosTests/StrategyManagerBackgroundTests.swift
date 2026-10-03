@@ -203,27 +203,72 @@ final class StrategyManagerBackgroundTests: XCTestCase {
     }
   }
 
-  func testGivenBackgroundStopsDisabled_WhenStoppingFromBackground_ThenThrowsBackgroundStopsDisabled()
-    async throws
-  {
-    let profile = BlockedProfiles(name: "Test")
-    profile.disableBackgroundStops = true
-    context.insert(profile)
-    let session = BlockedProfileSession(tag: "test", blockedProfile: profile)
-    context.insert(session)
-    try context.save()
+  func testOldTrueFlagDoesNotVetoConfiguredShortcutStop() async throws {
+    for oldFlag in [false, true] {
+      let profile = try eligibleProfile()
+      profile.disableBackgroundStops = oldFlag
+      let session = BlockedProfileSession.createSession(in: context, withTag: "manual", withProfile: profile)
+      try context.save()
+      try await manager.stopSessionFromBackground(profile.id, context: context)
+      XCTAssertFalse(session.isActive)
+      XCTAssertNil(SharedData.getActiveSharedSession())
+    }
+  }
 
+  func testGenuineV1ShortcutVetoPreservedUntilConversion() async throws {
+    let profile = try eligibleProfile()
+    profile.profileSchemaVersion = 1
+    profile.blockingStrategyId = ManualBlockingStrategy.id
+    profile.disableBackgroundStops = true
+    let session = BlockedProfileSession.createSession(in: context, withTag: "manual", withProfile: profile)
+    try context.save()
     do {
       try await manager.stopSessionFromBackground(profile.id, context: context)
-      XCTFail("Expected error to be thrown")
-    } catch let error as IntentError {
-      if case .backgroundStopsDisabled = error {
-      } else {
-        XCTFail("Expected backgroundStopsDisabled, got \(error)")
-      }
+      XCTFail("Deferred V1 session must retain its veto")
     } catch {
-      XCTFail("Expected IntentError, got \(error)")
+      guard case IntentError.backgroundStopsDisabled = error else { return XCTFail("Unexpected denial: \(error)") }
     }
+    XCTAssertTrue(session.isActive)
+    session.endSession()
+    profile.migrateToV2IfNeeded()
+    XCTAssertTrue(profile.disableBackgroundStops)
+    let converted = BlockedProfileSession.createSession(in: context, withTag: "manual", withProfile: profile)
+    try context.save()
+    try await manager.stopSessionFromBackground(profile.id, context: context)
+    XCTAssertFalse(converted.isActive)
+  }
+
+  func testConfiguredLinkStopIgnoresV2FlagWithoutBroadeningAdmission() async throws {
+    for version in [1, 3] {
+      for enabled in [false, true] {
+        let profile = try eligibleProfile()
+        profile.profileSchemaVersion = version
+        profile.disableBackgroundStops = true
+        profile.stopConditions = .init(manual: true, deepLink: enabled)
+        let session = BlockedProfileSession.createSession(in: context, withTag: "manual", withProfile: profile)
+        try context.save()
+        await manager.toggleSessionFromDeeplink(
+          profile.id.uuidString,
+          url: URL(string: BlockedProfiles.getProfileDeepLink(profile))!, context: context)
+        XCTAssertEqual(session.isActive, version == 1 || !enabled)
+        if session.isActive { session.endSession() }
+      }
+    }
+  }
+
+  func testMissingV2ConditionsNeverFallbackToLegacyVeto() async throws {
+    let profile = try eligibleProfile()
+    profile.stopConditionsData = nil
+    profile.disableBackgroundStops = true
+    let session = BlockedProfileSession.createSession(in: context, withTag: "manual", withProfile: profile)
+    try context.save()
+    do {
+      try await manager.stopSessionFromBackground(profile.id, context: context)
+      XCTFail("Missing V2 conditions must fail closed")
+    } catch {
+      guard case IntentError.stopConditionsNotMet = error else { return XCTFail("Unexpected denial: \(error)") }
+    }
+    XCTAssertTrue(session.isActive)
   }
 
   func testGivenNFCOnlyStopProfile_WhenStoppingFromBackground_ThenThrowsStopConditionsNotMet()
@@ -369,18 +414,13 @@ final class StrategyManagerBackgroundTests: XCTestCase {
     } catch { XCTAssertTrue(error is IntentError) }
     XCTAssertTrue(try XCTUnwrap(replacement).isActive)
     XCTAssertEqual(SharedData.getActiveSharedSession()?.id, replacement?.id)
-    for disableBackground in [false, true] {
-      profile.stopConditions = ProfileStopConditions(manual: true)
-      profile.disableBackgroundStops = false
-      geofence.change = {
-        if disableBackground { profile.disableBackgroundStops = true } else { profile.stopConditions = ProfileStopConditions(anyNFC: true) }
-      }
-      do {
-        try await manager.stopSessionFromBackground(profile.id, context: context)
-        XCTFail("Must use current stop policy")
-      } catch { XCTAssertTrue(error is IntentError) }
-      XCTAssertTrue(try XCTUnwrap(replacement).isActive)
-    }
+    profile.stopConditions = ProfileStopConditions(manual: true)
+    geofence.change = { profile.stopConditions = ProfileStopConditions(anyNFC: true) }
+    do {
+      try await manager.stopSessionFromBackground(profile.id, context: context)
+      XCTFail("Must use current Manual permission")
+    } catch { XCTAssertTrue(error is IntentError) }
+    XCTAssertTrue(try XCTUnwrap(replacement).isActive)
   }
 
   func testMoreRestrictiveUnlockPreferenceDuringStopRefuses() async throws {

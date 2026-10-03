@@ -1491,7 +1491,7 @@ final class SyncApplyServiceTests: XCTestCase {
         XCTAssertTrue(service.drainReenqueues().isEmpty)
         XCTAssertEqual(StartStopActionResolver.determineStopAction(for: local.stopConditions), .stopImmediately)
         XCTAssertTrue(StartStopActionResolver.canStop(with: .nfc(tag: "A0FF"), conditions: local.stopConditions, sessionTag: session.tag, stopNFCTagIds: local.stopNFCTagIds, stopQRCodeIds: []).allowed)
-        XCTAssertEqual(BackgroundStopPolicy.evaluate(channel: .schedule, sessionMatchesProfile: true, disableBackgroundStops: false, geofence: .noRule, stopConditions: local.stopConditions), .allowed)
+        XCTAssertEqual(BackgroundStopPolicy.evaluate(channel: .schedule, sessionMatchesProfile: true, geofence: .noRule, stopConditions: local.stopConditions), .allowed)
         store = SyncEngineStore(userRecordName: "user-1", defaults: storeDefaults)
         XCTAssertTrue(store.failedApplies.contains { $0.recordName == local.id.uuidString && $0.op == .upsert })
       }

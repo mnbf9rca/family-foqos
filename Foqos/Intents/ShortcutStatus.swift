@@ -61,7 +61,7 @@ enum ShortcutStatus {
     } else if profile.profileSchemaVersion == 1, profile.schedule?.isActive == true {
       let grant = clauses.isEmpty ? "" : ", with " + clauses.joined(separator: " and ")
       return (matches, "\(prefix)\(profile.name) is active\(grant), but its legacy schedule timing is unavailable.")
-    } else if profile.stopConditions.schedule && !profile.disableBackgroundStops,
+    } else if profile.stopConditions.schedule,
       let schedule = profile.stopSchedule,
       let next = schedule.nextScheduledStartTime(after: now, calendar: calendar)
     {
