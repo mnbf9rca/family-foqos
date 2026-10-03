@@ -152,12 +152,18 @@ set -euo pipefail
 : "${UPGRADE_ENV:?Set UPGRADE_ENV to the env.sh path printed by step 1}"
 [ -f "$UPGRADE_ENV" ] || { echo 'Run environment file is missing' >&2; exit 1; }
 source "$UPGRADE_ENV"
-cp "$UPGRADE_RUN/original-LogTailTests.swift" "$UPGRADE_V1/FoqosTests/LogTailTests.swift"
-rm -- "$UPGRADE_V2/FoqosTests/RCUpgradeVerificationTests.swift"
-[ -z "$(git -C "$UPGRADE_V1" status --porcelain)" ] || { echo 'V1 worktree has additional changes: preserve and inspect them' >&2; exit 1; }
-[ -z "$(git -C "$UPGRADE_V2" status --porcelain)" ] || { echo 'V2 worktree has additional changes: preserve and inspect them' >&2; exit 1; }
-git worktree remove "$UPGRADE_V1"
-git worktree remove "$UPGRADE_V2"
+if [ -d "$UPGRADE_V1" ] && [ -f "$UPGRADE_RUN/original-LogTailTests.swift" ]; then
+  cp "$UPGRADE_RUN/original-LogTailTests.swift" "$UPGRADE_V1/FoqosTests/LogTailTests.swift"
+fi
+if [ -f "$UPGRADE_V2/FoqosTests/RCUpgradeVerificationTests.swift" ]; then
+  rm -- "$UPGRADE_V2/FoqosTests/RCUpgradeVerificationTests.swift"
+fi
+for worktree in "$UPGRADE_V1" "$UPGRADE_V2"; do
+  if [ -d "$worktree" ]; then
+    [ -z "$(git -C "$worktree" status --porcelain)" ] || { echo "Worktree has additional changes: preserve and inspect $worktree" >&2; exit 1; }
+    git worktree remove "$worktree"
+  fi
+done
 ```
 
 If setup stopped before creating a file/worktree, clean only the artifacts that actually exist. Preserve the evidence directory until its report has been saved in the issue or PR. The checked-in runbook, helper and Swift fixtures are the reusable procedure; a past `/private/tmp` directory is never a prerequisite for a new run.

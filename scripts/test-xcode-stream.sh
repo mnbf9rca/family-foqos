@@ -141,7 +141,7 @@ case "$command" in
     printf 'run\t%s\t%s\t%s\t%s\n' "$project" "$agent" "$session" "$uuid" >>"$GATE_LOG"
     export IOS_SIM_GATE_UDID="$uuid"
     export IOS_SIM_GATE_DESTINATION="platform=iOS Simulator,id=$uuid"
-    export IOS_SIM_GATE_DERIVED_DATA_PATH="$IOS_SIM_GATE_CACHE_HOME/DerivedData/$project/$agent/${session:-no-session}"
+    export IOS_SIM_GATE_DERIVED_DATA_PATH="$IOS_SIM_GATE_CACHE_HOME/DerivedData/$project/$agent/${session:+session-}${session:-no-session}"
     export IOS_SIM_GATE_PROJECT="$project"
     export IOS_SIM_GATE_AGENT="$agent"
     if [[ -n "$session" ]]; then
@@ -432,7 +432,7 @@ run_wrapper --agent build2 --session collab -- xcodebuild test -project FamilyFo
 assert_contains "$GATE_LOG" $'run\tfamily-foqos\tbuild2\tcollab\t11111111-1111-1111-1111-111111111111'
 assert_not_contains "$SIMCTL_LOG" "create "
 assert_contains "$XCODEBUILD_LOG" "platform=iOS Simulator,id=$REUSE_UUID"
-assert_contains "$XCODEBUILD_LOG" "$CASE_ROOT/cache/DerivedData/family-foqos/build2/collab"
+assert_contains "$XCODEBUILD_LOG" "$CASE_ROOT/cache/DerivedData/family-foqos/build2/session-collab"
 assert_contains "$XCODEBUILD_LOG" "-parallel-testing-enabled"
 assert_contains "$XCODEBUILD_LOG" "NO"
 assert_contains "$XCODEBUILD_LOG" "-disable-concurrent-destination-testing"
