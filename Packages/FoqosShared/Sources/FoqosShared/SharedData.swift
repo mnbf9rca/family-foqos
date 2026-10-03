@@ -177,6 +177,30 @@ public enum SharedData {
     return true
   }
 
+  /// Device-local metadata; never included in synced profile snapshots.
+  public static func startRegistrationNotBefore(for profileId: UUID) -> Date? {
+    suite.object(forKey: startRegistrationKey(for: profileId)) as? Date
+  }
+
+  @discardableResult
+  public static func setStartRegistrationNotBefore(_ date: Date?, for profileId: UUID) -> Bool {
+    withLockStatus(blocking: true) { outcome in
+      guard outcome == .acquired else { return false }
+      let key = startRegistrationKey(for: profileId)
+      let previous = suite.object(forKey: key)
+      if let date { suite.set(date, forKey: key) } else { suite.removeObject(forKey: key) }
+      guard (suite.object(forKey: key) as? Date) == date else {
+        if let previous { suite.set(previous, forKey: key) } else { suite.removeObject(forKey: key) }
+        return false
+      }
+      return true
+    }
+  }
+
+  private static func startRegistrationKey(for profileId: UUID) -> String {
+    "family_foqos_start_registration_not_before_\(profileId.uuidString)"
+  }
+
   // MARK: – Keys
 
   private enum Key: String {

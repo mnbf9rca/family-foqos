@@ -78,7 +78,7 @@ public class ScheduleTimerActivity: TimerActivity {
     }
 
     // Check start schedule — V2 uses consolidated shouldBeActiveNow, legacy uses individual checks
-    if let startSchedule = profile.startSchedule, profile.startTriggersSchedule == true {
+    if isV2, let startSchedule = profile.startSchedule, profile.startTriggersSchedule == true {
       let activeStopSchedule =
         (profile.stopConditionsSchedule == true) ? profile.stopSchedule : nil
       if !startSchedule.shouldBeActiveNow(
@@ -88,7 +88,7 @@ public class ScheduleTimerActivity: TimerActivity {
         Log.info("Start schedule timer activity for \(profile.id.uuidString), should not be active now", category: .timer)
         return
       }
-    } else if let schedule = profile.schedule {
+    } else if !isV2, let schedule = profile.schedule {
       guard schedule.isTodayScheduled() else {
         Log.info("Start schedule timer activity for \(profile.id.uuidString), not scheduled for today", category: .timer)
         return
@@ -196,6 +196,8 @@ public class ScheduleTimerActivity: TimerActivity {
   }
 
   public func stop(for profile: SharedData.ProfileSnapshot) {
+    // V2 start monitoring ends at an artificial time; only its stop recurrence completes sessions.
+    guard (profile.profileSchemaVersion ?? 1) < 2 else { return }
     let profileId = profile.id.uuidString
 
     guard let activeSession = SharedData.getActiveSharedSession() else {
