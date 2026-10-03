@@ -187,7 +187,7 @@ Only the human approves a fork PR's workflow run; agents never approve it. Versi
 
 A PR changing source code gets the `greptile-review` label once, when its author believes it is ready to merge after the reviewer’s findings are addressed, because every push after labelling triggers a paid re-review; never label spec-only, docs-only, version-only, or small follow-up PRs.
 
-Greptile publishes its review summary in the PR description and completion through the `Greptile Review` status check, so do not wait for a PR review or comment to establish that it ran. A green check does not clear findings: judge the summary's findings and confidence score and any unresolved inline Greptile review threads. Inspect the summary with `gh pr view N --json body`. If no result appears within about 30 minutes, the human retriggers the review from the Greptile management portal; do not remove and re-add the label.
+Greptile publishes its review summary in the PR description and completion through the `Greptile Review` status check, so do not wait for a PR review or comment to establish that it ran. A green check does not clear findings: judge the summary's findings and confidence score and any unresolved inline Greptile review threads. Inspect the summary with `gh pr view N --json body`. When a labelled PR has had no Greptile review of its latest head for about 30 minutes, the orchestrator posts a PR comment `@greptileai re-review`; the portal retrigger needs the human's login. This follows the [human ruling on #507 (2026-10-03)](https://github.com/mnbf9rca/family-foqos/issues/507#issuecomment-5969255530); do not remove and re-add the label.
 
 ### Calibrate Operator-Document Sign-Off
 
