@@ -35,10 +35,12 @@ public class StopScheduleTimerActivity: TimerActivity {
       }
     }
 
+    // Pre-update snapshots and deferred V1 sessions retain their old lifecycle.
+    guard (profile.profileSchemaVersion ?? 1) >= 2 || profile.disableBackgroundStops != true else { return }
+
     let decision = BackgroundStopPolicy.evaluate(
       channel: .schedule,
       sessionMatchesProfile: activeSession.blockedProfileId == profile.id,
-      disableBackgroundStops: profile.disableBackgroundStops ?? false,
       geofence: .noRule,
       stopConditions: profile.stopConditions
     )

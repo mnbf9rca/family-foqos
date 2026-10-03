@@ -54,7 +54,7 @@ final class ShortcutsStatusTests: XCTestCase {
     XCTAssertEqual(inactive.dialog, "No session is active.")
   }
 
-  func testConfiguredSchedulesAndBackgroundRestriction() {
+  func testShortcutStatusShowsConfiguredScheduleWithOldTrueFlag() {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = TimeZone(secondsFromGMT: 0)!
     let now = calendar.date(from: DateComponents(year: 2026, month: 9, day: 10, hour: 12))!
@@ -65,7 +65,7 @@ final class ShortcutsStatusTests: XCTestCase {
     let answer = ShortcutStatus.answer(session: session, asked: nil, grantRemaining: nil, now: now, calendar: calendar)
     XCTAssertTrue(answer.dialog.contains("next scheduled stop today at"))
     profile.disableBackgroundStops = true
-    XCTAssertTrue(ShortcutStatus.answer(session: session, asked: nil, grantRemaining: nil, now: now, calendar: calendar).dialog.contains("no end time available"))
+    XCTAssertEqual(ShortcutStatus.answer(session: session, asked: nil, grantRemaining: nil, now: now, calendar: calendar).dialog, answer.dialog)
     profile.startTriggers = ProfileStartTriggers(schedule: true)
     profile.startSchedule = ProfileScheduleTime(days: Weekday.allCases, hour: 9, minute: 0, updatedAt: now)
     let nextStart = ShortcutStatus.answer(session: nil, asked: profile, grantRemaining: nil, now: now, calendar: calendar)

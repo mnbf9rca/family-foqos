@@ -273,6 +273,7 @@ public enum SharedData {
 
     public var geofenceRule: ProfileGeofenceRule?
 
+    // Legacy wire field with no V2 runtime authority. Preserve genuine V1 lifecycle data.
     public var disableBackgroundStops: Bool?
     public var stopConditions: ProfileStopConditions?
 

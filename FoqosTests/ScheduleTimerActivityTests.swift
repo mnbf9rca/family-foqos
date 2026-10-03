@@ -64,16 +64,36 @@ final class ScheduleTimerActivityTests: XCTestCase {
     XCTAssertNil(SharedData.getActiveSharedSession())
   }
 
-  func testGivenBackgroundStopsDisabled_WhenStopScheduleFires_ThenSessionSurvives() {
-    let id = UUID()
-    SharedData.createSessionForScheduler(for: id)
-    let snap = snapshot(id: id, disableBackgroundStops: true)
+  func testOldTrueFlagDoesNotVetoEitherConfiguredScheduleAdapter() {
+    let now = Date()
+    for stopOnly in [false, true] {
+      for oldFlag in [false, true] {
+        var snap = snapshot(id: UUID(), disableBackgroundStops: oldFlag)
+        snap.profileSchemaVersion = 3
+        SharedData.createActiveSharedSession(
+          for: .init(
+            id: UUID().uuidString, tag: "manual", blockedProfileId: snap.id,
+            startTime: now, forceStarted: false, origin: .init(kind: .manual)))
+        if stopOnly { StopScheduleTimerActivity().stop(for: snap) } else { ScheduleTimerActivity().stop(for: snap) }
+        XCTAssertNil(SharedData.getActiveSharedSession(), "A configured V2 schedule ignores the retained flag")
+      }
+    }
+  }
 
-    StopScheduleTimerActivity().stop(for: snap)
-
-    XCTAssertNotNil(
-      SharedData.getActiveSharedSession(),
-      "disableBackgroundStops must block the scheduled stop (#239)")
+  func testGenuineV1VetoPreservedForBothScheduleAdapters() {
+    let now = Date()
+    for version: Int? in [nil, 1] {
+      for stopOnly in [false, true] {
+        var snap = snapshot(id: UUID(), disableBackgroundStops: true)
+        snap.profileSchemaVersion = version
+        let session = SharedData.SessionSnapshot(
+          id: UUID().uuidString, tag: "legacy", blockedProfileId: snap.id,
+          startTime: now, forceStarted: false)
+        SharedData.createActiveSharedSession(for: session)
+        if stopOnly { StopScheduleTimerActivity().stop(for: snap) } else { ScheduleTimerActivity().stop(for: snap) }
+        XCTAssertEqual(SharedData.getActiveSharedSession(), session)
+      }
+    }
   }
 
   func testGivenScheduleStopEnabled_WhenStopScheduleFires_ThenSessionEnds() {
@@ -149,6 +169,28 @@ final class ScheduleTimerActivityTests: XCTestCase {
     XCTAssertEqual(
       SharedData.getActiveSharedSession()?.blockedProfileId, victimId,
       "the protected victim session must survive; the scheduled takeover is skipped (#236)")
+  }
+
+  func testScheduledTakeoverIgnoresOnlyV2VictimsOldFlag() {
+    let now = Date()
+    for version in [1, 3] {
+      var victim = snapshot(id: UUID(), disableBackgroundStops: true, stopConditions: .init(manual: true))
+      victim.profileSchemaVersion = version
+      SharedData.setSnapshot(victim, for: victim.id.uuidString)
+      let original = SharedData.SessionSnapshot(
+        id: UUID().uuidString, tag: "manual",
+        blockedProfileId: victim.id, startTime: now, forceStarted: false)
+      SharedData.createActiveSharedSession(for: original)
+      var incoming = startScheduledSnapshot(id: UUID(), stopConditions: .init(manual: true))
+      incoming.profileSchemaVersion = 3
+      incoming.settingsReadable = true
+      incoming.startTriggers = .init(schedule: true)
+      incoming.startTriggersSchedule = true
+      incoming.startSchedule = .init(days: Weekday.allCases, hour: 0, minute: 0, updatedAt: .distantPast)
+      SharedData.setSnapshot(incoming, for: incoming.id.uuidString)
+      ScheduleTimerActivity(cancelReminders: { _ in }).start(for: incoming)
+      XCTAssertEqual(SharedData.getActiveSharedSession()?.blockedProfileId, version == 1 ? victim.id : incoming.id)
+    }
   }
 
   func testGivenSameProfileName_WhenBuildingSkippedStartNotificationIds_ThenIdsUseProfileUUID() {

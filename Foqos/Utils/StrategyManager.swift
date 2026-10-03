@@ -546,7 +546,9 @@ class StrategyManager: ObservableObject {
       let activeSession = try getActiveSession(context: context)
 
       if let localActiveSession = activeSession {
-        if localActiveSession.blockedProfile.disableBackgroundStops {
+        if localActiveSession.blockedProfile.profileSchemaVersion < 2,
+          localActiveSession.blockedProfile.disableBackgroundStops
+        {
           Log.info(
             "profile: \(localActiveSession.blockedProfile.name) has disable background stops enabled, not stopping it",
             category: .strategy)
@@ -703,7 +705,7 @@ class StrategyManager: ObservableObject {
         throw IntentError.noActiveSession(profileName: profile.name)
       }
 
-      if profile.disableBackgroundStops {
+      if profile.profileSchemaVersion < 2, profile.disableBackgroundStops {
         Log.info(
           "profile: \(profile.name) has disable background stops enabled, not stopping it",
           category: .strategy)
@@ -734,10 +736,14 @@ class StrategyManager: ObservableObject {
         let currentProfile = try BlockedProfiles.findProfile(byID: profileId, in: context)
       else { throw IntentError.noActiveSession(profileName: profile.name) }
 
+      // Only deferred active V1 profiles retain the shipped safeguard.
+      if currentProfile.profileSchemaVersion < 2, currentProfile.disableBackgroundStops {
+        throw IntentError.backgroundStopsDisabled(profileName: currentProfile.name)
+      }
+
       let decision = BackgroundStopPolicy.evaluate(
         channel: .shortcut,
         sessionMatchesProfile: currentSession.blockedProfile.id == profileId,
-        disableBackgroundStops: currentProfile.disableBackgroundStops,
         geofence: geofenceState,
         stopConditions: currentProfile.stopConditions
       )
@@ -762,14 +768,8 @@ class StrategyManager: ObservableObject {
         Log.info("Background stop refused: stop conditions not met", category: .strategy)
         self.errorMessage = reason
         throw IntentError.stopConditionsNotMet(reason: reason)
-      case .denied(.backgroundStopsDisabled):
-        // Defensive only: disableBackgroundStops is handled before the policy call above.
-        self.errorMessage = "\(profile.name) cannot be stopped in the background."
-        throw IntentError.backgroundStopsDisabled(profileName: profile.name)
       case .denied(.noMatchingSession):
-        // Defensive only: session/profile matching is handled before the policy call above.
-        self.errorMessage = "\(profile.name) cannot be stopped in the background."
-        throw IntentError.backgroundStopsDisabled(profileName: profile.name)
+        throw IntentError.noActiveSession(profileName: profile.name)
       }
 
       if currentSession.blockedProfile.profileSchemaVersion >= 2 { endV2Session(currentSession, context: context) } else { _ = manualStrategy.stopBlocking(context: context, session: currentSession) }

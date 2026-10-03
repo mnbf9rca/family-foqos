@@ -43,6 +43,7 @@ class BlockedProfiles {
 
   var geofenceRule: ProfileGeofenceRule?
 
+  // Inert legacy storage; only genuinely unmigrated V1 sessions consult this value.
   var disableBackgroundStops: Bool = false
 
   /// Records when a schedule-started session was last manually stopped.
@@ -272,7 +273,6 @@ class BlockedProfiles {
     physicalUnblockQRCodeId: String? = nil,
     schedule: BlockedProfileSchedule? = nil,
     geofenceRule: ProfileGeofenceRule? = nil,
-    disableBackgroundStops: Bool = false,
     preActivationReminderTimes: [UInt8] = [],
     isManaged: Bool = false,
     managedByChildId: String? = nil,
@@ -306,7 +306,6 @@ class BlockedProfiles {
     self.schedule = schedule
     self.geofenceRule = geofenceRule
 
-    self.disableBackgroundStops = disableBackgroundStops
     self.preActivationReminderTimes = preActivationReminderTimes
     self.isManaged = isManaged
     self.managedByChildId = managedByChildId
@@ -390,7 +389,6 @@ class BlockedProfiles {
     physicalUnblockQRCodeId: String? = nil,
     schedule: BlockedProfileSchedule? = nil,
     geofenceRule: ProfileGeofenceRule? = nil,
-    disableBackgroundStops: Bool? = nil,
     preActivationReminderTimes: [UInt8]? = nil,
     isManaged: Bool? = nil,
     managedByChildId: String? = nil,
@@ -481,10 +479,6 @@ class BlockedProfiles {
 
     if let geofenceRule {
       profile.geofenceRule = geofenceRule
-    }
-
-    if let newDisableBackgroundStops = disableBackgroundStops {
-      profile.disableBackgroundStops = newDisableBackgroundStops
     }
 
     if let newPreActivationReminderTimes = preActivationReminderTimes {
@@ -702,7 +696,7 @@ class BlockedProfiles {
       startTriggersSchedule: profile.startTriggers.schedule,
       stopConditionsSchedule: profile.stopConditions.schedule,
       geofenceRule: profile.geofenceRule,
-      disableBackgroundStops: profile.disableBackgroundStops,
+      disableBackgroundStops: profile.profileSchemaVersion < 2 ? profile.disableBackgroundStops : false,
       stopConditions: stop,
       isManaged: profile.isManaged,
       managedByChildId: profile.managedByChildId,
@@ -791,7 +785,6 @@ class BlockedProfiles {
     physicalUnblockQRCodeId: String? = nil,
     schedule: BlockedProfileSchedule? = nil,
     geofenceRule: ProfileGeofenceRule? = nil,
-    disableBackgroundStops: Bool = false,
     preActivationReminderTimes: [UInt8] = [],
     isManaged: Bool = false,
     managedByChildId: String? = nil,
@@ -823,7 +816,6 @@ class BlockedProfiles {
       physicalUnblockNFCTagId: physicalUnblockNFCTagId,
       physicalUnblockQRCodeId: physicalUnblockQRCodeId,
       geofenceRule: geofenceRule,
-      disableBackgroundStops: disableBackgroundStops,
       preActivationReminderTimes: preActivationReminderTimes,
       isManaged: isManaged,
       managedByChildId: managedByChildId,
@@ -877,7 +869,6 @@ class BlockedProfiles {
       physicalUnblockQRCodeId: source.physicalUnblockQRCodeId,
       schedule: source.schedule,
       geofenceRule: source.geofenceRule,
-      disableBackgroundStops: source.disableBackgroundStops,
       preActivationReminderTimes: source.preActivationReminderTimes,
       isManaged: mode == .child ? false : source.isManaged,
       managedByChildId: mode == .child ? nil : source.managedByChildId,

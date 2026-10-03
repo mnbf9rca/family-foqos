@@ -186,7 +186,6 @@ struct DebugView: View {
     markdown += "- **Live Activity:** \(profile.enableLiveActivity ? "Enabled" : "Disabled")\n"
     markdown += "- **Breaks:** \(profile.enableBreaks ? "Enabled" : "Disabled")\n"
     markdown += "- **Strict Mode:** \(profile.enableStrictMode ? "Enabled" : "Disabled")\n"
-    markdown += "- **Disable Background Stops:** \(profile.disableBackgroundStops ? "Yes" : "No")\n"
 
     if let reminderTime = profile.reminderTimeInSeconds {
       markdown += "- **Reminder Time:** \(reminderTime / 60) minutes\n"

@@ -26,6 +26,24 @@ final class SessionTimerEndTests: XCTestCase {
     return BlockedProfileSession.createSession(in: context, withTag: tag, withProfile: profile, startTime: now)
   }
 
+  func testOldTrueFlagDoesNotVetoExactSessionTimerExpiry() throws {
+    let now = Date()
+    var snapshot = BlockedProfiles.getSnapshot(for: BlockedProfiles(name: "Timer"))
+    snapshot.disableBackgroundStops = true
+    snapshot.stopConditions = .init(timer: true, timerDurationMinutes: 15)
+    let deadline = now.addingTimeInterval(900)
+    let session = SharedData.SessionSnapshot(
+      id: UUID().uuidString, tag: "manual",
+      blockedProfileId: snapshot.id, startTime: now, timerEndTime: deadline,
+      forceStarted: false, origin: .init(kind: .manual))
+    SharedData.createActiveSharedSession(for: session)
+    let timer = StrategyTimerActivity()
+    XCTAssertFalse(timer.stop(for: snapshot, sessionId: UUID().uuidString, now: deadline))
+    XCTAssertEqual(SharedData.getActiveSharedSession(), session)
+    XCTAssertTrue(timer.stop(for: snapshot, sessionId: session.id, now: deadline))
+    XCTAssertNil(SharedData.getActiveSharedSession())
+  }
+
   func testRegistrarSuccessFailureAndReplacementPublishExactResult() throws {
     let now = Date()
     for tag in [ShortcutTimerBlockingStrategy.id, NFCTimerBlockingStrategy.id, QRTimerBlockingStrategy.id] {

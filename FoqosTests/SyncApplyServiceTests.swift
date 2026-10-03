@@ -1454,6 +1454,61 @@ final class SyncApplyServiceTests: XCTestCase {
     XCTAssertNil(canonical["anyNFC"])
   }
 
+  func testIncomingOldFlagIgnoredAndStopChangesStillApply() throws {
+    let now = Date()
+    for existing in [false, true] {
+      for oldFlag in [false, true] {
+        let profile = BlockedProfiles(name: "Before", createdAt: now, updatedAt: now, syncVersion: 1)
+        profile.startTriggers = .init(manual: true)
+        profile.stopConditions = .init(manual: true)
+        profile.disableBackgroundStops = true
+        if existing {
+          context.insert(profile)
+          try context.save()
+        }
+        var incoming = SyncedProfile(from: profile, originDeviceId: "remote")
+        incoming.version = 2
+        incoming.name = "Incoming"
+        incoming.stopConditionsData = try JSONEncoder().encode(ProfileStopConditions(manual: true, timer: true, schedule: true, nfc: .specific, timerDurationMinutes: 37))
+        incoming.stopNFCTagIds = ["A0FF"]
+        incoming.stopScheduleData = try JSONEncoder().encode(ProfileScheduleTime(days: Weekday.allCases, hour: 17, minute: 0, updatedAt: now))
+        let record = incoming.toCKRecord(in: zoneID)
+        record[SyncedProfile.FieldKey.disableBackgroundStops.rawValue] = oldFlag
+        XCTAssertEqual(makeService().applyFetchedModification(record, isPendingDeleteOrTombstoned: noPendingDelete), .applied)
+        let applied = try XCTUnwrap(BlockedProfiles.findProfile(byID: profile.id, in: context))
+        XCTAssertEqual(applied.name, "Incoming")
+        XCTAssertEqual(applied.stopConditions, .init(manual: true, timer: true, schedule: true, nfc: .specific, timerDurationMinutes: 37))
+        XCTAssertEqual(applied.stopNFCTagIds, ["A0FF"])
+        XCTAssertEqual(applied.stopSchedule?.hour, 17)
+        XCTAssertEqual(applied.enableSafariBlocking, profile.enableSafariBlocking)
+        XCTAssertEqual(BlockedProfiles.getSnapshot(for: applied).disableBackgroundStops, false)
+        XCTAssertFalse(SyncedProfile(from: applied, originDeviceId: "local").disableBackgroundStops)
+      }
+    }
+  }
+
+  func testIncomingV1FlagRetainedDuringActiveConversionDeferral() throws {
+    let now = Date()
+    let profile = BlockedProfiles(name: "Legacy", createdAt: now, updatedAt: now, blockingStrategyId: ManualBlockingStrategy.id, syncVersion: 1)
+    profile.profileSchemaVersion = 1
+    context.insert(profile)
+    let session = BlockedProfileSession.createSession(in: context, withTag: "manual", withProfile: profile, startTime: now)
+    try context.save()
+    var incoming = SyncedProfile(from: profile, originDeviceId: "remote")
+    incoming.version = 2
+    let record = incoming.toCKRecord(in: zoneID)
+    record[SyncedProfile.FieldKey.disableBackgroundStops.rawValue] = true
+    XCTAssertEqual(makeService().applyFetchedModification(record, isPendingDeleteOrTombstoned: noPendingDelete), .applied)
+    XCTAssertEqual(profile.profileSchemaVersion, 1)
+    XCTAssertTrue(profile.disableBackgroundStops)
+    XCTAssertEqual(BlockedProfiles.getSnapshot(for: profile).disableBackgroundStops, true)
+    session.endSession(now: now.addingTimeInterval(60))
+    try profile.migrateIfEligible(hasActiveSession: false)
+    XCTAssertGreaterThanOrEqual(profile.profileSchemaVersion, 2)
+    XCTAssertEqual(BlockedProfiles.getSnapshot(for: profile).disableBackgroundStops, false)
+    XCTAssertFalse(SyncedProfile(from: profile, originDeviceId: "local").disableBackgroundStops)
+  }
+
   func testInvalidActiveProfileUpdateDefersAndReplays() throws {
     let now = Date()
     let badSettings: [Data?] = [nil, Data("bad".utf8), Data("{\"nfc\":\"unknown\"}".utf8), try JSONEncoder().encode(ProfileStopConditions(nfc: .specific)), try JSONEncoder().encode(ProfileStopConditions())]
@@ -1491,7 +1546,7 @@ final class SyncApplyServiceTests: XCTestCase {
         XCTAssertTrue(service.drainReenqueues().isEmpty)
         XCTAssertEqual(StartStopActionResolver.determineStopAction(for: local.stopConditions), .stopImmediately)
         XCTAssertTrue(StartStopActionResolver.canStop(with: .nfc(tag: "A0FF"), conditions: local.stopConditions, sessionTag: session.tag, stopNFCTagIds: local.stopNFCTagIds, stopQRCodeIds: []).allowed)
-        XCTAssertEqual(BackgroundStopPolicy.evaluate(channel: .schedule, sessionMatchesProfile: true, disableBackgroundStops: false, geofence: .noRule, stopConditions: local.stopConditions), .allowed)
+        XCTAssertEqual(BackgroundStopPolicy.evaluate(channel: .schedule, sessionMatchesProfile: true, geofence: .noRule, stopConditions: local.stopConditions), .allowed)
         store = SyncEngineStore(userRecordName: "user-1", defaults: storeDefaults)
         XCTAssertTrue(store.failedApplies.contains { $0.recordName == local.id.uuidString && $0.op == .upsert })
       }

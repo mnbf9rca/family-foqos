@@ -517,7 +517,9 @@ final class SyncApplyService {
     profile.domains = synced.domains
     profile.schedule = synced.schedule
     profile.geofenceRule = synced.geofenceRule
-    profile.disableBackgroundStops = synced.disableBackgroundStops
+    if profile.profileSchemaVersion < 2, synced.profileSchemaVersion < 2 {
+      profile.disableBackgroundStops = synced.disableBackgroundStops
+    }
     profile.preActivationReminderTimes = synced.preActivationReminderTimes
     profile.isManaged = synced.isManaged
     profile.managedByChildId = synced.managedByChildId
@@ -571,7 +573,6 @@ final class SyncApplyService {
       physicalUnblockQRCodeId: synced.physicalUnblockQRCodeId,
       schedule: synced.schedule,
       geofenceRule: synced.geofenceRule,
-      disableBackgroundStops: synced.disableBackgroundStops,
       preActivationReminderTimes: synced.preActivationReminderTimes,
       isManaged: synced.isManaged,
       managedByChildId: synced.managedByChildId,
@@ -588,6 +589,7 @@ final class SyncApplyService {
     profile.stopNFCTagId = synced.stopNFCTagId
     profile.stopQRCodeIds = synced.stopQRCodeIds
     profile.stopQRCodeId = synced.stopQRCodeId
+    if synced.profileSchemaVersion < 2 { profile.disableBackgroundStops = synced.disableBackgroundStops }
     profile.profileSchemaVersion = synced.profileSchemaVersion
     profile.scheduleLastStoppedAt = synced.scheduleLastStoppedAt
     modelContext.insert(profile)

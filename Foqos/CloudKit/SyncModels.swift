@@ -67,6 +67,7 @@ struct SyncedProfile: Codable, Equatable {
   var stopQRCodeIds: [String] = []
 
   /// Other settings
+  // Deployed legacy field; neutral in V2 and retained only for genuine V1 wire data.
   var disableBackgroundStops: Bool
 
   // Managed profile fields
@@ -186,7 +187,7 @@ struct SyncedProfile: Codable, Equatable {
     record[FieldKey.stopNFCTagId.rawValue] = profileSchemaVersion < 3 ? stopNFCTagId : nil
     record[FieldKey.stopQRCodeIds.rawValue] = stopQRCodeIds
     record[FieldKey.stopQRCodeId.rawValue] = profileSchemaVersion < 3 ? stopQRCodeId : nil
-    record[FieldKey.disableBackgroundStops.rawValue] = disableBackgroundStops
+    record[FieldKey.disableBackgroundStops.rawValue] = profileSchemaVersion < 2 ? disableBackgroundStops : false
     record[FieldKey.isManaged.rawValue] = isManaged
     record[FieldKey.managedByChildId.rawValue] = managedByChildId
     record[FieldKey.generation.rawValue] = generation
@@ -274,7 +275,7 @@ struct SyncedProfile: Codable, Equatable {
     stopNFCTagId = profileSchemaVersion < 3 ? record[FieldKey.stopNFCTagId.rawValue] as? String : nil
     stopQRCodeIds = record[FieldKey.stopQRCodeIds.rawValue] as? [String] ?? []
     stopQRCodeId = profileSchemaVersion < 3 ? record[FieldKey.stopQRCodeId.rawValue] as? String : nil
-    disableBackgroundStops = record[FieldKey.disableBackgroundStops.rawValue] as? Bool ?? false
+    disableBackgroundStops = profileSchemaVersion < 2 ? record[FieldKey.disableBackgroundStops.rawValue] as? Bool ?? false : false
     isManaged = record[FieldKey.isManaged.rawValue] as? Bool ?? false
     managedByChildId = record[FieldKey.managedByChildId.rawValue] as? String
     generation = record[FieldKey.generation.rawValue] as? Int ?? 0
@@ -314,7 +315,7 @@ struct SyncedProfile: Codable, Equatable {
     physicalUnblockNFCTagId = profile.profileSchemaVersion < 3 ? profile.physicalUnblockNFCTagId : nil
     physicalUnblockQRCodeId = profile.profileSchemaVersion < 3 ? profile.physicalUnblockQRCodeId : nil
     domains = profile.domains
-    disableBackgroundStops = profile.disableBackgroundStops
+    disableBackgroundStops = profile.profileSchemaVersion < 2 ? profile.disableBackgroundStops : false
     isManaged = profile.isManaged
     managedByChildId = profile.managedByChildId
     self.generation = generation

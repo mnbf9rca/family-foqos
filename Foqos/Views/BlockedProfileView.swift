@@ -65,7 +65,6 @@ struct BlockedProfileView: View {
   @State private var enableSafariBlocking: Bool = true
   @State private var blockAdultWebsites: Bool = false
   @State private var blockAppInstallation: Bool = false
-  @State private var disableBackgroundStops: Bool = false
   @State private var preActivationReminderTimes: Set<UInt8> = []
   @State private var domains: [String] = []
 
@@ -201,9 +200,7 @@ struct BlockedProfileView: View {
     _enableReminder = State(
       initialValue: profile?.reminderTimeInSeconds != nil
     )
-    _disableBackgroundStops = State(
-      initialValue: profile?.disableBackgroundStops ?? false
-    )
+
     _preActivationReminderTimes = State(
       initialValue: Set(profile?.preActivationReminderTimes ?? [])
     )
@@ -469,13 +466,6 @@ struct BlockedProfileView: View {
               isDisabled: isBlocking
             )
 
-            CustomToggle(
-              title: "Disable Background Stops",
-              description:
-                "Disable the ability to stop a profile from the background, this includes shortcuts and scanning links from NFC tags or QR codes.",
-              isOn: $disableBackgroundStops,
-              isDisabled: isBlocking
-            )
           }
 
           // Parent-controlled profile section (only visible for parents)
@@ -1162,7 +1152,6 @@ struct BlockedProfileView: View {
           domains: domains,
           schedule: nil,
           geofenceRule: geofenceRule,
-          disableBackgroundStops: disableBackgroundStops,
           preActivationReminderTimes: Array(preActivationReminderTimes).sorted(),
           isManaged: isManaged,
           managedByChildId: managedChildId,
@@ -1191,7 +1180,6 @@ struct BlockedProfileView: View {
           domains: domains,
           schedule: nil,
           geofenceRule: geofenceRule,
-          disableBackgroundStops: disableBackgroundStops,
           preActivationReminderTimes: Array(preActivationReminderTimes).sorted(),
           isManaged: isManaged,
           managedByChildId: managedChildId,

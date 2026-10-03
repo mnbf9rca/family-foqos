@@ -27,7 +27,8 @@ enum SyncPayloadEquality {
       && a.physicalUnblockNFCTagId == b.physicalUnblockNFCTagId
       && a.physicalUnblockQRCodeId == b.physicalUnblockQRCodeId
       && a.domains == b.domains
-      && a.disableBackgroundStops == b.disableBackgroundStops
+      && (a.profileSchemaVersion >= 2 && b.profileSchemaVersion >= 2
+        || a.disableBackgroundStops == b.disableBackgroundStops)
       && a.isManaged == b.isManaged
       && a.managedByChildId == b.managedByChildId
       && a.profileSchemaVersion == b.profileSchemaVersion
