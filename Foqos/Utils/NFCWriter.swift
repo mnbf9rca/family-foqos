@@ -1,4 +1,5 @@
 @preconcurrency import CoreNFC  // NFCTagReaderSession, NFCMiFareTag, NFCISO15693Tag lack Sendable
+import SwiftData
 import SwiftUI
 
 /// Writes NDEF-formatted URLs to NFC tags
@@ -16,12 +17,38 @@ import SwiftUI
 @MainActor
 class NFCWriter: NSObject, ObservableObject {
   var isScanning: Bool = false
-  var errorMessage: String?
+  @Published var errorMessage: String?
+  var onWritten: ((ProfileTagPayload) -> Void)?
+  private var profilePayload: ProfileTagPayload?
+
+  static func makePayload(for profile: BlockedProfiles) throws -> ProfileTagPayload {
+    try ProfileTagPayload.prepare(for: profile, type: .nfc)
+  }
+
+  static func message(for payload: ProfileTagPayload) -> NFCNDEFMessage {
+    NFCNDEFMessage(records: [NFCNDEFPayload.wellKnownTypeURIPayload(url: payload.url)!])
+  }
+
+  static func enrollWrittenPayload(_ payload: ProfileTagPayload, name: String, in context: ModelContext) throws -> SavedTag {
+    try SavedTag.enroll(event: payload.event, name: name, in: context)
+  }
+
+  func writeProfile(_ profile: BlockedProfiles, onWritten: @escaping (ProfileTagPayload) -> Void) throws {
+    guard !isScanning else { return }
+    let payload = try Self.makePayload(for: profile)
+    profilePayload = payload
+    self.onWritten = onWritten
+    writeURL(payload.url.absoluteString)
+  }
 
   private var tagSession: NFCTagReaderSession?
   private var urlToWrite: String?
 
   func writeURL(_ url: String) {
+    if profilePayload?.url.absoluteString != url {
+      profilePayload = nil
+      onWritten = nil
+    }
     guard NFCReaderSession.readingAvailable else {
       self.errorMessage = "NFC writing not available on this device"
       return
@@ -273,6 +300,10 @@ extension NFCWriter: NFCTagReaderSessionDelegate {
         sessionBox.alertMessage = "✓ Successfully wrote profile to tag"
         Task { @MainActor in
           self.isScanning = false
+          if let payload = self.profilePayload {
+            self.profilePayload = nil
+            self.onWritten?(payload)
+          }
         }
         sessionBox.invalidate()
       }

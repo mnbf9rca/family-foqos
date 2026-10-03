@@ -30,6 +30,36 @@ struct TagEvent: Equatable, Sendable {
   }
 }
 
+struct ProfileTagPayload: Equatable, Sendable {
+  let profileId: UUID
+  let type: TagType
+  let key: String
+
+  init(profileId: UUID, type: TagType) {
+    self.profileId = profileId
+    self.type = type
+    self.key = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
+  }
+
+  var url: URL { ProfileTagLink.make(profileId: profileId, type: type, key: key) }
+  var event: TagEvent { TagEvent(type: type, namespace: .opaque, key: key, targetProfileId: profileId) }
+
+  @MainActor
+  static func prepare(for profile: BlockedProfiles, type: TagType) throws -> ProfileTagPayload {
+    let starts = profile.startTriggers
+    // A fresh random key cannot already belong to a Specific key set.
+    guard starts.deepLink || (type == .nfc ? starts.anyNFC : starts.anyQR) else {
+      throw NSError(
+        domain: "TagProducer", code: 1,
+        userInfo: [
+          NSLocalizedDescriptionKey:
+            "This profile isn’t set to start this way. Please edit its start settings."
+        ])
+    }
+    return ProfileTagPayload(profileId: profile.id, type: type)
+  }
+}
+
 enum ProfileTagLink {
   enum Delivery: Equatable, Sendable {
     case tag(TagEvent)
