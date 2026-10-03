@@ -24,7 +24,7 @@ done
 export UPGRADE_AGENT=build2
 export UPGRADE_REPO=$(git rev-parse --show-toplevel)
 [ -z "$(git status --porcelain)" ] || { echo 'Start from a clean checkout' >&2; exit 1; }
-git check-ignore -q .worktrees || { echo '.worktrees must already be ignored' >&2; exit 1; }
+git check-ignore -q .worktrees/ || { echo '.worktrees must already be ignored' >&2; exit 1; }
 git fetch origin main release/v1
 export UPGRADE_TARGET=$(git rev-parse HEAD)
 export UPGRADE_V1_SHA=$(git rev-parse '589bee9^{commit}')
