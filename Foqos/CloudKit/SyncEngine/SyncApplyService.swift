@@ -832,7 +832,7 @@ final class SyncApplyService {
       if let startTime = session.startTime {
         sessionController.startRemoteSession(
           context: modelContext, profileId: profileId, sessionId: session.sessionId.flatMap(UUID.init(uuidString:)), startTime: startTime,
-          timerEndTime: session.validTimerEndTime, originDevice: session.sessionOriginDevice, origin: session.origin, sequenceNumber: session.sequenceNumber)
+          timerEndTime: session.validTimerEndTime, originDevice: session.sessionOriginDevice, origin: session.origin, sequenceNumber: session.sequenceNumber, serverModificationDate: session.serverModificationDate)
         SyncDiagnostics.sessionApply(profileId: profileId, branch: "remote_start_applied")
       }
     } else if !session.isActive && localActive {

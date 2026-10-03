@@ -57,6 +57,9 @@ struct ProfileSessionRecord: Codable, Equatable, Sendable {
   /// When this record was last updated
   private(set) var lastModified: Date = Date()
 
+  /// CloudKit metadata, never a client-authored timestamp or an uploaded field.
+  private(set) var serverModificationDate: Date?
+
   // MARK: - CloudKit
 
   static let recordType = "ProfileSession"
@@ -92,6 +95,7 @@ struct ProfileSessionRecord: Codable, Equatable, Sendable {
     }
 
     self.profileId = profileId
+    self.serverModificationDate = record.modificationDate
     self.isActive = record[FieldKey.isActive.rawValue] as? Bool ?? false
     self.sequenceNumber = record[FieldKey.sequenceNumber.rawValue] as? Int ?? 0
     self.startTime = record[FieldKey.startTime.rawValue] as? Date

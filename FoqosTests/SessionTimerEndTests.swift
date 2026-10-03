@@ -151,16 +151,18 @@ final class SessionTimerEndTests: XCTestCase {
     context.insert(profile)
     try context.save()
     let manager = StrategyManager()
+    defer { manager.stopTimer() }
+    let id = UUID()
     manager.startRemoteSession(
-      context: context, profileId: profile.id, sessionId: UUID(), startTime: now,
-      timerEndTime: now.addingTimeInterval(900), originDevice: "B")
+      context: context, profileId: profile.id, sessionId: id, startTime: now,
+      timerEndTime: now.addingTimeInterval(900), originDevice: "B", serverModificationDate: now)
     let session = try XCTUnwrap(manager.activeSession)
     XCTAssertEqual(session.tag, "remote-sync")
     XCTAssertEqual(session.timerEndTime, now.addingTimeInterval(900))
     XCTAssertEqual(SharedData.getActiveSharedSession()?.timerEndTime, now.addingTimeInterval(900))
     manager.startRemoteSession(
-      context: context, profileId: profile.id, sessionId: UUID(), startTime: now,
-      timerEndTime: nil, originDevice: "B")
+      context: context, profileId: profile.id, sessionId: id, startTime: now,
+      timerEndTime: nil, originDevice: "B", serverModificationDate: now)
     XCTAssertEqual(manager.activeSession?.id, session.id)
     XCTAssertNil(session.timerEndTime)
     XCTAssertNil(SharedData.getActiveSharedSession()?.timerEndTime)
@@ -182,6 +184,8 @@ final class SessionTimerEndTests: XCTestCase {
       let session = BlockedProfileSession(tag: "timer", blockedProfile: profile, startTime: now)
       session.origin = .init(kind: .qr, key: "DIGEST", namespace: .qrDigest)
       session.usesCanonicalIdentity = true
+      session.sessionServerModificationDate = now
+      session.sessionStartSyncPending = true
       session.timerEndTime = now.addingTimeInterval(900)
       context.insert(session)
       try context.save()
@@ -195,6 +199,8 @@ final class SessionTimerEndTests: XCTestCase {
     XCTAssertEqual(restored.timerEndTime, now.addingTimeInterval(900))
     XCTAssertEqual(restored.origin, .init(kind: .qr, key: "DIGEST", namespace: .qrDigest))
     XCTAssertEqual(restored.usesCanonicalIdentity, true)
+    XCTAssertEqual(restored.sessionServerModificationDate, now)
+    XCTAssertTrue(restored.sessionStartSyncPending)
   }
   func testCASWinnerReplacesIdentityAndCancelsOnlyCandidateTimer() throws {
     let now = Date()

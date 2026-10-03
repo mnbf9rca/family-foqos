@@ -14,6 +14,8 @@ class BlockedProfileSession: BreakDurationCalculable {
   var timerEndTime: Date?
   var usesCanonicalIdentity: Bool?
   var sessionSequence: Int?
+  var sessionServerModificationDate: Date?
+  var sessionStartSyncPending: Bool = false
   var sessionOriginData: Data?
   var origin: SessionOrigin? {
     get { sessionOriginData.flatMap { try? JSONDecoder().decode(SessionOrigin.self, from: $0) } }
