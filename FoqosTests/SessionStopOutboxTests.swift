@@ -77,6 +77,69 @@ final class SessionStopOutboxTests: XCTestCase {
     XCTAssertTrue(outbox.pending.isEmpty)
   }
 
+  func testTwoOfflineStopsForSameProfileSurviveReloadAndDrain() async {
+    let now = Date()
+    let profile = UUID()
+    let outbox = SessionStopOutbox(defaults: defaults)
+    outbox.enqueue(profileId: profile, expectedStart: now, expectedSessionId: UUID().uuidString)
+    outbox.enqueue(profileId: profile, expectedStart: now.addingTimeInterval(60), expectedSessionId: UUID().uuidString)
+    let reloaded = SessionStopOutbox(defaults: defaults)
+    var attempted: [Date?] = []
+    await reloaded.drain { _, _, start in
+      attempted.append(start)
+      return true
+    }
+    XCTAssertEqual(attempted, [now, now.addingTimeInterval(60)])
+    XCTAssertTrue(reloaded.pending.isEmpty)
+  }
+
+  func testOldPersistedExactIntentMigratesBeforeNewIntentWithoutLoss() async {
+    let now = Date()
+    let profile = UUID()
+    let original = UUID().uuidString
+    let replacement = UUID().uuidString
+    defaults.set([profile.uuidString], forKey: "family_foqos_session_stop_outbox")
+    defaults.set([profile.uuidString: original], forKey: "family_foqos_session_stop_outbox_expected_ids")
+    defaults.set([profile.uuidString: now], forKey: "family_foqos_session_stop_outbox_expected_starts")
+    let outbox = SessionStopOutbox(defaults: defaults)
+    outbox.enqueue(profileId: profile, expectedStart: now.addingTimeInterval(1), expectedSessionId: replacement)
+    var attempted: [String?] = []
+    await SessionStopOutbox(defaults: defaults).drain { _, id, _ in
+      attempted.append(id)
+      return true
+    }
+    XCTAssertEqual(attempted, [original, replacement])
+    XCTAssertTrue(outbox.pending.isEmpty)
+  }
+
+  func testExactIntentsDeduplicateAndDoNotWeakenToLegacyStops() {
+    let now = Date()
+    let profile = UUID()
+    let first = UUID().uuidString
+    let second = UUID().uuidString
+    let outbox = SessionStopOutbox(defaults: defaults)
+    outbox.enqueue(profileId: profile, expectedStart: now, expectedSessionId: first)
+    outbox.enqueue(profileId: profile, expectedStart: now.addingTimeInterval(1), expectedSessionId: first)
+    outbox.enqueue(profileId: profile, expectedStart: now.addingTimeInterval(2), expectedSessionId: second)
+    outbox.enqueue(profileId: profile)
+    XCTAssertEqual(outbox.intents?.compactMap(\.expectedSessionId), [first, second])
+    outbox.resolve(profileId: profile, expectedSessionId: second, expectedStart: now.addingTimeInterval(2))
+    XCTAssertEqual(outbox.expectedSessionId(for: profile), first)
+  }
+
+  func testCorruptIntentQueueIsPreservedAndCannotBeDrainedOrOverwritten() async {
+    let corrupt = Data("damaged queue".utf8)
+    defaults.set(corrupt, forKey: "family_foqos_session_stop_intents")
+    let outbox = SessionStopOutbox(defaults: defaults)
+    outbox.enqueue(profileId: UUID(), expectedSessionId: UUID().uuidString)
+    await outbox.drain { _, _, _ in
+      XCTFail("A damaged queue cannot authorize a stop")
+      return true
+    }
+    XCTAssertNil(outbox.intents)
+    XCTAssertEqual(defaults.data(forKey: "family_foqos_session_stop_intents"), corrupt)
+  }
+
   // MARK: - StrategyManager routing (#201)
 
   /// Exercises `StrategyManager.handleStopResult` — the exact production code the CAS Task

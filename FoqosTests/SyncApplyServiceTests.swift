@@ -1700,7 +1700,7 @@ final class SyncApplyServiceTests: XCTestCase {
     let id = UUID().uuidString
     var remote = ProfileSessionRecord(profileId: profile.id)
     remote.applyUpdate(isActive: true, sequenceNumber: 1, deviceId: "device-B", startTime: now, timerEndTime: now.addingTimeInterval(2207), sessionId: id, origin: .init(kind: .nfc, key: "UID", namespace: .nfcUID))
-    _ = service.applyFetchedModification(remote.toCKRecord(in: zoneID), isPendingDeleteOrTombstoned: noPendingDelete)
+    _ = service.applyFetchedModification(SessionServerDatedRecord(copying: remote.toCKRecord(in: zoneID), modifiedAt: now.addingTimeInterval(Double(remote.sequenceNumber))), isPendingDeleteOrTombstoned: noPendingDelete)
     let session = try XCTUnwrap(manager.activeSession)
     XCTAssertEqual(session.id, id)
     XCTAssertEqual(session.origin?.initiatingKey, "UID")
@@ -1716,19 +1716,19 @@ final class SyncApplyServiceTests: XCTestCase {
     remote.resetForNewSession()
     let replacementId = UUID().uuidString
     remote.applyUpdate(isActive: true, sequenceNumber: 3, deviceId: "device-B", startTime: now.addingTimeInterval(1), timerEndTime: now.addingTimeInterval(4407), sessionId: replacementId, origin: .init(kind: .nfc, key: "NEW", namespace: .nfcUID))
-    _ = service.applyFetchedModification(remote.toCKRecord(in: zoneID), isPendingDeleteOrTombstoned: noPendingDelete)
+    _ = service.applyFetchedModification(SessionServerDatedRecord(copying: remote.toCKRecord(in: zoneID), modifiedAt: now.addingTimeInterval(Double(remote.sequenceNumber))), isPendingDeleteOrTombstoned: noPendingDelete)
     XCTAssertEqual(manager.activeSession?.id, replacementId)
     var old = ProfileSessionRecord(profileId: profile.id)
     old.applyUpdate(isActive: true, sequenceNumber: 1, deviceId: "device-B", startTime: now, sessionId: id, origin: .init(kind: .nfc, key: "UID", namespace: .nfcUID))
     old.applyUpdate(isActive: false, sequenceNumber: 2, deviceId: "device-B", endTime: now)
     let restarted = SyncApplyService(modelContext: context, store: store, sessionController: manager, emergencyManager: emergencyManager, deviceId: deviceId)
-    _ = restarted.applyFetchedModification(old.toCKRecord(in: zoneID), isPendingDeleteOrTombstoned: noPendingDelete)
+    _ = restarted.applyFetchedModification(SessionServerDatedRecord(copying: old.toCKRecord(in: zoneID), modifiedAt: now.addingTimeInterval(2)), isPendingDeleteOrTombstoned: noPendingDelete)
     XCTAssertEqual(manager.activeSession?.id, replacementId)
     XCTAssertEqual(registrations, 0)
-    let missing = remote.toCKRecord(in: zoneID)
+    let missing = SessionServerDatedRecord(copying: remote.toCKRecord(in: zoneID), modifiedAt: now.addingTimeInterval(Double(remote.sequenceNumber)))
     missing["sessionOrigin"] = "bad JSON"
     missing["sequenceNumber"] = 4
-    _ = restarted.applyFetchedModification(missing, isPendingDeleteOrTombstoned: noPendingDelete)
+    _ = restarted.applyFetchedModification(SessionServerDatedRecord(copying: missing, modifiedAt: now.addingTimeInterval(4)), isPendingDeleteOrTombstoned: noPendingDelete)
     XCTAssertNotNil(manager.activeSession)
     XCTAssertNil(manager.activeSession?.origin)
     XCTAssertFalse(StartStopActionResolver.canStop(with: .nfc(tag: "NEW"), conditions: profile.stopConditions, sessionTag: "nfc:NEW", stopNFCTagIds: [], stopQRCodeIds: [], sessionOrigin: nil).allowed)
@@ -1772,6 +1772,36 @@ final class SyncApplyServiceTests: XCTestCase {
     XCTAssertEqual(registrations, 0)
   }
 
+  func testRemoteIdentityOrderingUsesServerMetadataInsteadOfClientClockOrSequence() throws {
+    let now = Date()
+    let profile = BlockedProfiles(name: "Server order")
+    context.insert(profile)
+    try context.save()
+    let manager = StrategyManager(cancelTimer: { _, _ in })
+    defer { manager.stopTimer() }
+    let service = SyncApplyService(
+      modelContext: context, store: store,
+      sessionController: manager, emergencyManager: emergencyManager, deviceId: deviceId)
+    func apply(id: String, sequence: Int, start: Date, modified: Date) {
+      var remote = ProfileSessionRecord(profileId: profile.id)
+      remote.applyUpdate(
+        isActive: true, sequenceNumber: sequence, deviceId: "other-device",
+        startTime: start, timerEndTime: start.addingTimeInterval(2220), sessionId: id,
+        origin: .init(kind: .manual))
+      let wire = SessionServerDatedRecord(copying: remote.toCKRecord(in: zoneID), modifiedAt: modified)
+      _ = service.applyFetchedModification(wire, isPendingDeleteOrTombstoned: noPendingDelete)
+    }
+    let first = UUID().uuidString
+    let reset = UUID().uuidString
+    apply(id: first, sequence: 20, start: now, modified: now)
+    apply(id: UUID().uuidString, sequence: 21, start: now.addingTimeInterval(3600), modified: now.addingTimeInterval(-1))
+    XCTAssertEqual(manager.activeSession?.id, first)
+    apply(id: reset, sequence: 1, start: now.addingTimeInterval(-3600), modified: now.addingTimeInterval(1))
+    XCTAssertEqual(manager.activeSession?.id, reset)
+    XCTAssertEqual(manager.activeSession?.sessionServerModificationDate, now.addingTimeInterval(1))
+    XCTAssertEqual(manager.activeSession?.sessionSequence, 1)
+  }
+
   func testSyncResetNewIdentityStartsAtOneDespiteHistoricalAndActiveSequence() throws {
     let now = Date()
     let profile = BlockedProfiles(name: "Reset", createdAt: now, updatedAt: now)
@@ -1793,7 +1823,7 @@ final class SyncApplyServiceTests: XCTestCase {
       sessionId: id, origin: .init(kind: .manual))
     XCTAssertEqual(
       service.applyFetchedModification(
-        remote.toCKRecord(in: zoneID),
+        SessionServerDatedRecord(copying: remote.toCKRecord(in: zoneID), modifiedAt: now.addingTimeInterval(Double(remote.sequenceNumber))),
         isPendingDeleteOrTombstoned: noPendingDelete), .applied)
     XCTAssertEqual(manager.activeSession?.id, id)
     let replacement = UUID().uuidString
@@ -1801,7 +1831,7 @@ final class SyncApplyServiceTests: XCTestCase {
     remote.applyUpdate(
       isActive: true, sequenceNumber: 20, deviceId: "device-B", startTime: now.addingTimeInterval(1),
       sessionId: replacement, origin: .init(kind: .manual))
-    _ = service.applyFetchedModification(remote.toCKRecord(in: zoneID), isPendingDeleteOrTombstoned: noPendingDelete)
+    _ = service.applyFetchedModification(SessionServerDatedRecord(copying: remote.toCKRecord(in: zoneID), modifiedAt: now.addingTimeInterval(Double(remote.sequenceNumber))), isPendingDeleteOrTombstoned: noPendingDelete)
     var reset = ProfileSessionRecord(profileId: profile.id)
     let resetId = UUID().uuidString
     reset.applyUpdate(
@@ -1809,12 +1839,12 @@ final class SyncApplyServiceTests: XCTestCase {
       sessionId: resetId, origin: .init(kind: .manual))
     XCTAssertEqual(
       service.applyFetchedModification(
-        reset.toCKRecord(in: zoneID),
+        SessionServerDatedRecord(copying: reset.toCKRecord(in: zoneID), modifiedAt: now.addingTimeInterval(21)),
         isPendingDeleteOrTombstoned: noPendingDelete), .applied)
     XCTAssertEqual(manager.activeSession?.id, resetId)
     XCTAssertEqual(
       service.applyFetchedModification(
-        reset.toCKRecord(in: zoneID),
+        SessionServerDatedRecord(copying: reset.toCKRecord(in: zoneID), modifiedAt: now.addingTimeInterval(21)),
         isPendingDeleteOrTombstoned: noPendingDelete), .ignored)
   }
 
@@ -1871,7 +1901,7 @@ final class SyncApplyServiceTests: XCTestCase {
     let replacementId = UUID()
     manager.startRemoteSession(
       context: context, profileId: profile.id, sessionId: originalId,
-      startTime: now, origin: .init(kind: .nfc, key: "OLD", namespace: .nfcUID), sequenceNumber: 1)
+      startTime: now, origin: .init(kind: .nfc, key: "OLD", namespace: .nfcUID), sequenceNumber: 1, serverModificationDate: now)
     let active = try XCTUnwrap(manager.activeSession)
     SharedData.configureLockPath(nil)
     defer {
@@ -1880,14 +1910,14 @@ final class SyncApplyServiceTests: XCTestCase {
     }
     manager.startRemoteSession(
       context: context, profileId: profile.id, sessionId: replacementId,
-      startTime: now.addingTimeInterval(1), origin: .init(kind: .nfc, key: "NEW", namespace: .nfcUID), sequenceNumber: 2)
+      startTime: now.addingTimeInterval(1), origin: .init(kind: .nfc, key: "NEW", namespace: .nfcUID), sequenceNumber: 2, serverModificationDate: now.addingTimeInterval(1))
     XCTAssertEqual(active.id, originalId.uuidString)
     XCTAssertEqual(active.sessionSequence, 1)
     SharedData.resetLockPath()
     var remote = ProfileSessionRecord(profileId: profile.id)
     remote.applyUpdate(isActive: true, sequenceNumber: 2, deviceId: "device-B", startTime: now.addingTimeInterval(1), sessionId: replacementId.uuidString, origin: .init(kind: .nfc, key: "NEW", namespace: .nfcUID))
     let service = SyncApplyService(modelContext: context, store: store, sessionController: manager, emergencyManager: emergencyManager, deviceId: deviceId)
-    _ = service.applyFetchedModification(remote.toCKRecord(in: zoneID), isPendingDeleteOrTombstoned: noPendingDelete)
+    _ = service.applyFetchedModification(SessionServerDatedRecord(copying: remote.toCKRecord(in: zoneID), modifiedAt: now.addingTimeInterval(1)), isPendingDeleteOrTombstoned: noPendingDelete)
     XCTAssertEqual(active.id, replacementId.uuidString)
     XCTAssertEqual(active.origin?.initiatingKey, "NEW")
     XCTAssertEqual(active.sessionSequence, 2)

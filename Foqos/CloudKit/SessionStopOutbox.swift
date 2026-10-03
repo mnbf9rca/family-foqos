@@ -1,71 +1,106 @@
 import Foundation
 
-/// #201: a session-stop CAS write that fails must not be silently dropped. The intent is
-/// persisted and re-driven on foreground (minimal outbox, consistent with the funnel/tombstone
-/// approach — persisted intent, idempotent re-drive; the underlying stop is CAS-idempotent).
+/// Persist exact stop intents until CloudKit confirms each stopped session is resolved.
 @MainActor
 final class SessionStopOutbox {
+  struct Intent: Codable, Equatable {
+    let profileId: UUID
+    let expectedSessionId: String?
+    let expectedStart: Date?
+  }
+
   private let defaults: UserDefaults
   private let key = "family_foqos_session_stop_outbox"
   private let expectedIdsKey = "family_foqos_session_stop_outbox_expected_ids"
   private let expectedStartsKey = "family_foqos_session_stop_outbox_expected_starts"
+  private let intentsKey = "family_foqos_session_stop_intents"
 
-  init(defaults: UserDefaults = .standard) {
-    self.defaults = defaults
+  init(defaults: UserDefaults = .standard) { self.defaults = defaults }
+
+  // A damaged queue cannot authorize a new start or a destructive overwrite.
+  var intents: [Intent]? {
+    if defaults.object(forKey: intentsKey) != nil {
+      guard let data = defaults.data(forKey: intentsKey) else {
+        Log.error("Cannot read pending session stops", category: .sync)
+        return nil
+      }
+      do { return try JSONDecoder().decode([Intent].self, from: data) } catch {
+        Log.error("Cannot decode pending session stops", category: .sync)
+        return nil
+      }
+    }
+    return (defaults.array(forKey: key) as? [String] ?? []).compactMap { value in
+      guard let profileId = UUID(uuidString: value) else { return nil }
+      return Intent(
+        profileId: profileId,
+        expectedSessionId: defaults.dictionary(forKey: expectedIdsKey)?[value] as? String,
+        expectedStart: defaults.dictionary(forKey: expectedStartsKey)?[value] as? Date)
+    }
   }
 
   var pending: [UUID] {
-    (defaults.array(forKey: key) as? [String] ?? []).compactMap(UUID.init(uuidString:))
+    (intents ?? []).reduce(into: []) { ids, intent in
+      if !ids.contains(intent.profileId) { ids.append(intent.profileId) }
+    }
   }
 
   func expectedStart(for profileId: UUID) -> Date? {
-    defaults.dictionary(forKey: expectedStartsKey)?[profileId.uuidString] as? Date
+    intents?.first { $0.profileId == profileId }?.expectedStart
   }
 
   func expectedSessionId(for profileId: UUID) -> String? {
-    defaults.dictionary(forKey: expectedIdsKey)?[profileId.uuidString] as? String
+    intents?.first { $0.profileId == profileId }?.expectedSessionId
+  }
+
+  private func save(_ intents: [Intent]) {
+    do { defaults.set(try JSONEncoder().encode(intents), forKey: intentsKey) } catch {
+      Log.error("Cannot encode pending session stops", category: .sync)
+    }
   }
 
   func enqueue(profileId: UUID, expectedStart: Date? = nil, expectedSessionId: String? = nil) {
-    var ids = defaults.array(forKey: key) as? [String] ?? []
-    let value = profileId.uuidString
-    var starts = defaults.dictionary(forKey: expectedStartsKey) ?? [:]
-    var sessionIds = defaults.dictionary(forKey: expectedIdsKey) ?? [:]
-    // Never weaken a pending exact intent into a profile-only legacy stop.
-    if let expectedSessionId { sessionIds[value] = expectedSessionId } else if sessionIds[value] != nil { return }
-    defaults.set(sessionIds, forKey: expectedIdsKey)
-    starts[value] = expectedStart
-    defaults.set(starts, forKey: expectedStartsKey)
-    guard !ids.contains(value) else { return }
-    ids.append(value)
-    defaults.set(ids, forKey: key)
+    guard var queued = intents else { return }
+    if expectedSessionId == nil, queued.contains(where: { $0.profileId == profileId && $0.expectedSessionId != nil }) { return }
+    let intent = Intent(profileId: profileId, expectedSessionId: expectedSessionId, expectedStart: expectedStart)
+    if queued.contains(intent) { return }
+    // Exact identities supersede profile-only legacy stops, never another exact identity.
+    if expectedSessionId != nil {
+      queued.removeAll { $0.profileId == profileId && $0.expectedSessionId == nil }
+      if queued.contains(where: { $0.profileId == profileId && $0.expectedSessionId == expectedSessionId }) { return }
+    }
+    queued.append(intent)
+    save(queued)
+  }
+
+  func resolve(profileId: UUID, expectedSessionId: String?, expectedStart: Date?) {
+    guard var queued = intents else { return }
+    let attempted = Intent(profileId: profileId, expectedSessionId: expectedSessionId, expectedStart: expectedStart)
+    queued.removeAll { $0 == attempted }
+    save(queued)
+  }
+
+  func removeLegacyIntents(profileId: UUID) {
+    guard var queued = intents else { return }
+    queued.removeAll { $0.profileId == profileId && $0.expectedSessionId == nil }
+    save(queued)
   }
 
   func remove(profileId: UUID) {
-    var ids = defaults.array(forKey: key) as? [String] ?? []
-    ids.removeAll { $0 == profileId.uuidString }
-    defaults.set(ids, forKey: key)
-    var sessionIds = defaults.dictionary(forKey: expectedIdsKey) ?? [:]
-    sessionIds.removeValue(forKey: profileId.uuidString)
-    defaults.set(sessionIds, forKey: expectedIdsKey)
-    var starts = defaults.dictionary(forKey: expectedStartsKey) ?? [:]
-    starts.removeValue(forKey: profileId.uuidString)
-    defaults.set(starts, forKey: expectedStartsKey)
+    guard var queued = intents else { return }
+    queued.removeAll { $0.profileId == profileId }
+    save(queued)
   }
 
   func clear() {
-    defaults.removeObject(forKey: expectedIdsKey)
-    defaults.removeObject(forKey: key)
-    defaults.removeObject(forKey: expectedStartsKey)
+    for value in [key, expectedIdsKey, expectedStartsKey, intentsKey] { defaults.removeObject(forKey: value) }
   }
 
-  /// Re-drive each pending stop; `stop` returns true when the id is resolved (removed).
+  /// Drain a captured FIFO; resolving an attempt cannot remove an intent queued during its await.
   func drain(stop: (UUID, String?, Date?) async -> Bool) async {
-    for id in pending {
-      let expectedId = expectedSessionId(for: id)
-      let start = expectedStart(for: id)
-      if await stop(id, expectedId, start), expectedSessionId(for: id) == expectedId, expectedStart(for: id) == start {
-        remove(profileId: id)
+    guard let queued = intents else { return }
+    for intent in queued {
+      if await stop(intent.profileId, intent.expectedSessionId, intent.expectedStart) {
+        resolve(profileId: intent.profileId, expectedSessionId: intent.expectedSessionId, expectedStart: intent.expectedStart)
       }
     }
   }

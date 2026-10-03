@@ -21,7 +21,7 @@ final class ConcurrentSessionTests: XCTestCase {
       startTime: now,
       deviceId: "device-a"
     )
-    guard case .started(let seq1) = startResult else {
+    guard case .started(let seq1, _) = startResult else {
       XCTFail("Should start")
       return
     }
