@@ -29,10 +29,7 @@ struct ProfileDebugCard: View {
           label: "Enable Allow Mode Domains",
           value: "\(profile.enableAllowModeDomains)"
         )
-        DebugRow(
-          label: "Disable Background Stops",
-          value: "\(profile.disableBackgroundStops)"
-        )
+
       }
 
       Divider()
@@ -123,8 +120,7 @@ struct ProfileDebugCard: View {
     enableLiveActivity: true,
     enableBreaks: true,
     order: 2,
-    schedule: schedule,
-    disableBackgroundStops: true
+    schedule: schedule
   )
 
   return ProfileDebugCard(profile: profile)

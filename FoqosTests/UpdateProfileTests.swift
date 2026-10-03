@@ -74,14 +74,14 @@ final class UpdateProfileTests: XCTestCase {
       profile, in: context, now: now,
       name: "Updated",
       enableStrictMode: true,
-      order: 5,
-      disableBackgroundStops: true
+      blockAppInstallation: true,
+      order: 5
     )
 
     XCTAssertEqual(updated.name, "Updated")
     XCTAssertTrue(updated.enableStrictMode)
     XCTAssertEqual(updated.order, 5)
-    XCTAssertTrue(updated.disableBackgroundStops)
+    XCTAssertTrue(updated.blockAppInstallation)
     XCTAssertEqual(updated.updatedAt, now)
   }
 
