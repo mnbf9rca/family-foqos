@@ -603,13 +603,13 @@ public enum SharedData {
     _ candidate: SessionSnapshot, expectedVictimId: String?, now: Date,
     scheduleOccurrence: Date? = nil, calendar: Calendar = .current,
     encode: (SessionSnapshot) throws -> Data = { try JSONEncoder().encode($0) },
-    onCommit: () -> Void = {}
+    allowLinkForTag: Bool = false, onCommit: () -> Void = {}
   ) -> Bool {
     withLockStatus(blocking: true) { outcome in
       guard outcome == .acquired, candidate.endTime == nil,
         UUID(uuidString: candidate.id) != nil, let origin = candidate.origin,
         let profile = profileSnapshots[candidate.blockedProfileId.uuidString],
-        ProfileConditionValidation.startRejection(for: profile, origin: origin) == nil,
+        ProfileConditionValidation.startRejection(for: profile, origin: origin, allowLinkForTag: allowLinkForTag) == nil,
         let current = checkedActiveSession(),
         current?.id == expectedVictimId,
         current?.endTime == nil,

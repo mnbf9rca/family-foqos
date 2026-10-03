@@ -91,7 +91,7 @@ public enum ProfileConditionValidation {
     }
     return errors
   }
-  public static func startRejection(for snapshot: SharedData.ProfileSnapshot, origin: SessionOrigin) -> String? {
+  public static func startRejection(for snapshot: SharedData.ProfileSnapshot, origin: SessionOrigin, allowLinkForTag: Bool = false) -> String? {
     let editRequired = "Please edit this profile before starting. Its start and stop settings need updating."
     guard snapshot.profileSchemaVersion.map({ $0 >= 2 }) == true,
       snapshot.settingsReadable == true,
@@ -111,9 +111,9 @@ public enum ProfileConditionValidation {
     case .link: entranceEnabled = start.deepLink
     case .schedule: entranceEnabled = start.schedule
     case .nfc:
-      entranceEnabled = start.anyNFC || (start.specificNFC && origin.initiatingKey.map { (snapshot.startNFCTagIds ?? []).contains($0) } == true)
+      entranceEnabled = (allowLinkForTag && start.deepLink) || start.anyNFC || (start.specificNFC && origin.initiatingKey.map { (snapshot.startNFCTagIds ?? []).contains($0) } == true)
     case .qr:
-      entranceEnabled = start.anyQR || (start.specificQR && origin.initiatingKey.map { (snapshot.startQRCodeIds ?? []).contains($0) } == true)
+      entranceEnabled = (allowLinkForTag && start.deepLink) || start.anyQR || (start.specificQR && origin.initiatingKey.map { (snapshot.startQRCodeIds ?? []).contains($0) } == true)
     }
     guard entranceEnabled else {
       return "This profile isn’t set to start this way. Please edit its start settings."
@@ -122,8 +122,8 @@ public enum ProfileConditionValidation {
       stop.manual || (stop.timer && stop.timerDurationMinutes != nil)
       || stop.schedule || stop.nfc == .any || stop.nfc == .specific
       || stop.qr == .any || stop.qr == .specific
-      || (stop.nfc == .same && origin.kind == .nfc && origin.initiatingKey != nil)
-      || (stop.qr == .same && origin.kind == .qr && origin.initiatingKey != nil)
+      || (stop.nfc == .same && origin.kind == .nfc && (origin.initiatingKey != nil || origin.isUnidentifiedLegacyTag))
+      || (stop.qr == .same && origin.kind == .qr && (origin.initiatingKey != nil || origin.isUnidentifiedLegacyTag))
     return hasStop ? nil : "This profile has no stop for this start. Please edit it before starting."
   }
 }

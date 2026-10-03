@@ -36,7 +36,7 @@ struct BlockedProfileView: View {
 
   private func registerTag(id: String, kind: String, selectedIds: Binding<[String]>) {
     do {
-      let number = savedTags.filter { $0.kind == kind }.count + 1
+      let number = savedTags.valid.filter { $0.kind == kind }.count + 1
       let name = "\(kind == "nfc" ? "NFC tag" : "QR code") \(number)"
       let tag = try SavedTag.findOrCreate(id: id, kind: kind, name: name, in: modelContext)
       try modelContext.save()
@@ -75,6 +75,7 @@ struct BlockedProfileView: View {
 
   /// QR code generator
   @State private var showingGeneratedQRCode = false
+  @State private var generatedQRPayload: ProfileTagPayload?
 
   /// Sheet for activity picker
   @State private var showingActivityPicker = false
@@ -372,15 +373,15 @@ struct BlockedProfileView: View {
             startNFCTagIds: $triggerConfig.startNFCTagIds,
             startQRCodeIds: $triggerConfig.startQRCodeIds,
             startSchedule: $triggerConfig.startSchedule,
-            nfcTags: savedTags.filter { $0.kind == "nfc" }.map { ($0.id, $0.name) },
-            qrTags: savedTags.filter { $0.kind == "qr" }.map { ($0.id, $0.name) },
+            nfcTags: savedTags.valid.filter { $0.kind == "nfc" }.map { ($0.id, $0.name) },
+            qrTags: savedTags.valid.filter { $0.kind == "qr" }.map { ($0.id, $0.name) },
             disabled: editingDisabled,
             onTriggerChange: {
               triggerConfig.startTriggersDidChange()
             },
             onScanNFCTag: {
               nfcScanner.onTagScanned = { tag in
-                registerTag(id: tag.id, kind: "nfc", selectedIds: $triggerConfig.startNFCTagIds)
+                registerTag(id: tag.event?.matchingKey ?? tag.id, kind: "nfc", selectedIds: $triggerConfig.startNFCTagIds)
               }
               nfcScanner.onError = { error in
                 alertIdentifier = AlertIdentifier(id: .error, errorMessage: error)
@@ -408,20 +409,28 @@ struct BlockedProfileView: View {
             Text("Require being at or away from specific locations to stop this profile.")
           }
 
+          if strategyManager.activeSession?.blockedProfile.id == profile?.id,
+            strategyManager.activeSession?.origin?.isUnidentifiedLegacyTag == true
+          {
+            Text("If the app can't identify the older tag or code that started the session, any tag or code of the same type can stop it.")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+
           StopConditionSelector(
             conditions: $triggerConfig.stopConditions,
             stopNFCTagIds: $triggerConfig.stopNFCTagIds,
             stopQRCodeIds: $triggerConfig.stopQRCodeIds,
             stopSchedule: $triggerConfig.stopSchedule,
-            nfcTags: savedTags.filter { $0.kind == "nfc" }.map { ($0.id, $0.name) },
-            qrTags: savedTags.filter { $0.kind == "qr" }.map { ($0.id, $0.name) },
+            nfcTags: savedTags.valid.filter { $0.kind == "nfc" }.map { ($0.id, $0.name) },
+            qrTags: savedTags.valid.filter { $0.kind == "qr" }.map { ($0.id, $0.name) },
             disabled: editingDisabled,
             onConditionChange: {
               triggerConfig.stopConditionsDidChange()
             },
             onScanNFCTag: {
               nfcScanner.onTagScanned = { tag in
-                registerTag(id: tag.id, kind: "nfc", selectedIds: $triggerConfig.stopNFCTagIds)
+                registerTag(id: tag.event?.matchingKey ?? tag.id, kind: "nfc", selectedIds: $triggerConfig.stopNFCTagIds)
               }
               nfcScanner.onError = { error in
                 alertIdentifier = AlertIdentifier(id: .error, errorMessage: error)
@@ -655,7 +664,7 @@ struct BlockedProfileView: View {
                   }
 
                   Button {
-                    showingGeneratedQRCode = true
+                    generateProfileQR()
                   } label: {
                     Label("Generate QR code", systemImage: "qrcode")
                   }
@@ -727,9 +736,15 @@ struct BlockedProfileView: View {
             allowMode: enableAllowModeDomain
           )
         }
+        .onChange(of: nfcWriter.errorMessage) { _, message in
+          if let message {
+            showError(message: message)
+            nfcWriter.errorMessage = nil
+          }
+        }
         .sheet(isPresented: $showingGeneratedQRCode) {
-          if let profileToWrite = profile {
-            let url = BlockedProfiles.getProfileDeepLink(profileToWrite)
+          if let profileToWrite = profile, let payload = generatedQRPayload {
+            let url = payload.url.absoluteString
             QRCodeView(
               url: url,
               profileName: profileToWrite
@@ -806,7 +821,8 @@ struct BlockedProfileView: View {
                 showStartQRScanner = false
                 registerTag(id: codeId, kind: "qr", selectedIds: $triggerConfig.startQRCodeIds)
               },
-              onFailure: { _ in
+              onFailure: { error in
+                showError(message: error)
                 showStartQRScanner = false
               }
             )
@@ -819,7 +835,8 @@ struct BlockedProfileView: View {
                 showStopQRScanner = false
                 registerTag(id: codeId, kind: "qr", selectedIds: $triggerConfig.stopQRCodeIds)
               },
-              onFailure: { _ in
+              onFailure: { error in
+                showError(message: error)
                 showStopQRScanner = false
               }
             )
@@ -1045,10 +1062,35 @@ struct BlockedProfileView: View {
   }
 
   private func writeProfile() {
-    if let profileToWrite = profile {
-      let url = BlockedProfiles.getProfileDeepLink(profileToWrite)
-      nfcWriter.writeURL(url)
-    }
+    guard let profileToWrite = profile else { return }
+    do {
+      try nfcWriter.writeProfile(profileToWrite) { payload in
+        let tag: SavedTag
+        do {
+          let name = "NFC tag \(savedTags.valid.filter { $0.kind == "nfc" }.count + 1)"
+          tag = try NFCWriter.enrollWrittenPayload(payload, name: name, in: modelContext)
+        } catch {
+          showError(message: "Failed to save tag: \(error.localizedDescription)")
+          return false
+        }
+        if profileSyncManager.isEnabled {
+          do {
+            try profileSyncManager.enqueueTagSave(tag.id)
+          } catch SyncEngineControllingError.notAttached {
+            Log.info("Tag upload deferred until sync attaches", category: .sync)
+          } catch { showError(message: "Failed to save tag: \(error.localizedDescription)") }
+        }
+        return true
+      }
+    } catch { showError(message: error.localizedDescription) }
+  }
+
+  private func generateProfileQR() {
+    guard let profile else { return }
+    do {
+      generatedQRPayload = try QRCodeView.makePayload(for: profile)
+      showingGeneratedQRCode = true
+    } catch { showError(message: error.localizedDescription) }
   }
 
   /// Register schedules and enqueue sync only after the edit has persisted.

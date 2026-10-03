@@ -11,7 +11,7 @@ public struct ProfileStopConditions: Codable, Equatable {
   public var nfc: TagStopKind
   public var qr: TagStopKind
   public var schedule: Bool
-  // Legacy runtime authority remains until the admission/identity slice.
+  // Inert in V2; retained only for genuinely active V1 session compatibility.
   public var deepLink: Bool
   public var timerDurationMinutes: Int?
   public var allowChangingTimerBeforeStart: Bool
@@ -90,7 +90,7 @@ public struct ProfileStopConditions: Codable, Equatable {
 
   /// Selected-family predicate for existing runtime consumers.
   public var isValid: Bool {
-    manual || timer || hasNFC || hasQR || schedule || deepLink
+    manual || timer || hasNFC || hasQR || schedule
   }
 
   public var hasNFC: Bool { nfc != .none }

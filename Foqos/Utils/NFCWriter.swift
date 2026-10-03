@@ -1,4 +1,5 @@
 @preconcurrency import CoreNFC  // NFCTagReaderSession, NFCMiFareTag, NFCISO15693Tag lack Sendable
+import SwiftData
 import SwiftUI
 
 /// Writes NDEF-formatted URLs to NFC tags
@@ -16,23 +17,54 @@ import SwiftUI
 @MainActor
 class NFCWriter: NSObject, ObservableObject {
   var isScanning: Bool = false
-  var errorMessage: String?
+  @Published var errorMessage: String?
+  private var onWritten: ((ProfileTagPayload) -> Bool)?
+  private var profilePayload: ProfileTagPayload?
+  private var awaitingEnrollment = false
+
+  static func makePayload(for profile: BlockedProfiles) throws -> ProfileTagPayload {
+    try ProfileTagPayload.prepare(for: profile, type: .nfc)
+  }
+
+  static func message(for payload: ProfileTagPayload) -> NFCNDEFMessage {
+    NFCNDEFMessage(records: [NFCNDEFPayload.wellKnownTypeURIPayload(url: payload.url)!])
+  }
+
+  static func enrollWrittenPayload(_ payload: ProfileTagPayload, name: String, in context: ModelContext) throws -> SavedTag {
+    try SavedTag.enroll(event: payload.event, name: name, in: context)
+  }
+
+  func writeProfile(_ profile: BlockedProfiles, onWritten: @escaping (ProfileTagPayload) -> Bool) throws {
+    guard !isScanning else { return }
+    if awaitingEnrollment && profilePayload?.profileId == profile.id {
+      didWritePayload()
+      return
+    }
+    let payload = try Self.makePayload(for: profile)
+    // Choosing another profile abandons the previous request's failed enrollment.
+    awaitingEnrollment = false
+    profilePayload = payload
+    self.onWritten = onWritten
+    beginWriting()
+  }
 
   private var tagSession: NFCTagReaderSession?
-  private var urlToWrite: String?
+  func didWritePayload() {
+    isScanning = false
+    guard let payload = profilePayload, let onWritten else { return }
+    // A retry must enroll the key already on the tag, without starting another NFC write.
+    awaitingEnrollment = !onWritten(payload)
+    if !awaitingEnrollment {
+      profilePayload = nil
+      self.onWritten = nil
+    }
+  }
 
-  func writeURL(_ url: String) {
+  func beginWriting() {
     guard NFCReaderSession.readingAvailable else {
       self.errorMessage = "NFC writing not available on this device"
       return
     }
-
-    guard URL(string: url) != nil else {
-      self.errorMessage = "Invalid URL format"
-      return
-    }
-
-    urlToWrite = url
 
     // Use NFCTagReaderSession to detect ALL tag types (including non-NDEF)
     // This allows us to show proper errors for Amiibos, hotel cards, etc.
@@ -54,6 +86,7 @@ class NFCWriter: NSObject, ObservableObject {
 
 private struct NFCSessionBox: @unchecked Sendable {  // SAFETY: NFCTagReaderSession is only used on CoreNFC's internal queue
   private let session: NFCTagReaderSession
+  var identity: ObjectIdentifier { ObjectIdentifier(session) }
 
   init(session: NFCTagReaderSession) {
     self.session = session
@@ -121,11 +154,13 @@ extension NFCWriter: NFCTagReaderSessionDelegate {
     _ session: NFCTagReaderSession, didInvalidateWithError error: Error
   ) {
     // Capture values before MainActor hop
+    let identity = ObjectIdentifier(session)
     let readerError = error as? NFCReaderError
     let errorCode = readerError?.code
     let localizedDescription = error.localizedDescription
 
     Task { @MainActor in
+      guard self.tagSession.map({ ObjectIdentifier($0) }) == identity else { return }
       self.isScanning = false
 
       if let errorCode = errorCode {
@@ -153,20 +188,18 @@ extension NFCWriter: NFCTagReaderSessionDelegate {
       return
     }
 
-    // Fetch URL from MainActor FIRST, then proceed with all NFC work
+    // Fetch the logical payload before proceeding with NFC work.
     let sessionBox = NFCSessionBox(session: session)
     let tagBox = NFCTagBox(tag: tag)
 
     Task { @MainActor in
-      guard let urlString = self.urlToWrite,
-        let url = URL(string: urlString),
-        let urlPayload = NFCNDEFPayload.wellKnownTypeURIPayload(url: url)
-      else {
+      guard self.tagSession.map({ ObjectIdentifier($0) }) == sessionBox.identity else { return }
+      guard let payload = self.profilePayload else {
         sessionBox.invalidate(errorMessage: "Invalid URL format")
         return
       }
 
-      let message = NFCNDEFMessage(records: [urlPayload])
+      let message = Self.message(for: payload)
       let messageBox = NFCNDEFMessageBox(message: message)
 
       // Now proceed with NFC operations - pass all needed data through closures
@@ -272,7 +305,8 @@ extension NFCWriter: NFCTagReaderSessionDelegate {
       } else {
         sessionBox.alertMessage = "✓ Successfully wrote profile to tag"
         Task { @MainActor in
-          self.isScanning = false
+          guard self.tagSession.map({ ObjectIdentifier($0) }) == sessionBox.identity else { return }
+          self.didWritePayload()
         }
         sessionBox.invalidate()
       }

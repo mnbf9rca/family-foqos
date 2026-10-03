@@ -10,7 +10,7 @@ class PhysicalReader {
     onSuccess: @escaping (String) -> Void
   ) {
     nfcScanner.onTagScanned = { result in
-      let tagId = result.id
+      let tagId = result.event?.matchingKey ?? result.id
       onSuccess(tagId)
     }
 
@@ -27,7 +27,7 @@ class PhysicalReader {
     ) { result in
       switch result {
       case .success(let hashedCode):
-        onSuccess(hashedCode.hash)
+        onSuccess(hashedCode.event?.matchingKey ?? hashedCode.hash)
       case .failure(let error):
         onFailure(error.localizedDescription)
       }
