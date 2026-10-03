@@ -289,7 +289,7 @@ struct HomeView: View {
         navigationManager.deliveryError = nil
       }
     }
-    .onChange(of: navigationManager.navigateToProfileId) { _, newValue in
+    .onChange(of: navigationManager.navigateToProfileId, initial: true) { _, newValue in
       if let profileId = newValue {
         navigateToProfileId = UUID(uuidString: profileId)
         navigationManager.clearNavigation()
