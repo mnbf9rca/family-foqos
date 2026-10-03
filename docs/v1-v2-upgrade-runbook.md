@@ -54,13 +54,13 @@ cp "$UPGRADE_REPO/docs/fixtures/V2UpgradeVerificationTests.swift" "$UPGRADE_V2/F
 (cd "$UPGRADE_V1"
  "$UPGRADE_GATE" --agent "$UPGRADE_AGENT" --session collab --xcbeautify -- \
   xcodebuild build-for-testing -project FamilyFoqos.xcodeproj -scheme FamilyFoqos \
-  -only-testing:FoqosTests/RCUpgradeSeedTests \
+  -only-testing:foqosTests/RCUpgradeSeedTests \
   > "$UPGRADE_RUN/preflight-v1.log" 2>&1) || {
  status=$?; echo 'V1 preflight failed; API mismatch means fixtures out of date: update them in a PR' >&2; exit "$status";
 }
 ```
 
-V2 compiles first so V1 remains the gate's last build product for `prepare`. The current wrapper is used from both worktrees because the frozen V1 checkout predates it. No custom destination or DerivedData argument is allowed.
+V1 uses the frozen lowercase `foqosTests` target; V2 uses `FoqosTests`. V2 compiles first so V1 remains the gate's last build product for `prepare`. The current wrapper is used from both worktrees because the frozen V1 checkout predates it. No custom destination or DerivedData argument is allowed.
 
 ## 2. Reset the disposable app, seed real V1 data, capture it
 
@@ -70,7 +70,7 @@ V2 compiles first so V1 remains the gate's last build product for `prepare`. The
 (cd "$UPGRADE_V1"
  "$UPGRADE_GATE" --agent "$UPGRADE_AGENT" --session collab --xcbeautify -- \
   xcodebuild test -project FamilyFoqos.xcodeproj -scheme FamilyFoqos \
-  -only-testing:FoqosTests/RCUpgradeSeedTests -collect-test-diagnostics never \
+  -only-testing:foqosTests/RCUpgradeSeedTests -collect-test-diagnostics never \
   -resultBundlePath "$UPGRADE_RUN/v1-seed.xcresult" \
   > "$UPGRADE_RUN/v1-seed.log" 2>&1)
 "$UPGRADE_GATE" --agent "$UPGRADE_AGENT" --session collab -- \
