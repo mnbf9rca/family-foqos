@@ -33,6 +33,40 @@ public struct ProfileScheduleTime: Codable, Equatable {
     return now.timeIntervalSince(updatedAt) > 1 * 60
   }
 
+  public var isValid: Bool {
+    isActive && (0...23).contains(hour) && (0...59).contains(minute)
+  }
+
+  public func conflicts(with other: ProfileScheduleTime) -> Bool {
+    isValid && other.isValid && hour == other.hour && minute == other.minute
+      && days.contains(where: other.days.contains)
+  }
+
+  /// The latest daily OS start, before checking whether its weekday is enabled.
+  public func previousDailyClockOccurrence(atOrBefore date: Date, calendar: Calendar = .current) -> Date? {
+    guard isValid, let today = scheduledStartTime(on: date, calendar: calendar) else { return nil }
+    if today <= date { return today }
+    guard let yesterday = calendar.date(byAdding: .day, value: -1, to: calendar.startOfDay(for: date)) else { return nil }
+    return scheduledStartTime(on: yesterday, calendar: calendar)
+  }
+
+  /// The latest enabled stop, including a missed occurrence on an earlier weekday.
+  public func previousOccurrence(atOrBefore date: Date, calendar: Calendar = .current) -> Date? {
+    guard isValid else { return nil }
+    for offset in 0...7 {
+      guard let day = calendar.date(byAdding: .day, value: -offset, to: calendar.startOfDay(for: date)),
+        let occurrence = scheduledStartTime(on: day, calendar: calendar)
+      else { return nil }
+      if occurrence <= date && isTodayScheduled(now: occurrence, calendar: calendar) { return occurrence }
+    }
+    return nil
+  }
+
+  public func hasOccurrence(from start: Date, through end: Date, calendar: Calendar = .current) -> Bool {
+    guard start <= end, let occurrence = previousOccurrence(atOrBefore: end, calendar: calendar) else { return false }
+    return occurrence >= start
+  }
+
   public var formattedTime: String {
     var h = hour % 12
     if h == 0 { h = 12 }
@@ -47,35 +81,12 @@ public struct ProfileScheduleTime: Codable, Equatable {
   /// Returns the next future occurrence of this schedule after the given date.
   /// Walks up to 7 days forward to find the next scheduled day.
   public func nextScheduledStartTime(after date: Date, calendar: Calendar = .current) -> Date? {
-    guard isActive else { return nil }
-
-    var components = calendar.dateComponents([.year, .month, .day], from: date)
-    components.hour = hour
-    components.minute = minute
-    components.second = 0
-    guard let todayStart = calendar.date(from: components) else { return nil }
-
-    // If we haven't passed today's start yet, today could be the candidate;
-    // otherwise start looking from tomorrow's start time.
-    var candidate: Date
-    if date < todayStart {
-      candidate = todayStart
-    } else {
-      guard let tomorrow = calendar.date(byAdding: .day, value: 1, to: todayStart) else {
-        return nil
-      }
-      candidate = tomorrow
-    }
-
-    for _ in 0..<7 {
-      let weekdayRaw = calendar.component(.weekday, from: candidate)
-      if let weekday = Weekday(rawValue: weekdayRaw), days.contains(weekday) {
-        return candidate
-      }
-      guard let nextDay = calendar.date(byAdding: .day, value: 1, to: candidate) else {
-        return nil
-      }
-      candidate = nextDay
+    guard isValid else { return nil }
+    for offset in 0...7 {
+      guard let day = calendar.date(byAdding: .day, value: offset, to: calendar.startOfDay(for: date)),
+        let occurrence = scheduledStartTime(on: day, calendar: calendar)
+      else { return nil }
+      if occurrence > date && isTodayScheduled(now: occurrence, calendar: calendar) { return occurrence }
     }
     return nil
   }
@@ -84,6 +95,7 @@ public struct ProfileScheduleTime: Codable, Equatable {
   /// Constructs a Date from the date's year/month/day and this schedule's hour:minute.
   /// Does not check whether `date` falls on a scheduled day — callers are responsible for day checks.
   public func scheduledStartTime(on date: Date, calendar: Calendar = .current) -> Date? {
+    guard isValid else { return nil }
     var components = calendar.dateComponents([.year, .month, .day], from: date)
     components.hour = hour
     components.minute = minute

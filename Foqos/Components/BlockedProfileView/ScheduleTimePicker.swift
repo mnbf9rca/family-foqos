@@ -15,10 +15,13 @@ struct ScheduleTimePicker: View {
 
   @Environment(\.dismiss) var dismiss
 
-  private var timesMatch: Bool {
+  private var schedulesConflict: Bool {
     guard let other = otherScheduleTime else { return false }
     let components = Calendar.current.dateComponents([.hour, .minute], from: selectedTime)
-    return components.hour == other.hour && components.minute == other.minute
+    return ProfileScheduleTime(
+      days: Array(selectedDays), hour: components.hour ?? 9, minute: components.minute ?? 0,
+      updatedAt: selectedTime
+    ).conflicts(with: other)
   }
 
   var body: some View {
@@ -56,10 +59,10 @@ struct ScheduleTimePicker: View {
           .labelsHidden()
         }
 
-        if timesMatch {
+        if schedulesConflict {
           Section {
             Text(
-              "Start and stop times can't be the same. Try 1 minute apart for a near-24-hour schedule."
+              "Choose different moments for scheduled start and stop."
             )
             .foregroundStyle(.red)
             .font(.footnote)
@@ -79,7 +82,7 @@ struct ScheduleTimePicker: View {
             saveSchedule()
             dismiss()
           }
-          .disabled(selectedDays.isEmpty || timesMatch)
+          .disabled(selectedDays.isEmpty || schedulesConflict)
         }
       }
       .onAppear {
