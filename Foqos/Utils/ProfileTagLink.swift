@@ -67,7 +67,8 @@ enum ProfileTagLink {
   }
 
   enum Failure: LocalizedError {
-    case invalidTag, invalidLink, read(TagType)
+    case invalidTag, invalidLink
+    case read(TagType)
     var errorDescription: String? {
       switch self {
       case .invalidTag: return "This profile link isn’t valid. Please use another tag or code."
