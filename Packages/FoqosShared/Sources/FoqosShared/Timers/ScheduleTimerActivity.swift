@@ -54,6 +54,10 @@ public class ScheduleTimerActivity: TimerActivity {
   }
 
   public func start(for profile: SharedData.ProfileSnapshot) {
+    start(for: profile, now: Date())
+  }
+
+  public func start(for profile: SharedData.ProfileSnapshot, now: Date, calendar: Calendar = .current) {
     let profileId = profile.id.uuidString
 
     let isV2 = (profile.profileSchemaVersion ?? 1) >= 2
@@ -77,28 +81,25 @@ public class ScheduleTimerActivity: TimerActivity {
       return
     }
 
-    // Check start schedule — V2 uses consolidated shouldBeActiveNow, legacy uses individual checks
-    if isV2, let startSchedule = profile.startSchedule, profile.startTriggersSchedule == true {
-      let activeStopSchedule =
-        (profile.stopConditionsSchedule == true) ? profile.stopSchedule : nil
-      if !startSchedule.shouldBeActiveNow(
-        stopSchedule: activeStopSchedule,
-        lastStoppedAt: profile.scheduleLastStoppedAt)
-      {
-        Log.info("Start schedule timer activity for \(profile.id.uuidString), should not be active now", category: .timer)
+    var scheduleOccurrence: Date?
+    if isV2 {
+      let currentProfile = SharedData.snapshot(for: profile.id.uuidString) ?? profile
+      guard let occurrence = SharedData.scheduledStartOccurrence(for: currentProfile, now: now, calendar: calendar) else {
+        Log.info("Scheduled start is not eligible at callback delivery", category: .timer)
         return
       }
+      scheduleOccurrence = occurrence
     } else if !isV2, let schedule = profile.schedule {
-      guard schedule.isTodayScheduled() else {
+      guard schedule.isTodayScheduled(now: now, calendar: calendar) else {
         Log.info("Start schedule timer activity for \(profile.id.uuidString), not scheduled for today", category: .timer)
         return
       }
-      guard schedule.olderThanOneMinute() else {
+      guard schedule.olderThanOneMinute(now: now) else {
         Log.info("Start schedule timer activity for \(profile.id.uuidString), schedule is too new", category: .timer)
         return
       }
       if let stoppedAt = profile.scheduleLastStoppedAt,
-        let windowStart = schedule.windowStart(),
+        let windowStart = schedule.windowStart(on: now, calendar: calendar),
         windowStart <= stoppedAt
       {
         Log.info(
@@ -145,7 +146,6 @@ public class ScheduleTimerActivity: TimerActivity {
     }
 
     if isV2 {
-      let now = Date()
       let sessionId = UUID().uuidString
       let minutes = profile.stopConditions?.timer == true ? profile.stopConditions?.timerDurationMinutes : nil
       var deadline: Date?
@@ -162,6 +162,7 @@ public class ScheduleTimerActivity: TimerActivity {
       guard
         SharedData.commitOriginatingSession(
           candidate, expectedVictimId: existingSession?.id, now: now,
+          scheduleOccurrence: scheduleOccurrence, calendar: calendar,
           onCommit: {
             self.appBlocker.activateRestrictions(for: profile)
           })

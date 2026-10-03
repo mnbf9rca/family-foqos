@@ -429,7 +429,6 @@ struct FoqosApp: App {
       context: container.mainContext)
     PreActivationReminderScheduler.reconcileScheduleRegistrations(
       context: container.mainContext)
-    PreActivationReminderScheduler.catchUpMissedScheduleStarts(context: container.mainContext)
   }
 
   // MARK: - Share Acceptance Alerts

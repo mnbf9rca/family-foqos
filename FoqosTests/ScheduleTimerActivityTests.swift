@@ -65,16 +65,19 @@ final class ScheduleTimerActivityTests: XCTestCase {
   }
 
   func testOldTrueFlagDoesNotVetoEitherConfiguredScheduleAdapter() {
-    let now = Date()
+    let calendar = Calendar.current
+    let now = calendar.date(from: DateComponents(year: 2026, month: 6, day: 15, hour: 18))!
     for stopOnly in [false, true] {
       for oldFlag in [false, true] {
         var snap = snapshot(id: UUID(), disableBackgroundStops: oldFlag)
         snap.profileSchemaVersion = 3
+        snap.stopConditionsSchedule = true
+        SharedData.setSnapshot(snap, for: snap.id.uuidString)
         SharedData.createActiveSharedSession(
           for: .init(
             id: UUID().uuidString, tag: "manual", blockedProfileId: snap.id,
-            startTime: now, forceStarted: false, origin: .init(kind: .manual)))
-        if stopOnly { StopScheduleTimerActivity().stop(for: snap) } else { ScheduleTimerActivity().stop(for: snap) }
+            startTime: now.addingTimeInterval(-7200), forceStarted: false, origin: .init(kind: .manual)))
+        if stopOnly { StopScheduleTimerActivity().stop(for: snap, now: now, calendar: calendar) } else { ScheduleTimerActivity().stop(for: snap) }
         if stopOnly {
           XCTAssertNil(SharedData.getActiveSharedSession(), "A configured V2 stop ignores the retained flag")
         } else {

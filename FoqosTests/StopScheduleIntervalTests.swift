@@ -138,7 +138,7 @@ final class StopScheduleIntervalTests: XCTestCase {
     XCTAssertTrue(
       DeviceActivityCenterUtil.scheduleTimerActivity(
         for: profile, now: now, scheduleFor: { inventory[$0] },
-        startMonitoring: monitor, stopMonitoring: { names in names.forEach { inventory.removeValue(forKey: $0) } }
+        startMonitoring: monitor, stopMonitoring: { names in for name in names { inventory.removeValue(forKey: name) } }
       ).isEmpty)
     XCTAssertEqual(attempts, [start, stop])
     profile.startSchedule?.minute = 1
@@ -183,7 +183,7 @@ final class StopScheduleIntervalTests: XCTestCase {
           startMonitoring: { _, _ in XCTFail("Stop must remain registered") },
           stopMonitoring: { names in
             removed += names
-            names.forEach { inventory.removeValue(forKey: $0) }
+            for name in names { inventory.removeValue(forKey: name) }
           }
         ).isEmpty)
       XCTAssertEqual(removed, [start])
