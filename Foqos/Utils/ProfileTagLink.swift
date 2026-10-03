@@ -129,17 +129,19 @@ enum ProfileTagLink {
         unidentifiedLegacyTag: parsed.key == nil))
   }
 
-  static func uriURLs(_ message: NFCNDEFMessage?) throws -> [URL] {
+  static func uriURLs(_ message: NFCNDEFMessage?, requireValidRecords: Bool = true) throws -> [URL] {
     try (message?.records ?? []).compactMap { record in
       if record.typeNameFormat == .nfcWellKnown, record.type == Data([0x55]) {
         guard record.payload.count > 1, let url = record.wellKnownTypeURIPayload(), url.scheme != nil else {
-          throw Failure.invalidTag
+          if requireValidRecords { throw Failure.invalidTag }
+          return nil
         }
         return url
       }
       if record.typeNameFormat == .absoluteURI {
         guard let text = String(data: record.type, encoding: .utf8), let url = URL(string: text), url.scheme != nil else {
-          throw Failure.invalidTag
+          if requireValidRecords { throw Failure.invalidTag }
+          return nil
         }
         return url
       }
@@ -149,7 +151,9 @@ enum ProfileTagLink {
 
   /// Ordinary content retains UID/digest matching; any recognized profile path must validate.
   static func scannedEvent(type: TagType, urls: [URL], legacyKey: String, rawKey: String? = nil) throws -> TagEvent {
-    let profileURLs = urls.filter { $0.path == "/profile" || $0.path.hasPrefix("/profile/") }
+    let profileURLs = urls.filter {
+      $0.host?.lowercased() == "family-foqos.app" && ($0.path == "/profile" || $0.path.hasPrefix("/profile/"))
+    }
     guard let url = profileURLs.first else {
       return TagEvent(type: type, namespace: type == .nfc ? .nfcUID : .qrDigest, key: legacyKey, rawKey: rawKey)
     }

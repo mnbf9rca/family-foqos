@@ -73,7 +73,7 @@ struct TagsView: View {
       }
       .confirmationDialog("Add Tag", isPresented: $showingScanOptions, titleVisibility: .visible) {
         Button("Scan NFC tag") {
-          scanner.onTagScanned = { handleScan(id: $0.id, kind: "nfc") }
+          scanner.onTagScanned = { handleScan(id: $0.event?.matchingKey ?? $0.id, kind: "nfc") }
           scanner.onError = { errorMessage = $0 }
           scanner.scan(profileName: "your tag list")
         }

@@ -450,7 +450,7 @@ struct HomeView: View {
       if let pending = strategyManager.pendingTagSwitch {
         NavigationStack {
           VStack {
-            Text(tagConfirmationMessage).padding()
+            if !tagConfirmationMessage.isEmpty { Text(tagConfirmationMessage).padding() }
             if let error = strategyManager.tagScanError { Text(error).foregroundStyle(.red).padding() }
             if pending.requiredType == .qr {
               LabeledCodeScannerView(heading: "Scan to Stop", subtitle: "") { result in
@@ -715,7 +715,7 @@ struct HomeView: View {
     if let id = pending.targetProfileId, let target = try? BlockedProfiles.findProfile(byID: id, in: context) {
       return "Scan the required \(item) to stop \(session.blockedProfile.name), then \(target.name) can start."
     }
-    return "Scan a \(item) to stop \(session.blockedProfile.name)"
+    return ""
   }
 
   private func confirmTag(_ event: TagEvent) {

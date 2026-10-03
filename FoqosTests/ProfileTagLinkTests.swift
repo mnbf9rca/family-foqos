@@ -78,7 +78,51 @@ final class ProfileTagLinkTests: XCTestCase {
     XCTAssertEqual(try ProfileTagLink.classify(activity), .link(profileId: profile))
   }
 
-  func testMalformedRecognizedNDEFNeverDowngradesOrEnrollsUID() throws {
+  func testBrowsingActivityPreservesPassiveNavigationWithoutCommands() {
+    let navigation = NavigationManager()
+    let scene = SceneDelegate(navigation: navigation)
+    let activity = NSUserActivity(activityType: NSUserActivityTypeBrowsingWeb)
+    activity.webpageURL = URL(string: "https://family-foqos.app/navigate/\(profile)")!
+    scene.receiveConnection(activities: [activity], urls: [])
+    XCTAssertEqual(navigation.navigateToProfileId, profile.uuidString)
+    XCTAssertTrue(navigation.deliveries.isEmpty)
+    XCTAssertNil(navigation.deliveryError)
+    navigation.clearNavigation()
+    scene.receiveActivity(activity)
+    XCTAssertNil(navigation.navigateToProfileId)
+    let later = NSUserActivity(activityType: NSUserActivityTypeBrowsingWeb)
+    later.webpageURL = activity.webpageURL
+    scene.receiveActivity(later)
+    XCTAssertEqual(navigation.navigateToProfileId, profile.uuidString)
+    XCTAssertTrue(navigation.deliveries.isEmpty)
+  }
+
+  func testNonCommandURLsStaySilentAcrossSceneRoutes() {
+    for text in [
+      "https://family-foqos.app", "https://family-foqos.app/",
+      "https://family-foqos.app/help", "https://www.icloud.com/share/example",
+      "https://evil.example/profile/\(profile)/nfc/\(key)",
+    ] {
+      let navigation = NavigationManager()
+      let scene = SceneDelegate(navigation: navigation)
+      let url = URL(string: text)!
+      scene.receiveConnection(activities: [], urls: [url])
+      scene.receiveURL(url)
+      let activity = NSUserActivity(activityType: NSUserActivityTypeBrowsingWeb)
+      activity.webpageURL = url
+      scene.receiveActivity(activity)
+      XCTAssertTrue(navigation.deliveries.isEmpty, text)
+      XCTAssertNil(navigation.deliveryError, text)
+      XCTAssertNil(navigation.navigateToProfileId, text)
+    }
+    let navigation = NavigationManager()
+    let scene = SceneDelegate(navigation: navigation)
+    scene.receiveURL(URL(string: "https://family-foqos.app/profile/bad/nfc/\(key)")!)
+    XCTAssertTrue(navigation.deliveries.isEmpty)
+    XCTAssertEqual(navigation.deliveryError, ProfileTagLink.Failure.invalidLink.localizedDescription)
+  }
+
+  func testMalformedBackgroundNDEFNeverDowngrades() throws {
     let now = Date()
     let malformed = NFCNDEFMessage(records: [
       NFCNDEFPayload(format: .nfcWellKnown, type: Data([0x55]), identifier: Data(), payload: Data())
@@ -87,11 +131,37 @@ final class ProfileTagLinkTests: XCTestCase {
     activity.webpageURL = url
     activity.fixtureNDEF = malformed
     XCTAssertThrowsError(try ProfileTagLink.classify(activity))
-    XCTAssertThrowsError(try NFCResult.read(id: "A0FF", message: malformed, error: nil, now: now))
+    XCTAssertEqual(try NFCResult.read(id: "A0FF", message: malformed, error: nil, now: now).event?.matchingKey, "A0FF")
     let navigation = NavigationManager()
     navigation.handleActivity(activity)
     XCTAssertTrue(navigation.deliveries.isEmpty)
     XCTAssertNotNil(navigation.deliveryError)
+  }
+
+  func testBlankNDEFRetainsUIDAndRealReadFailureDoesNot() throws {
+    let now = Date()
+    let blank = NSError(domain: NFCErrorDomain, code: NFCReaderError.Code.ndefReaderSessionErrorZeroLengthMessage.rawValue)
+    XCTAssertEqual((blank as Error as? NFCReaderError)?.code, .ndefReaderSessionErrorZeroLengthMessage)
+    XCTAssertEqual(try NFCResult.read(id: "A0FF", message: nil, error: blank, now: now).event?.matchingKey, "A0FF")
+    let failed = NSError(domain: NFCErrorDomain, code: NFCReaderError.Code.readerTransceiveErrorTagConnectionLost.rawValue)
+    XCTAssertThrowsError(try NFCResult.read(id: "A0FF", message: nil, error: failed, now: now))
+  }
+
+  func testThirdPartyContentRetainsLegacyScanIdentities() throws {
+    let now = Date()
+    let card = URL(string: "https://tapt.io/profile/jane")!
+    let message = NFCNDEFMessage(records: [NFCNDEFPayload.wellKnownTypeURIPayload(url: card)!])
+    let nfc = try NFCResult.read(id: "A0FF", message: message, error: nil, now: now)
+    XCTAssertEqual(nfc.event?.matchingKey, "A0FF")
+    XCTAssertNil(nfc.event?.targetProfileId)
+    let qr = try QRScanResult.read(card.absoluteString)
+    XCTAssertEqual(qr.event?.matchingKey, QRCodeHasher.hash(card.absoluteString))
+    XCTAssertNil(qr.event?.targetProfileId)
+    let oddURI = NFCNDEFMessage(records: [
+      NFCNDEFPayload(format: .absoluteURI, type: Data([0xff]), identifier: Data(), payload: Data())
+    ])
+    XCTAssertEqual(try NFCResult.read(id: "A0FF", message: oddURI, error: nil, now: now).event?.matchingKey, "A0FF")
+    XCTAssertThrowsError(try QRScanResult.read("family-foqos://family-foqos.app/profile/\(profile)/qr/\(key)"))
   }
 
   func testColdWarmAndDualEntryDeliveryConsumedOnce() throws {

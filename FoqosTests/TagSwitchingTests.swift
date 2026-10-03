@@ -65,6 +65,17 @@ final class TagSwitchingTests: XCTestCase {
     TagEvent(type: type, namespace: .opaque, key: key, targetProfileId: target)
   }
 
+  private func classifiedActivity(_ type: TagType, key: String, target: UUID) throws -> ProfileTagLink.Delivery {
+    let activity = SwitchActivity(activityType: NSUserActivityTypeBrowsingWeb)
+    activity.webpageURL = ProfileTagLink.make(profileId: target, type: type, key: key)
+    if type == .nfc {
+      activity.message = NFCNDEFMessage(records: [NFCNDEFPayload.wellKnownTypeURIPayload(url: activity.webpageURL!)!])
+    } else {
+      activity.barcode = CIQRCodeDescriptor(payload: Data([1]), symbolVersion: 1, maskPattern: 0, errorCorrectionLevel: .levelL)
+    }
+    return try ProfileTagLink.classify(activity)
+  }
+
   private func active(_ p: BlockedProfiles, type: TagType, now: Date) throws -> BlockedProfileSession {
     try manager.startOriginatingSession(context: context, profile: p, origin: event(type, key: aKey).origin, now: now)
   }
@@ -145,10 +156,14 @@ final class TagSwitchingTests: XCTestCase {
         a.stopNFCTagIds = ["nfc:opaque:\(aKey)"]
         a.stopQRCodeIds = ["qr:opaque:\(aKey)"]
         let b = try profile("B", type: type, now: now)
-        for delivery in [ProfileTagLink.Delivery.tag(event(type, key: bKey, target: b.id))] {
+        for background in [false, true] {
           let victim = try active(a, type: type, now: now)
           applier.clearForAssertion()
-          await manager.handleDelivery(delivery, context: context, now: now)
+          if background {
+            await manager.handleDelivery(try classifiedActivity(type, key: bKey, target: b.id), context: context, now: now)
+          } else {
+            await manager.handleTagEvent(event(type, key: bKey, target: b.id), operation: .scan, context: context, now: now)
+          }
           if kind == .any {
             XCTAssertFalse(victim.isActive)
             XCTAssertEqual(manager.activeSession?.blockedProfile.id, b.id)
@@ -241,6 +256,7 @@ final class TagSwitchingTests: XCTestCase {
         let before = registrations
         await manager.handleDelivery(.link(profileId: a.id), context: context, now: now)
         XCTAssertTrue(victim.isActive)
+        XCTAssertNil(manager.errorMessage)
         await manager.handleTagEvent(event(type, key: aKey, target: a.id), operation: .scan, context: context, now: now)
         XCTAssertEqual(registrations, before)
         if kind == .none {
@@ -250,6 +266,77 @@ final class TagSwitchingTests: XCTestCase {
           XCTAssertFalse(victim.isActive)
           XCTAssertNil(manager.activeSession)
           XCTAssertNil(SharedData.getActiveSharedSession())
+        }
+      }
+    }
+  }
+
+  func testOwnTagWrongKeyPromptsWithoutReplacementAndKeepsStopOnlyTarget() async throws {
+    let now = Date()
+    for type in [TagType.nfc, .qr] {
+      let a = try profile("A", type: type, stop: .same, now: now)
+      let victim = try active(a, type: type, now: now)
+      let before = registrations
+      await manager.handleDelivery(try classifiedActivity(type, key: bKey, target: a.id), context: context, now: now)
+      XCTAssertTrue(manager.showTagConfirmation)
+      XCTAssertNil(manager.pendingTagSwitch?.targetProfileId)
+      await manager.handleTagEvent(event(type, key: cKey), operation: .confirmSwitch, context: context, now: now)
+      XCTAssertTrue(victim.isActive)
+      XCTAssertEqual(manager.tagScanError, type == .nfc ? "That NFC tag doesn’t match. Scan the required tag." : "That QR code doesn’t match. Scan the required code.")
+      await manager.handleTagEvent(event(type, key: aKey), operation: .confirmSwitch, context: context, now: now)
+      XCTAssertFalse(victim.isActive)
+      XCTAssertNil(manager.activeSession)
+      XCTAssertEqual(registrations, before)
+    }
+  }
+
+  func testIneligibleBRefusesBeforePromisingConfirmation() async throws {
+    let now = Date()
+    for failure in ["disabled", "invalid", "selection"] {
+      let a = try profile("A", type: .qr, stop: .same, now: now)
+      let b = try profile("B", type: .qr, now: now)
+      let victim = try active(a, type: .qr, now: now)
+      switch failure {
+      case "disabled": b.startTriggers = .init(manual: true)
+      case "invalid": b.stopConditions = .init(deepLink: true)
+      default: b.needsAppSelection = true
+      }
+      let before = registrations
+      await manager.handleDelivery(try classifiedActivity(.qr, key: bKey, target: b.id), context: context, now: now)
+      XCTAssertNil(manager.pendingTagSwitch, failure)
+      XCTAssertFalse(manager.showTagConfirmation, failure)
+      XCTAssertNotNil(manager.errorMessage, failure)
+      XCTAssertEqual(manager.activeSession?.id, victim.id)
+      XCTAssertTrue(victim.isActive)
+      XCTAssertEqual(registrations, before)
+      retire(victim, now: now)
+    }
+  }
+
+  func testVerifiedBackgroundTagsPreserveGenuineV1LinkLifecycle() async throws {
+    let now = Date()
+    for type in [TagType.nfc, .qr] {
+      for flag in [false, true] {
+        for linkStop in [false, true] {
+          let p = try profile("V1", type: type, now: now)
+          p.profileSchemaVersion = 1
+          p.blockingStrategyId = ManualBlockingStrategy.id
+          p.disableBackgroundStops = flag
+          p.stopConditions = .init(deepLink: linkStop, nfc: flag && type == .nfc ? .any : .none, qr: flag && type == .qr ? .any : .none)
+          let victim = BlockedProfileSession(tag: "manual", blockedProfile: p, startTime: now)
+          context.insert(victim)
+          try context.save()
+          manager.activeSession = victim
+          BlockedProfiles.updateSnapshot(for: p)
+          SharedData.createActiveSharedSession(for: victim.toSnapshot())
+          await manager.handleDelivery(try classifiedActivity(type, key: bKey, target: p.id), context: context, now: now)
+          let refused = flag || !linkStop
+          XCTAssertEqual(victim.isActive, refused)
+          if refused {
+            XCTAssertNotNil(manager.errorMessage)
+            retire(victim, now: now)
+          }
+          XCTAssertEqual(registrations, 0)
         }
       }
     }

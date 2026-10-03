@@ -7,10 +7,12 @@ struct NFCResult: Equatable, Sendable {
   var event: TagEvent? = nil
 
   static func read(id: String, message: NFCNDEFMessage?, error: Error?, now: Date) throws -> NFCResult {
-    guard error == nil else { throw ProfileTagLink.Failure.read(.nfc) }
+    let blank = (error as? NFCReaderError)?.code == .ndefReaderSessionErrorZeroLengthMessage
+    guard error == nil || blank else { throw ProfileTagLink.Failure.read(.nfc) }
     return NFCResult(
       id: id, dateScanned: now,
-      event: try ProfileTagLink.scannedEvent(type: .nfc, urls: try ProfileTagLink.uriURLs(message), legacyKey: id))
+      event: try ProfileTagLink.scannedEvent(
+        type: .nfc, urls: try ProfileTagLink.uriURLs(blank ? nil : message, requireValidRecords: false), legacyKey: id))
   }
 }
 

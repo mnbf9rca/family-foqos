@@ -455,22 +455,6 @@ struct FoqosApp: App {
     }
   }
 
-  private func handleURL(_ url: URL) {
-    Log.info("handleURL called with: \(redactedURLString(url))", category: .app)
-
-    // CloudKit share URLs are handled automatically by the system
-    // via userDidAcceptCloudKitShareWith - we don't need to do anything here
-    // Just log for debugging and pass non-share URLs to navigation
-    if let components = URLComponents(url: url, resolvingAgainstBaseURL: true),
-      components.host == "www.icloud.com" || url.absoluteString.contains("cloudkit")
-    {
-      Log.debug("Detected CloudKit URL - system should handle via AppDelegate", category: .cloudKit)
-      return
-    }
-
-    // Handle as universal link for our app
-    navigationManager.handleLink(url)
-  }
 }
 
 @MainActor

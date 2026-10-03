@@ -38,28 +38,15 @@ class NFCWriter: NSObject, ObservableObject {
     let payload = try Self.makePayload(for: profile)
     profilePayload = payload
     self.onWritten = onWritten
-    writeURL(payload.url.absoluteString)
+    beginWriting()
   }
 
   private var tagSession: NFCTagReaderSession?
-  private var urlToWrite: String?
-
-  func writeURL(_ url: String) {
-    if profilePayload?.url.absoluteString != url {
-      profilePayload = nil
-      onWritten = nil
-    }
+  private func beginWriting() {
     guard NFCReaderSession.readingAvailable else {
       self.errorMessage = "NFC writing not available on this device"
       return
     }
-
-    guard URL(string: url) != nil else {
-      self.errorMessage = "Invalid URL format"
-      return
-    }
-
-    urlToWrite = url
 
     // Use NFCTagReaderSession to detect ALL tag types (including non-NDEF)
     // This allows us to show proper errors for Amiibos, hotel cards, etc.
@@ -183,21 +170,18 @@ extension NFCWriter: NFCTagReaderSessionDelegate {
       return
     }
 
-    // Fetch URL from MainActor FIRST, then proceed with all NFC work
+    // Fetch the logical payload before proceeding with NFC work.
     let sessionBox = NFCSessionBox(session: session)
     let tagBox = NFCTagBox(tag: tag)
 
     Task { @MainActor in
       guard self.tagSession.map({ ObjectIdentifier($0) }) == sessionBox.identity else { return }
-      guard let urlString = self.urlToWrite,
-        let url = URL(string: urlString),
-        let urlPayload = NFCNDEFPayload.wellKnownTypeURIPayload(url: url)
-      else {
+      guard let payload = self.profilePayload else {
         sessionBox.invalidate(errorMessage: "Invalid URL format")
         return
       }
 
-      let message = NFCNDEFMessage(records: [urlPayload])
+      let message = Self.message(for: payload)
       let messageBox = NFCNDEFMessageBox(message: message)
 
       // Now proceed with NFC operations - pass all needed data through closures

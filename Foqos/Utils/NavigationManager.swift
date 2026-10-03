@@ -26,12 +26,24 @@ class NavigationManager: ObservableObject {
   func handleActivity(_ activity: NSUserActivity) {
     guard !consumedActivities.contains(activity) else { return }
     consumedActivities.add(activity)
+    if activity.activityType == NSUserActivityTypeBrowsingWeb, let url = activity.webpageURL,
+      handleNonCommandURL(url)
+    {
+      return
+    }
     do { deliveries.append(try ProfileTagLink.classify(activity)) } catch { deliveryError = error.localizedDescription }
   }
 
   func handleLink(_ url: URL) {
-    if let c = URLComponents(url: url, resolvingAgainstBaseURL: false),
-      c.scheme?.lowercased() == "https", c.host?.lowercased() == "family-foqos.app",
+    guard !handleNonCommandURL(url) else { return }
+    do { deliveries.append(try ProfileTagLink.classify(url)) } catch { deliveryError = error.localizedDescription }
+  }
+
+  private func handleNonCommandURL(_ url: URL) -> Bool {
+    guard let c = URLComponents(url: url, resolvingAgainstBaseURL: false),
+      c.host?.lowercased() == "family-foqos.app"
+    else { return true }
+    if c.scheme?.lowercased() == "https",
       c.user == nil, c.password == nil, c.port == nil
     {
       let parts = c.path.split(separator: "/", omittingEmptySubsequences: false)
@@ -39,10 +51,10 @@ class NavigationManager: ObservableObject {
         let id = UUID(uuidString: String(parts[2]))
       {
         navigateToProfileId = id.uuidString
-        return
+        return true
       }
     }
-    do { deliveries.append(try ProfileTagLink.classify(url)) } catch { deliveryError = error.localizedDescription }
+    return c.path != "/profile" && !c.path.hasPrefix("/profile/")
   }
 
   func takeDelivery() -> ProfileTagLink.Delivery? {

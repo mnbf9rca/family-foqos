@@ -546,7 +546,17 @@ class StrategyManager: ObservableObject {
 
   func handleDelivery(_ delivery: ProfileTagLink.Delivery, context: ModelContext, now: Date = Date()) async {
     switch delivery {
-    case .tag(let event): await handleTagEvent(event, operation: .scan, context: context, now: now)
+    case .tag(let event):
+      do {
+        if let session = try getActiveSession(context: context), session.blockedProfile.profileSchemaVersion < 2,
+          let target = event.targetProfileId
+        {
+          cancelTagOperation()
+          await handleLegacyLink(profileId: target, sessionId: session.id, context: context)
+        } else {
+          await handleTagEvent(event, operation: .scan, context: context, now: now)
+        }
+      } catch { errorMessage = error.localizedDescription }
     case .link(let id):
       await toggleSessionFromDeeplink(id.uuidString, url: URL(string: "https://family-foqos.app/profile/\(id.uuidString)")!, context: context)
     }
@@ -571,8 +581,10 @@ class StrategyManager: ObservableObject {
       if let session = try getActiveSession(context: context) {
         if session.blockedProfile.profileSchemaVersion < 2 {
           await handleLegacyLink(profileId: profile.id, sessionId: session.id, context: context)
-        } else {
+        } else if session.blockedProfile.id != profile.id {
           errorMessage = "Stop \(session.blockedProfile.name) before starting \(profile.name) from this link."
+        } else {
+          errorMessage = nil
         }
         return
       }
@@ -582,13 +594,20 @@ class StrategyManager: ObservableObject {
 
   private func handleLegacyLink(profileId: UUID, sessionId: String, context: ModelContext) async {
     guard let session = try? BlockedProfileSession.findSession(byID: sessionId, in: context),
-      session.isActive, session.blockedProfile.profileSchemaVersion < 2,
-      !session.blockedProfile.disableBackgroundStops,
-      StartStopActionResolver.canStop(
-        with: .deepLink, conditions: session.blockedProfile.stopConditions,
-        sessionTag: session.tag, stopNFCTagIds: [], stopQRCodeIds: [], legacySession: true
-      ).allowed
+      session.isActive, session.blockedProfile.profileSchemaVersion < 2
     else { return }
+    guard !session.blockedProfile.disableBackgroundStops else {
+      errorMessage = "profile: \(session.blockedProfile.name) has disable background stops enabled, not stopping it"
+      return
+    }
+    let stop = StartStopActionResolver.canStop(
+      with: .deepLink, conditions: session.blockedProfile.stopConditions,
+      sessionTag: session.tag, stopNFCTagIds: [], stopQRCodeIds: [], legacySession: true
+    )
+    guard stop.allowed else {
+      errorMessage = stop.errorMessage ?? "\(session.blockedProfile.name) cannot be stopped via written NFC or printed QR"
+      return
+    }
     guard await tagStopGeofenceAllowed(sessionId: sessionId, context: context),
       let current = try? BlockedProfileSession.findSession(byID: sessionId, in: context), current.isActive,
       activeSession?.id == sessionId, SharedData.getActiveSharedSession()?.id == sessionId
@@ -649,6 +668,17 @@ class StrategyManager: ObservableObject {
           }
           tagOperationId = nil
           return
+        }
+        if let target {
+          guard let profile = try BlockedProfiles.findProfile(byID: target, in: context) else { throw ProfileTagLink.Failure.invalidTag }
+          if let rejection = ProfileConditionValidation.startRejection(
+            for: BlockedProfiles.getSnapshot(for: profile), origin: admittedTagOrigin(event, profile: profile), allowLinkForTag: true)
+          {
+            throw NSError(domain: "ProfileStart", code: 1, userInfo: [NSLocalizedDescriptionKey: rejection])
+          }
+          guard !profile.needsAppSelection else {
+            throw NSError(domain: "ProfileStart", code: 1, userInfo: [NSLocalizedDescriptionKey: needsAppSelectionMessage(for: profile)])
+          }
         }
         let pending = PendingTagSwitch(operationId: operationId, victimId: victim.id, targetProfileId: target, event: event, requiredType: event.type)
         if !tagStopResult(event, session: victim).allowed {
