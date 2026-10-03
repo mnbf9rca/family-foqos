@@ -36,13 +36,13 @@ struct ProfileWidgetEntryView: View {
     return entry.useProfileURL == true
   }
 
-  private var linkToOpen: URL {
+  private var linkToOpen: URL? {
     // Don't open the app via profile to stop the session
     if entry.isBreakActive || entry.isSessionActive {
       return URL(string: "https://family-foqos.app")!
     }
 
-    return entry.deepLinkURL ?? URL(string: "family-foqos://")!
+    return entry.deepLinkURL
   }
 
   var body: some View {
@@ -104,7 +104,17 @@ struct ProfileWidgetEntryView: View {
                 .foregroundColor(.white)
             }
           } else if entry.isSessionActive {
-            if let startTime = entry.sessionStartTime {
+            if let deadline = entry.activeSession?.timerEndTime {
+              HStack(spacing: 4) {
+                Image(systemName: "timer")
+                  .font(.body)
+                Text(timerInterval: min(Date(), deadline)...deadline, countsDown: true)
+                  .font(.system(size: 22))
+                  .fontWeight(.bold)
+                  .monospacedDigit()
+              }
+              .foregroundColor(.white)
+            } else if let startTime = entry.sessionStartTime {
               let breakDuration = entry.activeSession?.calculateBreakDuration() ?? 0
               let adjustedStartTime = startTime.addingTimeInterval(breakDuration)
               HStack(spacing: 4) {
@@ -124,11 +134,14 @@ struct ProfileWidgetEntryView: View {
               }
             }
           } else {
-            Link(destination: linkToOpen) {
-              Text(quickLaunchEnabled ? "Tap to launch" : "Tap to open")
-                .font(.body)
-                .fontWeight(.medium)
-                .foregroundColor(shouldUseWhiteText ? .white : .secondary)
+            let label = Text(quickLaunchEnabled ? "Tap to launch" : "Tap to open")
+              .font(.body)
+              .fontWeight(.medium)
+              .foregroundColor(shouldUseWhiteText ? .white : .secondary)
+            if let linkToOpen {
+              Link(destination: linkToOpen) { label }
+            } else {
+              label
             }
           }
         }
@@ -182,11 +195,9 @@ struct ProfileWidgetEntryView: View {
     if profile.physicalUnblockNFCTagId != nil { count += 1 }
     if profile.physicalUnblockQRCodeId != nil { count += 1 }
     let hasSchedule =
-      profile.schedule?.isActive == true
-      || (profile.startTriggersSchedule == true && profile.startSchedule?.isActive == true)
+      (profile.startTriggersSchedule == true && profile.startSchedule?.isActive == true)
       || (profile.stopConditionsSchedule == true && profile.stopSchedule?.isActive == true)
     if hasSchedule { count += 1 }
-    if profile.disableBackgroundStops == true { count += 1 }
     return count
   }
 }
@@ -323,7 +334,7 @@ struct ProfileWidgetEntryView: View {
     profileName: "No Profile Selected",
     activeSession: nil,
     profileSnapshot: nil,
-    deepLinkURL: URL(string: "family-foqos://"),
+    deepLinkURL: nil,
     focusMessage: "Select a profile to get started",
     useProfileURL: false
   )

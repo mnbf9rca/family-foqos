@@ -156,8 +156,7 @@ final class BlockedProfilesTriggersTests: XCTestCase {
     model.stopConditions.specificQR = true
     model.validate()
     let messages = [
-      "Scan an NFC tag to use as the start trigger", "Scan a QR code to use as the start trigger",
-      "Scan an NFC tag to use as the stop condition", "Scan a QR code to use as the stop condition",
+      "Choose at least one NFC tag.", "Choose at least one QR code.",
     ]
     for message in messages { XCTAssertTrue(model.validationErrors.contains(message)) }
     model.startNFCTagIds = ["n1", "n2"]

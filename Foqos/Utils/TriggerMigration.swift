@@ -46,14 +46,28 @@ enum TriggerMigration {
       start.manual = true
       stop.timer = true
 
+    case nil:
+      start.shortcuts = true
+      start.deepLink = true
+      stop.requiresEditingAfterConversion = true
+
     default:
-      // Unknown strategy defaults to manual
-      start.manual = true
-      stop.manual = true
+      // The V1 factory used the plain NFC strategy for unknown non-nil IDs.
+      start.anyNFC = true
+      stop.nfc = .same
     }
 
-    start.shortcuts = start.manual
+    start.shortcuts = start.shortcuts || start.manual
+    start.deepLink = start.deepLink || start.manual
     return (start, stop)
+  }
+
+  static func validTimerDuration(from data: Data?) -> Int? {
+    guard let data,
+      let decoded = try? JSONDecoder().decode(StrategyTimerData.self, from: data),
+      (DeviceActivityLimits.minimumIntervalMinutes...DeviceActivityLimits.maximumTimerMinutes).contains(decoded.durationInMinutes)
+    else { return nil }
+    return decoded.durationInMinutes
   }
 
   /// Migrates physical unlock tags to the new specific NFC/QR stop conditions
@@ -68,16 +82,14 @@ enum TriggerMigration {
 
     if let nfcTagId = physicalUnblockNFCTagId {
       // Replace anyNFC/sameNFC with specificNFC
-      stop.anyNFC = false
-      stop.sameNFC = false
-      stop.specificNFC = true
+      stop.nfc = .specific
       stopTagId = nfcTagId
     } else if let qrCodeId = physicalUnblockQRCodeId {
       // Replace anyQR/sameQR with specificQR
-      stop.anyQR = false
-      stop.sameQR = false
-      stop.specificQR = true
-      stopTagId = QRCodeHasher.hash(qrCodeId)
+      stop.qr = .specific
+      stopTagId =
+        qrCodeId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        ? qrCodeId : QRCodeHasher.hash(qrCodeId)
     }
 
     return (stop, stopTagId)

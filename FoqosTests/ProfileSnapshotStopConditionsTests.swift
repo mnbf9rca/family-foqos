@@ -45,4 +45,32 @@ final class ProfileSnapshotStopConditionsTests: XCTestCase {
 
     XCTAssertNil(decoded.stopConditions, "missing field decodes to nil (back-compat)")
   }
+  func testSnapshotCarriesCanonicalSettings() throws {
+    let now = Date()
+    let profile = BlockedProfiles(name: "Timer", createdAt: now, updatedAt: now)
+    profile.startTriggers = .init(manual: true)
+    profile.stopConditions = .init(timer: true, nfc: .specific, qr: .same, timerDurationMinutes: 37, allowChangingTimerBeforeStart: true)
+    profile.stopNFCTagIds = ["A0FF"]
+    let encoded = try JSONEncoder().encode(BlockedProfiles.getSnapshot(for: profile))
+    let decoded = try JSONDecoder().decode(SharedData.ProfileSnapshot.self, from: encoded)
+    XCTAssertEqual(decoded.stopConditions, profile.stopConditions)
+    XCTAssertFalse(profile.hasInvalidConditionSettings)
+    profile.stopConditionsData = Data("malformed".utf8)
+    XCTAssertTrue(profile.hasInvalidConditionSettings)
+    let safe = try JSONDecoder().decode(SharedData.ProfileSnapshot.self, from: JSONEncoder().encode(BlockedProfiles.getSnapshot(for: profile)))
+    XCTAssertEqual(safe.stopConditions, ProfileStopConditions())
+
+    let other = BlockedProfiles(name: "Other", createdAt: now, updatedAt: now)
+    other.stopConditions = .init(manual: true)
+    var json = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+    json["stopConditions"] = ["manual": false, "timer": false, "anyNFC": true, "specificNFC": true, "sameNFC": true, "anyQR": true, "specificQR": false, "sameQR": true, "schedule": false, "deepLink": false]
+    let otherJSON = try JSONSerialization.jsonObject(with: JSONEncoder().encode(BlockedProfiles.getSnapshot(for: other)))
+    let dictionary = try JSONSerialization.data(withJSONObject: ["old": json, "other": otherJSON])
+    let snapshots = try JSONDecoder().decode([String: SharedData.ProfileSnapshot].self, from: dictionary)
+    XCTAssertEqual(snapshots.count, 2)
+    XCTAssertEqual(snapshots["old"]?.stopConditions?.nfc, .specific)
+    XCTAssertEqual(snapshots["old"]?.stopConditions?.qr, .same)
+    XCTAssertEqual(snapshots["other"]?.stopConditions?.manual, true)
+  }
+
 }

@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct SectionTitle: View {
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   let title: String
   let buttonText: String?
   let buttonAction: (() -> Void)?
@@ -17,13 +18,16 @@ struct SectionTitle: View {
   }
 
   var body: some View {
-    HStack {
+    let layout =
+      dynamicTypeSize.isAccessibilitySize
+      ? AnyLayout(VStackLayout(alignment: .leading)) : AnyLayout(HStackLayout())
+    layout {
       Text(title)
         .font(.headline)
         .fontWeight(.medium)
         .foregroundColor(.secondary)
 
-      Spacer()
+      if !dynamicTypeSize.isAccessibilitySize { Spacer() }
 
       if let buttonText = buttonText, let buttonAction = buttonAction {
         RoundedButton(buttonText, action: buttonAction, iconName: buttonIcon)

@@ -33,6 +33,7 @@ See [Development Workflow](docs/development-workflow.md) for credential fallback
 - After 30 quiet minutes with in-flight work, the orchestrator checks the agent's Herdr state, has a subagent collect recent output, commit age, dirty files, and CPU delta, then prompts the agent unless it is blocked.
 - Announce every wait for a gate, review, or dependency to the orchestrator when it begins.
 - A PR reported approved or merge-ready must already be ready for review and must not be a draft.
+- Keep PRs lean: one short description with a concise test-evidence summary, updated in place; one reviewer verdict comment per head; and replies on Greptile's inline threads. Send progress notes and handover packets directly to the orchestrator, not as PR comments. Record evidence that must survive temporary files once, briefly, on the relevant issue.
 - Never end with only promised future work; state exactly what remains, and use commit age, dirty files, and CPU delta as evidence, never message recency or Herdr's `agent_status`.
 
 See [Multi-Agent Coordination](docs/multi-agent-coordination.md) for gate examples, heartbeat diagnostics, CPU recipes, and calibrated operator-doc sign-off.

@@ -10,6 +10,7 @@ struct HomeView: View {
 
   @Environment(\.modelContext) private var context
   @Environment(\.openURL) var openURL
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
   @Environment(\.scenePhase) private var scenePhase
 
@@ -124,11 +125,14 @@ struct HomeView: View {
   }
 
   var body: some View {
+    let headerLayout =
+      dynamicTypeSize.isAccessibilitySize
+      ? AnyLayout(VStackLayout(alignment: .leading)) : AnyLayout(HStackLayout())
     ScrollView(showsIndicators: false) {
       VStack(alignment: .leading, spacing: 30) {
-        HStack(alignment: .center) {
+        headerLayout {
           AppTitle()
-          Spacer()
+          if !dynamicTypeSize.isAccessibilitySize { Spacer() }
           HStack(spacing: 8) {
             // Show Family button in parent mode
             if appModeManager.currentMode == .parent {
@@ -136,19 +140,26 @@ struct HomeView: View {
                 "",
                 action: {
                   showParentDashboard = true
-                }, iconName: "person.2.fill")
+                }, iconName: "person.2.fill"
+              )
+              .accessibilityLabel("Family Controls")
             }
             RoundedButton(
               "",
               action: {
                 showSupportView = true
-              }, iconName: "heart.fill")
+              }, iconName: "heart.fill"
+            )
+            .accessibilityLabel("Support")
             RoundedButton(
               "",
               action: {
                 showSettingsView = true
-              }, iconName: "gear")
+              }, iconName: "gear"
+            )
+            .accessibilityLabel("Settings")
           }
+          .padding(.leading, dynamicTypeSize.isAccessibilitySize ? 16 : 0)
         }
         .padding(.trailing, 16)
         .padding(.top, 16)
