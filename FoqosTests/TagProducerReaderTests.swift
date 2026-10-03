@@ -97,6 +97,76 @@ final class TagProducerReaderTests: XCTestCase {
     XCTAssertThrowsError(try SavedTag.enroll(event: TagEvent(type: .nfc, namespace: nil, key: nil, unidentifiedLegacyTag: true), name: "Bad", in: context))
     XCTAssertEqual(try SavedTag.fetchAll(in: context).count, before)
   }
+
+  func testWrittenPayloadEnrollmentRetryKeepsTheWrittenKeyWithoutAnotherNFCWrite() throws {
+    let container = try TestModelContainer.create()
+    let context = container.mainContext
+    let p = profile(type: .nfc)
+    let writer = TestNFCWriter()
+    var attemptedPayloads: [ProfileTagPayload] = []
+    try writer.writeProfile(p) { payload in
+      attemptedPayloads.append(payload)
+      if attemptedPayloads.count == 1 { return false }  // Local save failed after the physical write.
+      do {
+        _ = try NFCWriter.enrollWrittenPayload(payload, name: "Kitchen", in: context)
+        return true
+      } catch {
+        XCTFail("Enrollment retry failed: \(error)")
+        return false
+      }
+    }
+    XCTAssertEqual(writer.writeCount, 1)
+    writer.didWritePayload()
+    let written = try XCTUnwrap(attemptedPayloads.first)
+    XCTAssertTrue(try SavedTag.fetchAll(in: context).isEmpty)
+
+    p.startTriggers = .init()  // Enrollment remains retryable if start settings have since changed.
+    try writer.writeProfile(p) { _ in
+      XCTFail("The retry must keep the original enrollment callback and written payload")
+      return false
+    }
+    XCTAssertEqual(writer.writeCount, 1)
+    XCTAssertEqual(attemptedPayloads.map(\.key), [written.key, written.key])
+    XCTAssertEqual(try SavedTag.fetchAll(in: context).map(\.id), [written.event.matchingKey])
+
+    var nextPayload: ProfileTagPayload?
+    p.startTriggers = .init(anyNFC: true)
+    try writer.writeProfile(p) { payload in
+      nextPayload = payload
+      return true
+    }
+    XCTAssertEqual(writer.writeCount, 2)
+    writer.didWritePayload()
+    XCTAssertNotEqual(try XCTUnwrap(nextPayload).key, written.key)
+  }
+
+  func testFailedPhysicalWriteDoesNotEnrollOrTurnRetryIntoEnrollment() throws {
+    let writer = TestNFCWriter()
+    let p = profile(type: .nfc)
+    var enrollments = 0
+    let enroll: (ProfileTagPayload) -> Bool = { _ in
+      enrollments += 1
+      return true
+    }
+    try writer.writeProfile(p, onWritten: enroll)
+    try writer.writeProfile(p, onWritten: enroll)
+    XCTAssertEqual(writer.writeCount, 1)  // A busy writer ignores a second request.
+    writer.isScanning = false  // Hardware canceled or failed before reporting a successful write.
+    try writer.writeProfile(p, onWritten: enroll)
+    XCTAssertEqual(writer.writeCount, 2)
+    XCTAssertEqual(enrollments, 0)
+    writer.didWritePayload()
+    XCTAssertEqual(enrollments, 1)
+  }
+}
+
+@MainActor
+private final class TestNFCWriter: NFCWriter {
+  var writeCount = 0
+  override func beginWriting() {
+    writeCount += 1
+    isScanning = true
+  }
 }
 
 private final class ProducerActivity: NSUserActivity {

@@ -18,8 +18,9 @@ import SwiftUI
 class NFCWriter: NSObject, ObservableObject {
   var isScanning: Bool = false
   @Published var errorMessage: String?
-  var onWritten: ((ProfileTagPayload) -> Void)?
+  private var onWritten: ((ProfileTagPayload) -> Bool)?
   private var profilePayload: ProfileTagPayload?
+  private var awaitingEnrollment = false
 
   static func makePayload(for profile: BlockedProfiles) throws -> ProfileTagPayload {
     try ProfileTagPayload.prepare(for: profile, type: .nfc)
@@ -33,8 +34,12 @@ class NFCWriter: NSObject, ObservableObject {
     try SavedTag.enroll(event: payload.event, name: name, in: context)
   }
 
-  func writeProfile(_ profile: BlockedProfiles, onWritten: @escaping (ProfileTagPayload) -> Void) throws {
+  func writeProfile(_ profile: BlockedProfiles, onWritten: @escaping (ProfileTagPayload) -> Bool) throws {
     guard !isScanning else { return }
+    if awaitingEnrollment {
+      didWritePayload()
+      return
+    }
     let payload = try Self.makePayload(for: profile)
     profilePayload = payload
     self.onWritten = onWritten
@@ -42,7 +47,18 @@ class NFCWriter: NSObject, ObservableObject {
   }
 
   private var tagSession: NFCTagReaderSession?
-  private func beginWriting() {
+  func didWritePayload() {
+    isScanning = false
+    guard let payload = profilePayload, let onWritten else { return }
+    // A retry must enroll the key already on the tag, without starting another NFC write.
+    awaitingEnrollment = !onWritten(payload)
+    if !awaitingEnrollment {
+      profilePayload = nil
+      self.onWritten = nil
+    }
+  }
+
+  func beginWriting() {
     guard NFCReaderSession.readingAvailable else {
       self.errorMessage = "NFC writing not available on this device"
       return
@@ -288,11 +304,7 @@ extension NFCWriter: NFCTagReaderSessionDelegate {
         sessionBox.alertMessage = "✓ Successfully wrote profile to tag"
         Task { @MainActor in
           guard self.tagSession.map({ ObjectIdentifier($0) }) == sessionBox.identity else { return }
-          self.isScanning = false
-          if let payload = self.profilePayload {
-            self.profilePayload = nil
-            self.onWritten?(payload)
-          }
+          self.didWritePayload()
         }
         sessionBox.invalidate()
       }

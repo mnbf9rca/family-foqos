@@ -1065,13 +1065,22 @@ struct BlockedProfileView: View {
     guard let profileToWrite = profile else { return }
     do {
       try nfcWriter.writeProfile(profileToWrite) { payload in
+        let tag: SavedTag
         do {
           let name = "NFC tag \(savedTags.valid.filter { $0.kind == "nfc" }.count + 1)"
-          let tag = try NFCWriter.enrollWrittenPayload(payload, name: name, in: modelContext)
-          if profileSyncManager.isEnabled {
-            do { try profileSyncManager.enqueueTagSave(tag.id) } catch SyncEngineControllingError.notAttached { Log.info("Tag upload deferred until sync attaches", category: .sync) }
-          }
-        } catch { showError(message: "Failed to save tag: \(error.localizedDescription)") }
+          tag = try NFCWriter.enrollWrittenPayload(payload, name: name, in: modelContext)
+        } catch {
+          showError(message: "Failed to save tag: \(error.localizedDescription)")
+          return false
+        }
+        if profileSyncManager.isEnabled {
+          do {
+            try profileSyncManager.enqueueTagSave(tag.id)
+          } catch SyncEngineControllingError.notAttached {
+            Log.info("Tag upload deferred until sync attaches", category: .sync)
+          } catch { showError(message: "Failed to save tag: \(error.localizedDescription)") }
+        }
+        return true
       }
     } catch { showError(message: error.localizedDescription) }
   }
