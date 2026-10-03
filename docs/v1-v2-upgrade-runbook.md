@@ -1,6 +1,6 @@
 # Agent-run V1 → V2 source upgrade verification
 
-An agent runs this procedure and reports the result. The human does not create profiles, execute the matrix, or interpret simulator output. Use it before a release candidate and after changing migration, shared snapshots, tag routing, or session starts/stops.
+An agent runs this procedure and reports the result. The human does not create profiles, execute the matrix, or interpret simulator output. Use it after changing migration, shared snapshots, tag routing, or session starts/stops; the full release-candidate pass covers both simulator runtimes under [Agent Acceptance](development-workflow.md#agent-acceptance-runbooks).
 
 This builds V1 **1.31.3 from `589bee9`** as a proxy for the App Store app, generates its actual on-disk store and shared JSON, and installs the chosen V2 revision over that data. It is not the physical App Store → TestFlight check: signed reader handoffs, real Screen Time shields, OS callback delivery and cross-device iCloud still require the RC device checklist.
 
@@ -132,14 +132,14 @@ source "$UPGRADE_ENV"
   > "$UPGRADE_RUN/v2-units.log" 2>&1)
 ```
 
-Confirm XCTest actually ran the seed, upgrade and production tests with zero failures. Preserve all logs, result bundles, source refs, installed-version manifests, original/captured shared JSON, container backups and `v2-app-data/Documents/rc-upgrade-verification.json`. Record the actual unit count and runtime from the results; historical counts are not acceptance criteria. Use the wrapper's UUID destination as simulator identity, not a device-name match.
+Confirm XCTest actually ran the seed, upgrade and production tests with zero failures. Preserve all logs, result bundles, source refs, installed-version manifests, original/captured shared JSON, container backups and `v2-app-data/Documents/rc-upgrade-verification.json`. Record `IOS_SIM_GATE_RUNTIME_VERSION` from inside the gate and the actual unit count/runtime from the results; historical counts are not acceptance criteria. Use the wrapper's UUID destination as simulator identity, not a device-name match.
 
 Report to the orchestrator (and the release issue only when requested):
 
 - Exact V1 and V2 commits, installed versions/builds, simulator UUID/OS and evidence directory.
 - PASS/FAIL/UNRUN for source upgrade, each fixture profile, retained active session, decoder compatibility, scan identity, Shortcut timer and invalid conversion, plus the production unit result.
 - The failing test/operation and original error if anything fails. Preserve that failed run, fix through the normal reviewed workflow, and use a fresh directory plus a fresh seed for the next attempt. Never overwrite a failure with a successful retry.
-- Physical App Store → TestFlight, NFC radio/Camera/Code Scanner/signed Universal Links, actual timer/schedule shields and iCloud/device pairs remain human checks. Injected callbacks, bitmap decoding or Safari web fallback do not certify a physical handoff.
+- Physical App Store → TestFlight, NFC radio/Camera/Code Scanner/signed Universal Links, actual timer/schedule shields and iCloud/device pairs remain genuinely device-only human checks, once on the iOS 27 release-candidate TestFlight build after all work merges, never per PR/slice. Injected callbacks, bitmap decoding or Safari web fallback do not certify a physical handoff.
 
 Do not report overall PASS if an operation was unavailable, output was malformed or tests did not execute. `-collect-test-diagnostics never` avoids Xcode's lengthy automatic simulator diagnosis after a failure; it does not ignore that failure.
 
@@ -166,4 +166,4 @@ for worktree in "$UPGRADE_V1" "$UPGRADE_V2"; do
 done
 ```
 
-If setup stopped before creating a file/worktree, clean only the artifacts that actually exist. Preserve the evidence directory until its report has been saved in the issue or PR. The checked-in runbook, helper and Swift fixtures are the reusable procedure; a past `/private/tmp` directory is never a prerequisite for a new run.
+If setup stopped before creating a file/worktree, clean only the artifacts that actually exist. Preserve the evidence directory until its durable report has been saved once, briefly, on the issue; send long evidence directly to the orchestrator. The checked-in runbook, helper and Swift fixtures are the reusable procedure; a past `/private/tmp` directory is never a prerequisite for a new run.

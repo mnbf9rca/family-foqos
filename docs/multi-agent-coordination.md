@@ -1,132 +1,95 @@
 # Multi-Agent Coordination
 
-The root `AGENTS.md` carries the common-case rules. This runbook contains the operational procedure, rationale, and diagnostics an agent needs to work in the Herdr fleet, and that the orchestrator needs when a gate is blocked or an agent goes quiet.
+This runbook expands `AGENTS.md` with fleet procedures, gates, and diagnostics.
 
 ## The Fleet
 
-The fleet is one Herdr workspace with one agent per tab. Herdr addresses each agent by a unique live name.
+Use one Herdr workspace, one agent per tab, and unique live names.
 
 | Name | Runtime | Role |
 |---|---|---|
-| `orchestrator` | Claude | The human's eyes, ears, and proxy. Dispatches work, relays human decisions, owns the quiet-agent heartbeat, arbitrates planner-versus-reviewer disagreements, and merges after asking the human about that specific PR. Produces no repository artifacts: no code, docs, plans, commits (except updating a PR branch from main), or PRs. Does not assign implementation or release work to its own subagents. Briefs, relays, memory notes, and terse issue or PR decisions are fine. |
+| `orchestrator` | Claude | Dispatch, human gates, heartbeat, arbitration, and merges under the sign-off policy below. No repository artifacts except updating PR branches from main; no implementation/release work delegated to its subagents. Briefs, relays, memory notes, and terse issue/PR decisions are allowed. |
 | `planner` | Codex (gpt-6-astra, high reasoning) | Writes specs and plans. Does not implement. Runs review rounds directly with the reviewer. |
 | `build1`, `build2` | Codex (gpt-6.1-sol, high reasoning) | Implement in their own worktree and branch with disjoint files. All simulator work goes through `scripts/xcode-stream.sh`. |
 | `reviewer` | Claude (Opus 5.5, high effort) | Adversarial design review before implementation (correctness, over-engineering, missing cases that matter in practice) and independent code review before every merge. |
 | `auditor` | Codex (gpt-6-astra, high reasoning) | Read-only systematic audits and coverage checks of plans against findings and human rulings. Produces no repository artifacts; reports findings to the orchestrator for recording on the relevant issue. |
 
-The reviewer always runs a different model from the planner and builders so review is independent of the model that produced the work.
+The reviewer uses a different model from the planner and builders.
 
-The orchestrator verifies agent claims (PR diff, CI, grep results) by delegating to its own subagents or workflows, not by reading the material in its own context.
+The orchestrator delegates claim verification to its subagents or workflows, never its own context.
 
-Read-only reviews and evidence collection run from the agent's own working copy or use read-only commands such as `git -C`, `git show`, and `git diff` against SHAs. For dirty-file checks in another agent's worktree, use `git --no-optional-locks -C <worktree> status --porcelain` to avoid refreshing or locking its index. No agent, including the orchestrator, changes another agent's worktree HEAD, branch, or files, or makes another agent's worktree its own working directory.
+Review from your own working copy or read-only SHA commands; check another worktree’s dirt with `git --no-optional-locks -C <worktree> status --porcelain`. Never change another agent’s HEAD, branch, or files, or adopt its working directory.
 
 ### Briefs
 
-A brief from the orchestrator to any agent contains exactly four things:
-
-1. A one-sentence problem statement.
-2. The human's rulings that are not open for redesign.
-3. Real details the agent cannot discover itself, such as a decision made in conversation or a result observed on a device.
-4. How to report back.
-
-A brief never contains method, model, effort, or workflow guidance. The agent's own skills and the project docs supply those. Project conventions and operational facts live in project docs, never in any agent's private memory; a convention that exists only in memory is a doc defect to fix, not a fact to relay in briefs.
+A brief contains exactly four items: the problem in one sentence, fixed human rulings, undiscoverable details, and how to report back. Exclude method, model, effort, and workflow guidance; skills and project docs supply those. Project conventions belong in docs, never private agent memory; a memory-only convention is a doc defect.
 
 ## Fleet Startup
 
-Every agent auto-loads `AGENTS.md` when it starts. The orchestrator's first prompt names the agent's role.
+Every agent auto-loads `AGENTS.md`; the orchestrator names its role in the first prompt.
 
 ```text
 orchestrator: you are <role>. Before taking work: read docs/multi-agent-coordination.md for the <role> rules, and load these skills: <skills for the role>. Reply with one line naming what you loaded, your role, and "exact remainder: none". Take no work until a brief arrives.
 ```
 
-The orchestrator resets agents between unrelated work items, never while work is in flight; only the human resets the orchestrator. State carries through docs, issues, and files. Before a reset, the orchestrator records any findings or state held only in the agent's context on the relevant issue, then follows these steps:
+Reset agents only between unrelated work items; only the human resets the orchestrator. First record context-only findings/state on the relevant issue, then:
 
-1. Record the agent's pane id and name from `herdr agent list`; fleet panes share a cwd, so cwd cannot identify the agent after its name drops.
-2. Send `herdr agent prompt <pane> /new` for Codex or `herdr agent prompt <pane> /clear` for Claude. These bare slash commands are exempt from the role-prefix rule for messages.
-3. For Codex, read the pane with `herdr agent read <pane> --source visible`. At "Where should the new conversation run?", select "Current checkout" using `herdr agent send-keys <pane> up` or `herdr agent send-keys <pane> down` as needed, then `herdr agent send-keys <pane> enter`. This is the orchestrator's authorized reset step; other approval or question dialogs still require the human's say-so.
+1. Record pane id and name from `herdr agent list`; shared cwd cannot identify a nameless agent.
+2. Send `herdr agent prompt <pane> /new` for Codex or `/clear` for Claude; bare reset commands need no role prefix.
+3. For Codex, read `herdr agent read <pane> --source visible`. At "Where should the new conversation run?", select "Current checkout" with `herdr agent send-keys <pane> up`/`down`, then `enter`. Only this reset dialog is pre-authorized; other dialogs require human authority.
 4. Re-apply the name with `herdr agent rename <pane> <name>` after session re-registration.
-5. Send the startup template to the pane id: a reset agent starts blank, so name its role again. Re-check its name after this first turn as described below.
+5. Send the startup template to the pane id, naming the role again; re-check its name after the first turn.
 
 - planner: herdr, communicating-clearly, writing-clearly, ponytail.
 - build1/build2: herdr, ponytail.
 - reviewer: herdr, communicating-clearly, writing-clearly, ponytail, ponytail-review.
 - auditor: herdr, communicating-clearly, writing-clearly, ponytail.
 
-A Codex agent loads a skill missing from its catalog by reading that skill's `SKILL.md` directly.
+Read a missing skill’s `SKILL.md` directly.
 
-An agent takes no gate, review, or confirmation step that the runbook does not name.
+Take no unnamed gate, review, or confirmation step.
 
-A Codex agent shows a "Hooks need review" trust prompt on its first start after a Herdr integration install, and Herdr reads that prompt as `idle`; answer it by hand before the first prompt. Codex registers its session with Herdr only on its first turn, so a Codex pane that has never been prompted does not restore after a Herdr restart.
+After Herdr integration installation, answer Codex’s "Hooks need review" trust dialog by hand before prompting; Herdr reports it as `idle`. Codex registers on its first turn; unprompted panes do not restore after Herdr restarts.
 
-A new tab's shell may still be running startup, such as a dotfiles fetch. If `herdr agent start` fails with `agent_pane_busy`, retry once the shell prompt is ready.
+If startup returns `agent_pane_busy`, retry when shell startup finishes.
 
-Herdr drops a Codex agent's name when it re-registers its session, including after first turns and `/new`. Before prompting, the orchestrator checks `herdr agent list` and restores missing names with `herdr agent rename <pane> <name>`; re-check after each Codex agent's first turn and every `/new`. Other agents whose prompt fails because a name is unknown report it to the orchestrator rather than renaming panes themselves.
+Codex re-registration can drop names. Before prompting, and after each first turn or `/new`, the orchestrator checks `herdr agent list` and restores missing names with `herdr agent rename <pane> <name>`. Others report unknown names to the orchestrator; do not rename panes themselves.
 
-While the human is present, the orchestrator dispatches `scripts/warm-git-credentials.sh` to every implementation stream. Each stream runs it in its clean assigned feature worktree before taking implementation work. If signing or SSH approval expires mid-session, the orchestrator dispatches a rerun only while the human is present; see Development Workflow for the AFK commit fallback.
+Credential warm-up, expiry, and AFK fallback follow [Development Workflow](development-workflow.md#warm-git-credentials).
 
 ## Messaging
 
-Send work or a reply to an agent by name. Start every message with your own role and a colon, so the recipient's transcript shows who said what:
+Send `herdr agent prompt <name> "<your role>: <text>"`; read `herdr agent read <name> --source recent-unwrapped --lines N`. Prefix every message with your role and a colon.
 
-```bash
-herdr agent prompt build1 "orchestrator: implement docs/superpowers/specs/<file>.md in .worktrees/build1-<issue>"
-```
-
-Read what an agent wrote:
-
-```bash
-herdr agent read build1 --source recent-unwrapped --lines 120
-```
-
-Builders, the reviewer, and the auditor report to the orchestrator, and the orchestrator forwards to other agents as needed. The one exception is the review loop: the planner prompts `reviewer` directly with the path of the document or PR, sends `planner: review requested for <path>` to the orchestrator, and after the verdict sends `planner: review verdict: <n> blocking, <m> non-blocking`. If a planner-reviewer disagreement survives two rounds, the planner escalates it to the orchestrator. Other direct agent-to-agent messaging happens only when the orchestrator asks for it.
+Builders, reviewer, and auditor report through the orchestrator. Exception: planner prompts reviewer directly with the document/PR path and notifies the orchestrator at request and verdict, including blocking/non-blocking counts. Escalate disagreements after two unresolved rounds; other direct messaging requires orchestrator instruction.
 
 ### Delivery and readback
 
-The orchestrator never blocks its own turn on `herdr agent prompt --wait` or `herdr agent wait`: send without waiting, or run the wait in a background job, so the human can still reach it. Other agents may use waits.
+The orchestrator never blocks its turn on `herdr agent prompt --wait` or `herdr agent wait`; send without waiting or wait in a background job. Other agents may wait.
 
-`herdr agent prompt --wait` returns at the first settled `idle`, `done`, or `blocked` state. A settled `blocked` state is not completion. If the recipient was already `working`, the wait can be satisfied by the end of its earlier turn, so read its output before treating the wait as an answer to your prompt.
+`prompt --wait` returns at the first settled `idle`, `done`, or `blocked`; blocked is not complete. An already-working recipient may settle its earlier turn; read the reply before attributing completion to your prompt.
 
 When a prompt fails or a wait ends without the reply you expected:
 
-- `agent_blocked`: the recipient is waiting at an approval or question dialog. Read the dialog with `herdr agent read <name>`. Do not answer another agent's dialog without the human's say-so. Keep your report and resend it once the recipient is ready for input again, which is `idle` or `done`; `done` is idle work that nobody has viewed yet, and CLI reads do not clear it.
-- `agent_prompt_stalled`: Herdr saw no lifecycle change within five seconds. Inspect `herdr agent get` and `herdr agent read` before resending; the recipient may have consumed the prompt without a visible state change. Do not duplicate work on the strength of a stalled prompt.
-- A read that stays truncated as `--lines` grows: the agent is on the terminal's alternate screen, and rows that left it are not recoverable. Ask the agent to write its complete reply as Markdown in a temporary directory and reply with only the path, then read the file. Use this only as a fallback.
+- `agent_blocked`: read the dialog; never answer without human authority. Retain and resend your report once `idle`/`done`; CLI reads do not clear `done`.
+- `agent_prompt_stalled`: no lifecycle change within five seconds; inspect `herdr agent get` and `read` before resending, since the prompt may have been consumed.
+- Persistent truncation as `--lines` grows: alternate-screen rows may be lost. Only then request the complete reply in a temporary Markdown file and read the returned path.
 
 ### Agent state
 
-`herdr agent get <name>` reports `agent_status` from Herdr screen detection:
-
-- `idle`: ready for input and its tab has been seen in the focused Herdr UI.
-- `done`: the same idle state after background work finished while the tab was not being watched.
-- `working`: Herdr detected a working indicator.
-- `blocked`: Herdr recognized an approval or question dialog.
-- `unknown`: an agent is present but Herdr cannot classify it. This does not prove completion.
-
-None of these states is evidence of progress. `working` means Herdr detected a working state, not that the task advanced. `idle` does not prove a particular instruction ran. Evidence of work is commit age, dirty files, and CPU delta in the agent's worktree, read in context: a low CPU delta during a remote model request or a delegated build is inconclusive, and a read-only review produces no repository changes.
+`herdr agent get <name>` reports screen state: `idle` is ready and viewed, `done` is ready after unwatched work, `working` shows a work indicator, `blocked` shows a dialog, and `unknown` is unclassified. These states and message recency prove neither progress nor instruction completion. Use commit age, dirty files, and CPU delta in context; low CPU during remote requests/delegated builds is inconclusive, and read-only reviews produce no edits.
 
 ## Route Human Gates Through the Orchestrator
 
-The human speaks through the orchestrator. When you need a human decision, announce the block to the orchestrator the moment it starts, then wait:
-
-```bash
-herdr agent prompt orchestrator "build2: blocked on human gate: approve deleting the stale CloudKit zone"
-```
-
-The orchestrator relays authority the human already supplied or obtains it. Never guess at the human's answer and never answer your own gate.
-
-The orchestrator batches its questions to the human, describing each decision in plain words with a concrete example and a recommendation; omit internal IDs such as C5, G2, or B9. Agents still announce gates immediately. When the human delegates an approval to an agent, act on that agent's verdict without re-escalating it; delegation covers only the named approval and covers the per-PR merge gate only if the human named that specific PR.
-
-The orchestrator records every human ruling on the relevant GitHub issue when it is made, so provenance never lives only in agent prompts.
-
-When a build stream is blocked by credits, credentials, or tooling, the orchestrator presents options to the human. It does not hand the work to its own subagents.
+Announce `"<role>: blocked on human gate: <decision>"` to the orchestrator immediately and wait; it relays existing authority or obtains it. Never guess the answer or answer your own gate. The orchestrator batches human questions in plain words, with concrete examples and recommendations, omitting internal IDs. Delegated approval covers only its named scope; PR merge authority requires that specific PR, except docs under the policy below. Record every human ruling on the relevant issue when made. For blocked credits, credentials, or tooling, present options to the human; do not assign implementation to orchestrator subagents.
 
 ### How the orchestrator arbitrates
 
-A spec recording existing behaviour is not a product decision. Before treating behaviour as deliberate, find a recorded human ruling; this applies to every agent reading specs, including the planner, reviewer, and auditor.
+Existing behavior in a spec is deliberate only when backed by a recorded human ruling; every agent must check.
 
-When the planner and the reviewer disagree, the orchestrator decides when one side rests on something checkable (code, an existing invariant, a reproduced result) and the other does not. It applies KISS, YAGNI, and the right-sizing rule with first-hand knowledge of the human's intent, because these disagreements are often gold-plating or unlikely edge cases.
+The orchestrator resolves disagreements when one side has checkable evidence and the other does not, applying KISS, YAGNI, right-sizing, and the human’s intent.
 
-The orchestrator escalates to the human when the disagreement is about preference, product behaviour, scope, or blast radius (release, user data, security, user-facing text), and always after two unresolved rounds.
+Escalate preference, product behavior, scope, release, user data, security, or user-facing text to the human, and always after two unresolved rounds.
 
 ## Heartbeat a Quiet Agent
 
@@ -136,7 +99,7 @@ If an agent with in-flight work has sent nothing for 30 minutes, the orchestrato
 2. Otherwise dispatch one subagent to collect evidence: the agent's recent output (`herdr agent read <name> --source recent-unwrapped --lines 120`) to see whether the last instruction was consumed, commit age and dirty files in the agent's worktree, and two CPU samples using the recipe below.
 3. Read the subagent's evidence and prompt the agent directly, asking for evidence of work or an explicit blocker.
 
-Evidence collection is delegated because the orchestrator does not verify in its own context. Scheduling, gate triage, and the decision to prompt stay with the orchestrator.
+The orchestrator retains scheduling, gate triage, and the prompt decision; evidence collection is delegated.
 
 ### Measure CPU Delta
 
@@ -163,42 +126,36 @@ ps -o pid=,time= -p "$agent_pid"
 # Repeat after a short interval and compare TIME; use this with commit age and dirty files.
 ```
 
-The recipe fails closed and preserves the failing command's exit status; only its own checks (environment, tools, and the repository comparison) exit 1. A missing Herdr environment or tool, an unknown name, an agent whose working directory is not a worktree of this repository, a pane whose single foreground process is not the expected agent binary, or a malformed JSON field is a diagnostic, never a healthy sample. The worktree check compares Git common directories, so a same-named agent from another project in the same Herdr session is refused before any sample is taken.
+The recipe preserves child failures and exits 1 for its own checks. Missing tools/environment, malformed fields, wrong repository, or a pane without exactly the expected foreground agent are diagnostics, never healthy samples; Git common-directory comparison rejects same-named agents from other projects.
 
 ## Announce Blockers When They Begin
 
-An agent entering any wait for a gate, review, or dependency sends a status to the orchestrator immediately. Include the exact condition and what becomes possible after it clears. Do not stay silent until a later heartbeat discovers the wait.
+Immediately report every gate, review, or dependency wait to the orchestrator, naming the exact condition and what clearing it enables; use the required human-gate prefix. Do not wait for a heartbeat.
 
-For a human gate, use the required prefix. For other waits, keep the state equally explicit:
+## Investigate Unexplained Behavior
 
-```text
-reviewer: blocked on review gate: waiting for build1 to push the fix commit for PR #123
-```
+For unexplained hangs, errors, or platform behavior, research online early (Apple docs/forums, GitHub issues, Stack Overflow) before deep local digging or improbable theories. Report links alongside local evidence, per the [human ruling](https://github.com/mnbf9rca/family-foqos/issues/507#issuecomment-5973667912).
 
 ## Report Merge Readiness Literally
 
-A spec or plan PR is never merged alone; the build stream branches from the approved spec head and the spec lands in the same PR as its implementation.
+Specs and multi-slice plans land in implementation PRs, never separate docs PRs; builders branch from the approved spec/plan head. Shared-file slices may stack sequentially within one owning stream, updated by signed merge commits pushed normally, never rebase or force. After a parent is squash-merged, merge main into the child and let GitHub retarget its base; the diff-comparison rule below determines renewed review. Concurrent streams still reserve disjoint files. See the [recorded ruling](https://github.com/mnbf9rca/family-foqos/issues/507#issuecomment-5973689700).
 
-Before reporting a PR approved or merge-ready, verify that it is already ready for review and not a draft. Include the exact head and base, check state, and independent review decision in the handoff. The orchestrator performs the merge. Operator and process docs follow the sign-off policy below; other PRs require the human’s approval of that specific PR.
+Report approval/readiness only for a non-draft PR; include exact head/base, checks, and independent review. The orchestrator merges: docs follow the policy below; other PRs require specific human approval.
 
-When branch protection requires an up-to-date branch, the orchestrator may update the PR branch from main with a GitHub merge, never a force push, and merge without a new review only after verifying that the PR's diff against main is identical to the approved head's diff against its base and all checks are green on the new head. If the diff changes, obtain a fresh review. Notify the owning agent to fetch and fast-forward or merge the update before its next push. Human approval of that specific PR is still required except for operator and process docs, which follow the sign-off policy below.
+For an up-to-date-branch requirement, the orchestrator may merge main into the PR branch through GitHub. Retain review only if the new diff against main equals the approved diff against its base and new-head checks are green; otherwise obtain fresh review. Notify the owner to fetch and fast-forward or merge before pushing again. Specific human approval still applies except for docs.
 
 Only the human approves a fork PR's workflow run; agents never approve it. Version bumps for a fork PR go onto the fork branch through maintainer edits, preserving the contributor's commits.
 
-A PR changing source code gets the `greptile-review` label once, when its author believes it is ready to merge after the reviewer’s findings are addressed, because every push after labelling triggers a paid re-review; never label spec-only, docs-only, version-only, or small follow-up PRs.
+Label source PRs `greptile-review` once, after reviewer findings are addressed and the author considers them merge-ready; each re-review is paid. Never label spec-only, docs-only, version-only, or small follow-up PRs.
 
-Greptile publishes its review summary in the PR description and completion through the `Greptile Review` status check, so do not wait for a PR review or comment to establish that it ran. A green check does not clear findings: judge the summary's findings and confidence score and any unresolved inline Greptile review threads. Inspect the summary with `gh pr view N --json body`. When a labelled PR has had no Greptile review of its latest head for about 30 minutes, the orchestrator posts a PR comment `@greptileai re-review`; the portal retrigger needs the human's login. This follows the [human ruling on #507 (2026-10-03)](https://github.com/mnbf9rca/family-foqos/issues/507#issuecomment-5969255530); do not remove and re-add the label.
+Greptile’s summary is in the PR description (`gh pr view N --json body`); its `Greptile Review` check reports completion, not cleared findings. Judge summary findings/confidence and unresolved inline threads separately. After every push to an already-labelled PR, the pushing agent immediately comments `@greptileai re-review`, including orchestrator updates from main, per the [new ruling](https://github.com/mnbf9rca/family-foqos/issues/507#issuecomment-5970570092). If the latest head still lacks a review after about 30 minutes (including unanswered initial-label or re-review requests), the orchestrator may post the same command under the [fallback ruling](https://github.com/mnbf9rca/family-foqos/issues/507#issuecomment-5969255530). The portal retrigger needs human login; do not remove and re-add the label.
+
+Keep PR prose lean: one short description with concise test evidence, updated in place, and one reviewer verdict comment per head. Send progress, handovers, and long evidence directly to the orchestrator. Tool/agent interfaces remain available, including re-review commands and review-thread replies. Record durable evidence once, briefly, on the relevant issue.
 
 ### Calibrate Operator-Document Sign-Off
 
-The human does no final read of operator or process documentation. Reviewer approval and green checks are enough for the orchestrator to merge these docs PRs, including new or restructured operator flows, per the [human ruling on #507 (2026-10-03)](https://github.com/mnbf9rca/family-foqos/issues/507#issuecomment-5969279559).
+The human does no final read of operator/process docs, including new or restructured flows; reviewer approval and green checks authorize orchestrator merge under the [human ruling](https://github.com/mnbf9rca/family-foqos/issues/507#issuecomment-5969279559).
 
 ## End Turns With the Exact Remainder
 
-Never end a turn merely announcing future work. If work remains, name the concrete remaining gate or action so the orchestrator can re-prompt without reconstructing state:
-
-```text
-build1: exact remainder: receive the reviewer's exact-head approval, then send the merge-ready packet to the orchestrator.
-```
-
-Once no work remains, report the completed outcome instead of promising another action.
+Name the exact remaining gate/action when work remains; never end with only promised future work. Otherwise report the completed outcome.
