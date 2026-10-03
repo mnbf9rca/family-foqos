@@ -150,6 +150,49 @@ final class SessionTimerCASTests: XCTestCase {
     XCTAssertEqual(saves.first?["endTime"] as? Date, saves.last?["endTime"] as? Date)
     XCTAssertEqual(saves.last?["isActive"] as? Int, 0)
   }
+  func testMirrorAuthorizedStopWithTimerCannotEndReplacementAfterConflict() async {
+    let now = Date()
+    let profile = UUID()
+    let id = UUID().uuidString
+    for replacement in [false, true] {
+      let active = record(profile: profile, start: now, owner: "other-device", deadline: now.addingTimeInterval(2207))
+      active["sessionId"] = id
+      let newer = active.copy() as! CKRecord
+      newer["sessionId"] = replacement ? UUID().uuidString : id
+      let server = TimerCASRecords(records: [active, newer], failuresRemaining: replacement ? 1 : 0)
+      let service = SessionSyncService(fetchRecord: { _ in try await server.fetch() }, saveRecord: { try await server.save($0) })
+      let result = await service.stopSession(profileId: profile, endTime: now, expectedSessionId: id, expectedStart: now)
+      if replacement {
+        guard case .alreadyStopped = result else {
+          XCTFail("Exact ID mismatch must resolve without replacement stop")
+          continue
+        }
+      } else {
+        guard case .stopped = result else {
+          XCTFail("Mirror may stop the canonical timed session")
+          continue
+        }
+      }
+      let saves = await server.saves
+      XCTAssertEqual(saves.count, 1)
+    }
+  }
+
+  func testNewCASStartWritesCanonicalIdentityAndOrigin() async throws {
+    let now = Date()
+    let profile = UUID()
+    let id = UUID().uuidString
+    let server = TimerCASRecords(records: [], failSave: false)
+    let service = SessionSyncService(fetchRecord: { _ in try await server.fetch() }, saveRecord: { try await server.save($0) })
+    let origin = SessionOrigin(kind: .nfc, key: "UID", namespace: .nfcUID)
+    let result = await service.startSession(profileId: profile, startTime: now, timerEndTime: now.addingTimeInterval(2207), sessionId: id, origin: origin)
+    guard case .started = result else { return XCTFail("Must publish") }
+    let saved = await server.saves
+    let record = try XCTUnwrap(saved.last)
+    XCTAssertEqual(record["sessionId"] as? String, id)
+    XCTAssertEqual(try JSONDecoder().decode(SessionOrigin.self, from: Data(try XCTUnwrap(record["sessionOrigin"] as? String).utf8)), origin)
+  }
+
 }
 
 private actor TimerCASRecords {

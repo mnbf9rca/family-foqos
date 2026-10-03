@@ -12,10 +12,15 @@ class BlockedProfileSession: BreakDurationCalculable {
   var startTime: Date
   var endTime: Date?
   var timerEndTime: Date?
+  var usesCanonicalIdentity: Bool?
+  var sessionSequence: Int?
   var sessionOriginData: Data?
   var origin: SessionOrigin? {
     get { sessionOriginData.flatMap { try? JSONDecoder().decode(SessionOrigin.self, from: $0) } }
-    set { sessionOriginData = newValue.flatMap { try? JSONEncoder().encode($0) } }
+    set {
+      if newValue != nil { usesCanonicalIdentity = true }
+      sessionOriginData = newValue.flatMap { try? JSONEncoder().encode($0) }
+    }
   }
 
   var breakStartTime: Date?
@@ -75,6 +80,7 @@ class BlockedProfileSession: BreakDurationCalculable {
     self.blockedProfile = blockedProfile
     self.startTime = startTime
     self.forceStarted = forceStarted
+    self.usesCanonicalIdentity = origin != nil ? true : nil
     self.origin = origin
 
     // Add this session to the profile's sessions array
@@ -139,7 +145,7 @@ class BlockedProfileSession: BreakDurationCalculable {
       pinnedProfileConfig: pinnedProfileConfigData.flatMap {
         try? JSONDecoder().decode(SharedData.ProfileSnapshot.self, from: $0)
       },
-      origin: endTime == nil ? origin : nil
+      origin: endTime == nil ? origin : nil, usesCanonicalIdentity: usesCanonicalIdentity, sequenceNumber: sessionSequence
     )
   }
 
@@ -193,6 +199,8 @@ class BlockedProfileSession: BreakDurationCalculable {
 
     // Try to find an existing session by id
     if let existingSession = try? findSession(byID: snapshot.id, in: context) {
+      existingSession.sessionSequence = snapshot.sequenceNumber ?? existingSession.sessionSequence
+      existingSession.usesCanonicalIdentity = snapshot.usesCanonicalIdentity
       existingSession.origin = snapshot.origin
       existingSession.tag = snapshot.tag
       existingSession.startTime = snapshot.startTime
@@ -227,6 +235,8 @@ class BlockedProfileSession: BreakDurationCalculable {
       forceStarted: snapshot.forceStarted
     )
     // Override auto-generated values with snapshot-provided ones
+    newSession.sessionSequence = snapshot.sequenceNumber
+    newSession.usesCanonicalIdentity = snapshot.usesCanonicalIdentity
     newSession.origin = snapshot.origin
     newSession.id = snapshot.id
     newSession.startTime = snapshot.startTime

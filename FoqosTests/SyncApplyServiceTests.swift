@@ -1628,4 +1628,125 @@ final class SyncApplyServiceTests: XCTestCase {
     }
   }
 
+  func testMirrorMatchesSameAndNeverRegistersAndRejectsDelayedInactiveAfterRestart() throws {
+    let now = Date()
+    let profile = BlockedProfiles(name: "Mirror", createdAt: now, updatedAt: now)
+    profile.startTriggers = .init(anyNFC: true)
+    profile.stopConditions = .init(timer: true, sameNFC: true, timerDurationMinutes: 37)
+    context.insert(profile)
+    try context.save()
+    var registrations = 0
+    let manager = StrategyManager(
+      registerTimer: { _, _, _, _ in
+        registrations += 1
+        return now
+      }, cancelTimer: { _, _ in })
+    let service = SyncApplyService(modelContext: context, store: store, sessionController: manager, emergencyManager: emergencyManager, deviceId: deviceId)
+    let id = UUID().uuidString
+    var remote = ProfileSessionRecord(profileId: profile.id)
+    remote.applyUpdate(isActive: true, sequenceNumber: 1, deviceId: "device-B", startTime: now, timerEndTime: now.addingTimeInterval(2207), sessionId: id, origin: .init(kind: .nfc, key: "UID", namespace: .nfcUID))
+    _ = service.applyFetchedModification(remote.toCKRecord(in: zoneID), isPendingDeleteOrTombstoned: noPendingDelete)
+    let session = try XCTUnwrap(manager.activeSession)
+    XCTAssertEqual(session.id, id)
+    XCTAssertEqual(session.origin?.initiatingKey, "UID")
+    XCTAssertEqual(registrations, 0)
+    XCTAssertTrue(StartStopActionResolver.canStop(with: .nfc(tag: "UID"), conditions: profile.stopConditions, sessionTag: session.tag, stopNFCTagIds: [], stopQRCodeIds: [], sessionOrigin: session.origin).allowed)
+    XCTAssertFalse(StartStopActionResolver.canStop(with: .qr(code: "UID"), conditions: .init(sameQR: true), sessionTag: "qr:UID", stopNFCTagIds: [], stopQRCodeIds: [], sessionOrigin: session.origin).allowed)
+    manager.stopWithNFCTag(context: context, tagId: "wrong")
+    XCTAssertTrue(session.isActive)
+    manager.stopWithNFCTag(context: context, tagId: "UID")
+    XCTAssertFalse(session.isActive)
+    XCTAssertNil(session.origin)
+    XCTAssertNil(session.timerEndTime)
+    remote.resetForNewSession()
+    let replacementId = UUID().uuidString
+    remote.applyUpdate(isActive: true, sequenceNumber: 3, deviceId: "device-B", startTime: now.addingTimeInterval(1), timerEndTime: now.addingTimeInterval(4407), sessionId: replacementId, origin: .init(kind: .nfc, key: "NEW", namespace: .nfcUID))
+    _ = service.applyFetchedModification(remote.toCKRecord(in: zoneID), isPendingDeleteOrTombstoned: noPendingDelete)
+    XCTAssertEqual(manager.activeSession?.id, replacementId)
+    var old = ProfileSessionRecord(profileId: profile.id)
+    old.applyUpdate(isActive: true, sequenceNumber: 1, deviceId: "device-B", startTime: now, sessionId: id, origin: .init(kind: .nfc, key: "UID", namespace: .nfcUID))
+    old.applyUpdate(isActive: false, sequenceNumber: 2, deviceId: "device-B", endTime: now)
+    let restarted = SyncApplyService(modelContext: context, store: store, sessionController: manager, emergencyManager: emergencyManager, deviceId: deviceId)
+    _ = restarted.applyFetchedModification(old.toCKRecord(in: zoneID), isPendingDeleteOrTombstoned: noPendingDelete)
+    XCTAssertEqual(manager.activeSession?.id, replacementId)
+    XCTAssertEqual(registrations, 0)
+    let missing = remote.toCKRecord(in: zoneID)
+    missing["sessionOrigin"] = "bad JSON"
+    missing["sequenceNumber"] = 4
+    _ = restarted.applyFetchedModification(missing, isPendingDeleteOrTombstoned: noPendingDelete)
+    XCTAssertNotNil(manager.activeSession)
+    XCTAssertNil(manager.activeSession?.origin)
+    XCTAssertFalse(StartStopActionResolver.canStop(with: .nfc(tag: "NEW"), conditions: profile.stopConditions, sessionTag: "nfc:NEW", stopNFCTagIds: [], stopQRCodeIds: [], sessionOrigin: nil).allowed)
+    manager.stopTimer()
+  }
+
+  func testQRMirrorUsesInitiatingDigestAndExactInactiveCompletion() throws {
+    let now = Date()
+    let profile = BlockedProfiles(name: "QR mirror", createdAt: now, updatedAt: now)
+    profile.startTriggers = .init(anyQR: true)
+    profile.stopConditions = .init(timer: true, sameQR: true, timerDurationMinutes: 37)
+    context.insert(profile)
+    try context.save()
+    var registrations = 0
+    let manager = StrategyManager(
+      registerTimer: { _, _, _, _ in
+        registrations += 1
+        return now
+      }, cancelTimer: { _, _ in })
+    defer { manager.stopTimer() }
+    let service = SyncApplyService(modelContext: context, store: store, sessionController: manager, emergencyManager: emergencyManager, deviceId: deviceId)
+    var remote = ProfileSessionRecord(profileId: profile.id)
+    let id = UUID().uuidString
+    remote.applyUpdate(isActive: true, sequenceNumber: 1, deviceId: "device-B", startTime: now, timerEndTime: now.addingTimeInterval(2207), sessionId: id, origin: .init(kind: .qr, key: "digest", namespace: .qrDigest))
+    _ = service.applyFetchedModification(remote.toCKRecord(in: zoneID), isPendingDeleteOrTombstoned: noPendingDelete)
+    let session = try XCTUnwrap(manager.activeSession)
+    XCTAssertEqual(session.id, id)
+    XCTAssertEqual(session.timerEndTime, remote.validTimerEndTime)
+    XCTAssertTrue(StartStopActionResolver.canStop(with: .qr(code: "digest"), conditions: profile.stopConditions, sessionTag: session.tag, stopNFCTagIds: [], stopQRCodeIds: [], sessionOrigin: session.origin).allowed)
+    XCTAssertFalse(StartStopActionResolver.canStop(with: .nfc(tag: "digest"), conditions: .init(sameNFC: true), sessionTag: "nfc:digest", stopNFCTagIds: [], stopQRCodeIds: [], sessionOrigin: session.origin).allowed)
+    manager.stopWithQRCode(context: context, codeValue: "wrong")
+    XCTAssertTrue(session.isActive)
+    XCTAssertTrue(StartStopActionResolver.canStop(with: .qr(code: "stop-only"), conditions: .init(specificQR: true), sessionTag: session.tag, stopNFCTagIds: [], stopQRCodeIds: ["stop-only"], sessionOrigin: session.origin).allowed)
+    remote.applyUpdate(isActive: false, sequenceNumber: 2, deviceId: "device-B", endTime: now.addingTimeInterval(5))
+    _ = service.applyFetchedModification(remote.toCKRecord(in: zoneID), isPendingDeleteOrTombstoned: noPendingDelete)
+    XCTAssertNil(manager.activeSession)
+    XCTAssertFalse(session.isActive)
+    XCTAssertNil(session.origin)
+    XCTAssertNil(session.timerEndTime)
+    XCTAssertEqual(session.sessionSequence, 2)
+    XCTAssertEqual(registrations, 0)
+  }
+
+  func testFailedAdoptionDoesNotAdvanceSequenceAndCanRetryAfterLockRecovery() throws {
+    let now = Date()
+    let profile = BlockedProfiles(name: "Mirror", createdAt: now, updatedAt: now)
+    context.insert(profile)
+    try context.save()
+    let manager = StrategyManager(cancelTimer: { _, _ in })
+    let originalId = UUID()
+    let replacementId = UUID()
+    manager.startRemoteSession(
+      context: context, profileId: profile.id, sessionId: originalId,
+      startTime: now, origin: .init(kind: .nfc, key: "OLD", namespace: .nfcUID), sequenceNumber: 1)
+    let active = try XCTUnwrap(manager.activeSession)
+    SharedData.configureLockPath(nil)
+    defer {
+      SharedData.resetLockPath()
+      manager.stopTimer()
+    }
+    manager.startRemoteSession(
+      context: context, profileId: profile.id, sessionId: replacementId,
+      startTime: now.addingTimeInterval(1), origin: .init(kind: .nfc, key: "NEW", namespace: .nfcUID), sequenceNumber: 2)
+    XCTAssertEqual(active.id, originalId.uuidString)
+    XCTAssertEqual(active.sessionSequence, 1)
+    SharedData.resetLockPath()
+    var remote = ProfileSessionRecord(profileId: profile.id)
+    remote.applyUpdate(isActive: true, sequenceNumber: 2, deviceId: "device-B", startTime: now.addingTimeInterval(1), sessionId: replacementId.uuidString, origin: .init(kind: .nfc, key: "NEW", namespace: .nfcUID))
+    let service = SyncApplyService(modelContext: context, store: store, sessionController: manager, emergencyManager: emergencyManager, deviceId: deviceId)
+    _ = service.applyFetchedModification(remote.toCKRecord(in: zoneID), isPendingDeleteOrTombstoned: noPendingDelete)
+    XCTAssertEqual(active.id, replacementId.uuidString)
+    XCTAssertEqual(active.origin?.initiatingKey, "NEW")
+    XCTAssertEqual(active.sessionSequence, 2)
+  }
+
 }

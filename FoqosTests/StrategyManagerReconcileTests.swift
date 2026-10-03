@@ -110,8 +110,8 @@ final class StrategyManagerReconcileTests: XCTestCase {
     XCTAssertNotNil(session.endTime, "a matching-identity Stop ends the session")
   }
 
-  // Control: a missing shared session means the displayed session is still safe to stop normally.
-  func testGivenNoSharedSession_WhenToggleStop_ThenSessionEndsWithoutScheduledTimerError() throws {
+  // A V2 stop requires the exact authoritative session, including when the store is idle.
+  func testGivenNoSharedSession_WhenToggleStop_ThenV2SessionIsPreserved() throws {
     let profile = BlockedProfiles(name: "Focus")
     context.insert(profile)
     let session = BlockedProfileSession(tag: "manual", blockedProfile: profile)
@@ -122,7 +122,7 @@ final class StrategyManagerReconcileTests: XCTestCase {
 
     manager.toggleBlocking(context: context, activeProfile: profile)
 
-    XCTAssertNotNil(session.endTime, "nil SharedData falls through to normal Stop")
-    XCTAssertNil(manager.errorMessage, "nil SharedData should not surface the scheduled-timer error")
+    XCTAssertNil(session.endTime)
+    XCTAssertEqual(manager.errorMessage, "This session changed. Please try again.")
   }
 }

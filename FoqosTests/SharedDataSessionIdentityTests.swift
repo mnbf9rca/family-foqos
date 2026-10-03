@@ -122,6 +122,26 @@ final class SharedDataSessionIdentityTests: XCTestCase {
     XCTAssertEqual(effects, 0)
   }
 
+  func testOriginatingCommitRejectsUnusableEncodingAndCorruptAuthoritativeState() throws {
+    let now = Date()
+    let profile = BlockedProfiles(name: "Candidate", createdAt: now, updatedAt: now)
+    profile.startTriggers = .init(manual: true)
+    profile.stopConditions = .init(manual: true)
+    SharedData.setSnapshot(BlockedProfiles.getSnapshot(for: profile), for: profile.id.uuidString)
+    let victim = SharedData.SessionSnapshot(id: UUID().uuidString, tag: "victim", blockedProfileId: UUID(), startTime: now, forceStarted: false)
+    let candidate = SharedData.SessionSnapshot(id: UUID().uuidString, tag: "manual", blockedProfileId: profile.id, startTime: now, forceStarted: false, origin: .init(kind: .manual))
+    SharedData.createActiveSharedSession(for: victim)
+    var effects = 0
+    XCTAssertFalse(SharedData.commitOriginatingSession(candidate, expectedVictimId: victim.id, now: now, encode: { _ in Data("unusable".utf8) }, onCommit: { effects += 1 }))
+    XCTAssertEqual(SharedData.getActiveSharedSession(), victim)
+    XCTAssertEqual(effects, 0)
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defaults.set(Data("corrupt".utf8), forKey: "family_foqos_active_schedule_session")
+    XCTAssertFalse(SharedData.commitOriginatingSession(candidate, expectedVictimId: nil, now: now, onCommit: { effects += 1 }))
+    XCTAssertEqual(defaults.data(forKey: "family_foqos_active_schedule_session"), Data("corrupt".utf8))
+    XCTAssertEqual(effects, 0)
+  }
+
 }
 
 private final class RejectingSessionDefaults: UserDefaults {

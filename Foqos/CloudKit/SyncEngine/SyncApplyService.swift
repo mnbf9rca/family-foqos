@@ -807,6 +807,11 @@ final class SyncApplyService {
       Log.info("Ignoring undecodable ProfileSession record", category: .sync)
       return .ignored
     }
+    if let profile = try? BlockedProfiles.findProfile(byID: session.profileId, in: modelContext),
+      let applied = profile.sessions.valid.compactMap(\.sessionSequence).max(), applied >= session.sequenceNumber
+    {
+      return .ignored
+    }
     applySessionState(session)
     return .applied
   }
@@ -824,12 +829,12 @@ final class SyncApplyService {
     if session.isActive {
       if let startTime = session.startTime {
         sessionController.startRemoteSession(
-          context: modelContext, profileId: profileId, sessionId: UUID(), startTime: startTime,
-          timerEndTime: session.validTimerEndTime, originDevice: session.sessionOriginDevice)
+          context: modelContext, profileId: profileId, sessionId: session.sessionId.flatMap(UUID.init(uuidString:)), startTime: startTime,
+          timerEndTime: session.validTimerEndTime, originDevice: session.sessionOriginDevice, origin: session.origin, sequenceNumber: session.sequenceNumber)
         SyncDiagnostics.sessionApply(profileId: profileId, branch: "remote_start_applied")
       }
     } else if !session.isActive && localActive {
-      sessionController.stopRemoteSession(context: modelContext, profileId: profileId)
+      sessionController.stopRemoteSession(context: modelContext, profileId: profileId, expectedSessionId: session.sessionId, sequenceNumber: session.sequenceNumber)
       SyncDiagnostics.sessionApply(profileId: profileId, branch: "remote_stop_applied")
     } else {
       SyncDiagnostics.sessionApply(profileId: profileId, branch: "state_already_matching_noop")

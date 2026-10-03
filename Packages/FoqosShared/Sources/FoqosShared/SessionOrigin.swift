@@ -1,8 +1,8 @@
 import Foundation
 
-public struct SessionOrigin: Codable, Equatable {
-  public enum Kind: String, Codable { case manual, nfc, qr, shortcut, link, schedule }
-  public enum KeyNamespace: String, Codable { case nfcUID, qrDigest }
+public struct SessionOrigin: Codable, Equatable, Sendable {
+  public enum Kind: String, Codable, Sendable { case manual, nfc, qr, shortcut, link, schedule }
+  public enum KeyNamespace: String, Codable, Sendable { case nfcUID, qrDigest }
 
   public var kind: Kind
   public var key: String?

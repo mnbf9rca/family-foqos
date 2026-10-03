@@ -1,3 +1,4 @@
+import FoqosShared
 import Foundation
 import SwiftData
 
@@ -15,10 +16,10 @@ class MockSessionController: SessionController {
   func startRemoteSession(
     context: ModelContext,
     profileId: UUID,
-    sessionId: UUID,
+    sessionId: UUID?,
     startTime: Date,
     timerEndTime: Date?,
-    originDevice: String?
+    originDevice: String?, origin: SessionOrigin?, sequenceNumber: Int?
   ) {
     startRemoteSessionCalled = true
     receivedTimerEndTime = timerEndTime
@@ -28,7 +29,7 @@ class MockSessionController: SessionController {
 
   var stopRemoteSessionCalled = false
   var stopRemoteSessionProfileId: UUID?
-  func stopRemoteSession(context: ModelContext, profileId: UUID) {
+  func stopRemoteSession(context: ModelContext, profileId: UUID, expectedSessionId: String?, sequenceNumber: Int?) {
     stopRemoteSessionCalled = true
     stopRemoteSessionProfileId = profileId
   }

@@ -394,6 +394,8 @@ public enum SharedData {
       }
     }
     public var timerEndTime: Date?
+    public var sequenceNumber: Int?
+    public var usesCanonicalIdentity: Bool?
     public var origin: SessionOrigin?
 
     public var breakStartTime: Date?
@@ -425,7 +427,9 @@ public enum SharedData {
       breakEndDeadline: Date? = nil,
       oneMoreMinuteDeadline: Date? = nil,
       pinnedProfileConfig: ProfileSnapshot? = nil,
-      origin: SessionOrigin? = nil
+      origin: SessionOrigin? = nil,
+      usesCanonicalIdentity: Bool? = nil,
+      sequenceNumber: Int? = nil
     ) {
       self.id = id
       self.tag = tag
@@ -441,10 +445,12 @@ public enum SharedData {
       self.breakEndDeadline = breakEndDeadline
       self.oneMoreMinuteDeadline = oneMoreMinuteDeadline
       self.pinnedProfileConfig = pinnedProfileConfig
+      self.sequenceNumber = sequenceNumber
+      self.usesCanonicalIdentity = usesCanonicalIdentity ?? (origin != nil ? true : nil)
       self.origin = endTime == nil ? origin : nil
     }
     private enum CodingKeys: String, CodingKey {
-      case id, tag, blockedProfileId, startTime, endTime, timerEndTime, breakStartTime, breakEndTime, forceStarted, oneMoreMinuteUsed, oneMoreMinuteStartTime, breakEndDeadline, oneMoreMinuteDeadline, pinnedProfileConfig, origin
+      case sequenceNumber, usesCanonicalIdentity, id, tag, blockedProfileId, startTime, endTime, timerEndTime, breakStartTime, breakEndTime, forceStarted, oneMoreMinuteUsed, oneMoreMinuteStartTime, breakEndDeadline, oneMoreMinuteDeadline, pinnedProfileConfig, origin
     }
     public init(from decoder: Decoder) throws {
       let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -462,6 +468,8 @@ public enum SharedData {
       self.breakEndDeadline = try values.decodeIfPresent(Date.self, forKey: .breakEndDeadline)
       self.oneMoreMinuteDeadline = try values.decodeIfPresent(Date.self, forKey: .oneMoreMinuteDeadline)
       self.pinnedProfileConfig = try values.decodeIfPresent(ProfileSnapshot.self, forKey: .pinnedProfileConfig)
+      self.sequenceNumber = try values.decodeIfPresent(Int.self, forKey: .sequenceNumber)
+      self.usesCanonicalIdentity = try values.decodeIfPresent(Bool.self, forKey: .usesCanonicalIdentity)
       self.origin = try? values.decode(SessionOrigin.self, forKey: .origin)
       if endTime != nil {
         origin = nil
@@ -581,7 +589,11 @@ public enum SharedData {
     guard let raw = data(forKey: .activeScheduleSession, legacyKey: .activeScheduleSession) else {
       return .some(nil)
     }
-    return try? JSONDecoder().decode(SessionSnapshot?.self, from: raw)
+    do {
+      return .some(try JSONDecoder().decode(SessionSnapshot?.self, from: raw))
+    } catch {
+      return nil
+    }
   }
 
   private static func checkedCompletedSessions() -> [SessionSnapshot]? {
@@ -605,6 +617,9 @@ public enum SharedData {
         array.append(item)
       }
       array.append(Data("]".utf8))
+      guard try JSONDecoder().decode(SessionSnapshot?.self, from: activeData) == active,
+        try JSONDecoder().decode([SessionSnapshot].self, from: array) == completed
+      else { return false }
       writes = [(.activeScheduleSession, activeData), (.completedScheduleSessions, array)]
       if let profiles { writes.append((.profileSnapshots, try JSONEncoder().encode(profiles))) }
     } catch {
@@ -650,6 +665,38 @@ public enum SharedData {
       guard commitSessionTransition(nil, completed: completed, profiles: scheduled ? profiles : nil) else { return false }
       onComplete()
       return true
+    }
+  }
+
+  @discardableResult
+  public static func adoptAuthoritativeSession(
+    _ candidate: SessionSnapshot, expectedSessionId: String?, now: Date,
+    onAdopt: () -> Void = {}
+  ) -> Bool {
+    withLockStatus(blocking: true) { outcome in
+      guard outcome == .acquired, candidate.endTime == nil,
+        let checked = checkedActiveSession(), checked?.id == expectedSessionId,
+        var completed = checkedCompletedSessions()
+      else { return false }
+      if var previous = checked, previous.blockedProfileId != candidate.blockedProfileId {
+        previous.endTime = now
+        completed.append(normalizedForEnd(previous))
+      }
+      guard commitSessionTransition(candidate, completed: completed) else { return false }
+      onAdopt()
+      return true
+    }
+  }
+
+  @discardableResult
+  public static func updateSessionSequence(expectedSessionId: String, sequenceNumber: Int) -> Bool {
+    withLockStatus(blocking: true) { outcome in
+      guard outcome == .acquired, let checked = checkedActiveSession(), var current = checked,
+        current.id == expectedSessionId, current.endTime == nil,
+        sequenceNumber >= (current.sequenceNumber ?? 0), let completed = checkedCompletedSessions()
+      else { return false }
+      current.sequenceNumber = sequenceNumber
+      return commitSessionTransition(current, completed: completed)
     }
   }
 

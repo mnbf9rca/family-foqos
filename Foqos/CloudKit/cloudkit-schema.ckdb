@@ -225,6 +225,8 @@ DEFINE SCHEMA
         breakEndTime        TIMESTAMP,
         timerEndTime        TIMESTAMP,
         lastModifiedBy      STRING,
+        sessionId           STRING,
+        sessionOrigin       STRING,
         sessionOriginDevice STRING QUERYABLE,
         lastModified        TIMESTAMP QUERYABLE SORTABLE,
         GRANT WRITE TO "_creator",

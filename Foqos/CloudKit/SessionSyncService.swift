@@ -1,4 +1,5 @@
 import CloudKit
+import FoqosShared
 import Foundation
 import os
 
@@ -95,7 +96,7 @@ actor SessionSyncService {
   private static let maxCASRetries = 3
 
   /// Attempt to start a session. Uses CAS with iterative retry loop.
-  func startSession(profileId: UUID, startTime: Date = Date(), timerEndTime: Date? = nil) async -> StartResult {
+  func startSession(profileId: UUID, startTime: Date = Date(), timerEndTime: Date? = nil, sessionId: String? = nil, origin: SessionOrigin? = nil) async -> StartResult {
     for attempt in 0..<Self.maxCASRetries {
       // Backoff with jitter on retries (not on first attempt)
       if attempt > 0 {
@@ -131,7 +132,7 @@ actor SessionSyncService {
           sequenceNumber: newSequence,
           deviceId: deviceId,
           startTime: startTime,
-          timerEndTime: timerEndTime
+          timerEndTime: timerEndTime, sessionId: sessionId, origin: origin
         )
         updatedSession.updateCKRecord(existingRecord)
 
@@ -157,7 +158,7 @@ actor SessionSyncService {
           sequenceNumber: 1,
           deviceId: deviceId,
           startTime: startTime,
-          timerEndTime: timerEndTime
+          timerEndTime: timerEndTime, sessionId: sessionId, origin: origin
         )
         let record = session.toCKRecord(in: syncZoneID)
 
@@ -230,7 +231,7 @@ actor SessionSyncService {
   // MARK: - Stop Session (with CAS)
 
   /// Attempt to stop a session. Uses CAS to handle concurrent stops.
-  func stopSession(profileId: UUID, endTime: Date = Date(), expectedStart: Date? = nil) async -> StopResult {
+  func stopSession(profileId: UUID, endTime: Date = Date(), expectedSessionId: String? = nil, expectedStart: Date? = nil) async -> StopResult {
     // Fetch current state
     let fetchResult = await fetchSession(profileId: profileId)
 
@@ -240,13 +241,13 @@ actor SessionSyncService {
         Log.info("Session already stopped for \(profileId)", category: .sync)
         return .alreadyStopped
       }
-      if let expectedStart, !existing.matchesCompletion(expectedStart: expectedStart, deviceId: deviceId) {
+      if !existing.matchesCompletion(expectedSessionId: expectedSessionId, expectedStart: expectedStart, deviceId: deviceId) {
         return .alreadyStopped
       }
-      return await deactivateSession(profileId: profileId, endTime: endTime, expectedStart: expectedStart)
+      return await deactivateSession(profileId: profileId, endTime: endTime, expectedSessionId: expectedSessionId, expectedStart: expectedStart)
 
     case .notFound:
-      if expectedStart != nil { return .alreadyStopped }
+      if expectedSessionId != nil || expectedStart != nil { return .alreadyStopped }
       // §6: this device stopped a session it believed active — write a stopped record
       // create-if-absent so mirrors converge (do NOT silently drop, the old
       // .notFound -> .alreadyStopped path is removed).
@@ -257,7 +258,7 @@ actor SessionSyncService {
     }
   }
 
-  private func deactivateSession(profileId: UUID, endTime: Date, expectedStart: Date?) async -> StopResult {
+  private func deactivateSession(profileId: UUID, endTime: Date, expectedSessionId: String?, expectedStart: Date?) async -> StopResult {
     guard let cached = cachedRecords[profileId] else {
       return .error(SessionSyncError.noCachedRecord)
     }
@@ -298,11 +299,7 @@ actor SessionSyncService {
           if !current.isActive {
             return .alreadyStopped
           }
-          if let expectedStart {
-            guard current.matchesCompletion(expectedStart: expectedStart, deviceId: deviceId) else {
-              return .alreadyStopped
-            }
-          }
+          guard current.matchesCompletion(expectedSessionId: expectedSessionId, expectedStart: expectedStart, deviceId: deviceId) else { return .alreadyStopped }
           return .conflict(currentSession: current)
         case .notFound:
           return .alreadyStopped

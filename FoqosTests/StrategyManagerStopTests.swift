@@ -94,7 +94,7 @@ final class StrategyManagerStopTests: XCTestCase {
       conditions: stop,
       sessionTag: "nfc:session-tag",
       stopNFCTagIds: [],
-      stopQRCodeIds: []
+      stopQRCodeIds: [], legacySession: true
     )
 
     XCTAssertTrue(result.allowed)
@@ -126,7 +126,7 @@ final class StrategyManagerStopTests: XCTestCase {
       conditions: stop,
       sessionTag: "qr:session-code",
       stopNFCTagIds: [],
-      stopQRCodeIds: []
+      stopQRCodeIds: [], legacySession: true
     )
 
     XCTAssertTrue(result.allowed)
@@ -284,7 +284,7 @@ final class StrategyManagerStopTests: XCTestCase {
           with: isNFC ? .nfc(tag: value) : .qr(code: value), conditions: conditions,
           sessionTag: nil, stopNFCTagIds: ["first", "second"], stopQRCodeIds: ["first", "second"])
         XCTAssertEqual(result.allowed, allowed)
-        if !allowed { XCTAssertEqual(result.errorMessage, isNFC ? "Scan the correct NFC tag to stop" : "Scan the correct QR code to stop") }
+        if !allowed { XCTAssertEqual(result.errorMessage, isNFC ? "That NFC tag doesn’t match. Scan the required tag." : "That QR code doesn’t match. Scan the required code.") }
       }
     }
   }
@@ -382,7 +382,7 @@ final class StrategyManagerStopTests: XCTestCase {
       let result = StartStopActionResolver.canStop(
         with: .qr(code: QRCodeHasher.hash(scan), rawHash: QRCodeHasher.rawHash(scan)),
         conditions: ProfileStopConditions(sameQR: true), sessionTag: sessionTag,
-        stopNFCTagIds: [], stopQRCodeIds: [oldHash])
+        stopNFCTagIds: [], stopQRCodeIds: [oldHash], legacySession: true)
       XCTAssertEqual(result.allowed, allowed)
     }
   }

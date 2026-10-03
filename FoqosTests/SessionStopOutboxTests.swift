@@ -68,12 +68,12 @@ final class SessionStopOutboxTests: XCTestCase {
     outbox.enqueue(profileId: stuckId)
 
     // First drive: resolvedId succeeds (.alreadyStopped ⇒ resolved), stuckId keeps failing.
-    await outbox.drain { id, _ in id == resolvedId }
+    await outbox.drain { id, _, _ in id == resolvedId }
 
     XCTAssertEqual(outbox.pending, [stuckId], "resolved id cleared, stuck id retained (no loop loss)")
 
     // Second drive: stuckId now resolves.
-    await outbox.drain { _, _ in true }
+    await outbox.drain { _, _, _ in true }
     XCTAssertTrue(outbox.pending.isEmpty)
   }
 
@@ -92,4 +92,24 @@ final class SessionStopOutboxTests: XCTestCase {
 
     manager.sessionStopOutbox.clear()
   }
+  func testExactIdentityPersistsAndDelayedDrainKeepsNewIntent() async {
+    let now = Date()
+    let profile = UUID()
+    let original = UUID().uuidString
+    let replacement = UUID().uuidString
+    let outbox = SessionStopOutbox(defaults: defaults)
+    outbox.enqueue(profileId: profile, expectedStart: now, expectedSessionId: original)
+    let reloaded = SessionStopOutbox(defaults: defaults)
+    XCTAssertEqual(reloaded.expectedSessionId(for: profile), original)
+    await reloaded.drain { id, expectedId, start in
+      XCTAssertEqual(expectedId, original)
+      XCTAssertEqual(start, now)
+      outbox.enqueue(profileId: id, expectedStart: now.addingTimeInterval(1), expectedSessionId: replacement)
+      await Task.yield()
+      return true
+    }
+    XCTAssertEqual(reloaded.pending, [profile])
+    XCTAssertEqual(reloaded.expectedSessionId(for: profile), replacement)
+  }
+
 }

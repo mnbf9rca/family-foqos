@@ -1,4 +1,5 @@
 import CloudKit
+import FoqosShared
 import XCTest
 
 @testable import FamilyFoqos
@@ -164,6 +165,33 @@ final class ProfileSessionRecordTests: XCTestCase {
     XCTAssertTrue(session.matchesCompletion(expectedStart: now.addingTimeInterval(0.4), deviceId: "A"))
     XCTAssertFalse(session.matchesCompletion(expectedStart: now, deviceId: "B"))
     XCTAssertFalse(session.matchesCompletion(expectedStart: now.addingTimeInterval(2), deviceId: "A"))
+  }
+
+  func testIdentityDeadlineRoundTripAndReset() throws {
+    let now = Date()
+    let id = UUID().uuidString
+    for origin in [SessionOrigin(kind: .nfc, key: "UID", namespace: .nfcUID), .init(kind: .qr, key: "digest", namespace: .qrDigest), .init(kind: .manual), .init(kind: .schedule), .init(kind: .link), .init(kind: .shortcut)] {
+      var session = ProfileSessionRecord(profileId: UUID())
+      session.applyUpdate(isActive: true, sequenceNumber: 1, deviceId: "owner", startTime: now, timerEndTime: now.addingTimeInterval(2207), sessionId: id, origin: origin)
+      let wire = session.toCKRecord(in: CKRecordZone.ID(zoneName: "Test"))
+      let decoded = try XCTUnwrap(ProfileSessionRecord(from: wire))
+      XCTAssertEqual(decoded.sessionId, id)
+      XCTAssertEqual(decoded.origin, origin)
+      XCTAssertEqual(try JSONDecoder().decode(ProfileSessionRecord.self, from: JSONEncoder().encode(decoded)).origin, origin)
+      XCTAssertEqual(decoded.validTimerEndTime, now.addingTimeInterval(2207))
+      wire["sessionOrigin"] = "{\"kind\":\"unknown\"}"
+      let malformed = try XCTUnwrap(ProfileSessionRecord(from: wire))
+      XCTAssertTrue(malformed.isActive)
+      XCTAssertNil(malformed.origin)
+      XCTAssertEqual(malformed.sessionId, id)
+      session.applyUpdate(isActive: false, sequenceNumber: 2, deviceId: "mirror", endTime: now)
+      XCTAssertEqual(session.sessionId, id)
+      XCTAssertNil(session.origin)
+      XCTAssertNil(session.timerEndTime)
+      session.resetForNewSession()
+      XCTAssertNil(session.sessionId)
+      XCTAssertNil(session.origin)
+    }
   }
 
 }

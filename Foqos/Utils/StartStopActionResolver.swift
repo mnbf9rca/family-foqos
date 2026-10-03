@@ -129,7 +129,8 @@ enum StartStopActionResolver {
     conditions: ProfileStopConditions,
     sessionTag: String?,
     stopNFCTagIds: [String],
-    stopQRCodeIds: [String]
+    stopQRCodeIds: [String],
+    sessionOrigin: SessionOrigin? = nil, legacySession: Bool = false
   ) -> StopValidationResult {
 
     switch method {
@@ -151,18 +152,19 @@ enum StartStopActionResolver {
         if stopNFCTagIds.contains(scannedTag) {
           return .allowed()
         }
-        return .denied("Scan the correct NFC tag to stop")
+        return .denied("That NFC tag doesn’t match. Scan the required tag.")
       }
 
       // Check same NFC (match session tag - must be NFC type)
       if conditions.sameNFC {
-        if let sessionStartTag = sessionTag,
+        if sessionOrigin?.kind == .nfc, sessionOrigin?.initiatingKey == scannedTag { return .allowed() }
+        if legacySession, let sessionStartTag = sessionTag,
           sessionStartTag.hasPrefix("nfc:"),
           scannedTag == String(sessionStartTag.dropFirst(4))
         {
           return .allowed()
         }
-        return .denied("Scan the same NFC tag you used to start")
+        return .denied("That NFC tag doesn’t match. Scan the required tag.")
       }
 
       // Check any NFC
@@ -178,19 +180,20 @@ enum StartStopActionResolver {
         if stopQRCodeIds.contains(where: { $0 == scannedCode || $0 == rawHash }) {
           return .allowed()
         }
-        return .denied("Scan the correct QR code to stop")
+        return .denied("That QR code doesn’t match. Scan the required code.")
       }
 
       // Check same QR (match session tag - must be QR type)
       if conditions.sameQR {
-        if let sessionStartCode = sessionTag,
+        if sessionOrigin?.kind == .qr, let key = sessionOrigin?.initiatingKey, key == scannedCode || key == rawHash { return .allowed() }
+        if legacySession, let sessionStartCode = sessionTag,
           sessionStartCode.hasPrefix("qr:"),
           scannedCode == String(sessionStartCode.dropFirst(3))
             || rawHash == String(sessionStartCode.dropFirst(3))
         {
           return .allowed()
         }
-        return .denied("Scan the same QR code you used to start")
+        return .denied("That QR code doesn’t match. Scan the required code.")
       }
 
       // Check any QR

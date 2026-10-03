@@ -50,7 +50,7 @@ final class StrategyManagerRemoteSessionTests: XCTestCase {
       "activateSession's startTimer() must run on the remote-start path (#204)")
   }
 
-  func testRemoteStartWithDegradedLockStillPublishesTimingActivatesAndCanStop() throws {
+  func testRemoteAdoptionWithDegradedLockCannotOverwriteAuthoritativeState() throws {
     let now = Date()
     let profile = BlockedProfiles(name: "Focus")
     context.insert(profile)
@@ -61,15 +61,12 @@ final class StrategyManagerRemoteSessionTests: XCTestCase {
       context: context, profileId: profile.id, sessionId: UUID(), startTime: now,
       timerEndTime: now.addingTimeInterval(900))
 
-    XCTAssertEqual(manager.activeSession?.blockedProfile.id, profile.id)
-    XCTAssertNotNil(manager.timerTask)
-    XCTAssertNil(manager.errorMessage)
-    XCTAssertEqual(SharedData.getActiveSharedSession()?.timerEndTime, now.addingTimeInterval(900))
-    XCTAssertEqual(appBlocker.calls, [.activate(profileId: profile.id)])
-    manager.stopRemoteSession(context: context, profileId: profile.id)
     XCTAssertNil(manager.activeSession)
     XCTAssertNil(manager.timerTask)
-    XCTAssertTrue(try activeSessions().isEmpty)
+    XCTAssertNotNil(manager.errorMessage)
+    XCTAssertNil(SharedData.getActiveSharedSession())
+    XCTAssertTrue(appBlocker.calls.isEmpty)
+
   }
 
   // Guard: a remote start for a profile needing app selection must NOT activate.
@@ -97,6 +94,7 @@ final class StrategyManagerRemoteSessionTests: XCTestCase {
     let session = BlockedProfileSession(tag: "local", blockedProfile: profile)
     context.insert(session)
     try context.save()
+    SharedData.createActiveSharedSession(for: session.toSnapshot())
     manager.activeSession = session
     manager.startTimer()
     XCTAssertNotNil(manager.timerTask, "precondition: timer running")
