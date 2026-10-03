@@ -223,6 +223,59 @@ final class IndependentScheduleRuntimeTests: XCTestCase {
     XCTAssertEqual(applier.deactivations, 1)
   }
 
+  func testStopEditDoesNotRetroactivelyEndSessionForNewlyEnabledDay() {
+    let now = at(18, day: 5)
+    var profile = profile(stop: .init(days: [.thursday], hour: 17, minute: 0, updatedAt: .distantPast))
+    let session = install(profile, start: at(12, day: 4))
+    profile.stopSchedule = .init(days: [.friday], hour: 17, minute: 0, updatedAt: at(18, day: 4))
+    SharedData.setSnapshot(profile, for: profile.id.uuidString)
+    var cancellations = 0
+    let stop = StopScheduleTimerActivity(applier: applier, cancelTimer: { _, _ in cancellations += 1 })
+    stop.stop(for: profile, now: now, calendar: calendar)
+    XCTAssertEqual(SharedData.getActiveSharedSession(), session)
+    XCTAssertEqual(applier.deactivations, 0)
+    XCTAssertEqual(cancellations, 0)
+    XCTAssertTrue(SharedData.completedSessionsInScheduler.isEmpty)
+    stop.stop(for: profile, now: at(17, day: 11), calendar: calendar)
+    XCTAssertNil(SharedData.getActiveSharedSession(), "The next configured Friday stop remains eligible")
+    XCTAssertEqual(applier.deactivations, 1)
+    XCTAssertEqual(cancellations, 1)
+  }
+
+  func testCompletionRejectsStopOccurrenceBeforeConfigEditUnderOwnershipLock() {
+    let now = at(18, day: 5)
+    var profile = profile()
+    let session = install(profile, start: at(12, day: 3))
+    profile.stopSchedule?.updatedAt = at(18, day: 4)
+    SharedData.setSnapshot(profile, for: profile.id.uuidString)
+    var effects = 0
+    XCTAssertFalse(
+      SharedData.completeSession(
+        expectedSessionId: session.id, now: now, scheduledStopAt: at(17, day: 4),
+        expectedProfileId: profile.id, calendar: calendar, onComplete: { effects += 1 }))
+    XCTAssertEqual(SharedData.getActiveSharedSession(), session)
+    XCTAssertEqual(effects, 0)
+  }
+
+  func testStopConfigCutoffBoundaryPreservesUnchangedLateStops() {
+    let now = at(18, day: 5)
+    let occurrence = at(17, day: 4)
+    for update in [Date.distantPast, occurrence.addingTimeInterval(-1), occurrence, occurrence.addingTimeInterval(1)] {
+      defaults.removePersistentDomain(forName: suiteName)
+      applier.deactivations = 0
+      let profile = profile(stop: .init(days: [.friday], hour: 17, minute: 0, updatedAt: update))
+      let session = install(profile, start: at(12, day: 3))
+      StopScheduleTimerActivity(applier: applier).stop(for: profile, now: now, calendar: calendar)
+      if update <= occurrence {
+        XCTAssertNil(SharedData.getActiveSharedSession(), "An unchanged or boundary-valid missed stop still ends the session")
+        XCTAssertEqual(applier.deactivations, 1)
+      } else {
+        XCTAssertEqual(SharedData.getActiveSharedSession(), session)
+        XCTAssertEqual(applier.deactivations, 0)
+      }
+    }
+  }
+
   func testLateStopDoesNotEndReplacementStartedAfterOccurrence() {
     let now = at(18, day: 5)
     let profile = profile()

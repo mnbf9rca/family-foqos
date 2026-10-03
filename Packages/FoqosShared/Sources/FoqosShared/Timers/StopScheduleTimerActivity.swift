@@ -45,7 +45,7 @@ public class StopScheduleTimerActivity: TimerActivity {
       guard profile.stopConditionsSchedule == true, profile.stopConditions?.schedule == true,
         let stopSchedule = profile.stopSchedule,
         let occurrence = stopSchedule.previousOccurrence(atOrBefore: now, calendar: calendar),
-        activeSession.startTime <= occurrence
+        occurrence >= stopSchedule.updatedAt, activeSession.startTime <= occurrence
       else { return }
       stopOccurrence = occurrence
     } else {

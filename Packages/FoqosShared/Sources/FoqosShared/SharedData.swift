@@ -725,7 +725,8 @@ public enum SharedData {
           scheduledStopAt <= now,
           let profile = profileSnapshots[current.blockedProfileId.uuidString],
           profile.stopConditionsSchedule == true, profile.stopConditions?.schedule == true,
-          profile.stopSchedule?.previousOccurrence(atOrBefore: now, calendar: calendar) == scheduledStopAt
+          let stopSchedule = profile.stopSchedule, scheduledStopAt >= stopSchedule.updatedAt,
+          stopSchedule.previousOccurrence(atOrBefore: now, calendar: calendar) == scheduledStopAt
         else { return false }
       }
       if requireTimerDeadline {
