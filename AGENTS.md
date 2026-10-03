@@ -8,11 +8,14 @@ This always-loaded file is the invariant sheet for agentic work in Family Foqos.
 - V2 start and stop conditions are independent; V1 strategy behaviour must not be reused. Follow the [V2 conditions rulebook](docs/superpowers/specs/2026-10-02-508-v2-conditions-rulebook.md); legacy data conversion does not give V1 behaviour authority over V2.
 - Never amend or force commits. Put every fix in a new signed commit; revert with a new commit when needed.
 - Obtain independent adversarial design review (correctness, over-engineering, missing cases that matter in practice) before implementation and independent code review before every merge. The orchestrator merges; operator and process docs require reviewer approval and green checks, while other PRs require the human’s approval of that specific PR.
-- At fleet startup while the human is present, the orchestrator dispatches `scripts/warm-git-credentials.sh` to every implementation stream; each stream runs it in its clean assigned feature worktree before taking implementation work, and reruns it only if signing or SSH approval expires mid-session while the human is present.
+- Warm each implementation stream’s Git credentials at startup while the human is present; follow [Development Workflow](docs/development-workflow.md#warm-git-credentials) for dispatch, expiry, and AFK rules.
 - The gate supports up to three Xcode/simulator streams when all simulator work uses `scripts/xcode-stream.sh --agent <agent> --session <session>` with stable ownership and UUID destinations only, never device-name destinations; it injects `-parallel-testing-enabled NO` and `-disable-concurrent-destination-testing`.
-- Keep implementation streams on separate feature branches/worktrees with disjoint files. Read-only work does not consume a gate slot and may run concurrently from another working copy.
+- Keep concurrent implementation streams on separate feature branches/worktrees with disjoint files; sequential slices may stack within one stream. Read-only work needs no gate slot.
 
-See [Development Workflow](docs/development-workflow.md) for credential fallback, simulator ownership, command rationale, and complete build/test/format guidance.
+- Agents own simulator UI verification; follow [Development Workflow](docs/development-workflow.md#agent-acceptance-runbooks) for coverage and the single RC device pass.
+- Schema-changing PRs require the post-merge Development import; follow [CloudKit Schema Upgrade](docs/cloudkit-production-schema.md); Production deployment belongs to the human.
+
+See [Development Workflow](docs/development-workflow.md) for credentials, simulator ownership, and build/test/format guidance.
 
 ## Script Safety
 
@@ -26,14 +29,15 @@ See [Development Workflow](docs/development-workflow.md) for credential fallback
 
 - The fleet is one Herdr workspace with agents addressed by name: `orchestrator` (the human's proxy: dispatch, human gates, heartbeat, merges), `planner` (specs and plans only), `build1` and `build2` (implementation in their own worktrees), `reviewer` (design and code review), `auditor` (read-only audits and plan coverage; no repository artifacts).
 - Every agent loads this file at startup; the orchestrator's first prompt names your role; read `docs/multi-agent-coordination.md` for that role's rules before taking work.
-- Message an agent with `herdr agent prompt <name> "<your role>: <text>"` and read its reply with `herdr agent read <name> --source recent-unwrapped --lines N`. Review rounds run directly between planner and reviewer with a one-line notice to the orchestrator at request and at verdict.
+- Use role-prefixed Herdr messages; planner/reviewer review directly and notify the orchestrator at request and verdict, following [Messaging](docs/multi-agent-coordination.md#messaging).
 - Route human gates through the orchestrator: send `<role>: blocked on human gate: <what>` to `orchestrator` and wait.
 - The orchestrator records each human ruling on the relevant GitHub issue when made; every agent requires a recorded ruling before treating existing behaviour in a spec as a deliberate product decision.
 - The orchestrator produces no repository artifacts, verifies claims through its own subagents rather than in its own context, and briefs agents with only the problem, the human's rulings, undiscoverable details, and how to report back.
 - After 30 quiet minutes with in-flight work, the orchestrator checks the agent's Herdr state, has a subagent collect recent output, commit age, dirty files, and CPU delta, then prompts the agent unless it is blocked.
 - Announce every wait for a gate, review, or dependency to the orchestrator when it begins.
+- Research unexplained behavior online early; report source links with local evidence under [Investigation](docs/multi-agent-coordination.md#investigate-unexplained-behavior).
 - A PR reported approved or merge-ready must already be ready for review and must not be a draft.
-- Keep PR prose lean: one short description with a concise test-evidence summary, updated in place, and one reviewer verdict comment per head. Send progress notes, handover packets and long evidence dumps directly to the orchestrator, not as PR comments. This does not restrict using a PR's designed interfaces to work with tools or agents, such as `@greptileai re-review` commands or replies on review threads. Record evidence that must survive temporary files once, briefly, on the relevant issue.
+- Keep PR prose lean; send progress, packets, and long evidence directly to the orchestrator, following [Merge Readiness](docs/multi-agent-coordination.md#report-merge-readiness-literally).
 - Never end with only promised future work; state exactly what remains, and use commit age, dirty files, and CPU delta as evidence, never message recency or Herdr's `agent_status`.
 
 See [Multi-Agent Coordination](docs/multi-agent-coordination.md) for gate examples, heartbeat diagnostics, CPU recipes, and calibrated operator-doc sign-off.
