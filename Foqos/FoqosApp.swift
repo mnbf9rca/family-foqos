@@ -22,8 +22,11 @@ private var isRunningUnitTests: Bool {
 }
 
 /// Redact query and fragment from URL for safe logging (may contain tokens)
-private func redactedURLString(_ url: URL) -> String {
+func redactedURLString(_ url: URL) -> String {
   var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+  if components?.path.hasPrefix("/profile/") == true {
+    components?.path = "/profile/[REDACTED]"
+  }
   if components?.query != nil {
     components?.query = "[REDACTED]"
   }
@@ -176,14 +179,11 @@ struct FoqosApp: App {
         }
         .onOpenURL { url in
           Log.info("onOpenURL triggered with: \(redactedURLString(url))", category: .app)
-          handleURL(url)
+          navigationManager.receiveSwiftUI(url)
         }
         .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { userActivity in
           Log.debug("NSUserActivityTypeBrowsingWeb received", category: .app)
-          guard let url = userActivity.webpageURL else {
-            return
-          }
-          handleURL(url)
+          navigationManager.receiveSwiftUI(userActivity)
         }
         .alert(
           CloudKitManager.familyRevocationAlertTitle,
@@ -691,6 +691,26 @@ extension ChildSharedDataRefreshResult {
 // MARK: - Scene Delegate for CloudKit Share Handling
 
 class SceneDelegate: NSObject, UIWindowSceneDelegate {
+  private let navigation: NavigationManager
+
+  override init() {
+    navigation = .shared
+    super.init()
+  }
+  init(navigation: NavigationManager) {
+    self.navigation = navigation
+    super.init()
+  }
+
+  func receiveConnection(activities: [NSUserActivity], urls: [URL]) {
+    navigation.registerSceneOwnership()
+    for activity in activities { receiveActivity(activity) }
+    for url in urls { receiveURL(url) }
+  }
+
+  func receiveActivity(_ activity: NSUserActivity) { handleUserActivity(activity) }
+  func receiveURL(_ url: URL) { navigation.handleLink(url) }
+
   /// Called when app launches fresh with the share
   func scene(_: UIScene, willConnectTo _: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
     Log.debug("willConnectTo", category: .app)
@@ -701,28 +721,19 @@ class SceneDelegate: NSObject, UIWindowSceneDelegate {
       acceptCloudKitShare(metadata)
     }
 
-    // Check user activities
-    for activity in connectionOptions.userActivities {
-      Log.debug("Found activity: \(activity.activityType)", category: .app)
-      handleUserActivity(activity)
-    }
-
-    // Check URL contexts
-    for urlContext in connectionOptions.urlContexts {
-      Log.debug("Found URL: \(redactedURLString(urlContext.url))", category: .app)
-    }
+    receiveConnection(activities: Array(connectionOptions.userActivities), urls: connectionOptions.urlContexts.map { $0.url })
   }
 
   /// Called when app is already running and receives a user activity
   func scene(_: UIScene, continue userActivity: NSUserActivity) {
     Log.debug("continue userActivity - \(userActivity.activityType)", category: .app)
-    handleUserActivity(userActivity)
+    receiveActivity(userActivity)
   }
 
   /// Called when app is already running and receives URLs
   func scene(_: UIScene, openURLContexts urlContexts: Set<UIOpenURLContext>) {
     for context in urlContexts {
-      Log.debug("openURLContexts - \(redactedURLString(context.url))", category: .app)
+      receiveURL(context.url)
     }
   }
 
@@ -745,10 +756,7 @@ class SceneDelegate: NSObject, UIWindowSceneDelegate {
       return
     }
 
-    // Log all userInfo keys for debugging
-    if let userInfo = activity.userInfo {
-      Log.debug("userInfo keys: \(userInfo.keys)", category: .app)
-    }
+    if activity.activityType == NSUserActivityTypeBrowsingWeb { navigation.handleActivity(activity) }
   }
 }
 

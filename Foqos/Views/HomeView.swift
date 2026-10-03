@@ -277,10 +277,13 @@ struct HomeView: View {
       maxHeight: .infinity,
       alignment: .topLeading
     )
-    .onChange(of: navigationManager.profileId) { _, newValue in
-      if let profileId = newValue, let url = navigationManager.link {
-        toggleSessionFromDeeplink(profileId, link: url)
-        navigationManager.clearNavigation()
+    .onChange(of: navigationManager.deliveries) { _, _ in
+      receiveQueuedLinks()
+    }
+    .onChange(of: navigationManager.deliveryError) { _, message in
+      if let message {
+        strategyManager.errorMessage = message
+        navigationManager.deliveryError = nil
       }
     }
     .onChange(of: navigationManager.navigateToProfileId) { _, newValue in
@@ -505,6 +508,15 @@ struct HomeView: View {
     }
   }
 
+  private func receiveQueuedLinks() {
+    // Verified events remain queued until the shared tag dispatcher consumes them.
+    guard let delivery = navigationManager.deliveries.first,
+      case .link(let id) = delivery
+    else { return }
+    _ = navigationManager.takeDelivery()
+    toggleSessionFromDeeplink(id.uuidString, link: URL(string: "https://family-foqos.app/profile/\(id.uuidString)")!)
+  }
+
   private func toggleSessionFromDeeplink(_ profileId: String, link: URL) {
     Task { @MainActor in
       await strategyManager
@@ -657,6 +669,7 @@ struct HomeView: View {
 
   private func onAppearApp() {
     loadApp()
+    receiveQueuedLinks()
     #if DEBUG
       if ScreenshotDemoMode.scenario == .profileEditor {
         profileToEdit = profiles.valid.first { $0.name == "Deep Focus" }

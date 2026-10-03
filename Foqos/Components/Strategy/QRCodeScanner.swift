@@ -3,11 +3,25 @@ import CodeScanner
 import SwiftUI
 import UIKit
 
+struct QRScanResult: Equatable, Sendable {
+  let hash: String
+  let rawHash: String
+  var event: TagEvent? = nil
+
+  static func read(_ text: String) throws -> QRScanResult {
+    let hash = QRCodeHasher.hash(text)
+    let rawHash = QRCodeHasher.rawHash(text)
+    let url = URL(string: text.trimmingCharacters(in: .whitespacesAndNewlines))
+    let event = try ProfileTagLink.scannedEvent(type: .qr, urls: url.map { [$0] } ?? [], legacyKey: hash, rawKey: rawHash)
+    return QRScanResult(hash: hash, rawHash: rawHash, event: event)
+  }
+}
+
 struct LabeledCodeScannerView: View {
   let heading: String
   let subtitle: String
   let simulatedData: String?
-  let onScanResult: (Result<(hash: String, rawHash: String), ScanError>) -> Void
+  let onScanResult: (Result<QRScanResult, Error>) -> Void
 
   @State private var camera =
     AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back)
@@ -22,7 +36,7 @@ struct LabeledCodeScannerView: View {
     heading: String,
     subtitle: String,
     simulatedData: String? = nil,
-    onScanResult: @escaping (Result<(hash: String, rawHash: String), ScanError>) -> Void
+    onScanResult: @escaping (Result<QRScanResult, Error>) -> Void
   ) {
     self.heading = heading
     self.subtitle = subtitle
@@ -187,10 +201,10 @@ struct LabeledCodeScannerView: View {
       isShowingScanner = false
       errorMessage = nil
       scanError = nil
-      // Keep both digests so existing tags match the untouched original payload.
-      // V1 profiles with active QR sessions store plaintext physicalUnblockQRCodeId;
-      // those sessions will mismatch until ended (Emergency Unblock) and migrated to V2.
-      onScanResult(.success((hash: QRCodeHasher.hash(scanResult.string), rawHash: QRCodeHasher.rawHash(scanResult.string))))
+      do { onScanResult(.success(try QRScanResult.read(scanResult.string))) } catch {
+        errorMessage = error.localizedDescription
+        onScanResult(.failure(error))
+      }
     case .failure(let error):
       if case ScanError.permissionDenied = error {
         isShowingScanner = false

@@ -1,9 +1,17 @@
 @preconcurrency import CoreNFC  // NFCTagReaderSession, NFCNDEFReaderSession, tag types lack Sendable
 import SwiftUI
 
-struct NFCResult: Equatable {
+struct NFCResult: Equatable, Sendable {
   var id: String
   var dateScanned: Date
+  var event: TagEvent? = nil
+
+  static func read(id: String, message: NFCNDEFMessage?, error: Error?, now: Date) throws -> NFCResult {
+    guard error == nil else { throw ProfileTagLink.Failure.read(.nfc) }
+    return NFCResult(
+      id: id, dateScanned: now,
+      event: try ProfileTagLink.scannedEvent(type: .nfc, urls: ProfileTagLink.uriURLs(message), legacyKey: id))
+  }
 }
 
 @MainActor
@@ -153,10 +161,10 @@ extension NFCScannerUtil: NFCTagReaderSessionDelegate {
         case .readerSessionInvalidationErrorUserCanceled:
           break  // User dismissed the NFC sheet without scanning
         default:
-          self.onError?(readerError.localizedDescription)
+          self.onError?(ProfileTagLink.Failure.read(.nfc).localizedDescription)
         }
       } else {
-        self.onError?(error.localizedDescription)
+        self.onError?(ProfileTagLink.Failure.read(.nfc).localizedDescription)
       }
     }
   }
@@ -187,48 +195,37 @@ extension NFCScannerUtil: NFCTagReaderSessionDelegate {
   // MARK: - NFC Read Operations (nonisolated - all work happens on CoreNFC's queue)
 
   nonisolated private func readMiFareTag(_ tagBox: ScannerMiFareTagBox, sessionBox: ScannerSessionBox) {
-    let tagIdentifier = tagBox.identifier.hexEncodedString()
-    let redactedTagIdentifier = DebugRedaction.physicalUnblockNFCTagIdForLog(tagIdentifier)
-    tagBox.readNDEF { (message: NFCNDEFMessage?, error: Error?) in
-      if error != nil || message == nil {
-        if let error = error {
-          Log.info("⚠️ NDEF read failed (non-critical): \(error.localizedDescription). using tag id: \(redactedTagIdentifier)", category: .nfc)
-        }
-
-        // Still use the identifier - works for all tag types
-        self.completeTagScan(id: tagIdentifier, sessionBox: sessionBox)
-        return
-      }
-
-      self.completeTagScan(id: tagIdentifier, sessionBox: sessionBox)
+    let id = tagBox.identifier.hexEncodedString()
+    tagBox.readNDEF { message, error in
+      self.completeTagRead(id: id, message: message, error: error, sessionBox: sessionBox)
     }
   }
 
   nonisolated private func readISO15693Tag(_ tagBox: ScannerISO15693TagBox, sessionBox: ScannerSessionBox) {
-    let tagIdentifier = tagBox.identifier.hexEncodedString()
-    let redactedTagIdentifier = DebugRedaction.physicalUnblockNFCTagIdForLog(tagIdentifier)
-    tagBox.readNDEF { (message: NFCNDEFMessage?, error: Error?) in
-      if error != nil || message == nil {
-        if let error = error {
-          Log.info("⚠️ ISO15693 NDEF read failed (non-critical): \(error.localizedDescription). using tag id: \(redactedTagIdentifier)", category: .nfc)
-        }
+    let id = tagBox.identifier.hexEncodedString()
+    tagBox.readNDEF { message, error in
+      self.completeTagRead(id: id, message: message, error: error, sessionBox: sessionBox)
+    }
+  }
 
-        self.completeTagScan(id: tagIdentifier, sessionBox: sessionBox)
-        return
+  nonisolated private func completeTagRead(id: String, message: NFCNDEFMessage?, error: Error?, sessionBox: ScannerSessionBox) {
+    do {
+      let result = try NFCResult.read(id: id, message: message, error: error, now: Date())
+      Task { @MainActor in
+        self.scanCompleted = true
+        self.onTagScanned?(result)
       }
-
-      self.completeTagScan(id: tagIdentifier, sessionBox: sessionBox)
+      sessionBox.invalidate()
+    } catch {
+      let message = error.localizedDescription
+      Task { @MainActor in
+        self.scanCompleted = true
+        self.onError?(message)
+      }
+      sessionBox.invalidate(errorMessage: message)
     }
   }
 
-  nonisolated private func completeTagScan(id: String, sessionBox: ScannerSessionBox) {
-    let result = NFCResult(id: id, dateScanned: Date())
-    Task { @MainActor in
-      self.scanCompleted = true
-      self.onTagScanned?(result)
-    }
-    sessionBox.invalidate()
-  }
 }
 
 // MARK: - NFCNDEFReaderSessionDelegate (NDEF Writing Support)

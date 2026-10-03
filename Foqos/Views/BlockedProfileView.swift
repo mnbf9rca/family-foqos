@@ -380,7 +380,7 @@ struct BlockedProfileView: View {
             },
             onScanNFCTag: {
               nfcScanner.onTagScanned = { tag in
-                registerTag(id: tag.id, kind: "nfc", selectedIds: $triggerConfig.startNFCTagIds)
+                registerTag(id: tag.event?.matchingKey ?? tag.id, kind: "nfc", selectedIds: $triggerConfig.startNFCTagIds)
               }
               nfcScanner.onError = { error in
                 alertIdentifier = AlertIdentifier(id: .error, errorMessage: error)
@@ -421,7 +421,7 @@ struct BlockedProfileView: View {
             },
             onScanNFCTag: {
               nfcScanner.onTagScanned = { tag in
-                registerTag(id: tag.id, kind: "nfc", selectedIds: $triggerConfig.stopNFCTagIds)
+                registerTag(id: tag.event?.matchingKey ?? tag.id, kind: "nfc", selectedIds: $triggerConfig.stopNFCTagIds)
               }
               nfcScanner.onError = { error in
                 alertIdentifier = AlertIdentifier(id: .error, errorMessage: error)
