@@ -394,7 +394,6 @@ public enum SharedData {
       }
     }
     public var timerEndTime: Date?
-    public var sequenceNumber: Int?
     public var usesCanonicalIdentity: Bool?
     public var origin: SessionOrigin?
 
@@ -428,8 +427,7 @@ public enum SharedData {
       oneMoreMinuteDeadline: Date? = nil,
       pinnedProfileConfig: ProfileSnapshot? = nil,
       origin: SessionOrigin? = nil,
-      usesCanonicalIdentity: Bool? = nil,
-      sequenceNumber: Int? = nil
+      usesCanonicalIdentity: Bool? = nil
     ) {
       self.id = id
       self.tag = tag
@@ -445,12 +443,11 @@ public enum SharedData {
       self.breakEndDeadline = breakEndDeadline
       self.oneMoreMinuteDeadline = oneMoreMinuteDeadline
       self.pinnedProfileConfig = pinnedProfileConfig
-      self.sequenceNumber = sequenceNumber
       self.usesCanonicalIdentity = usesCanonicalIdentity ?? (origin != nil ? true : nil)
       self.origin = endTime == nil ? origin : nil
     }
     private enum CodingKeys: String, CodingKey {
-      case sequenceNumber, usesCanonicalIdentity, id, tag, blockedProfileId, startTime, endTime, timerEndTime, breakStartTime, breakEndTime, forceStarted, oneMoreMinuteUsed, oneMoreMinuteStartTime, breakEndDeadline, oneMoreMinuteDeadline, pinnedProfileConfig, origin
+      case usesCanonicalIdentity, id, tag, blockedProfileId, startTime, endTime, timerEndTime, breakStartTime, breakEndTime, forceStarted, oneMoreMinuteUsed, oneMoreMinuteStartTime, breakEndDeadline, oneMoreMinuteDeadline, pinnedProfileConfig, origin
     }
     public init(from decoder: Decoder) throws {
       let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -468,7 +465,6 @@ public enum SharedData {
       self.breakEndDeadline = try values.decodeIfPresent(Date.self, forKey: .breakEndDeadline)
       self.oneMoreMinuteDeadline = try values.decodeIfPresent(Date.self, forKey: .oneMoreMinuteDeadline)
       self.pinnedProfileConfig = try values.decodeIfPresent(ProfileSnapshot.self, forKey: .pinnedProfileConfig)
-      self.sequenceNumber = try values.decodeIfPresent(Int.self, forKey: .sequenceNumber)
       self.usesCanonicalIdentity = try values.decodeIfPresent(Bool.self, forKey: .usesCanonicalIdentity)
       self.origin = try? values.decode(SessionOrigin.self, forKey: .origin)
       if endTime != nil {
@@ -644,11 +640,16 @@ public enum SharedData {
   @discardableResult
   public static func completeSession(
     expectedSessionId: String, now: Date, requireTimerDeadline: Bool = false,
+    localSession: SessionSnapshot? = nil, allowUndecodableStore: Bool = false,
     onComplete: () -> Void = {}
   ) -> Bool {
     withLockStatus(blocking: true) { outcome in
-      guard outcome == .acquired, let checked = checkedActiveSession(),
-        var current = checked, current.id == expectedSessionId, current.endTime == nil,
+      guard outcome == .acquired else { return false }
+      let checked = checkedActiveSession()
+      guard checked != nil || allowUndecodableStore else { return false }
+      let live = checked.flatMap { $0 }.flatMap { $0.endTime == nil ? $0 : nil }
+      guard var current = live ?? localSession,
+        current.id == expectedSessionId, current.endTime == nil,
         var completed = checkedCompletedSessions()
       else { return false }
       if requireTimerDeadline {
@@ -657,12 +658,16 @@ public enum SharedData {
       let scheduled = current.origin?.kind == .schedule
       current.endTime = now
       completed.append(normalizedForEnd(current))
-      var profiles = profileSnapshots
-      if scheduled, var profile = profiles[current.blockedProfileId.uuidString] {
-        profile.scheduleLastStoppedAt = now
-        profiles[current.blockedProfileId.uuidString] = profile
+      var updatedProfiles: [String: ProfileSnapshot]?
+      if scheduled {
+        var profiles = profileSnapshots
+        if var profile = profiles[current.blockedProfileId.uuidString] {
+          profile.scheduleLastStoppedAt = now
+          profiles[current.blockedProfileId.uuidString] = profile
+          updatedProfiles = profiles
+        }
       }
-      guard commitSessionTransition(nil, completed: completed, profiles: scheduled ? profiles : nil) else { return false }
+      guard commitSessionTransition(nil, completed: completed, profiles: updatedProfiles) else { return false }
       onComplete()
       return true
     }
@@ -685,18 +690,6 @@ public enum SharedData {
       guard commitSessionTransition(candidate, completed: completed) else { return false }
       onAdopt()
       return true
-    }
-  }
-
-  @discardableResult
-  public static func updateSessionSequence(expectedSessionId: String, sequenceNumber: Int) -> Bool {
-    withLockStatus(blocking: true) { outcome in
-      guard outcome == .acquired, let checked = checkedActiveSession(), var current = checked,
-        current.id == expectedSessionId, current.endTime == nil,
-        sequenceNumber >= (current.sequenceNumber ?? 0), let completed = checkedCompletedSessions()
-      else { return false }
-      current.sequenceNumber = sequenceNumber
-      return commitSessionTransition(current, completed: completed)
     }
   }
 

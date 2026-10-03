@@ -110,8 +110,8 @@ final class StrategyManagerReconcileTests: XCTestCase {
     XCTAssertNotNil(session.endTime, "a matching-identity Stop ends the session")
   }
 
-  // A V2 stop requires the exact authoritative session, including when the store is idle.
-  func testGivenNoSharedSession_WhenToggleStop_ThenV2SessionIsPreserved() throws {
+  // An idle shared store must not make a local session impossible to stop.
+  func testGivenNoSharedSession_WhenToggleStop_ThenLocalSessionEnds() throws {
     let profile = BlockedProfiles(name: "Focus")
     context.insert(profile)
     let session = BlockedProfileSession(tag: "manual", blockedProfile: profile)
@@ -122,7 +122,8 @@ final class StrategyManagerReconcileTests: XCTestCase {
 
     manager.toggleBlocking(context: context, activeProfile: profile)
 
-    XCTAssertNil(session.endTime)
-    XCTAssertEqual(manager.errorMessage, "This session changed. Please try again.")
+    XCTAssertNotNil(session.endTime)
+    XCTAssertNil(manager.activeSession)
+    XCTAssertNil(manager.errorMessage)
   }
 }

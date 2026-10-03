@@ -18,7 +18,6 @@ class BlockedProfileSession: BreakDurationCalculable {
   var origin: SessionOrigin? {
     get { sessionOriginData.flatMap { try? JSONDecoder().decode(SessionOrigin.self, from: $0) } }
     set {
-      if newValue != nil { usesCanonicalIdentity = true }
       sessionOriginData = newValue.flatMap { try? JSONEncoder().encode($0) }
     }
   }
@@ -145,7 +144,7 @@ class BlockedProfileSession: BreakDurationCalculable {
       pinnedProfileConfig: pinnedProfileConfigData.flatMap {
         try? JSONDecoder().decode(SharedData.ProfileSnapshot.self, from: $0)
       },
-      origin: endTime == nil ? origin : nil, usesCanonicalIdentity: usesCanonicalIdentity, sequenceNumber: sessionSequence
+      origin: endTime == nil ? origin : nil, usesCanonicalIdentity: usesCanonicalIdentity
     )
   }
 
@@ -199,7 +198,6 @@ class BlockedProfileSession: BreakDurationCalculable {
 
     // Try to find an existing session by id
     if let existingSession = try? findSession(byID: snapshot.id, in: context) {
-      existingSession.sessionSequence = snapshot.sequenceNumber ?? existingSession.sessionSequence
       existingSession.usesCanonicalIdentity = snapshot.usesCanonicalIdentity
       existingSession.origin = snapshot.origin
       existingSession.tag = snapshot.tag
@@ -235,7 +233,6 @@ class BlockedProfileSession: BreakDurationCalculable {
       forceStarted: snapshot.forceStarted
     )
     // Override auto-generated values with snapshot-provided ones
-    newSession.sessionSequence = snapshot.sequenceNumber
     newSession.usesCanonicalIdentity = snapshot.usesCanonicalIdentity
     newSession.origin = snapshot.origin
     newSession.id = snapshot.id

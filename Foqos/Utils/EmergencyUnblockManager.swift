@@ -7,6 +7,7 @@ import WidgetKit
 /// Covers all failure modes: no unblocks remaining, no active session, and geofence restrictions.
 enum EmergencyUnblockError: LocalizedError {
   case noUnblocksRemaining
+  case sessionChanged
   case noActiveSession
   case locationPermissionNeeded
   case locationPermissionDenied
@@ -17,6 +18,8 @@ enum EmergencyUnblockError: LocalizedError {
     switch self {
     case .noUnblocksRemaining:
       return "No emergency unblocks remaining."
+    case .sessionChanged:
+      return "This session changed. Please try again."
     case .noActiveSession:
       return "No active session to unblock."
     case .locationPermissionNeeded:
@@ -341,7 +344,7 @@ class EmergencyUnblockManager: ObservableObject {
   func emergencyUnblock(
     context: ModelContext,
     activeSession: BlockedProfileSession?,
-    onUnblock: @escaping (ModelContext, BlockedProfileSession) -> Void,
+    onUnblock: @escaping (ModelContext, BlockedProfileSession) -> Bool,
     now: Date = Date()
   ) async throws(EmergencyUnblockError) {
     guard getRemainingEmergencyUnblocks() > 0 else {
@@ -362,17 +365,17 @@ class EmergencyUnblockManager: ObservableObject {
       )
     }
 
-    performEmergencyUnblock(context: context, session: activeSession, onUnblock: onUnblock, now: now)
+    try performEmergencyUnblock(context: context, session: activeSession, onUnblock: onUnblock, now: now)
   }
 
   /// Actually perform the emergency unblock (called after all checks pass)
   private func performEmergencyUnblock(
     context: ModelContext,
     session: BlockedProfileSession,
-    onUnblock: @escaping (ModelContext, BlockedProfileSession) -> Void,
+    onUnblock: @escaping (ModelContext, BlockedProfileSession) -> Bool,
     now: Date = Date()
-  ) {
-    onUnblock(context, session)
+  ) throws(EmergencyUnblockError) {
+    guard onUnblock(context, session) else { throw .sessionChanged }
 
     recordAndEnqueueUnblock(now: now)
 

@@ -4,7 +4,14 @@ import Foundation
 public class StrategyTimerActivity: TimerActivity {
   public static let id = "StrategyTimerActivity"
   private let appBlocker: RestrictionApplying
-  public init(applier: RestrictionApplying = AppBlockerUtil()) { appBlocker = applier }
+  private let cancelTimer: (UUID, String) -> Void
+  public init(
+    applier: RestrictionApplying = AppBlockerUtil(),
+    cancelTimer: @escaping (UUID, String) -> Void = StrategyTimerActivity.cancel
+  ) {
+    appBlocker = applier
+    self.cancelTimer = cancelTimer
+  }
 
   public func getDeviceActivityName(from profileId: String) -> DeviceActivityName {
     .init("\(Self.id):\(profileId)")
@@ -23,7 +30,7 @@ public class StrategyTimerActivity: TimerActivity {
     guard (DeviceActivityLimits.minimumIntervalMinutes...DeviceActivityLimits.maximumTimerMinutes).contains(minutes),
       let deadline = calendar.dateInterval(of: .minute, for: now.addingTimeInterval(Double(minutes) * 60))?.start
     else { throw NSError(domain: "StrategyTimer", code: 1, userInfo: [NSLocalizedDescriptionKey: "Choose a timer from 15 minutes to 23 hours 59 minutes."]) }
-    return (calendar.dateComponents([.hour, .minute], from: now), calendar.dateComponents([.hour, .minute], from: deadline), deadline)
+    return (calendar.dateComponents([.calendar, .timeZone, .year, .month, .day, .hour, .minute], from: now), calendar.dateComponents([.calendar, .timeZone, .year, .month, .day, .hour, .minute], from: deadline), deadline)
   }
   public static func register(profileId: UUID, sessionId: String, minutes: Int, now: Date) throws -> Date {
     guard UUID(uuidString: sessionId) != nil else { throw NSError(domain: "StrategyTimer", code: 2) }
@@ -38,14 +45,21 @@ public class StrategyTimerActivity: TimerActivity {
   public func getAllStrategyTimerActivities(from activities: [DeviceActivityName]) -> [DeviceActivityName] {
     activities.filter { $0.rawValue.hasPrefix(Self.id + ":") }
   }
-  // Interval starts are deliberately inert: originating admission establishes restrictions.
-  public func start(for profile: SharedData.ProfileSnapshot) {}
+  // New per-session starts are inert; two-part legacy timers still establish V1 restrictions.
+  public func start(for profile: SharedData.ProfileSnapshot) {
+    guard (profile.profileSchemaVersion ?? 1) < 2,
+      let active = SharedData.getActiveSharedSession(), active.blockedProfileId == profile.id,
+      active.origin == nil
+    else { return }
+    appBlocker.activateRestrictions(for: profile)
+  }
 
   @discardableResult
   public func stop(for profile: SharedData.ProfileSnapshot, sessionId: String, now: Date) -> Bool {
     guard let active = SharedData.getActiveSharedSession(), active.blockedProfileId == profile.id else { return false }
     return SharedData.completeSession(expectedSessionId: sessionId, now: now, requireTimerDeadline: true) {
       self.appBlocker.deactivateRestrictions()
+      self.cancelTimer(profile.id, sessionId)
     }
   }
   public func stop(for profile: SharedData.ProfileSnapshot) {

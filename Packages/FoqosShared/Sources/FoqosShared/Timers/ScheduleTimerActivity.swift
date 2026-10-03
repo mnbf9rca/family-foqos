@@ -59,6 +59,7 @@ public class ScheduleTimerActivity: TimerActivity {
     let isV2 = (profile.profileSchemaVersion ?? 1) >= 2
     if isV2 {
       if let rejection = ProfileConditionValidation.startRejection(for: profile, origin: .init(kind: .schedule)) {
+        // The privacy analyzer requires literal log messages.
         switch rejection {
         case "Please edit this profile before starting. Its start and stop settings need updating.": Log.warning("Please edit this profile before starting. Its start and stop settings need updating.", category: .timer)
         case "This profile isn’t set to start this way. Please edit its start settings.": Log.warning("This profile isn’t set to start this way. Please edit its start settings.", category: .timer)
@@ -167,7 +168,13 @@ public class ScheduleTimerActivity: TimerActivity {
         Log.warning("Couldn’t start this profile. Please try again.", category: .timer)
         return
       }
-      if let existingSession { cancelTimer(existingSession.blockedProfileId, existingSession.id) }
+      if let existingSession {
+        if (SharedData.snapshot(for: existingSession.blockedProfileId.uuidString)?.profileSchemaVersion ?? 1) < 2 {
+          DeviceActivityCenter().stopMonitoring([StrategyTimerActivity().getDeviceActivityName(from: existingSession.blockedProfileId.uuidString)])
+        } else {
+          cancelTimer(existingSession.blockedProfileId, existingSession.id)
+        }
+      }
       cancelReminders(profile.id)
       return
     }

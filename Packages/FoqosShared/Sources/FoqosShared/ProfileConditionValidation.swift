@@ -2,6 +2,19 @@ import Foundation
 
 /// Validates complete settings without rewriting the user's selections.
 public enum ProfileConditionValidation {
+  public static func settingsAreReadable(
+    start: ProfileStartTriggers?, stop: ProfileStopConditions?,
+    startScheduleData: Data?, stopScheduleData: Data?
+  ) -> Bool {
+    start != nil && stop != nil
+      && (startScheduleData == nil || startScheduleData.flatMap { try? JSONDecoder().decode(ProfileScheduleTime.self, from: $0) } != nil)
+      && (stopScheduleData == nil || stopScheduleData.flatMap { try? JSONDecoder().decode(ProfileScheduleTime.self, from: $0) } != nil)
+  }
+
+  public static func persistedKeys(schemaVersion: Int, list: [String], scalar: String?) -> [String] {
+    schemaVersion == 2 ? scalar.map { [$0] } ?? [] : list
+  }
+
   public static func configurationErrors(
     start: ProfileStartTriggers,
     stop: ProfileStopConditions,

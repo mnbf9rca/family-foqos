@@ -595,6 +595,7 @@ class BlockedProfiles {
     let cancelSessionAndBreakReminders: (UUID) -> Void
     let removeBreakBackstop: (UUID) -> Void
     let removeOneMoreMinuteBackstop: (UUID) -> Void
+    var cancelStrategyTimer: (UUID, String) -> Void = DeviceActivityCenterUtil.removeStrategyTimerActivity
   }
 
   private static func defaultDeleteCleanup() -> DeleteCleanup {
@@ -620,6 +621,8 @@ class BlockedProfiles {
     // First end any active sessions
     for session in profile.sessions {
       if session.endTime == nil {
+        cleanup.cancelStrategyTimer(profile.id, session.id)
+        if profile.profileSchemaVersion < 2 { DeviceActivityCenterUtil.removeStrategyTimerActivity(profileId: profile.id) }
         session.endSession()
       }
     }
@@ -663,11 +666,11 @@ class BlockedProfiles {
     let start = profile.startTriggersData.flatMap { try? JSONDecoder().decode(ProfileStartTriggers.self, from: $0) }
     let stop = profile.stopConditionsData.flatMap { try? JSONDecoder().decode(ProfileStopConditions.self, from: $0) }
     let readable =
-      !profile.isNewerSchemaVersion && start != nil && stop != nil
-      && (profile.startScheduleData == nil || profile.startSchedule != nil)
-      && (profile.stopScheduleData == nil || profile.stopSchedule != nil)
+      !profile.isNewerSchemaVersion
+      && ProfileConditionValidation.settingsAreReadable(
+        start: start, stop: stop, startScheduleData: profile.startScheduleData, stopScheduleData: profile.stopScheduleData)
     func keys(_ list: [String], _ scalar: String?) -> [String] {
-      profile.profileSchemaVersion == 2 ? scalar.map { [$0] } ?? [] : list
+      ProfileConditionValidation.persistedKeys(schemaVersion: profile.profileSchemaVersion, list: list, scalar: scalar)
     }
     return SharedData.ProfileSnapshot(
       id: profile.id,
