@@ -1,3 +1,4 @@
+import SwiftData
 import SwiftUI
 
 @MainActor
@@ -46,6 +47,16 @@ class NavigationManager: ObservableObject {
 
   func takeDelivery() -> ProfileTagLink.Delivery? {
     deliveries.isEmpty ? nil : deliveries.removeFirst()
+  }
+
+  private var dispatching = false
+  func dispatchQueued(using manager: StrategyManager, context: ModelContext, ready: Bool, now: Date = Date()) async {
+    guard ready, !dispatching else { return }
+    dispatching = true
+    defer { dispatching = false }
+    while let delivery = takeDelivery() {
+      await manager.handleDelivery(delivery, context: context, now: now)
+    }
   }
 
   func clearNavigation() { navigateToProfileId = nil }

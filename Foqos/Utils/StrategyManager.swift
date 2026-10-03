@@ -85,13 +85,13 @@ class StrategyManager: ObservableObject {
   /// A V2 originating start registers its countdown before constructing any session.
   func startOriginatingSession(
     context: ModelContext, profile: BlockedProfiles, origin: SessionOrigin,
-    durationOverrideMinutes: Int? = nil, now: Date = Date(), expectedVictimId: String? = nil
+    durationOverrideMinutes: Int? = nil, now: Date = Date(), expectedVictimId: String? = nil, allowLinkForTag: Bool = false
   ) throws -> BlockedProfileSession {
     let snapshot = BlockedProfiles.getSnapshot(for: profile)
     func refusal(_ message: String) -> NSError {
       NSError(domain: "ProfileStart", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
     }
-    if let message = ProfileConditionValidation.startRejection(for: snapshot, origin: origin) {
+    if let message = ProfileConditionValidation.startRejection(for: snapshot, origin: origin, allowLinkForTag: allowLinkForTag) {
       throw refusal(message)
     }
     guard !profile.needsAppSelection else { throw refusal(needsAppSelectionMessage(for: profile)) }
@@ -120,7 +120,7 @@ class StrategyManager: ObservableObject {
       BlockedProfiles.updateSnapshot(for: profile)
       guard
         SharedData.commitOriginatingSession(
-          candidate.toSnapshot(), expectedVictimId: expectedVictimId, now: now,
+          candidate.toSnapshot(), expectedVictimId: expectedVictimId, now: now, allowLinkForTag: allowLinkForTag,
           onCommit: {
             self.appBlocker.activateRestrictions(for: snapshot)
           })
@@ -520,123 +520,226 @@ class StrategyManager: ObservableObject {
     errorMessage = "One more minute ended early — it couldn't be scheduled in the background."
   }
 
-  func toggleSessionFromDeeplink(
-    _ profileId: String,
-    url: URL,
-    context: ModelContext
-  ) async {
-    guard let profileUUID = UUID(uuidString: profileId) else {
-      self.errorMessage = "This tag doesn't contain a valid profile link"
+  enum TagOperation {
+    case scan
+    case explicitStart(UUID)
+    case confirmSwitch
+  }
+  struct PendingTagSwitch: Equatable {
+    let operationId: UUID
+    let victimId: String
+    let targetProfileId: UUID?
+    let event: TagEvent
+    let requiredType: TagType
+  }
+  @Published private(set) var pendingTagSwitch: PendingTagSwitch?
+  @Published var showTagConfirmation = false
+  @Published private(set) var tagScanError: String?
+  private var tagOperationId: UUID?
+
+  func cancelTagOperation() {
+    tagOperationId = nil
+    pendingTagSwitch = nil
+    showTagConfirmation = false
+    tagScanError = nil
+  }
+
+  func handleDelivery(_ delivery: ProfileTagLink.Delivery, context: ModelContext, now: Date = Date()) async {
+    switch delivery {
+    case .tag(let event): await handleTagEvent(event, operation: .scan, context: context, now: now)
+    case .link(let id):
+      await toggleSessionFromDeeplink(id.uuidString, url: URL(string: "https://family-foqos.app/profile/\(id.uuidString)")!, context: context)
+    }
+  }
+
+  func toggleSessionFromDeeplink(_ profileId: String, url: URL, context: ModelContext) async {
+    cancelTagOperation()
+    let parsed: ParsedProfileLink
+    do { parsed = try ProfileTagLink.parse(url) } catch {
+      errorMessage = ProfileTagLink.Failure.invalidLink.localizedDescription
       return
     }
-
+    guard UUID(uuidString: profileId) == parsed.profileId else {
+      errorMessage = ProfileTagLink.Failure.invalidLink.localizedDescription
+      return
+    }
     do {
-      guard
-        let profile: BlockedProfiles = try BlockedProfiles.findProfile(
-          byID: profileUUID,
-          in: context
-        )
-      else {
-        self.errorMessage =
-          "No matching profile found on this device. The profile may have been deleted or this tag belongs to a different device."
+      guard let profile = try BlockedProfiles.findProfile(byID: parsed.profileId, in: context) else {
+        errorMessage = "No matching profile found on this device. The profile may have been deleted or this tag belongs to a different device."
         return
       }
-
-      let manualStrategy = getStrategy(id: ManualBlockingStrategy.id)
-
-      let activeSession = try getActiveSession(context: context)
-
-      if let localActiveSession = activeSession {
-        if localActiveSession.blockedProfile.profileSchemaVersion < 2,
-          localActiveSession.blockedProfile.disableBackgroundStops
-        {
-          Log.info(
-            "profile: \(localActiveSession.blockedProfile.name) has disable background stops enabled, not stopping it",
-            category: .strategy)
-          self.errorMessage =
-            "profile: \(localActiveSession.blockedProfile.name) has disable background stops enabled, not stopping it"
-          return
-        }
-
-        // When switching profiles, validate the new profile's start trigger
-        // BEFORE stopping the current session to avoid leaving the user with
-        // no active session if the new profile isn't configured for deep links
-        let isSwitching = localActiveSession.blockedProfile.id != profile.id
-        if isSwitching {
-          if let rejection = ProfileConditionValidation.startRejection(for: BlockedProfiles.getSnapshot(for: profile), origin: .init(kind: .link)) {
-            self.errorMessage = rejection
-            return
-          }
-          guard !profile.needsAppSelection else {
-            self.errorMessage = needsAppSelectionMessage(for: profile)
-            return
-          }
-        }
-
-        let stopResult = StartStopActionResolver.canStop(
-          with: .deepLink,
-          conditions: localActiveSession.blockedProfile.stopConditions,
-          sessionTag: localActiveSession.tag,
-          stopNFCTagIds: localActiveSession.blockedProfile.stopNFCTagIds,
-          stopQRCodeIds: localActiveSession.blockedProfile.stopQRCodeIds, sessionOrigin: localActiveSession.origin, legacySession: localActiveSession.blockedProfile.profileSchemaVersion < 2
-        )
-        guard stopResult.allowed else {
-          self.errorMessage =
-            stopResult.errorMessage
-            ?? "\(localActiveSession.blockedProfile.name) cannot be stopped via written NFC or printed QR"
-          return
-        }
-
-        // Check geofence rule — in foreground, handle permissions with user-facing messages
-        if let geofenceRule = localActiveSession.blockedProfile.geofenceRule,
-          geofenceRule.hasLocations
-        {
-          let locationManager = self.locationManager
-          if locationManager.isNotDetermined {
-            locationManager.requestAuthorization()
-            self.errorMessage =
-              "Please allow location access to stop this profile, then try again."
-            return
-          }
-          if locationManager.isDenied {
-            self.errorMessage =
-              "Location access is denied. Enable location services in Settings to use location-based restrictions."
-            return
-          }
-        }
-
-        let geofenceResult = await geofenceEvaluator.evaluateGeofenceForStop(
-          profile: localActiveSession.blockedProfile,
-          context: context
-        )
-        if let geofenceResult, !geofenceResult.isSatisfied {
-          self.errorMessage = geofenceResult.failureMessage ?? "Location restriction not met."
-          return
-        }
-
-        if isSwitching {
-          _ = try startOriginatingSession(context: context, profile: profile, origin: .init(kind: .link), expectedVictimId: localActiveSession.id)
-          finishDepartingSession(localActiveSession, context: context)
-        } else if localActiveSession.blockedProfile.profileSchemaVersion >= 2 {
-          endV2Session(localActiveSession, context: context)
+      if let session = try getActiveSession(context: context) {
+        if session.blockedProfile.profileSchemaVersion < 2 {
+          await handleLegacyLink(profileId: profile.id, sessionId: session.id, context: context)
         } else {
-          _ = manualStrategy.stopBlocking(context: context, session: localActiveSession)
+          errorMessage = "Stop \(session.blockedProfile.name) before starting \(profile.name) from this link."
         }
-      } else {
-        if let rejection = ProfileConditionValidation.startRejection(for: BlockedProfiles.getSnapshot(for: profile), origin: .init(kind: .link)) {
-          self.errorMessage = rejection
-          return
-        }
-        guard !profile.needsAppSelection else {
-          self.errorMessage = needsAppSelectionMessage(for: profile)
-          return
-        }
+        return
+      }
+      _ = try startOriginatingSession(context: context, profile: profile, origin: .init(kind: .link))
+    } catch { errorMessage = error.localizedDescription }
+  }
 
-        _ = try startOriginatingSession(context: context, profile: profile, origin: .init(kind: .link))
+  private func handleLegacyLink(profileId: UUID, sessionId: String, context: ModelContext) async {
+    guard let session = try? BlockedProfileSession.findSession(byID: sessionId, in: context),
+      session.isActive, session.blockedProfile.profileSchemaVersion < 2,
+      !session.blockedProfile.disableBackgroundStops,
+      StartStopActionResolver.canStop(
+        with: .deepLink, conditions: session.blockedProfile.stopConditions,
+        sessionTag: session.tag, stopNFCTagIds: [], stopQRCodeIds: [], legacySession: true
+      ).allowed
+    else { return }
+    guard await tagStopGeofenceAllowed(sessionId: sessionId, context: context),
+      let current = try? BlockedProfileSession.findSession(byID: sessionId, in: context), current.isActive,
+      activeSession?.id == sessionId, SharedData.getActiveSharedSession()?.id == sessionId
+    else { return }
+    do {
+      if current.blockedProfile.id == profileId {
+        stopBlocking(context: context, bypassStrategy: true)
+      } else if let profile = try BlockedProfiles.findProfile(byID: profileId, in: context) {
+        _ = try startOriginatingSession(context: context, profile: profile, origin: .init(kind: .link), expectedVictimId: sessionId)
+        finishDepartingSession(current, context: context)
+      }
+    } catch { errorMessage = error.localizedDescription }
+  }
+
+  func handleTagEvent(_ event: TagEvent, operation: TagOperation, context: ModelContext, now: Date = Date()) async {
+    do {
+      if case .confirmSwitch = operation {
+        guard let pending = pendingTagSwitch else { return }
+        guard activeSession?.id == pending.victimId,
+          let victim = try BlockedProfileSession.findSession(byID: pending.victimId, in: context), victim.isActive,
+          SharedData.getActiveSharedSession()?.id == victim.id
+        else {
+          cancelTagOperation()
+          return
+        }
+        guard event.type == pending.requiredType,
+          tagStopResult(event, session: victim).allowed
+        else {
+          tagScanError = event.type == .nfc ? "That NFC tag doesn’t match. Scan the required tag." : "That QR code doesn’t match. Scan the required code."
+          return
+        }
+        await commitTagTransition(pending, context: context, now: now)
+        return
+      }
+      cancelTagOperation()
+      let operationId = UUID()
+      tagOperationId = operationId
+      if case .explicitStart(let id) = operation {
+        guard let profile = try BlockedProfiles.findProfile(byID: id, in: context) else { throw ProfileTagLink.Failure.invalidTag }
+        guard let rejection = rejectionForStart(profile, context: context) else {
+          let origin = admittedTagOrigin(event, profile: profile)
+          _ = try startOriginatingSession(context: context, profile: profile, origin: origin, now: now)
+          tagOperationId = nil
+          return
+        }
+        errorMessage = rejection
+        tagOperationId = nil
+        return
+      }
+      if let victim = try getActiveSession(context: context) {
+        let target = event.targetProfileId == victim.blockedProfile.id ? nil : event.targetProfileId
+        let kind = event.type == .nfc ? victim.blockedProfile.stopConditions.nfc : victim.blockedProfile.stopConditions.qr
+        guard kind != .none else {
+          if let target, let profile = try BlockedProfiles.findProfile(byID: target, in: context) {
+            errorMessage = "\(victim.blockedProfile.name) can’t stop with this tag or code. Stop it another way before starting \(profile.name)."
+          } else {
+            errorMessage = tagStopResult(event, session: victim).errorMessage
+          }
+          tagOperationId = nil
+          return
+        }
+        let pending = PendingTagSwitch(operationId: operationId, victimId: victim.id, targetProfileId: target, event: event, requiredType: event.type)
+        if !tagStopResult(event, session: victim).allowed {
+          pendingTagSwitch = pending
+          showTagConfirmation = true
+          return
+        }
+        await commitTagTransition(pending, context: context, now: now)
+      } else if let target = event.targetProfileId {
+        guard let profile = try BlockedProfiles.findProfile(byID: target, in: context) else { throw ProfileTagLink.Failure.invalidTag }
+        _ = try startOriginatingSession(context: context, profile: profile, origin: admittedTagOrigin(event, profile: profile), now: now, allowLinkForTag: true)
+        tagOperationId = nil
+      } else {
+        tagOperationId = nil
       }
     } catch {
-      self.errorMessage = error.localizedDescription
+      cancelTagOperation()
+      errorMessage = error.localizedDescription
     }
+  }
+
+  private func admittedTagOrigin(_ event: TagEvent, profile: BlockedProfiles) -> SessionOrigin {
+    if event.namespace == .qrDigest, profile.startTriggers.specificQR,
+      let raw = event.rawKey, profile.startQRCodeIds.contains(raw),
+      !profile.startQRCodeIds.contains(event.key ?? "")
+    {
+      return SessionOrigin(kind: .qr, key: raw, namespace: .qrDigest)
+    }
+    return event.origin
+  }
+
+  private func tagStopResult(_ event: TagEvent, session: BlockedProfileSession) -> StopValidationResult {
+    StartStopActionResolver.canStop(
+      with: .tag(event), conditions: session.blockedProfile.stopConditions,
+      sessionTag: session.tag, stopNFCTagIds: session.blockedProfile.stopNFCTagIds,
+      stopQRCodeIds: session.blockedProfile.stopQRCodeIds, sessionOrigin: session.origin,
+      legacySession: session.blockedProfile.profileSchemaVersion < 2)
+  }
+
+  private func commitTagTransition(_ pending: PendingTagSwitch, context: ModelContext, now: Date) async {
+    guard await tagStopGeofenceAllowed(sessionId: pending.victimId, context: context),
+      tagOperationId == pending.operationId
+    else {
+      if tagOperationId == pending.operationId { cancelTagOperation() }
+      return
+    }
+    do {
+      guard let victim = try BlockedProfileSession.findSession(byID: pending.victimId, in: context),
+        victim.isActive, activeSession?.id == victim.id, SharedData.getActiveSharedSession()?.id == victim.id
+      else {
+        cancelTagOperation()
+        return
+      }
+      if let target = pending.targetProfileId {
+        guard let profile = try BlockedProfiles.findProfile(byID: target, in: context) else { throw ProfileTagLink.Failure.invalidTag }
+        _ = try startOriginatingSession(
+          context: context, profile: profile,
+          origin: admittedTagOrigin(pending.event, profile: profile), now: now,
+          expectedVictimId: victim.id, allowLinkForTag: true)
+        finishDepartingSession(victim, context: context, now: now)
+      } else if victim.blockedProfile.profileSchemaVersion >= 2 {
+        endV2Session(victim, context: context, now: now)
+      } else {
+        stopBlocking(context: context, bypassStrategy: true)
+      }
+      cancelTagOperation()
+    } catch {
+      cancelTagOperation()
+      errorMessage = error.localizedDescription
+    }
+  }
+
+  private func tagStopGeofenceAllowed(sessionId: String, context: ModelContext) async -> Bool {
+    guard let session = try? BlockedProfileSession.findSession(byID: sessionId, in: context), session.isActive else { return false }
+    if let rule = session.blockedProfile.geofenceRule, rule.hasLocations {
+      if locationManager.isNotDetermined {
+        locationManager.requestAuthorization()
+        errorMessage = "Please allow location access to stop this profile, then try again."
+        return false
+      }
+      if locationManager.isDenied {
+        errorMessage = "Location access is denied. Enable location services in Settings to use location-based restrictions."
+        return false
+      }
+    }
+    let result = await geofenceEvaluator.evaluateGeofenceForStop(profile: session.blockedProfile, context: context)
+    if let result, !result.isSatisfied {
+      errorMessage = result.failureMessage ?? "Location restriction not met."
+      return false
+    }
+    return true
   }
 
   @discardableResult

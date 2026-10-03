@@ -409,6 +409,14 @@ struct BlockedProfileView: View {
             Text("Require being at or away from specific locations to stop this profile.")
           }
 
+          if strategyManager.activeSession?.blockedProfile.id == profile?.id,
+            strategyManager.activeSession?.origin?.isUnidentifiedLegacyTag == true
+          {
+            Text("If the app can't identify the older tag or code that started the session, any tag or code of the same type can stop it.")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+
           StopConditionSelector(
             conditions: $triggerConfig.stopConditions,
             stopNFCTagIds: $triggerConfig.stopNFCTagIds,

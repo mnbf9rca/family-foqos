@@ -112,7 +112,7 @@ enum ProfileTagLink {
     guard activity.activityType == NSUserActivityTypeBrowsingWeb, let url = activity.webpageURL else {
       throw Failure.invalidLink
     }
-    let uris = uriURLs(activity.ndefMessagePayload)
+    let uris = try uriURLs(activity.ndefMessagePayload)
     let nfc = uris.contains(url)
     let qr = activity.detectedBarcodeDescriptor is CIQRCodeDescriptor
     guard !(nfc && qr), uris.isEmpty || nfc else { throw Failure.invalidTag }
@@ -128,13 +128,19 @@ enum ProfileTagLink {
         unidentifiedLegacyTag: parsed.key == nil))
   }
 
-  static func uriURLs(_ message: NFCNDEFMessage?) -> [URL] {
-    (message?.records ?? []).compactMap { record in
+  static func uriURLs(_ message: NFCNDEFMessage?) throws -> [URL] {
+    try (message?.records ?? []).compactMap { record in
       if record.typeNameFormat == .nfcWellKnown, record.type == Data([0x55]) {
-        return record.wellKnownTypeURIPayload()
+        guard record.payload.count > 1, let url = record.wellKnownTypeURIPayload(), url.scheme != nil else {
+          throw Failure.invalidTag
+        }
+        return url
       }
-      if record.typeNameFormat == .absoluteURI, let text = String(data: record.type, encoding: .utf8) {
-        return URL(string: text)
+      if record.typeNameFormat == .absoluteURI {
+        guard let text = String(data: record.type, encoding: .utf8), let url = URL(string: text), url.scheme != nil else {
+          throw Failure.invalidTag
+        }
+        return url
       }
       return nil
     }

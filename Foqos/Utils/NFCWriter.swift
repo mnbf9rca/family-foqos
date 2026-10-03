@@ -81,6 +81,7 @@ class NFCWriter: NSObject, ObservableObject {
 
 private struct NFCSessionBox: @unchecked Sendable {  // SAFETY: NFCTagReaderSession is only used on CoreNFC's internal queue
   private let session: NFCTagReaderSession
+  var identity: ObjectIdentifier { ObjectIdentifier(session) }
 
   init(session: NFCTagReaderSession) {
     self.session = session
@@ -148,11 +149,13 @@ extension NFCWriter: NFCTagReaderSessionDelegate {
     _ session: NFCTagReaderSession, didInvalidateWithError error: Error
   ) {
     // Capture values before MainActor hop
+    let identity = ObjectIdentifier(session)
     let readerError = error as? NFCReaderError
     let errorCode = readerError?.code
     let localizedDescription = error.localizedDescription
 
     Task { @MainActor in
+      guard self.tagSession.map({ ObjectIdentifier($0) }) == identity else { return }
       self.isScanning = false
 
       if let errorCode = errorCode {
@@ -185,6 +188,7 @@ extension NFCWriter: NFCTagReaderSessionDelegate {
     let tagBox = NFCTagBox(tag: tag)
 
     Task { @MainActor in
+      guard self.tagSession.map({ ObjectIdentifier($0) }) == sessionBox.identity else { return }
       guard let urlString = self.urlToWrite,
         let url = URL(string: urlString),
         let urlPayload = NFCNDEFPayload.wellKnownTypeURIPayload(url: url)
@@ -299,6 +303,7 @@ extension NFCWriter: NFCTagReaderSessionDelegate {
       } else {
         sessionBox.alertMessage = "✓ Successfully wrote profile to tag"
         Task { @MainActor in
+          guard self.tagSession.map({ ObjectIdentifier($0) }) == sessionBox.identity else { return }
           self.isScanning = false
           if let payload = self.profilePayload {
             self.profilePayload = nil

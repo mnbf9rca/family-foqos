@@ -1692,6 +1692,56 @@ final class SyncApplyServiceTests: XCTestCase {
     }
   }
 
+  func testOpaqueAndUnidentifiedOriginsSurviveActualSessionSyncApplication() throws {
+    let now = Date()
+    for type in [TagType.nfc, .qr] {
+      for unidentified in [false, true] {
+        let profile = BlockedProfiles(name: "Mirror", createdAt: now, updatedAt: now)
+        profile.startTriggers = type == .nfc ? .init(anyNFC: true) : .init(anyQR: true)
+        profile.stopConditions = type == .nfc ? .init(sameNFC: true) : .init(sameQR: true)
+        context.insert(profile)
+        try context.save()
+        var registrations = 0
+        let manager = StrategyManager(
+          registerTimer: { _, _, _, _ in
+            registrations += 1
+            return now
+          }, cancelTimer: { _, _ in })
+        defer { manager.stopTimer() }
+        let service = SyncApplyService(modelContext: context, store: store, sessionController: manager, emergencyManager: emergencyManager, deviceId: deviceId)
+        let key = "0123456789abcdef0123456789abcdef"
+        let origin = SessionOrigin(
+          kind: type == .nfc ? .nfc : .qr, key: unidentified ? nil : key,
+          namespace: unidentified ? nil : .opaque, unidentifiedLegacyTag: unidentified)
+        var remote = ProfileSessionRecord(profileId: profile.id)
+        let id = UUID().uuidString
+        remote.applyUpdate(isActive: true, sequenceNumber: 1, deviceId: "device-B", startTime: now, sessionId: id, origin: origin)
+        let record = SessionServerDatedRecord(copying: remote.toCKRecord(in: zoneID), modifiedAt: now)
+        _ = service.applyFetchedModification(record, isPendingDeleteOrTombstoned: noPendingDelete)
+        let session = try XCTUnwrap(manager.activeSession)
+        XCTAssertEqual(session.id, id)
+        XCTAssertEqual(session.origin, origin)
+        XCTAssertEqual(SharedData.getActiveSharedSession()?.origin, origin)
+        XCTAssertEqual(registrations, 0)
+        let matching = TagEvent(type: type, namespace: .opaque, key: key)
+        XCTAssertTrue(
+          StartStopActionResolver.canStop(
+            with: .tag(matching), conditions: profile.stopConditions, sessionTag: nil,
+            stopNFCTagIds: [], stopQRCodeIds: [], sessionOrigin: session.origin
+          ).allowed)
+        XCTAssertFalse(
+          StartStopActionResolver.canStop(
+            with: .tag(matching), conditions: .init(nfc: .specific, qr: .specific), sessionTag: nil,
+            stopNFCTagIds: ["other"], stopQRCodeIds: ["other"], sessionOrigin: session.origin
+          ).allowed)
+        manager.stopRemoteSession(context: context, profileId: profile.id, expectedSessionId: id)
+        XCTAssertNil(manager.activeSession)
+        XCTAssertNil(session.origin)
+        XCTAssertNil(SharedData.getActiveSharedSession())
+      }
+    }
+  }
+
   func testMirrorMatchesSameAndNeverRegistersAndRejectsDelayedInactiveAfterRestart() throws {
     let now = Date()
     let profile = BlockedProfiles(name: "Mirror", createdAt: now, updatedAt: now)

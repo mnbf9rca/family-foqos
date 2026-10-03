@@ -78,6 +78,22 @@ final class ProfileTagLinkTests: XCTestCase {
     XCTAssertEqual(try ProfileTagLink.classify(activity), .link(profileId: profile))
   }
 
+  func testMalformedRecognizedNDEFNeverDowngradesOrEnrollsUID() throws {
+    let now = Date()
+    let malformed = NFCNDEFMessage(records: [
+      NFCNDEFPayload(format: .nfcWellKnown, type: Data([0x55]), identifier: Data(), payload: Data())
+    ])
+    let activity = MetadataActivity(activityType: NSUserActivityTypeBrowsingWeb)
+    activity.webpageURL = url
+    activity.fixtureNDEF = malformed
+    XCTAssertThrowsError(try ProfileTagLink.classify(activity))
+    XCTAssertThrowsError(try NFCResult.read(id: "A0FF", message: malformed, error: nil, now: now))
+    let navigation = NavigationManager()
+    navigation.handleActivity(activity)
+    XCTAssertTrue(navigation.deliveries.isEmpty)
+    XCTAssertNotNil(navigation.deliveryError)
+  }
+
   func testColdWarmAndDualEntryDeliveryConsumedOnce() throws {
     let navigation = NavigationManager()
     let scene = SceneDelegate(navigation: navigation)

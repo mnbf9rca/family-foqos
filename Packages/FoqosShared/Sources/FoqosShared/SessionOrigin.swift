@@ -16,6 +16,10 @@ public struct SessionOrigin: Codable, Equatable, Sendable {
     self.unidentifiedLegacyTag = unidentifiedLegacyTag ? true : nil
   }
 
+  public var isUnidentifiedLegacyTag: Bool {
+    (kind == .nfc || kind == .qr) && unidentifiedLegacyTag == true && key == nil && namespace == nil
+  }
+
   public var initiatingKey: String? {
     if kind == .nfc || kind == .qr, namespace == .opaque, let key,
       key.count == 32, key.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) })

@@ -93,6 +93,9 @@ struct HomeView: View {
   // Scanner state for trigger-based starts
   @State private var showStartQRScanner = false
   @State private var scannerProfile: BlockedProfiles?
+  @State private var scannerProfileId: UUID?
+  @State private var confirmationScanAttempt = 0
+  @ObservedObject private var startupRecoveryRuntime = StartupRecoveryRuntime.shared
   @StateObject private var nfcScanner = NFCScannerUtil()
 
   // Stop picker state
@@ -313,6 +316,7 @@ struct HomeView: View {
       if newPhase == .active {
         loadApp()
       } else if newPhase == .background {
+        strategyManager.cancelTagOperation()
         unloadApp()
       }
     }
@@ -334,9 +338,16 @@ struct HomeView: View {
     .onReceive(NotificationCenter.default.publisher(for: .syncEnginePurged)) { _ in
       showNoticeAlert(title: "Device Sync Disabled", message: Self.syncEnginePurgedNoticeMessage)
     }
+    .onChange(of: startupRecoveryRuntime.isHeld) { _, held in
+      if !held {
+        loadApp()
+        receiveQueuedLinks()
+      }
+    }
     .onAppear {
       onAppearApp()
     }
+    .onDisappear { strategyManager.cancelTagOperation() }
     .fullScreenCover(isPresented: $showIntroScreen) {
       IntroView {
         showIntroScreen = false
@@ -430,6 +441,40 @@ struct HomeView: View {
         pendingPickerProfile = nil
       }
     }
+    .sheet(
+      isPresented: $strategyManager.showTagConfirmation,
+      onDismiss: {
+        if strategyManager.pendingTagSwitch != nil { strategyManager.cancelTagOperation() }
+      }
+    ) {
+      if let pending = strategyManager.pendingTagSwitch {
+        NavigationStack {
+          VStack {
+            Text(tagConfirmationMessage).padding()
+            if let error = strategyManager.tagScanError { Text(error).foregroundStyle(.red).padding() }
+            if pending.requiredType == .qr {
+              LabeledCodeScannerView(heading: "Scan to Stop", subtitle: "") { result in
+                switch result {
+                case .success(let scan): if let event = scan.event { confirmTag(event) }
+                case .failure(let error):
+                  strategyManager.cancelTagOperation()
+                  strategyManager.errorMessage = error.localizedDescription
+                }
+              }
+              .id(confirmationScanAttempt)
+            } else {
+              Button("Scan NFC Tag") { scanConfirmationNFC() }
+                .buttonStyle(.borderedProminent)
+            }
+          }
+          .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+              Button("Cancel") { strategyManager.cancelTagOperation() }
+            }
+          }
+        }
+      }
+    }
     .sheet(isPresented: $showStartQRScanner) {
       if let profile = scannerProfile {
         BlockingStrategyActionView(
@@ -440,10 +485,12 @@ struct HomeView: View {
             switch result {
             case .success(let hashedCode):
               showStartQRScanner = false
-              strategyManager.startWithQRCode(
-                context: context, profile: profile, codeValue: hashedCode.hash, rawHash: hashedCode.rawHash)
+              if let id = scannerProfileId, let event = hashedCode.event {
+                Task { await strategyManager.handleTagEvent(event, operation: .explicitStart(id), context: context) }
+              }
               scannerProfile = nil
-            case .failure:
+            case .failure(let error):
+              strategyManager.errorMessage = error.localizedDescription
               showStartQRScanner = false
               scannerProfile = nil
             }
@@ -461,10 +508,12 @@ struct HomeView: View {
             switch result {
             case .success(let hashedCode):
               showStopQRScanner = false
-              strategyManager.stopWithQRCode(
-                context: context, codeValue: hashedCode.hash, rawHash: hashedCode.rawHash)
+              if let event = hashedCode.event {
+                Task { await strategyManager.handleTagEvent(event, operation: .scan, context: context) }
+              }
               scannerProfile = nil
-            case .failure:
+            case .failure(let error):
+              strategyManager.errorMessage = error.localizedDescription
               showStopQRScanner = false
               scannerProfile = nil
             }
@@ -509,18 +558,14 @@ struct HomeView: View {
   }
 
   private func receiveQueuedLinks() {
-    // Verified events remain queued until the shared tag dispatcher consumes them.
-    guard let delivery = navigationManager.deliveries.first,
-      case .link(let id) = delivery
-    else { return }
-    _ = navigationManager.takeDelivery()
-    toggleSessionFromDeeplink(id.uuidString, link: URL(string: "https://family-foqos.app/profile/\(id.uuidString)")!)
-  }
-
-  private func toggleSessionFromDeeplink(_ profileId: String, link: URL) {
     Task { @MainActor in
-      await strategyManager
-        .toggleSessionFromDeeplink(profileId, url: link, context: context)
+      await navigationManager.dispatchQueued(
+        using: strategyManager, context: context,
+        ready: !startupRecoveryRuntime.isHeld)
+      if let message = navigationManager.deliveryError {
+        strategyManager.errorMessage = message
+        navigationManager.deliveryError = nil
+      }
     }
   }
 
@@ -549,6 +594,7 @@ struct HomeView: View {
 
     case .scanQR:
       scannerProfile = profile
+      scannerProfileId = profile.id
       showStartQRScanner = true
 
     case .waitForSchedule:
@@ -606,6 +652,7 @@ struct HomeView: View {
 
     case .scanQR:
       scannerProfile = profile
+      scannerProfileId = profile.id
       showStartQRScanner = true
 
     case .waitForSchedule, .deepLinkOnly, .showPicker, .cannotStart:
@@ -632,9 +679,11 @@ struct HomeView: View {
   }
 
   private func startNFCScan(for profile: BlockedProfiles) {
-    nfcScanner.onTagScanned = { tag in
-      let tagId = tag.id
-      strategyManager.startWithNFCTag(context: context, profile: profile, tagId: tagId)
+    let id = profile.id
+    nfcScanner.onTagScanned = { result in
+      if let event = result.event {
+        Task { await strategyManager.handleTagEvent(event, operation: .explicitStart(id), context: context) }
+      }
       scannerProfile = nil
     }
     nfcScanner.onError = { error in
@@ -645,9 +694,10 @@ struct HomeView: View {
   }
 
   private func stopNFCScan(for profile: BlockedProfiles) {
-    nfcScanner.onTagScanned = { tag in
-      let tagId = tag.id
-      strategyManager.stopWithNFCTag(context: context, tagId: tagId)
+    nfcScanner.onTagScanned = { result in
+      if let event = result.event {
+        Task { await strategyManager.handleTagEvent(event, operation: .scan, context: context) }
+      }
       scannerProfile = nil
     }
     nfcScanner.onError = { error in
@@ -655,6 +705,36 @@ struct HomeView: View {
       scannerProfile = nil
     }
     nfcScanner.scan(profileName: profile.name)
+  }
+
+  private var tagConfirmationMessage: String {
+    guard let pending = strategyManager.pendingTagSwitch,
+      let session = try? BlockedProfileSession.findSession(byID: pending.victimId, in: context)
+    else { return "" }
+    let item = pending.requiredType == .nfc ? "NFC tag" : "QR code"
+    if let id = pending.targetProfileId, let target = try? BlockedProfiles.findProfile(byID: id, in: context) {
+      return "Scan the required \(item) to stop \(session.blockedProfile.name), then \(target.name) can start."
+    }
+    return "Scan a \(item) to stop \(session.blockedProfile.name)"
+  }
+
+  private func confirmTag(_ event: TagEvent) {
+    Task {
+      await strategyManager.handleTagEvent(event, operation: .confirmSwitch, context: context)
+      confirmationScanAttempt += 1
+    }
+  }
+
+  private func scanConfirmationNFC() {
+    nfcScanner.onTagScanned = { result in
+      if let event = result.event { confirmTag(event) }
+    }
+    nfcScanner.onError = { message in
+      strategyManager.cancelTagOperation()
+      strategyManager.errorMessage = message
+    }
+    nfcScanner.onCancel = { strategyManager.cancelTagOperation() }
+    nfcScanner.scan(profileName: "")
   }
 
   private func loadApp() {
