@@ -89,6 +89,8 @@ After a failing test run, `xcodebuild` can appear stalled while an asynchronous 
 
 For source-built V1 → V2 upgrade acceptance, an agent follows the [V1 → V2 upgrade runbook](v1-v2-upgrade-runbook.md). It generates the profile matrix, checks fixture compilation before touching data, and reports evidence to the orchestrator. The human performs only the separate checks that require real devices.
 
+For agent-driven UI checks, follow [Verify UI Changes in the Simulator](simulator-ui-verification.md) for temporary drivers and fixtures, owner-gated recovery, screenshot inspection, restoration, and device-check limits.
+
 ## Screenshots, Archives, and Uploads
 
 The Family Controls screenshot demo has no live CKShare identities, so its member list shows “Parent”, “Child”, and “Child” rather than the former synthetic names Alex, Emma, and Sam.
