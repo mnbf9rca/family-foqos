@@ -51,7 +51,7 @@ Take no unnamed gate, review, or confirmation step.
 
 After Herdr integration installation, answer Codex’s "Hooks need review" trust dialog by hand before prompting; Herdr reports it as `idle`. Codex registers on its first turn; unprompted panes do not restore after Herdr restarts.
 
-If startup returns `agent_pane_busy`, retry when shell startup finishes.
+If `herdr agent start` returns `agent_pane_busy`, retry when shell startup finishes.
 
 Codex re-registration can drop names. Before prompting, and after each first turn or `/new`, the orchestrator checks `herdr agent list` and restores missing names with `herdr agent rename <pane> <name>`. Others report unknown names to the orchestrator; do not rename panes themselves.
 
@@ -61,7 +61,7 @@ Credential warm-up, expiry, and AFK fallback follow [Development Workflow](devel
 
 Send `herdr agent prompt <name> "<your role>: <text>"`; read `herdr agent read <name> --source recent-unwrapped --lines N`. Prefix every message with your role and a colon.
 
-Builders, reviewer, and auditor report through the orchestrator. Exception: planner prompts reviewer directly with the document/PR path and notifies the orchestrator at request and verdict, including blocking/non-blocking counts. Escalate disagreements after two unresolved rounds; other direct messaging requires orchestrator instruction.
+Builders, reviewer, and auditor report through the orchestrator. Exception: planner prompts reviewer directly with the document/PR path and notifies the orchestrator at request and verdict, including blocking/non-blocking counts. The planner escalates to the orchestrator after two unresolved rounds; other direct messaging requires orchestrator instruction.
 
 ### Delivery and readback
 
@@ -81,7 +81,7 @@ When a prompt fails or a wait ends without the reply you expected:
 
 ## Route Human Gates Through the Orchestrator
 
-Announce `"<role>: blocked on human gate: <decision>"` to the orchestrator immediately and wait; it relays existing authority or obtains it. Never guess the answer or answer your own gate. The orchestrator batches human questions in plain words, with concrete examples and recommendations, omitting internal IDs. Delegated approval covers only its named scope; PR merge authority requires that specific PR, except docs under the policy below. Record every human ruling on the relevant issue when made. For blocked credits, credentials, or tooling, present options to the human; do not assign implementation to orchestrator subagents.
+Announce `"<role>: blocked on human gate: <decision>"` to the orchestrator immediately and wait; it relays existing authority or obtains it. Never guess the answer or answer your own gate. The orchestrator batches human questions in plain words, with concrete examples and recommendations, omitting internal IDs. When the human delegates approval to an agent, act on that agent’s verdict without re-escalating. Delegated approval covers only its named scope; PR merge authority requires that specific PR, except docs under the policy below. Record every human ruling on the relevant issue when made. For blocked credits, credentials, or tooling, present options to the human; do not assign implementation to orchestrator subagents.
 
 ### How the orchestrator arbitrates
 
@@ -146,7 +146,7 @@ For an up-to-date-branch requirement, the orchestrator may merge main into the P
 
 Only the human approves a fork PR's workflow run; agents never approve it. Version bumps for a fork PR go onto the fork branch through maintainer edits, preserving the contributor's commits.
 
-Label source PRs `greptile-review` once, after reviewer findings are addressed and the author considers them merge-ready; each re-review is paid. Never label spec-only, docs-only, version-only, or small follow-up PRs.
+Label source PRs `greptile-review` once, after reviewer findings are addressed and the author considers the PR merge-ready; each re-review is paid. Never label spec-only, docs-only, version-only, or small follow-up PRs.
 
 Greptile’s summary is in the PR description (`gh pr view N --json body`); its `Greptile Review` check reports completion, not cleared findings. Judge summary findings/confidence and unresolved inline threads separately. After every push to an already-labelled PR, the pushing agent immediately comments `@greptileai re-review`, including orchestrator updates from main, per the [new ruling](https://github.com/mnbf9rca/family-foqos/issues/507#issuecomment-5970570092). If the latest head still lacks a review after about 30 minutes (including unanswered initial-label or re-review requests), the orchestrator may post the same command under the [fallback ruling](https://github.com/mnbf9rca/family-foqos/issues/507#issuecomment-5969255530). The portal retrigger needs human login; do not remove and re-add the label.
 

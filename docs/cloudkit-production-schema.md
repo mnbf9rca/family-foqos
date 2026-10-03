@@ -37,9 +37,9 @@ The agent owns repository changes and the post-merge Development import; a PR ch
      --file Foqos/CloudKit/cloudkit-schema.ckdb
    ```
 
-   Missing/expired credentials are a human gate through the orchestrator; never skip the import or mark it complete. Treat the checked-in file as canonical. Import applies it to Development and may remove Development-only experiments that are absent from the file. CloudKit rejects the update without making changes if the required modifications could cause data loss relative to Production; resolve any rejection before continuing. The only known import-rejection candidate on this container is the built-in `Users.roles` field (`LIST<INT64>`). If CloudKit rejects that field, record the exact response and stop for human resolution instead of changing reviewed app-owned records.
+   Record the imported main commit and successful result once, briefly, on the schema issue; send detailed evidence directly to the orchestrator. Missing/expired credentials are a human gate through the orchestrator; never skip the import or mark it complete. Treat the checked-in file as canonical. Import applies it to Development and may remove Development-only experiments that are absent from the file. CloudKit rejects the update without making changes if the required modifications could cause data loss relative to Production; resolve any rejection before continuing. The only known import-rejection candidate on this container is the built-in `Users.roles` field (`LIST<INT64>`). If CloudKit rejects that field, record the exact response and stop for human resolution instead of changing reviewed app-owned records.
 
-## 2. Release Promotion — Maintainer Only
+## 2. Release Promotion — Human Deployment
 
 Production deployment is the human’s release-checklist step in CloudKit Console, after the final schema PR’s Development import and before a dependent upload. Agents never deploy Production; agent-run release verification, postflight, or uploads still require explicit per-release human approval.
 
