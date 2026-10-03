@@ -179,9 +179,9 @@ reviewer: blocked on review gate: waiting for build1 to push the fix commit for 
 
 A spec or plan PR is never merged alone; the build stream branches from the approved spec head and the spec lands in the same PR as its implementation.
 
-Before reporting a PR approved or merge-ready, verify that it is already ready for review and not a draft. Include the exact head and base, check state, and independent review decision in the handoff. The orchestrator performs the merge, and only after asking the human about that specific PR.
+Before reporting a PR approved or merge-ready, verify that it is already ready for review and not a draft. Include the exact head and base, check state, and independent review decision in the handoff. The orchestrator performs the merge. Operator and process docs follow the sign-off policy below; other PRs require the human’s approval of that specific PR.
 
-When branch protection requires an up-to-date branch, the orchestrator may update the PR branch from main with a GitHub merge, never a force push, and merge without a new review only after verifying that the PR's diff against main is identical to the approved head's diff against its base and all checks are green on the new head. If the diff changes, obtain a fresh review. Notify the owning agent to fetch and fast-forward or merge the update before its next push. Human approval of that specific PR is still required.
+When branch protection requires an up-to-date branch, the orchestrator may update the PR branch from main with a GitHub merge, never a force push, and merge without a new review only after verifying that the PR's diff against main is identical to the approved head's diff against its base and all checks are green on the new head. If the diff changes, obtain a fresh review. Notify the owning agent to fetch and fast-forward or merge the update before its next push. Human approval of that specific PR is still required except for operator and process docs, which follow the sign-off policy below.
 
 Only the human approves a fork PR's workflow run; agents never approve it. Version bumps for a fork PR go onto the fork branch through maintainer edits, preserving the contributor's commits.
 
@@ -191,9 +191,7 @@ Greptile publishes its review summary in the PR description and completion throu
 
 ### Calibrate Operator-Document Sign-Off
 
-New or restructured operator flows require blocking reviewer approval, an executable walkthrough where applicable, and a human final read of the text. A tiny delta does not make the human read the text: `tiny` means prose-only, with no new or changed flow step and no new command. The planner classifies the delta; the reviewer may escalate that classification to the full gates.
-
-Tiny deltas still require reviewer approval and green checks. The orchestrator names the delta as tiny in its per-PR merge ask, so the human can refuse the merge or, cheaply, revert by a new signed commit after it.
+The human does no final read of operator or process documentation. Reviewer approval and green checks are enough for the orchestrator to merge these docs PRs, including new or restructured operator flows, per the [human ruling on #507 (2026-10-03)](https://github.com/mnbf9rca/family-foqos/issues/507#issuecomment-5969279559).
 
 ## End Turns With the Exact Remainder
 
