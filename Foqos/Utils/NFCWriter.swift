@@ -36,11 +36,13 @@ class NFCWriter: NSObject, ObservableObject {
 
   func writeProfile(_ profile: BlockedProfiles, onWritten: @escaping (ProfileTagPayload) -> Bool) throws {
     guard !isScanning else { return }
-    if awaitingEnrollment {
+    if awaitingEnrollment && profilePayload?.profileId == profile.id {
       didWritePayload()
       return
     }
     let payload = try Self.makePayload(for: profile)
+    // Choosing another profile abandons the previous request's failed enrollment.
+    awaitingEnrollment = false
     profilePayload = payload
     self.onWritten = onWritten
     beginWriting()

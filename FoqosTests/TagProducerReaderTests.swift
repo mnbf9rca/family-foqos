@@ -158,6 +158,52 @@ final class TagProducerReaderTests: XCTestCase {
     writer.didWritePayload()
     XCTAssertEqual(enrollments, 1)
   }
+
+  func testAnotherProfileStartsAFreshWriteAndDropsThePreviousPendingEnrollment() throws {
+    let container = try TestModelContainer.create()
+    let context = container.mainContext
+    let a = profile(type: .nfc)
+    let b = profile(type: .nfc)
+    let writer = TestNFCWriter()
+    var oldPayload: ProfileTagPayload?
+    var oldEnrollmentAttempts = 0
+    try writer.writeProfile(a) { payload in
+      oldPayload = payload
+      oldEnrollmentAttempts += 1
+      return false
+    }
+    writer.didWritePayload()
+    let writtenA = try XCTUnwrap(oldPayload)
+    var newPayload: ProfileTagPayload?
+    let enrollB: (ProfileTagPayload) -> Bool = { payload in
+      newPayload = payload
+      do {
+        _ = try NFCWriter.enrollWrittenPayload(payload, name: "B tag", in: context)
+        return true
+      } catch {
+        XCTFail("New profile enrollment failed: \(error)")
+        return false
+      }
+    }
+
+    try writer.writeProfile(b, onWritten: enrollB)
+    XCTAssertEqual(writer.writeCount, 2)
+    XCTAssertEqual(oldEnrollmentAttempts, 1)
+    XCTAssertNil(newPayload)
+    writer.isScanning = false  // B's first physical write failed; retry must still write B.
+    try writer.writeProfile(b, onWritten: enrollB)
+    XCTAssertEqual(writer.writeCount, 3)
+    XCTAssertNil(newPayload)
+    XCTAssertTrue(try SavedTag.fetchAll(in: context).isEmpty)
+
+    writer.didWritePayload()
+    let writtenB = try XCTUnwrap(newPayload)
+    XCTAssertEqual(writtenB.profileId, b.id)
+    XCTAssertNotEqual(writtenB.key, writtenA.key)
+    XCTAssertEqual(oldEnrollmentAttempts, 1)
+    XCTAssertEqual(try SavedTag.fetchAll(in: context).map(\.id), [writtenB.event.matchingKey])
+    XCTAssertNil(try SavedTag.find(byID: XCTUnwrap(writtenA.event.matchingKey), in: context))
+  }
 }
 
 @MainActor
