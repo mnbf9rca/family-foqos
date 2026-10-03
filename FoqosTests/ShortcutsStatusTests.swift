@@ -20,30 +20,8 @@ final class ShortcutsStatusTests: XCTestCase {
     XCTAssertEqual(CheckProfileStatusIntent.authenticationPolicy, .alwaysAllowed)
   }
 
-  func testSharedStopPredicateRespectsCredentialsAndPrecedence() throws {
-    for credential in [StartStopActionResolver.StartCredential.none, .nfc, .qr] {
-      let usable: (ProfileStopConditions, Bool) -> Bool = {
-        StartStopActionResolver.hasUsableStop(conditions: $0, disableBackgroundStops: $1, credential: credential)
-      }
-      XCTAssertFalse(usable(ProfileStopConditions(), false))
-      XCTAssertFalse(usable(ProfileStopConditions(timer: true), false))
-      XCTAssertTrue(usable(ProfileStopConditions(manual: true), true))
-      XCTAssertEqual(usable(ProfileStopConditions(sameNFC: true), false), credential == .nfc)
-      XCTAssertEqual(usable(ProfileStopConditions(sameQR: true), false), credential == .qr)
-      XCTAssertEqual(usable(try JSONDecoder().decode(ProfileStopConditions.self, from: Data("{\"anyNFC\":true,\"sameNFC\":true}".utf8)), false), credential == .nfc)
-      XCTAssertEqual(usable(try JSONDecoder().decode(ProfileStopConditions.self, from: Data("{\"anyQR\":true,\"sameQR\":true}".utf8)), false), credential == .qr)
-      XCTAssertTrue(usable(try JSONDecoder().decode(ProfileStopConditions.self, from: Data("{\"specificNFC\":true,\"sameNFC\":true}".utf8)), true))
-      XCTAssertTrue(usable(try JSONDecoder().decode(ProfileStopConditions.self, from: Data("{\"specificQR\":true,\"sameQR\":true}".utf8)), true))
-      XCTAssertTrue(usable(ProfileStopConditions(anyQR: true), true))
-      XCTAssertTrue(usable(ProfileStopConditions(anyNFC: true), true))
-      XCTAssertTrue(usable(ProfileStopConditions(schedule: true), false))
-      XCTAssertFalse(usable(ProfileStopConditions(schedule: true), true))
-      XCTAssertTrue(usable(ProfileStopConditions(deepLink: true), false))
-      XCTAssertFalse(usable(ProfileStopConditions(deepLink: true), true))
-    }
-    XCTAssertEqual(
-      StartStopActionResolver.determineStartAction(for: ProfileStartTriggers(shortcuts: true)),
-      .cannotStart(reason: "Start this profile with Siri or Shortcuts."))
+  func testShortcutOnlyEntranceStillDirectsUserToShortcut() {
+    XCTAssertEqual(StartStopActionResolver.determineStartAction(for: ProfileStartTriggers(shortcuts: true)), .cannotStart(reason: "Start this profile with Siri or Shortcuts."))
   }
 
   func testStatusTruthGrantTimingAndNoDurationGuess() throws {

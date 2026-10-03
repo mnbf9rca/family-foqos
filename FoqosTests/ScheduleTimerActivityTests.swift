@@ -263,4 +263,71 @@ final class ScheduleTimerActivityTests: XCTestCase {
     XCTAssertEqual(SharedData.getActiveSharedSession()?.blockedProfileId, old.id)
   }
 
+  func testMonitorSavedTimerAndFailureLeaveVictimUntouched() throws {
+    let now = Date()
+    var incoming = startScheduledSnapshot(id: UUID(), stopConditions: .init(manual: true, timer: true, timerDurationMinutes: 37, allowChangingTimerBeforeStart: true))
+    incoming.profileSchemaVersion = 3
+    incoming.settingsReadable = true
+    incoming.startTriggers = .init(schedule: true)
+    incoming.startTriggersSchedule = true
+    incoming.startSchedule = .init(days: Weekday.allCases, hour: 0, minute: 0, updatedAt: .distantPast)
+    SharedData.setSnapshot(incoming, for: incoming.id.uuidString)
+    let victimProfile = snapshot(id: UUID(), stopConditions: .init(manual: true))
+    SharedData.setSnapshot(victimProfile, for: victimProfile.id.uuidString)
+    let victim = SharedData.SessionSnapshot(id: UUID().uuidString, tag: "victim", blockedProfileId: victimProfile.id, startTime: now, forceStarted: false, origin: .init(kind: .manual))
+    SharedData.createActiveSharedSession(for: victim)
+    var registrations = 0
+    var cancellations = 0
+    var reminders = 0
+    let accepted = now.addingTimeInterval(2207)
+    let failed = ScheduleTimerActivity(
+      registerTimer: { _, _, minutes, _ in
+        registrations += 1
+        XCTAssertEqual(minutes, 37)
+        XCTAssertEqual(SharedData.getActiveSharedSession(), victim)
+        throw NSError(domain: "registration", code: 1)
+      }, cancelTimer: { _, _ in cancellations += 1 }, cancelReminders: { _ in reminders += 1 })
+    failed.start(for: incoming)
+    XCTAssertEqual(registrations, 1)
+    XCTAssertEqual(cancellations, 1)
+    XCTAssertEqual(reminders, 0)
+    XCTAssertEqual(SharedData.getActiveSharedSession(), victim)
+    let started = ScheduleTimerActivity(
+      registerTimer: { _, _, minutes, _ in
+        registrations += 1
+        XCTAssertEqual(minutes, 37)
+        return accepted
+      }, cancelTimer: { _, _ in cancellations += 1 }, cancelReminders: { _ in reminders += 1 })
+    started.start(for: incoming)
+    XCTAssertEqual(registrations, 2)
+    XCTAssertEqual(reminders, 1)
+    XCTAssertEqual(SharedData.getActiveSharedSession()?.origin?.kind, .schedule)
+    XCTAssertEqual(SharedData.getActiveSharedSession()?.timerEndTime, accepted)
+    XCTAssertEqual(SharedData.completedSessionsInScheduler.last?.id, victim.id)
+  }
+
+  func testRawCreatorCannotPublishV2AndMalformedMonitorHasNoEffects() {
+    var incoming = startScheduledSnapshot(id: UUID(), stopConditions: .init(manual: true, timer: true, timerDurationMinutes: 14))
+    incoming.profileSchemaVersion = 3
+    incoming.settingsReadable = true
+    incoming.startTriggers = .init(schedule: true)
+    incoming.startTriggersSchedule = true
+    incoming.startSchedule = .init(days: Weekday.allCases, hour: 0, minute: 0, updatedAt: .distantPast)
+    SharedData.setSnapshot(incoming, for: incoming.id.uuidString)
+    SharedData.createSessionForScheduler(for: incoming.id)
+    XCTAssertNil(SharedData.getActiveSharedSession())
+    XCTAssertFalse(SharedData.startSchedulerSessionTakingOver(profileId: incoming.id, expectedVictimId: nil))
+    var registrations = 0
+    var reminders = 0
+    ScheduleTimerActivity(
+      registerTimer: { _, _, _, now in
+        registrations += 1
+        return now
+      }, cancelReminders: { _ in reminders += 1 }
+    ).start(for: incoming)
+    XCTAssertEqual(registrations, 0)
+    XCTAssertEqual(reminders, 0)
+    XCTAssertNil(SharedData.getActiveSharedSession())
+  }
+
 }

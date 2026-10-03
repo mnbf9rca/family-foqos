@@ -4,6 +4,7 @@ struct TimerDurationView: View {
   @EnvironmentObject var themeManager: ThemeManager
   @Environment(\.dismiss) private var dismiss
 
+  let adjustmentNote: String?
   let profileName: String
   let onDurationSelected: (StrategyTimerData) -> Void
 
@@ -22,8 +23,10 @@ struct TimerDurationView: View {
   init(
     profileName: String,
     initialDurationMinutes: Int? = nil,
+    adjustmentNote: String? = nil,
     onDurationSelected: @escaping (StrategyTimerData) -> Void
   ) {
+    self.adjustmentNote = adjustmentNote
     self.profileName = profileName
     self.onDurationSelected = onDurationSelected
     _durationMinutes = State(initialValue: Double(initialDurationMinutes ?? 60))
@@ -45,6 +48,8 @@ struct TimerDurationView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.top, 16)
+
+        if let adjustmentNote { Text(adjustmentNote).font(.callout).foregroundStyle(.secondary) }
 
         // Large time display
         timeDisplay

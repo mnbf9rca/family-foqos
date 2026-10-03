@@ -75,7 +75,7 @@ class StrategyManager: ObservableObject {
   /// A V2 originating start registers its countdown before constructing any session.
   func startOriginatingSession(
     context: ModelContext, profile: BlockedProfiles, origin: SessionOrigin,
-    now: Date = Date(), expectedVictimId: String? = nil, timerMinutes: Int? = nil
+    durationOverrideMinutes: Int? = nil, now: Date = Date(), expectedVictimId: String? = nil
   ) throws -> BlockedProfileSession {
     let snapshot = BlockedProfiles.getSnapshot(for: profile)
     func refusal(_ message: String) -> NSError {
@@ -84,8 +84,15 @@ class StrategyManager: ObservableObject {
     if let message = ProfileConditionValidation.startRejection(for: snapshot, origin: origin) {
       throw refusal(message)
     }
+    guard !profile.needsAppSelection else { throw refusal(needsAppSelectionMessage(for: profile)) }
+    if let durationOverrideMinutes {
+      guard origin.kind == .manual, snapshot.stopConditions?.allowChangingTimerBeforeStart == true,
+        snapshot.stopConditions?.timer == true, snapshot.stopConditions?.timerDurationMinutes != nil,
+        (DeviceActivityLimits.minimumIntervalMinutes...DeviceActivityLimits.maximumTimerMinutes).contains(durationOverrideMinutes)
+      else { throw refusal("Choose a timer from 15 minutes to 23 hours 59 minutes.") }
+    }
     let candidateId = UUID().uuidString
-    let minutes = snapshot.stopConditions?.timer == true ? (timerMinutes ?? snapshot.stopConditions?.timerDurationMinutes) : nil
+    let minutes = snapshot.stopConditions?.timer == true ? (durationOverrideMinutes ?? snapshot.stopConditions?.timerDurationMinutes) : nil
     var deadline: Date?
     if let minutes {
       do { deadline = try registerTimer(profile.id, candidateId, minutes, now) } catch {
@@ -94,7 +101,7 @@ class StrategyManager: ObservableObject {
       }
     }
     let candidate = BlockedProfileSession(
-      tag: origin.key ?? origin.kind.rawValue,
+      tag: origin.key.map { origin.kind.rawValue + ":" + $0 } ?? origin.kind.rawValue,
       blockedProfile: profile, startTime: now, id: candidateId, origin: origin)
     candidate.timerEndTime = deadline
     context.insert(candidate)
@@ -544,9 +551,8 @@ class StrategyManager: ObservableObject {
         // no active session if the new profile isn't configured for deep links
         let isSwitching = localActiveSession.blockedProfile.id != profile.id
         if isSwitching {
-          guard profile.startTriggers.deepLink else {
-            self.errorMessage =
-              "\(profile.name) is not configured to start via written NFC or printed QR"
+          if let rejection = ProfileConditionValidation.startRejection(for: BlockedProfiles.getSnapshot(for: profile), origin: .init(kind: .link)) {
+            self.errorMessage = rejection
             return
           }
           guard !profile.needsAppSelection else {
@@ -596,26 +602,17 @@ class StrategyManager: ObservableObject {
           return
         }
 
-        _ =
-          manualStrategy
-          .stopBlocking(
-            context: context,
-            session: localActiveSession
-          )
-
         if isSwitching {
-          Log.info("User is switching sessions from deep link", category: .strategy)
-
-          _ = manualStrategy.startBlocking(
-            context: context,
-            profile: profile,
-            forceStart: false
-          )
+          _ = try startOriginatingSession(context: context, profile: profile, origin: .init(kind: .link), expectedVictimId: localActiveSession.id)
+          finishDepartingSession(localActiveSession, context: context)
+        } else if localActiveSession.blockedProfile.profileSchemaVersion >= 2 {
+          endV2Session(localActiveSession, context: context)
+        } else {
+          _ = manualStrategy.stopBlocking(context: context, session: localActiveSession)
         }
       } else {
-        guard profile.startTriggers.deepLink else {
-          self.errorMessage =
-            "\(profile.name) is not configured to start via written NFC or printed QR"
+        if let rejection = ProfileConditionValidation.startRejection(for: BlockedProfiles.getSnapshot(for: profile), origin: .init(kind: .link)) {
+          self.errorMessage = rejection
           return
         }
         guard !profile.needsAppSelection else {
@@ -623,14 +620,10 @@ class StrategyManager: ObservableObject {
           return
         }
 
-        _ = manualStrategy.startBlocking(
-          context: context,
-          profile: profile,
-          forceStart: false
-        )
+        _ = try startOriginatingSession(context: context, profile: profile, origin: .init(kind: .link))
       }
     } catch {
-      self.errorMessage = "Something went wrong. Please try again."
+      self.errorMessage = error.localizedDescription
     }
   }
 
@@ -646,75 +639,24 @@ class StrategyManager: ObservableObject {
     registerTimer: @escaping (UUID, Int, Date) throws -> Date = DeviceActivityCenterUtil.registerStrategyTimer
   ) throws -> String {
     do {
-      guard let profile = try BlockedProfiles.findProfile(byID: profileId, in: context) else {
-        throw IntentError.profileNotFound
+      guard durationInMinutes == nil else {
+        throw IntentError.unexpected("This start uses the profile’s saved timer. Remove Duration from the Shortcut or edit the profile’s timer.")
       }
-      guard !profile.isNewerSchemaVersion else {
-        throw IntentError.unexpected("Update Family Foqos to use this profile.")
-      }
-      let session = try getActiveSession(context: context)
-      guard session == nil else { throw IntentError.sessionAlreadyActive }
-      if let duration = durationInMinutes {
-        guard
-          !ProfileEditGate.editingDisabled(
-            isBlocking: remotelyActiveProfileIds.contains(profile.id),
-            isManaged: profile.isManaged, isUnlocked: isUnlocked(profile.id),
-            mode: mode, lockActive: canVerifyCode
-          )
-        else {
-          throw IntentError.unexpected("This profile cannot be changed right now. Remove Duration to use its configured stop conditions.")
-        }
-        guard (DeviceActivityLimits.minimumIntervalMinutes...DeviceActivityLimits.maximumTimerMinutes).contains(duration) else {
-          throw IntentError.durationOutOfRange
-        }
-      }
-      guard !profile.needsAppSelection else {
-        throw IntentError.needsAppSelection(profileName: profile.name)
-      }
+      guard let profile = try BlockedProfiles.findProfile(byID: profileId, in: context) else { throw IntentError.profileNotFound }
+      guard try getActiveSession(context: context) == nil else { throw IntentError.sessionAlreadyActive }
+      guard !profile.needsAppSelection else { throw IntentError.needsAppSelection(profileName: profile.name) }
       switch authorization.authorizationStatus {
       case .approved, .approvedWithDataAccess: break
-      default:
-        throw IntentError.unexpected("Open Family Foqos and authorize Screen Time before starting this profile.")
+      default: throw IntentError.unexpected("Open Family Foqos and authorize Screen Time before starting this profile.")
       }
-      guard profile.startTriggers.shortcuts else {
-        throw IntentError.unexpected("Siri and Shortcuts start is disabled for this profile. Enable it in the profile editor.")
-      }
-      guard profile.stopConditions.isValid else {
-        throw IntentError.stopConditionsNotMet(reason: "No stop conditions configured. Edit the profile to add one.")
-      }
-      guard
-        durationInMinutes != nil
-          || StartStopActionResolver.hasUsableStop(
-            conditions: profile.stopConditions,
-            disableBackgroundStops: profile.disableBackgroundStops,
-            credential: .none
-          )
-      else {
-        throw IntentError.stopConditionsNotMet(reason: "Use a start method that provides the required stop, or add a usable stop condition.")
-      }
-
-      errorMessage = nil
-      if let duration = durationInMinutes {
-        guard let strategy = getStrategy(id: ShortcutTimerBlockingStrategy.id) as? ShortcutTimerBlockingStrategy else {
-          throw IntentError.unexpected("The timer strategy is unavailable.")
-        }
-        strategy.durationInMinutes = duration
-        strategy.registerTimer = registerTimer
-        _ = strategy.startBlocking(context: context, profile: profile, forceStart: true)
-      } else {
-        _ = getStrategy(id: ManualBlockingStrategy.id).startBlocking(
-          context: context, profile: profile, forceStart: false)
-      }
-      if let errorMessage {
-        throw IntentError.unexpected("The session started, but \(errorMessage)")
-      }
+      _ = try startOriginatingSession(context: context, profile: profile, origin: .init(kind: .shortcut))
       return profile.name
     } catch let error as IntentError {
       self.errorMessage = String(localized: error.localizedStringResource)
       throw error
     } catch {
-      Log.error("Failed to start background session", category: .strategy)
-      throw IntentError.unexpected("Something went wrong starting the session.")
+      self.errorMessage = error.localizedDescription
+      throw IntentError.unexpected(error.localizedDescription)
     }
   }
 
@@ -822,10 +764,7 @@ class StrategyManager: ObservableObject {
         throw IntentError.backgroundStopsDisabled(profileName: profile.name)
       }
 
-      let _ = manualStrategy.stopBlocking(
-        context: context,
-        session: currentSession
-      )
+      if currentSession.blockedProfile.profileSchemaVersion >= 2 { endV2Session(currentSession, context: context) } else { _ = manualStrategy.stopBlocking(context: context, session: currentSession) }
     } catch let error as IntentError {
       throw error
     } catch {
@@ -850,7 +789,7 @@ class StrategyManager: ObservableObject {
       guard let self else { return }
       let manualStrategy = self.getStrategy(id: ManualBlockingStrategy.id)
       // `.ended` already handles the session activity, reminder, and timer cleanup.
-      _ = manualStrategy.stopBlocking(context: ctx, session: sess)
+      if sess.blockedProfile.profileSchemaVersion >= 2 { self.endV2Session(sess, context: ctx) } else { _ = manualStrategy.stopBlocking(context: ctx, session: sess) }
     }
   }
 
@@ -1009,9 +948,6 @@ class StrategyManager: ObservableObject {
 
         // Remove one more minute activity for the ended profile
         DeviceActivityCenterUtil.removeOneMoreMinuteActivity(for: endedProfile)
-
-        // Remove all strategy timer activities
-        DeviceActivityCenterUtil.removeAllStrategyTimerActivities()
 
         // Migrate and enqueue the profile and newly-created tags after the V1 session ends.
         do {
@@ -1255,6 +1191,33 @@ class StrategyManager: ObservableObject {
       return
     }
 
+    if definedProfile.profileSchemaVersion >= 2 {
+      let snapshot = BlockedProfiles.getSnapshot(for: definedProfile)
+      if let rejection = ProfileConditionValidation.startRejection(for: snapshot, origin: .init(kind: .manual)) {
+        errorMessage = rejection
+        return
+      }
+      if definedProfile.stopConditions.timer,
+        definedProfile.stopConditions.allowChangingTimerBeforeStart,
+        let saved = definedProfile.stopConditions.timerDurationMinutes
+      {
+        customStrategyView = TimerDurationView(
+          profileName: definedProfile.name, initialDurationMinutes: saved,
+          adjustmentNote: "This session only; the saved duration stays unchanged."
+        ) { duration in
+          self.dismissView()
+          do {
+            _ = try self.startOriginatingSession(
+              context: context, profile: definedProfile,
+              origin: .init(kind: .manual), durationOverrideMinutes: duration.durationInMinutes)
+          } catch { self.errorMessage = error.localizedDescription }
+        }
+        showCustomStrategyView = true
+      } else {
+        do { _ = try startOriginatingSession(context: context, profile: definedProfile, origin: .init(kind: .manual)) } catch { errorMessage = error.localizedDescription }
+      }
+      return
+    }
     // When bypassStrategy is true, the V2 trigger system has already routed
     // the start action. Use ManualBlockingStrategy to create the session
     // directly, avoiding redundant NFC/QR scans from legacy strategies.
@@ -1288,7 +1251,7 @@ class StrategyManager: ObservableObject {
       }
     }
     let prefixedTag = "nfc:\(tagId)"
-    startWithTag(context: context, profile: profile, tag: prefixedTag)
+    startWithTag(context: context, profile: profile, tag: prefixedTag, origin: .init(kind: .nfc, key: tagId, namespace: .nfcUID))
   }
 
   /// Start blocking with a pre-scanned QR code (for trigger-based start)
@@ -1300,8 +1263,11 @@ class StrategyManager: ObservableObject {
         return
       }
     }
-    let prefixedTag = "qr:\(codeValue)"
-    startWithTag(context: context, profile: profile, tag: prefixedTag)
+    let matchedKey =
+      profile.startTriggers.specificQR
+      ? (profile.startQRCodeIds.first { $0 == codeValue || $0 == rawHash } ?? codeValue) : codeValue
+    let prefixedTag = "qr:\(matchedKey)"
+    startWithTag(context: context, profile: profile, tag: prefixedTag, origin: .init(kind: .qr, key: matchedKey, namespace: .qrDigest))
   }
 
   /// Stop blocking with a scanned NFC tag (for stop-condition-based stop)
@@ -1367,13 +1333,17 @@ class StrategyManager: ObservableObject {
   }
 
   /// Start blocking with a pre-scanned tag (internal helper)
-  private func startWithTag(context: ModelContext, profile: BlockedProfiles, tag: String) {
+  private func startWithTag(context: ModelContext, profile: BlockedProfiles, tag: String, origin: SessionOrigin) {
     if let rejection = rejectionForStart(profile, context: context) {
       errorMessage = rejection
       Log.info("Refusing tag start", category: .strategy)
       return
     }
 
+    if profile.profileSchemaVersion >= 2 {
+      do { _ = try startOriginatingSession(context: context, profile: profile, origin: origin) } catch { errorMessage = error.localizedDescription }
+      return
+    }
     AppBlockerUtil().activateRestrictions(for: BlockedProfiles.getSnapshot(for: profile))
 
     let session = BlockedProfileSession.createSession(
@@ -1424,6 +1394,45 @@ class StrategyManager: ObservableObject {
   /// - Parameter bypassStrategy: When true, uses ManualBlockingStrategy to end the session
   ///   directly. Use this when the V2 trigger system has already validated stop conditions
   ///   (e.g., NFC tag was already scanned) to avoid redundant scanning by legacy strategies.
+  private func finishDepartingSession(_ session: BlockedProfileSession, context: ModelContext, now: Date = Date()) {
+    cancelTimer(session.blockedProfile.id, session.id)
+    session.endSession(now: now)
+    do { try context.save() } catch { errorMessage = "Couldn’t stop this profile. Please try again. " + error.localizedDescription }
+    if activeSession?.id == session.id {
+      activeSession = nil
+      stopTimer()
+      liveActivityManager.endSessionActivity()
+      timersUtil.cancelAll()
+      scheduleReminder(profile: session.blockedProfile)
+      elapsedTime = 0
+    }
+    DeviceActivityCenterUtil.removeStopScheduleActivity(for: session.blockedProfile)
+    DeviceActivityCenterUtil.removeOneMoreMinuteActivity(for: session.blockedProfile)
+    if shouldSyncSessionChange {
+      let previousTask = sessionSyncTask
+      sessionSyncTask = Task {
+        await previousTask?.value
+        let result = await sessionSyncService.stopSession(profileId: session.blockedProfile.id, endTime: now, expectedStart: session.startTime)
+        await handleStopResult(result, profileId: session.blockedProfile.id, endTime: now, expectedStart: session.startTime)
+      }
+    }
+    WidgetCenter.shared.reloadTimelines(ofKind: "ProfileControlWidget")
+  }
+
+  private func endV2Session(_ session: BlockedProfileSession, context: ModelContext, now: Date = Date()) {
+    guard
+      SharedData.completeSession(
+        expectedSessionId: session.id, now: now,
+        onComplete: {
+          self.appBlocker.deactivateRestrictions()
+        })
+    else {
+      errorMessage = "This session changed. Please try again."
+      return
+    }
+    finishDepartingSession(session, context: context, now: now)
+  }
+
   private func stopBlocking(context: ModelContext, bypassStrategy: Bool = false) {
     guard let session = activeSession else {
       Log.info(
@@ -1431,6 +1440,10 @@ class StrategyManager: ObservableObject {
       return
     }
 
+    if session.blockedProfile.profileSchemaVersion >= 2 {
+      endV2Session(session, context: context)
+      return
+    }
     // When bypassStrategy is true, the caller has already handled any required
     // NFC/QR scanning and validation. Use ManualBlockingStrategy to end the
     // session directly, avoiding a redundant second scan from legacy strategies.

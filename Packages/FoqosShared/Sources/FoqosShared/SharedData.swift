@@ -655,6 +655,7 @@ public enum SharedData {
 
   public static func createSessionForScheduler(for profileID: UUID) {
     withLock {
+      guard (profileSnapshots[profileID.uuidString]?.profileSchemaVersion ?? 1) < 2 else { return }
       activeSharedSession = SessionSnapshot(
         id: UUID().uuidString,
         tag: profileID.uuidString,
@@ -722,6 +723,7 @@ public enum SharedData {
     expectedVictimId: String?
   ) -> Bool {
     withLock {
+      guard (profileSnapshots[profileId.uuidString]?.profileSchemaVersion ?? 1) < 2 else { return false }
       if let current = activeSharedSession {
         if current.blockedProfileId == profileId {
           return true

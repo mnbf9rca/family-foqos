@@ -81,7 +81,7 @@ final class StrategyManagerBackgroundTests: XCTestCase {
     XCTAssertNotNil(manager.errorMessage)
   }
 
-  func testGivenDurationTooShort_WhenStartingFromBackground_ThenThrowsDurationOutOfRange() throws {
+  func testGivenDurationTooShort_WhenStartingFromBackground_ThenRefusesObsoleteDuration() throws {
     let profile = BlockedProfiles(name: "Test")
     context.insert(profile)
     try context.save()
@@ -91,14 +91,14 @@ final class StrategyManagerBackgroundTests: XCTestCase {
         profile.id, context: context, durationInMinutes: 14
       )
     ) { error in
-      if case IntentError.durationOutOfRange = error {
+      if case IntentError.unexpected(let message) = error, message == "This start uses the profile’s saved timer. Remove Duration from the Shortcut or edit the profile’s timer." {
       } else {
-        XCTFail("Expected durationOutOfRange, got \(error)")
+        XCTFail("Expected obsolete Duration refusal, got \(error)")
       }
     }
   }
 
-  func testGivenDurationTooLong_WhenStartingFromBackground_ThenThrowsDurationOutOfRange() throws {
+  func testGivenDurationTooLong_WhenStartingFromBackground_ThenRefusesObsoleteDuration() throws {
     let profile = BlockedProfiles(name: "Test")
     context.insert(profile)
     try context.save()
@@ -108,14 +108,14 @@ final class StrategyManagerBackgroundTests: XCTestCase {
         profile.id, context: context, durationInMinutes: 1441
       )
     ) { error in
-      if case IntentError.durationOutOfRange = error {
+      if case IntentError.unexpected(let message) = error, message == "This start uses the profile’s saved timer. Remove Duration from the Shortcut or edit the profile’s timer." {
       } else {
-        XCTFail("Expected durationOutOfRange, got \(error)")
+        XCTFail("Expected obsolete Duration refusal, got \(error)")
       }
     }
   }
 
-  func testGivenDurationExactly1440_WhenStartingFromBackground_ThenThrowsDurationOutOfRange() throws {
+  func testGivenDurationExactly1440_WhenStartingFromBackground_ThenRefusesObsoleteDuration() throws {
     let profile = BlockedProfiles(name: "Test")
     context.insert(profile)
     try context.save()
@@ -125,9 +125,9 @@ final class StrategyManagerBackgroundTests: XCTestCase {
         profile.id, context: context, durationInMinutes: 1440
       )
     ) { error in
-      if case IntentError.durationOutOfRange = error {
+      if case IntentError.unexpected(let message) = error, message == "This start uses the profile’s saved timer. Remove Duration from the Shortcut or edit the profile’s timer." {
       } else {
-        XCTFail("Expected durationOutOfRange, got \(error)")
+        XCTFail("Expected obsolete Duration refusal, got \(error)")
       }
     }
   }
@@ -255,6 +255,7 @@ final class StrategyManagerBackgroundTests: XCTestCase {
     let session = BlockedProfileSession(tag: "test", blockedProfile: profile)
     context.insert(session)
     try context.save()
+    SharedData.createActiveSharedSession(for: session.toSnapshot())
 
     try await manager.stopSessionFromBackground(profile.id, context: context)
   }
@@ -311,40 +312,11 @@ final class StrategyManagerBackgroundTests: XCTestCase {
   }
 
   func testDurationUsesEditorGateAndNeverChangesProfile() throws {
-    let now = Date()
-    let authorization = MockAuthorizationRequesting(initialStatus: .approved)
     let profile = try eligibleProfile()
-    profile.isManaged = true
-    profile.stopConditions = ProfileStopConditions(sameNFC: true)
-    profile.strategyData = StrategyTimerData.toData(from: StrategyTimerData(durationInMinutes: 120))
-    BlockedProfiles.updateSnapshot(for: profile)
-    try context.save()
-    let originalData = profile.strategyData
-    let originalUpdated = profile.updatedAt
-    let originalSnapshot = SharedData.snapshot(for: profile.id.uuidString)
-    var registrations: [Int] = []
-    let register: (UUID, Int, Date) throws -> Date = { _, minutes, _ in
-      registrations.append(minutes)
-      return now.addingTimeInterval(Double(minutes) * 60)
-    }
-    XCTAssertThrowsError(
-      try manager.startSessionFromBackground(
-        profile.id, context: context, durationInMinutes: 30, authorization: authorization,
-        mode: .child, isUnlocked: { _ in false }, canVerifyCode: true, registerTimer: register))
-    XCTAssertTrue(registrations.isEmpty)
-    XCTAssertTrue(try context.fetch(FetchDescriptor<BlockedProfileSession>()).isEmpty)
-    XCTAssertEqual(profile.strategyData, originalData)
-    XCTAssertEqual(profile.updatedAt, originalUpdated)
-    XCTAssertEqual(SharedData.snapshot(for: profile.id.uuidString), originalSnapshot)
-    try manager.startSessionFromBackground(
-      profile.id, context: context, durationInMinutes: 30, authorization: authorization,
-      mode: .child, isUnlocked: { _ in true }, canVerifyCode: true, registerTimer: register)
-    XCTAssertEqual(registrations, [30])
-    XCTAssertEqual(manager.activeSession?.timerEndTime, now.addingTimeInterval(1800))
-    XCTAssertEqual(SharedData.getActiveSharedSession()?.timerEndTime, now.addingTimeInterval(1800))
-    XCTAssertEqual(profile.strategyData, originalData)
-    XCTAssertEqual(profile.updatedAt, originalUpdated)
-    XCTAssertEqual(SharedData.snapshot(for: profile.id.uuidString), originalSnapshot)
+    XCTAssertThrowsError(try manager.startSessionFromBackground(profile.id, context: context, durationInMinutes: 30, authorization: MockAuthorizationRequesting(initialStatus: .approved)))
+    XCTAssertEqual(manager.errorMessage, "This start uses the profile’s saved timer. Remove Duration from the Shortcut or edit the profile’s timer.")
+    XCTAssertTrue(profile.sessions.isEmpty)
+    XCTAssertNil(profile.strategyData)
   }
 
   func testNilDurationLockedProfileDoesNotRequireEditPermission() throws {
@@ -357,21 +329,11 @@ final class StrategyManagerBackgroundTests: XCTestCase {
     XCTAssertTrue(manager.isBlocking)
   }
 
-  func testExecutionDurationWithNoSavedDataAndFollowingUntimedStart() async throws {
-    let now = Date()
+  func testExecutionDurationWithNoSavedDataAndFollowingUntimedStart() throws {
     let profile = try eligibleProfile()
-    let authorization = MockAuthorizationRequesting(initialStatus: .approved)
-    if #available(iOS 26.4, *) { authorization.sendStatus(.approvedWithDataAccess) }
-    try manager.startSessionFromBackground(
-      profile.id, context: context, durationInMinutes: 15, authorization: authorization,
-      registerTimer: { _, minutes, _ in
-        XCTAssertEqual(minutes, 15)
-        return now.addingTimeInterval(900)
-      })
-    XCTAssertNil(profile.strategyData)
-    try await manager.stopSessionFromBackground(profile.id, context: context)
-    try manager.startSessionFromBackground(profile.id, context: context, authorization: authorization)
-    XCTAssertNil(manager.activeSession?.timerEndTime)
+    XCTAssertThrowsError(try manager.startSessionFromBackground(profile.id, context: context, durationInMinutes: 30, authorization: MockAuthorizationRequesting(initialStatus: .approved)))
+    XCTAssertEqual(manager.errorMessage, "This start uses the profile’s saved timer. Remove Duration from the Shortcut or edit the profile’s timer.")
+    XCTAssertTrue(profile.sessions.isEmpty)
     XCTAssertNil(profile.strategyData)
   }
 
@@ -436,57 +398,44 @@ final class StrategyManagerBackgroundTests: XCTestCase {
   }
 
   func testTimerOnlyOverrideUsesExistingModeAndCodeAvailabilityGate() throws {
+    let profile = try eligibleProfile()
+    XCTAssertThrowsError(try manager.startSessionFromBackground(profile.id, context: context, durationInMinutes: 30, authorization: MockAuthorizationRequesting(initialStatus: .approved)))
+    XCTAssertEqual(manager.errorMessage, "This start uses the profile’s saved timer. Remove Duration from the Shortcut or edit the profile’s timer.")
+    XCTAssertTrue(profile.sessions.isEmpty)
+    XCTAssertNil(profile.strategyData)
+  }
+
+  func testSavedTimerRegistrationFailureReportsNoStartedSession() throws {
+    let profile = try eligibleProfile()
+    profile.stopConditions = .init(manual: true, timer: true, timerDurationMinutes: 37)
+    let sut = StrategyManager(registerTimer: { _, _, _, _ in throw NSError(domain: "registration", code: 1) }, cancelTimer: { _, _ in })
+    XCTAssertThrowsError(try sut.startSessionFromBackground(profile.id, context: context, authorization: MockAuthorizationRequesting(initialStatus: .approved)))
+    XCTAssertEqual(sut.errorMessage, "This profile couldn’t start because its timer couldn’t be set. Please try again.")
+    XCTAssertFalse(sut.isBlocking)
+    XCTAssertNil(SharedData.getActiveSharedSession())
+    XCTAssertTrue(profile.sessions.isEmpty)
+  }
+
+  func testObsoleteShortcutDurationAlwaysRefusedWithC4() throws {
     let now = Date()
     let profile = try eligibleProfile()
     profile.isManaged = true
-    profile.stopConditions = ProfileStopConditions(timer: true)
-    let authorization = MockAuthorizationRequesting(initialStatus: .approved)
-    for (mode, codeAvailable) in [(AppMode.individual, true), (.parent, true), (.child, false)] {
-      try manager.startSessionFromBackground(
-        profile.id, context: context, durationInMinutes: 1439, authorization: authorization,
-        mode: mode, isUnlocked: { _ in false }, canVerifyCode: codeAvailable,
-        registerTimer: { _, minutes, _ in
-          XCTAssertEqual(minutes, 1439)
-          return now.addingTimeInterval(Double(minutes) * 60)
-        })
-      XCTAssertNotNil(manager.activeSession?.timerEndTime)
-      XCTAssertNil(profile.strategyData)
-      try XCTUnwrap(manager.activeSession).endSession(now: now)
-      try context.save()
-      manager.activeSession = nil
-      manager.stopTimer()
+    profile.stopConditions = .init(timer: true, timerDurationMinutes: 37)
+    let original = profile.strategyData
+    for supplied in [-1, 14, 30, 1439, 1440] {
+      XCTAssertThrowsError(
+        try manager.startSessionFromBackground(
+          profile.id, context: context, durationInMinutes: supplied,
+          authorization: MockAuthorizationRequesting(initialStatus: .approved), mode: .child, isUnlocked: { _ in false }, canVerifyCode: true)
+      ) {
+        XCTAssertEqual(($0 as? IntentError).map { String(localized: $0.localizedStringResource) } ?? $0.localizedDescription, "This start uses the profile’s saved timer. Remove Duration from the Shortcut or edit the profile’s timer.")
+      }
+      XCTAssertTrue(profile.sessions.isEmpty)
+      XCTAssertNil(SharedData.getActiveSharedSession())
+      XCTAssertEqual(profile.strategyData, original)
     }
-    profile.stopConditions = ProfileStopConditions()
-    XCTAssertThrowsError(
-      try manager.startSessionFromBackground(
-        profile.id, context: context, durationInMinutes: 30, authorization: authorization,
-        mode: .parent,
-        registerTimer: { _, _, _ in
-          XCTFail("Invalid stop conditions must refuse before registration")
-          return now
-        }))
-  }
-
-  func testTimerRegistrationFailureReportsStartedSessionWithoutClaimingTimer() throws {
-    let profile = try eligibleProfile()
-    let snapshot = BlockedProfiles.getSnapshot(for: profile)
-    let updatedAt = profile.updatedAt
-    do {
-      try manager.startSessionFromBackground(
-        profile.id, context: context, durationInMinutes: 30,
-        authorization: MockAuthorizationRequesting(initialStatus: .approved),
-        registerTimer: { _, _, _ in throw NSError(domain: "test", code: 1) })
-      XCTFail("Registration failure must be reported")
-    } catch {
-      XCTAssertTrue(manager.errorMessage?.contains("The session started") == true)
-      XCTAssertTrue(manager.errorMessage?.contains("timer could not be registered") == true)
-    }
-    XCTAssertTrue(manager.isBlocking)
-    XCTAssertNil(manager.activeSession?.timerEndTime)
-    XCTAssertNil(SharedData.getActiveSharedSession()?.timerEndTime)
-    XCTAssertNil(profile.strategyData)
-    XCTAssertEqual(profile.updatedAt, updatedAt)
-    XCTAssertEqual(BlockedProfiles.getSnapshot(for: profile), snapshot)
+    XCTAssertEqual(profile.stopConditions.timerDurationMinutes, 37)
+    XCTAssertLessThanOrEqual(profile.createdAt, now.addingTimeInterval(1))
   }
 
 }

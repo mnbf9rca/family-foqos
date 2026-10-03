@@ -121,22 +121,6 @@ enum StartStopActionResolver {
     return .showPicker(options: scanOptions)
   }
 
-  enum StartCredential { case none, nfc, qr }
-
-  /// Match canStop's specific → same → any precedence for each scan modality.
-  static func hasUsableStop(
-    conditions: ProfileStopConditions,
-    disableBackgroundStops: Bool,
-    credential: StartCredential
-  ) -> Bool {
-    conditions.manual
-      || conditions.specificNFC
-      || (conditions.sameNFC ? credential == .nfc : conditions.anyNFC)
-      || conditions.specificQR
-      || (conditions.sameQR ? credential == .qr : conditions.anyQR)
-      || (!disableBackgroundStops && (conditions.schedule || conditions.deepLink))
-  }
-
   // MARK: - Stop Validation
 
   /// Validates whether a stop method is allowed given profile configuration
