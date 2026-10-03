@@ -43,6 +43,8 @@ Open the exported images and inspect each claimed state, preferably with an inde
 
 Let your previous gated command exit first. For an AX-loaded timeout, run this reboot inside the same owner gate; replace `<agent>` with your assigned name. It checks tools and owner before changing state, uses only the gate-provided UUID, and stops on any failure. Never erase or reboot another stream's simulator, use the `booted` alias, or run these simulator commands outside the wrapper; if ownership or recovery fails, report the blocker to the orchestrator.
 
+If shutdown reports that the device is already shut down after a failed recovery, remove only the shutdown line and rerun boot and bootstatus inside the same owner-gated snippet, or report the blocker; do not ignore unexpected errors.
+
 ```bash
 ui_agent='<agent>'
 scripts/xcode-stream.sh --agent "$ui_agent" --session collab -- /bin/bash -c '
