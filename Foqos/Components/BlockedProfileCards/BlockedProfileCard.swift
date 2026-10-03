@@ -3,6 +3,7 @@ import SwiftUI
 
 struct BlockedProfileCard: View {
   @EnvironmentObject var themeManager: ThemeManager
+  @State private var showConditionSummary = false
 
   let data: BlockedProfileCardData
 
@@ -28,6 +29,52 @@ struct BlockedProfileCard: View {
   // Keep a reference to the CardBackground to access color
   private var cardBackground: CardBackground {
     CardBackground(isActive: isActive, customColor: themeManager.themeColor)
+  }
+
+  var startSummary: String? {
+    guard data.profileSchemaVersion >= 2 else { return nil }
+    let start = data.startTriggers
+    var labels: [String] = []
+    if start.manual { labels.append("Tap to start") }
+    if start.shortcuts { labels.append("Siri and Shortcuts") }
+    if start.hasNFC { labels.append("NFC: \(NFCStartOption.from(start).label)") }
+    if start.hasQR { labels.append("QR: \(QRStartOption.from(start).label)") }
+    if start.schedule { labels.append("Schedule") }
+    if start.deepLink { labels.append("Written NFC / printed QR") }
+    return labels.isEmpty ? "None" : labels.joined(separator: ", ")
+  }
+
+  var stopSummary: String? {
+    guard data.profileSchemaVersion >= 2 else { return nil }
+    let stop = data.stopConditions
+    var labels: [String] = []
+    if stop.manual { labels.append("Tap to stop") }
+    if stop.timer { labels.append("Timer") }
+    if stop.hasNFC { labels.append("NFC: \(NFCStopOption.from(stop).label)") }
+    if stop.hasQR { labels.append("QR: \(QRStopOption.from(stop).label)") }
+    if stop.schedule { labels.append("Schedule") }
+    return labels.isEmpty ? "None" : labels.joined(separator: ", ")
+  }
+
+  private func conditionSummary(_ title: String, text: String, icon: String) -> some View {
+    Label("\(title): \(text)", systemImage: icon)
+      .font(.caption2)
+      .foregroundStyle(.secondary)
+      .lineLimit(2)
+      .fixedSize(horizontal: false, vertical: true)
+      .accessibilityLabel("\(title): \(text)")
+  }
+
+  private func fullConditionSummaries(start: String, stop: String) -> some View {
+    VStack(alignment: .leading, spacing: 12) {
+      Label("Start: \(start)", systemImage: "play.fill")
+      Label("Stop: \(stop)", systemImage: "stop.fill")
+    }
+    .font(.caption2)
+    .foregroundStyle(.secondary)
+    .fixedSize(horizontal: false, vertical: true)
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("condition-summary-details")
   }
 
   var body: some View {
@@ -125,7 +172,31 @@ struct BlockedProfileCard: View {
           VStack(alignment: .leading, spacing: 16) {
             // Strategy and schedule side-by-side with divider
             HStack(spacing: 16) {
-              StrategyInfoView(strategyId: data.blockingStrategyId)
+              if let startSummary, let stopSummary {
+                Button {
+                  showConditionSummary = true
+                } label: {
+                  VStack(alignment: .leading, spacing: 4) {
+                    conditionSummary("Start", text: startSummary, icon: "play.fill")
+                    conditionSummary("Stop", text: stopSummary, icon: "stop.fill")
+                  }
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("condition-summary")
+                .popover(isPresented: $showConditionSummary) {
+                  ViewThatFits(in: .vertical) {
+                    fullConditionSummaries(start: startSummary, stop: stopSummary)
+                    ScrollView {
+                      fullConditionSummaries(start: startSummary, stop: stopSummary)
+                    }
+                  }
+                  .frame(maxWidth: 300, alignment: .leading)
+                  .padding()
+                  .presentationCompactAdaptation(.popover)
+                }
+              } else {
+                StrategyInfoView(strategyId: data.blockingStrategyId)
+              }
 
               Divider()
                 .frame(height: 24)
