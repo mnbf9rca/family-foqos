@@ -29,6 +29,7 @@ struct BlockedProfileCarousel: View {
 
   @State private var currentProfileId: UUID?
   @State private var scheduleOutOfSyncCards = ScheduleOutOfSyncCardState()
+  @ScaledMetric(relativeTo: .body) private var heightScale: CGFloat = 1
 
   // Constants for the carousel
   private let cardSpacing: CGFloat = 12
@@ -209,7 +210,7 @@ struct BlockedProfileCarousel: View {
         .scrollDisabled(isBlocking)
         .scrollIndicators(.hidden)
         .contentMargins(.horizontal, 16)
-        .frame(height: cardHeight)
+        .frame(height: cardHeight * heightScale)
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: cardHeight)
         .padding(.bottom, 10)
 
