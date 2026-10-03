@@ -87,10 +87,7 @@ After a failing test run, `xcodebuild` can appear stalled while an asynchronous 
 
 ## Agent Acceptance Runbooks
 
-For source-built V1 → V2 upgrade acceptance, an agent follows the
-[V1 → V2 upgrade runbook](v1-v2-upgrade-runbook.md). It generates the profile matrix,
-checks fixture compilation before touching data, and reports evidence to the orchestrator.
-The human performs only the separate checks that require real devices.
+For source-built V1 → V2 upgrade acceptance, an agent follows the [V1 → V2 upgrade runbook](v1-v2-upgrade-runbook.md). It generates the profile matrix, checks fixture compilation before touching data, and reports evidence to the orchestrator. The human performs only the separate checks that require real devices.
 
 ## Screenshots, Archives, and Uploads
 

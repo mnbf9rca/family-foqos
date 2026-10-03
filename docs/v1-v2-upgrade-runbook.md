@@ -14,14 +14,17 @@ The drivers are documentation fixtures, not normal test-target members. **Every 
 
 ## 1. Pin inputs, create throwaway worktrees, compile fixtures
 
-Run in Bash from a clean checkout containing this runbook and helper. Choose the assigned fleet agent below. `HEAD` is the V2 revision under test; use another reviewed commit if the task names one. Never test a moving branch without recording its resolved commit.
+Run in Bash from a clean checkout containing this runbook and helper. Replace `<agent>` with your own assigned fleet identity; an unchanged placeholder stops before creating worktrees or touching the simulator. `HEAD` is the V2 revision under test; use another reviewed commit if the task names one. Never test a moving branch without recording its resolved commit.
 
 ```bash
 set -euo pipefail
-for tool in git python3 xcodebuild xcrun plutil xcbeautify swift-format mktemp mkdir cp; do
+for tool in git python3 xcodebuild xcrun plutil xcbeautify swift-format mktemp mkdir cp rm; do
   command -v "$tool" >/dev/null || { echo "$tool is required" >&2; exit 127; }
 done
-export UPGRADE_AGENT=build2
+export UPGRADE_AGENT='<agent>'
+[ "$UPGRADE_AGENT" != '<agent>' ] && [ -n "$UPGRADE_AGENT" ] || {
+  echo 'Replace <agent> with your assigned fleet identity; never borrow another stream' >&2; exit 1;
+}
 export UPGRADE_REPO=$(git rev-parse --show-toplevel)
 [ -z "$(git status --porcelain)" ] || { echo 'Start from a clean checkout' >&2; exit 1; }
 git check-ignore -q .worktrees/ || { echo '.worktrees must already be ignored' >&2; exit 1; }
@@ -33,6 +36,10 @@ export UPGRADE_GATE="$UPGRADE_REPO/scripts/xcode-stream.sh"
 export UPGRADE_STATE="$UPGRADE_REPO/scripts/v1-v2-upgrade-state.py"
 export UPGRADE_V1="$UPGRADE_REPO/.worktrees/$UPGRADE_AGENT-v1-${UPGRADE_RUN##*.}"
 export UPGRADE_V2="$UPGRADE_REPO/.worktrees/$UPGRADE_AGENT-v2-${UPGRADE_RUN##*.}"
+for name in UPGRADE_AGENT UPGRADE_REPO UPGRADE_TARGET UPGRADE_V1_SHA UPGRADE_RUN UPGRADE_GATE UPGRADE_STATE UPGRADE_V1 UPGRADE_V2; do
+  printf 'export %s=%q\n' "$name" "${!name}"
+done > "$UPGRADE_RUN/env.sh"
+printf 'Saved run environment: %s\n' "$UPGRADE_RUN/env.sh"
 printf 'V1=%s\nV2=%s\nAgent=%s\n' "$UPGRADE_V1_SHA" "$UPGRADE_TARGET" "$UPGRADE_AGENT" > "$UPGRADE_RUN/source-refs.txt"
 git worktree add --detach "$UPGRADE_V1" "$UPGRADE_V1_SHA"
 git worktree add --detach "$UPGRADE_V2" "$UPGRADE_TARGET"
@@ -62,9 +69,15 @@ cp "$UPGRADE_REPO/docs/fixtures/V2UpgradeVerificationTests.swift" "$UPGRADE_V2/F
 
 V1 uses the frozen lowercase `foqosTests` target; V2 uses `FoqosTests`. V2 compiles first so V1 remains the gate's last build product for `prepare`. The current wrapper is used from both worktrees because the frozen V1 checkout predates it. No custom destination or DerivedData argument is allowed.
 
+Step 1 saves only the named `UPGRADE_*` variables to the printed `env.sh` path. Agent tool calls often start new shells: set `UPGRADE_ENV` to that exact path in each later shell before running its block. Do not source a past run or another agent’s environment file. Missing environment input stops the block.
+
 ## 2. Reset the disposable app, seed real V1 data, capture it
 
 ```bash
+set -euo pipefail
+: "${UPGRADE_ENV:?Set UPGRADE_ENV to the env.sh path printed by step 1}"
+[ -f "$UPGRADE_ENV" ] || { echo 'Run environment file is missing' >&2; exit 1; }
+source "$UPGRADE_ENV"
 "$UPGRADE_GATE" --agent "$UPGRADE_AGENT" --session collab -- \
  python3 "$UPGRADE_STATE" prepare "$UPGRADE_RUN"
 (cd "$UPGRADE_V1"
@@ -84,6 +97,10 @@ Require the seed test to execute and pass, not merely compile. The helper record
 Do **not** uninstall, clear preferences or restore a V2 store here. Clean only the owner's DerivedData before changing source versions; that leaves the V1 containers intact and avoids stale XCTest host/framework artifacts. Use `test`, not an unverified `test-without-building` product.
 
 ```bash
+set -euo pipefail
+: "${UPGRADE_ENV:?Set UPGRADE_ENV to the env.sh path printed by step 1}"
+[ -f "$UPGRADE_ENV" ] || { echo 'Run environment file is missing' >&2; exit 1; }
+source "$UPGRADE_ENV"
 (cd "$UPGRADE_V2"
  "$UPGRADE_GATE" --agent "$UPGRADE_AGENT" --session collab -- \
   "$UPGRADE_REPO/scripts/clean-build.sh"
@@ -103,6 +120,10 @@ The first verification read checks the existing V1 session and shared JSON befor
 The upgrade test consumes its one active V1 session, so exclude this temporary driver from the subsequent full unit suite.
 
 ```bash
+set -euo pipefail
+: "${UPGRADE_ENV:?Set UPGRADE_ENV to the env.sh path printed by step 1}"
+[ -f "$UPGRADE_ENV" ] || { echo 'Run environment file is missing' >&2; exit 1; }
+source "$UPGRADE_ENV"
 (cd "$UPGRADE_V2"
  "$UPGRADE_GATE" --agent "$UPGRADE_AGENT" --session collab --xcbeautify -- \
   xcodebuild test -project FamilyFoqos.xcodeproj -scheme FamilyFoqos \
@@ -127,12 +148,12 @@ Do not report overall PASS if an operation was unavailable, output was malformed
 Run cleanup after either success or failure. Do not reset someone else's worktree or erase their simulator. The state helper is deliberately not an automatic rollback of previous sessions: previous app/group backups remain in the evidence directory, and the disposable app keeps the tested V2 state.
 
 ```bash
+set -euo pipefail
+: "${UPGRADE_ENV:?Set UPGRADE_ENV to the env.sh path printed by step 1}"
+[ -f "$UPGRADE_ENV" ] || { echo 'Run environment file is missing' >&2; exit 1; }
+source "$UPGRADE_ENV"
 cp "$UPGRADE_RUN/original-LogTailTests.swift" "$UPGRADE_V1/FoqosTests/LogTailTests.swift"
-python3 - "$UPGRADE_V2/FoqosTests/RCUpgradeVerificationTests.swift" <<'PY'
-from pathlib import Path
-import sys
-Path(sys.argv[1]).unlink()
-PY
+rm -- "$UPGRADE_V2/FoqosTests/RCUpgradeVerificationTests.swift"
 [ -z "$(git -C "$UPGRADE_V1" status --porcelain)" ] || { echo 'V1 worktree has additional changes: preserve and inspect them' >&2; exit 1; }
 [ -z "$(git -C "$UPGRADE_V2" status --porcelain)" ] || { echo 'V2 worktree has additional changes: preserve and inspect them' >&2; exit 1; }
 git worktree remove "$UPGRADE_V1"
