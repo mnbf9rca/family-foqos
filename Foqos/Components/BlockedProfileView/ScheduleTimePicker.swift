@@ -102,20 +102,25 @@ struct ScheduleTimePicker: View {
   }
 
   private func saveSchedule() {
-    if selectedDays.isEmpty {
-      schedule = nil
-    } else {
-      let components = Calendar.current.dateComponents(
-        [.hour, .minute], from: selectedTime)
-      schedule = ProfileScheduleTime(
-        // rawValue sort for locale-independent storage order (not display order)
-        days: Array(selectedDays).sorted { $0.rawValue < $1.rawValue },
-        hour: components.hour ?? 9,
-        minute: components.minute ?? 0,
-        updatedAt: Date()
-      )
-    }
+    let components = Calendar.current.dateComponents([.hour, .minute], from: selectedTime)
+    schedule = Self.scheduleAfterSaving(
+      existing: schedule, days: selectedDays, hour: components.hour ?? 9,
+      minute: components.minute ?? 0, now: Date())
   }
+
+  static func scheduleAfterSaving(
+    existing: ProfileScheduleTime?, days: Set<Weekday>, hour: Int, minute: Int, now: Date
+  ) -> ProfileScheduleTime? {
+    guard !days.isEmpty else { return nil }
+    if let existing, Set(existing.days) == days, existing.hour == hour, existing.minute == minute {
+      return existing
+    }
+    return ProfileScheduleTime(
+      // rawValue sort for locale-independent storage order (not display order)
+      days: Array(days).sorted { $0.rawValue < $1.rawValue },
+      hour: hour, minute: minute, updatedAt: now)
+  }
+
 }
 
 #Preview {
