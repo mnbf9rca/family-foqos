@@ -257,6 +257,54 @@ final class IndependentScheduleRuntimeTests: XCTestCase {
     XCTAssertEqual(effects, 0)
   }
 
+  func testUnchangedPickerSavePreservesAlreadyDueDelayedStop() throws {
+    let now = at(18, day: 5)
+    var profile = profile()
+    let session = install(profile, start: at(12, day: 3))
+    let stored = try XCTUnwrap(profile.stopSchedule)
+    profile.stopSchedule = ScheduleTimePicker.scheduleAfterSaving(
+      existing: stored, days: Set(stored.days), hour: stored.hour, minute: stored.minute, now: now)
+    SharedData.setSnapshot(profile, for: profile.id.uuidString)
+    StopScheduleTimerActivity(applier: applier).stop(for: profile, now: now, calendar: calendar)
+    XCTAssertNil(SharedData.getActiveSharedSession())
+    XCTAssertEqual(SharedData.completedSessionsInScheduler.last?.id, session.id)
+    XCTAssertEqual(applier.deactivations, 1)
+  }
+
+  func testReenablingSchedulesRejectsPassedStopAndPreservesTheNextOccurrence() throws {
+    let now = at(18, day: 4)
+    let model = BlockedProfiles(name: "Reenabled")
+    model.startTriggers = .init(manual: true)
+    model.stopConditions = .init(manual: true)
+    model.startSchedule = .init(days: [.monday], hour: 9, minute: 0, updatedAt: .distantPast)
+    model.stopSchedule = .init(days: [.friday], hour: 17, minute: 0, updatedAt: .distantPast)
+    let container = try TestModelContainer.create()
+    let context = ModelContext(container)
+    context.insert(model)
+    try context.save()
+    let configuration = TriggerConfigurationModel()
+    configuration.startTriggers = .init(manual: true, schedule: true)
+    configuration.stopConditions = .init(manual: true, schedule: true)
+    configuration.startSchedule = model.startSchedule
+    configuration.stopSchedule = model.stopSchedule
+    let session = install(BlockedProfiles.getSnapshot(for: model), start: at(12, day: 3))
+    _ = try BlockedProfiles.updateProfile(model, in: context, now: now, triggerConfiguration: configuration)
+    XCTAssertEqual(model.startSchedule?.updatedAt, now)
+    XCTAssertEqual(model.stopSchedule?.updatedAt, now)
+    _ = try BlockedProfiles.updateProfile(model, in: context, now: now.addingTimeInterval(60), triggerConfiguration: configuration)
+    XCTAssertEqual(model.startSchedule?.updatedAt, now, "A second unchanged save retains the enable cutoff")
+    XCTAssertEqual(model.stopSchedule?.updatedAt, now)
+    let profile = BlockedProfiles.getSnapshot(for: model)
+    SharedData.setSnapshot(profile, for: profile.id.uuidString)
+    let stop = StopScheduleTimerActivity(applier: applier)
+    stop.stop(for: profile, now: at(18, day: 5), calendar: calendar)
+    XCTAssertEqual(SharedData.getActiveSharedSession(), session)
+    XCTAssertEqual(applier.deactivations, 0)
+    stop.stop(for: profile, now: at(17, day: 11), calendar: calendar)
+    XCTAssertNil(SharedData.getActiveSharedSession())
+    XCTAssertEqual(applier.deactivations, 1)
+  }
+
   func testStopConfigCutoffBoundaryPreservesUnchangedLateStops() {
     let now = at(18, day: 5)
     let occurrence = at(17, day: 4)

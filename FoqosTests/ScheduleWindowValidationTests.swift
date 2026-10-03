@@ -42,4 +42,43 @@ final class ScheduleWindowValidationTests: XCTestCase {
     model.validate()
     XCTAssertEqual(model.validationErrors, ["Choose a timer from 15 minutes to 23 hours 59 minutes."])
   }
+
+  func testSchedulePickerSavePreservesUnchangedRecurrenceAndStampsOnlyActualChanges() throws {
+    let now = Date(timeIntervalSince1970: 1_800_000_000)
+    let stored = ProfileScheduleTime(days: [.friday, .monday], hour: 17, minute: 0, updatedAt: now.addingTimeInterval(-3600))
+    let cases: [(Set<Weekday>, Int, Int, Bool)] = [
+      ([.monday, .friday], 17, 0, false),
+      ([.friday], 17, 0, true),
+      ([.monday, .friday], 18, 0, true),
+      ([.monday, .friday], 17, 1, true),
+    ]
+    for (days, hour, minute, changed) in cases {
+      let saved = try XCTUnwrap(
+        ScheduleTimePicker.scheduleAfterSaving(
+          existing: stored, days: days, hour: hour, minute: minute, now: now))
+      if changed {
+        XCTAssertEqual(Set(saved.days), days)
+        XCTAssertEqual(saved.hour, hour)
+        XCTAssertEqual(saved.minute, minute)
+        XCTAssertEqual(saved.updatedAt, now)
+      } else {
+        XCTAssertEqual(saved, stored, "An unchanged save preserves the timestamp and stored value")
+      }
+    }
+    var toggled = Set(stored.days)
+    toggled.remove(.monday)
+    toggled.insert(.monday)
+    XCTAssertEqual(
+      ScheduleTimePicker.scheduleAfterSaving(
+        existing: stored, days: toggled, hour: 17, minute: 0, now: now), stored)
+    let created = try XCTUnwrap(
+      ScheduleTimePicker.scheduleAfterSaving(
+        existing: nil, days: [.friday], hour: 17, minute: 0, now: now))
+    XCTAssertEqual(created.updatedAt, now)
+    XCTAssertEqual(Set(created.days), [.friday])
+    XCTAssertNil(
+      ScheduleTimePicker.scheduleAfterSaving(
+        existing: stored, days: [], hour: 17, minute: 0, now: now))
+  }
+
 }
