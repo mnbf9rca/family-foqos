@@ -105,10 +105,10 @@ class BlockedProfiles {
   var profileSchemaVersion: Int = 1
 
   /// Start triggers - serialized as JSON in SwiftData
-  private var startTriggersData: Data?
+  var startTriggersData: Data?
 
   /// Stop conditions - serialized as JSON in SwiftData
-  private var stopConditionsData: Data?
+  var stopConditionsData: Data?
 
   /// Computed property for start triggers with JSON serialization
   var startTriggers: ProfileStartTriggers {
@@ -117,7 +117,7 @@ class BlockedProfiles {
       do {
         return try JSONDecoder().decode(ProfileStartTriggers.self, from: data)
       } catch {
-        Log.error("Failed to decode startTriggers: \(error.localizedDescription)", category: .sync)
+        Log.error("Failed to decode startTriggers", category: .sync)
         return ProfileStartTriggers()
       }
     }
@@ -137,7 +137,7 @@ class BlockedProfiles {
       do {
         return try JSONDecoder().decode(ProfileStopConditions.self, from: data)
       } catch {
-        Log.error("Failed to decode stopConditions: \(error.localizedDescription)", category: .sync)
+        Log.error("Failed to decode stopConditions", category: .sync)
         return ProfileStopConditions()
       }
     }
@@ -167,10 +167,10 @@ class BlockedProfiles {
   var stopQRCodeIds: [String] = []
 
   /// Start schedule - serialized as JSON in SwiftData
-  private var startScheduleData: Data?
+  var startScheduleData: Data?
 
   /// Stop schedule - serialized as JSON in SwiftData
-  private var stopScheduleData: Data?
+  var stopScheduleData: Data?
 
   /// Computed property for start schedule with JSON serialization
   var startSchedule: ProfileScheduleTime? {
@@ -179,7 +179,7 @@ class BlockedProfiles {
       do {
         return try JSONDecoder().decode(ProfileScheduleTime.self, from: data)
       } catch {
-        Log.error("Failed to decode startSchedule: \(error.localizedDescription)", category: .sync)
+        Log.error("Failed to decode startSchedule", category: .sync)
         return nil
       }
     }
@@ -203,7 +203,7 @@ class BlockedProfiles {
       do {
         return try JSONDecoder().decode(ProfileScheduleTime.self, from: data)
       } catch {
-        Log.error("Failed to decode stopSchedule: \(error.localizedDescription)", category: .sync)
+        Log.error("Failed to decode stopSchedule", category: .sync)
         return nil
       }
     }
@@ -219,6 +219,12 @@ class BlockedProfiles {
       }
     }
   }
+
+  func conditionValidationErrors(forSave: Bool) -> [String] {
+    SyncedProfile(from: self, originDeviceId: "").conditionValidationErrors(forSave: forSave)
+  }
+
+  var hasInvalidConditionSettings: Bool { !conditionValidationErrors(forSave: false).isEmpty }
 
   @Relationship var sessions: [BlockedProfileSession] = []
 
@@ -389,8 +395,26 @@ class BlockedProfiles {
     isManaged: Bool? = nil,
     managedByChildId: String? = nil,
     syncVersion: Int? = nil,
-    needsAppSelection: Bool? = nil
+    needsAppSelection: Bool? = nil,
+    triggerConfiguration: TriggerConfigurationModel? = nil
   ) throws -> BlockedProfiles {
+    try validateEditorConfiguration(triggerConfiguration)
+    if triggerConfiguration != nil && profile.isNewerSchemaVersion {
+      try requireValidConditions(["These settings couldn’t be saved. Please check this profile and try again."])
+    }
+    let active = try BlockedProfileSession.mostRecentActiveSession(in: context)
+    try ProfileMigrationUtil.migrate(profile, hasActiveSession: active?.blockedProfile.id == profile.id)
+    let previous = SyncedProfile(from: profile, originDeviceId: "")
+    let previousStopData = profile.stopConditionsData
+    let previousSelection = profile.selectedActivity
+    let previousNeedsAppSelection = profile.needsAppSelection
+    if triggerConfiguration != nil {
+      // An editor draft owns nullable fields as well as its condition settings.
+      profile.geofenceRule = geofenceRule
+      profile.managedByChildId = managedByChildId
+      profile.reminderTimeInSeconds = reminderTime
+      profile.customReminderMessage = customReminderMessage
+    }
     if let newName = name {
       profile.name = newName
     }
@@ -494,15 +518,63 @@ class BlockedProfiles {
     if let customReminderMessage {
       profile.customReminderMessage = customReminderMessage
     }
-    let active = try BlockedProfileSession.mostRecentActiveSession(in: context)
-    try ProfileMigrationUtil.migrate(profile, hasActiveSession: active?.blockedProfile.id == profile.id)
+    triggerConfiguration?.saveToProfile(profile)
     profile.updatedAt = now
-
-    // Update the snapshot
+    do {
+      try context.save()
+    } catch {
+      context.rollback()
+      // A failed SwiftData save can leave the live model changed after rollback.
+      // Keep restoration covered by testReadOnlyStoreSaveFailurePublishesNothingAndRestoresLiveConfiguration.
+      if profile.isPersistentModelValid {
+        profile.selectedActivity = previousSelection
+        profile.needsAppSelection = previousNeedsAppSelection
+        profile.name = previous.name
+        profile.updatedAt = previous.updatedAt
+        profile.blockingStrategyId = previous.blockingStrategyId
+        profile.strategyData = previous.strategyData
+        profile.order = previous.order
+        profile.enableLiveActivity = previous.enableLiveActivity
+        profile.reminderTimeInSeconds = previous.reminderTimeInSeconds
+        profile.customReminderMessage = previous.customReminderMessage
+        profile.enableBreaks = previous.enableBreaks
+        profile.breakTimeInMinutes = previous.breakTimeInMinutes
+        profile.enableStrictMode = previous.enableStrictMode
+        profile.enableAllowMode = previous.enableAllowMode
+        profile.enableAllowModeDomains = previous.enableAllowModeDomains
+        profile.enableSafariBlocking = previous.enableSafariBlocking
+        profile.blockAdultWebsites = previous.blockAdultWebsites == true
+        profile.blockAppInstallation = previous.blockAppInstallation == true
+        profile.domains = previous.domains
+        profile.schedule = previous.schedule
+        profile.geofenceRule = previous.geofenceRule
+        profile.disableBackgroundStops = previous.disableBackgroundStops
+        profile.isManaged = previous.isManaged
+        profile.managedByChildId = previous.managedByChildId
+        profile.profileSchemaVersion = previous.profileSchemaVersion
+        profile.scheduleLastStoppedAt = previous.scheduleLastStoppedAt
+        profile.startTriggersData = previous.startTriggersData
+        profile.startScheduleData = previous.startScheduleData
+        profile.stopScheduleData = previous.stopScheduleData
+        profile.startNFCTagIds = previous.startNFCTagIds
+        profile.startQRCodeIds = previous.startQRCodeIds
+        profile.stopNFCTagIds = previous.stopNFCTagIds
+        profile.stopQRCodeIds = previous.stopQRCodeIds
+        if previous.profileSchemaVersion < 3 {
+          profile.physicalUnblockNFCTagId = previous.physicalUnblockNFCTagId
+          profile.physicalUnblockQRCodeId = previous.physicalUnblockQRCodeId
+          profile.startNFCTagId = previous.startNFCTagId
+          profile.startQRCodeId = previous.startQRCodeId
+          profile.stopNFCTagId = previous.stopNFCTagId
+          profile.stopQRCodeId = previous.stopQRCodeId
+        }
+        profile.stopConditionsData = previousStopData
+        profile.preActivationReminderTimesData = previous.preActivationReminderTimesData
+        profile.syncVersion = previous.version
+      }
+      throw error
+    }
     updateSnapshot(for: profile)
-
-    try context.save()
-
     return profile
   }
 
@@ -663,6 +735,21 @@ class BlockedProfiles {
     return lastProfile.order + 1
   }
 
+  @MainActor
+  private static func validateEditorConfiguration(_ configuration: TriggerConfigurationModel?) throws {
+    guard let configuration else { return }
+    configuration.validate()
+    try requireValidConditions(configuration.validationErrors)
+  }
+
+  private static func requireValidConditions(_ errors: [String]) throws {
+    guard !errors.isEmpty else { return }
+    throw NSError(
+      domain: "ProfileConditions", code: 1,
+      userInfo: [NSLocalizedDescriptionKey: errors.joined(separator: "\n\n")])
+  }
+
+  @MainActor
   static func createProfile(
     in context: ModelContext,
     name: String,
@@ -690,8 +777,10 @@ class BlockedProfiles {
     isManaged: Bool = false,
     managedByChildId: String? = nil,
     syncVersion: Int = 0,
-    needsAppSelection: Bool = false
+    needsAppSelection: Bool = false,
+    triggerConfiguration: TriggerConfigurationModel? = nil
   ) throws -> BlockedProfiles {
+    try validateEditorConfiguration(triggerConfiguration)
     let profileOrder = getNextOrder(in: context)
 
     let profile = BlockedProfiles(
@@ -727,11 +816,13 @@ class BlockedProfiles {
       profile.schedule = schedule
     }
 
-    // Create the snapshot so extensions can read it immediately
-    updateSnapshot(for: profile)
-
+    triggerConfiguration?.saveToProfile(profile)
     context.insert(profile)
-    try context.save()
+    do { try context.save() } catch {
+      context.rollback()
+      throw error
+    }
+    updateSnapshot(for: profile)
     return profile
   }
 
@@ -744,7 +835,6 @@ class BlockedProfiles {
   ) throws -> BlockedProfiles {
     let mode = mode ?? AppModeManager.shared.currentMode
     let active = try BlockedProfileSession.mostRecentActiveSession(in: context)
-    try ProfileMigrationUtil.migrate(source, hasActiveSession: active?.blockedProfile.id == source.id)
     let nextOrder = getNextOrder(in: context)
     let cloned = BlockedProfiles(
       name: newName,
@@ -776,11 +866,11 @@ class BlockedProfiles {
       needsAppSelection: source.needsAppSelection
     )
 
-    context.insert(cloned)
+    cloned.blockingStrategyId = source.blockingStrategyId
 
     // Copy V2 trigger data
-    cloned.startTriggers = source.startTriggers
-    cloned.stopConditions = source.stopConditions
+    cloned.startTriggersData = source.startTriggersData
+    cloned.stopConditionsData = source.stopConditionsData
     cloned.startNFCTagIds = source.startNFCTagIds
     cloned.startNFCTagId = source.startNFCTagId
     cloned.startQRCodeIds = source.startQRCodeIds
@@ -789,19 +879,33 @@ class BlockedProfiles {
     cloned.stopNFCTagId = source.stopNFCTagId
     cloned.stopQRCodeIds = source.stopQRCodeIds
     cloned.stopQRCodeId = source.stopQRCodeId
-    cloned.startSchedule = source.startSchedule
-    cloned.stopSchedule = source.stopSchedule
+    cloned.startScheduleData = source.startScheduleData
+    cloned.stopScheduleData = source.stopScheduleData
 
-    // Preserve the source's schema version: init stamps V2 unconditionally,
+    // Preserve the source's schema version: init stamps the current version,
     // which would leave a V1 source's clone with all-false triggers that no
     // migration pass will ever repair. Migrating here translates the copied
     // blockingStrategyId into startable triggers immediately (#223)
     cloned.profileSchemaVersion = source.profileSchemaVersion
-    try ProfileMigrationUtil.migrate(cloned, hasActiveSession: false)
+    cloned.migrateToV2IfNeeded()
+    let storedErrors = cloned.conditionValidationErrors(forSave: false)
+    let saveErrors = cloned.conditionValidationErrors(forSave: true)
+    try requireValidConditions(storedErrors + saveErrors.filter { !storedErrors.contains($0) })
 
-    try context.save()
-
-    // Create the snapshot so extensions can read it immediately (#209)
+    // Source/candidate persistence and sync-owning migration follow acceptance.
+    try ProfileMigrationUtil.migrate(source, hasActiveSession: active?.blockedProfile.id == source.id)
+    context.insert(cloned)
+    do {
+      try ProfileMigrationUtil.migrate(cloned, hasActiveSession: false)
+      try context.save()
+    } catch {
+      context.rollback()
+      if let leftover = try? findProfile(byID: cloned.id, in: context), leftover.isPersistentModelValid {
+        context.delete(leftover)
+        context.processPendingChanges()
+      }
+      throw error
+    }
     updateSnapshot(for: cloned)
 
     return cloned
@@ -907,6 +1011,8 @@ extension BlockedProfiles {
     var (start, stop) = TriggerMigration.migrateFromStrategy(
       blockingStrategyId
     )
+
+    if stop.timer { stop.timerDurationMinutes = TriggerMigration.validTimerDuration(from: strategyData) }
 
     // Step 2: Migrate physical unlock
     if physicalUnblockNFCTagId != nil || physicalUnblockQRCodeId != nil {

@@ -42,7 +42,7 @@ final class ProfileSaveSnapshotTests: XCTestCase {
     config.startSchedule = ProfileScheduleTime(days: [.monday], hour: 21, minute: 0, updatedAt: now)
     config.stopSchedule = ProfileScheduleTime(days: [.monday], hour: 7, minute: 0, updatedAt: now)
 
-    config.saveToProfile(profile)
+    _ = try BlockedProfiles.updateProfile(profile, in: context, now: now, triggerConfiguration: config)
 
     let snapshot = SharedData.snapshot(for: profile.id.uuidString)
     XCTAssertEqual(snapshot?.startTriggersSchedule, true)
@@ -63,7 +63,7 @@ final class ProfileSaveSnapshotTests: XCTestCase {
     config.startSchedule = ProfileScheduleTime(days: [.monday], hour: 21, minute: 0, updatedAt: now)
     config.stopSchedule = ProfileScheduleTime(days: [.monday], hour: 7, minute: 30, updatedAt: now)
 
-    config.saveToProfile(profile)
+    _ = try BlockedProfiles.updateProfile(profile, in: context, now: now, triggerConfiguration: config)
 
     let snapshot = SharedData.snapshot(for: profile.id.uuidString)
     XCTAssertEqual(snapshot?.stopConditionsSchedule, true)
@@ -83,11 +83,11 @@ final class ProfileSaveSnapshotTests: XCTestCase {
     config.stopConditions.schedule = true
     config.startSchedule = ProfileScheduleTime(days: [.monday], hour: 21, minute: 0, updatedAt: now)
     config.stopSchedule = ProfileScheduleTime(days: [.monday], hour: 7, minute: 0, updatedAt: now)
-    config.saveToProfile(profile)
+    _ = try BlockedProfiles.updateProfile(profile, in: context, now: now, triggerConfiguration: config)
 
     // User edits the start time in a later editing session
     config.startSchedule = ProfileScheduleTime(days: [.monday], hour: 22, minute: 30, updatedAt: now)
-    config.saveToProfile(profile)
+    _ = try BlockedProfiles.updateProfile(profile, in: context, now: now, triggerConfiguration: config)
 
     let snapshot = SharedData.snapshot(for: profile.id.uuidString)
     XCTAssertEqual(snapshot?.startSchedule?.hour, 22)
@@ -104,9 +104,7 @@ final class ProfileSaveSnapshotTests: XCTestCase {
     try context.save()
     let config = TriggerConfigurationModel()
     try config.loadFromProfile(profile, in: context)
-    _ = try BlockedProfiles.updateProfile(profile, in: context, now: now, blockAdultWebsites: true)
-    config.saveToProfile(profile)
-    try context.save()
+    _ = try BlockedProfiles.updateProfile(profile, in: context, now: now, blockAdultWebsites: true, triggerConfiguration: config)
     XCTAssertEqual(profile.profileSchemaVersion, 3)
     XCTAssertTrue(profile.startTriggers.anyNFC)
     XCTAssertTrue(profile.stopConditions.specificNFC)
@@ -122,7 +120,7 @@ final class ProfileSaveSnapshotTests: XCTestCase {
     // A deliberate edit after loading the migrated form remains authoritative.
     config.startTriggers.anyNFC = false
     config.startTriggers.manual = true
-    config.saveToProfile(profile)
+    _ = try BlockedProfiles.updateProfile(profile, in: context, now: now, triggerConfiguration: config)
     XCTAssertTrue(profile.startTriggers.manual)
     XCTAssertFalse(profile.startTriggers.anyNFC)
   }

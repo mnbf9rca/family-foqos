@@ -85,6 +85,7 @@ final class ProfileStartTriggersTests: XCTestCase {
     let profile = BlockedProfiles(name: "Explicit")
     profile.startTriggers = ProfileStartTriggers(manual: false, shortcuts: false)
     profile.startTriggers.manual = true
+    profile.stopConditions = .init(manual: true)
     container.mainContext.insert(profile)
     try container.mainContext.save()
     let cloned = try BlockedProfiles.cloneProfile(profile, in: container.mainContext, newName: "Clone", mode: .individual)
