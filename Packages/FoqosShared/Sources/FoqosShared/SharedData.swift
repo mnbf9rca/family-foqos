@@ -270,6 +270,12 @@ public enum SharedData {
   // MARK: – Serializable snapshot of a profile (no sessions)
 
   public struct ProfileSnapshot: Codable, Equatable {
+    public var hasActiveSchedule: Bool {
+      if (profileSchemaVersion ?? 1) < 2 { return schedule?.isActive == true }
+      return (startTriggersSchedule == true && startSchedule?.isActive == true)
+        || (stopConditionsSchedule == true && stopSchedule?.isActive == true)
+    }
+
     public var id: UUID
     public var name: String
     public var selectedActivity: FamilyActivitySelection

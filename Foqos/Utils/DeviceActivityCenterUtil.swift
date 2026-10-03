@@ -63,11 +63,11 @@ class DeviceActivityCenterUtil {
       // The end is artificial; the independent stop activity owns completion.
       let endMinute = (startSched.hour * 60 + startSched.minute + 1439) % 1440
       intervalEnd = DateComponents(hour: endMinute / 60, minute: endMinute % 60)
-    } else {
-      // Legacy path
-      let schedule = profile.schedule!
+    } else if profile.profileSchemaVersion < 2, let schedule = profile.schedule {
       intervalStart = DateComponents(hour: schedule.startHour, minute: schedule.startMinute)
       intervalEnd = DateComponents(hour: schedule.endHour, minute: schedule.endMinute)
+    } else {
+      return scheduleStopActivity(for: profile, scheduleFor: scheduleFor, startMonitoring: startMonitoring, stopMonitoring: stopMonitoring)
     }
 
     let deviceActivitySchedule = DeviceActivitySchedule(

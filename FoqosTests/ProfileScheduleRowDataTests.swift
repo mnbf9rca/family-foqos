@@ -1,3 +1,5 @@
+import DeviceActivity
+import FoqosShared
 import SwiftData
 import XCTest
 
@@ -181,4 +183,74 @@ final class ProfileScheduleRowDataTests: XCTestCase {
     XCTAssertEqual(after.startSchedule, afterStartSchedule)
     XCTAssertEqual(after.stopSchedule, afterStopSchedule)
   }
+  func testConvertedV2NeverUsesRetainedLegacySchedule() throws {
+    let now = Date(timeIntervalSince1970: 1_800_000_000)
+    let profile = BlockedProfiles(name: "Converted", blockingStrategyId: ManualBlockingStrategy.id)
+    profile.profileSchemaVersion = 1
+    profile.schedule = .init(days: [.monday], startHour: 9, startMinute: 0, endHour: 17, endMinute: 0, updatedAt: now)
+    context.insert(profile)
+    try context.save()
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = .sortedKeys
+    let legacyBytes = try encoder.encode(profile.schedule)
+    _ = try profile.migrateIfEligible(hasActiveSession: false)
+    XCTAssertGreaterThanOrEqual(profile.profileSchemaVersion, 2)
+    profile.startTriggers = .init(manual: true)
+    profile.stopConditions = .init(manual: true, schedule: true)
+    profile.stopSchedule = .init(days: [.friday], hour: 17, minute: 0, updatedAt: now)
+    try context.save()
+    let start = DeviceActivityName(profile.id.uuidString)
+    let stop = StopScheduleTimerActivity().getDeviceActivityName(from: profile.id.uuidString)
+    XCTAssertEqual(DeviceActivityCenterUtil.requiredActivities(for: profile), [stop])
+    XCTAssertEqual(ProfileScheduleRow(data: profile.cardData, isActive: false).scheduleLines, ["Stop: Fr 5:00 PM"])
+    var removed: [DeviceActivityName] = []
+    StrategyManager.shared.cleanUpGhostSchedules(context: context, activities: [start, stop], remove: { removed.append($0) })
+    XCTAssertEqual(removed, [start])
+    XCTAssertTrue(BlockedProfiles.getSnapshot(for: profile).hasActiveSchedule)
+    profile.stopConditions.schedule = false
+    XCTAssertFalse(BlockedProfiles.getSnapshot(for: profile).hasActiveSchedule, "Converted profiles never count retained V1 schedules")
+    removed = []
+    StrategyManager.shared.cleanUpGhostSchedules(context: context, activities: [start, stop], remove: { removed.append($0) })
+    XCTAssertEqual(Set(removed), Set([start, stop]))
+    XCTAssertEqual(try encoder.encode(profile.schedule), legacyBytes)
+  }
+
+  func testSnapshotScheduleCountPreservesDeferredAndPreUpdateV1Only() {
+    let now = Date(timeIntervalSince1970: 1_800_000_000)
+    let profile = BlockedProfiles(name: "Deferred")
+    profile.profileSchemaVersion = 1
+    profile.schedule = .init(days: [.monday], startHour: 9, startMinute: 0, endHour: 17, endMinute: 0, updatedAt: now)
+    var snapshot = BlockedProfiles.getSnapshot(for: profile)
+    XCTAssertEqual(snapshot.startTriggersSchedule, false, "V2 writers populate flags even before deferred migration")
+    XCTAssertTrue(snapshot.hasActiveSchedule)
+    snapshot.profileSchemaVersion = nil
+    XCTAssertTrue(snapshot.hasActiveSchedule, "Pre-update snapshots have no schema field")
+    snapshot.profileSchemaVersion = 3
+    XCTAssertFalse(snapshot.hasActiveSchedule)
+    snapshot.startTriggersSchedule = true
+    snapshot.startSchedule = .init(days: [.monday], hour: 9, minute: 0, updatedAt: now)
+    XCTAssertTrue(snapshot.hasActiveSchedule)
+    snapshot.startTriggersSchedule = false
+    snapshot.stopConditionsSchedule = true
+    snapshot.stopSchedule = .init(days: [.friday], hour: 17, minute: 0, updatedAt: now)
+    XCTAssertTrue(snapshot.hasActiveSchedule)
+  }
+
+  func testCleanupPreservesGenuineV1AndUnknownSchemaButRemovesIndependentOrphans() throws {
+    let now = Date(timeIntervalSince1970: 1_800_000_000)
+    let legacy = BlockedProfiles(name: "Legacy")
+    legacy.profileSchemaVersion = 1
+    legacy.schedule = .init(days: [.monday], startHour: 9, startMinute: 0, endHour: 17, endMinute: 0, updatedAt: now)
+    let future = BlockedProfiles(name: "Future")
+    future.profileSchemaVersion = 99
+    context.insert(legacy)
+    context.insert(future)
+    try context.save()
+    let orphan = UUID()
+    let names = [DeviceActivityName(legacy.id.uuidString), DeviceActivityName(future.id.uuidString), DeviceActivityName(orphan.uuidString), StopScheduleTimerActivity().getDeviceActivityName(from: orphan.uuidString), StrategyTimerActivity().getDeviceActivityName(from: orphan.uuidString)]
+    var removed: [DeviceActivityName] = []
+    StrategyManager.shared.cleanUpGhostSchedules(context: context, activities: names, remove: { removed.append($0) })
+    XCTAssertEqual(Set(removed), Set([names[2], names[3]]))
+  }
+
 }

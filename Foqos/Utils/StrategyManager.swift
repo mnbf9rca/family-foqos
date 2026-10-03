@@ -1,3 +1,4 @@
+import DeviceActivity
 import FoqosShared
 import SwiftData
 import SwiftUI
@@ -1543,12 +1544,17 @@ class StrategyManager: ObservableObject {
     )
   }
 
-  func cleanUpGhostSchedules(context: ModelContext) {
+  func cleanUpGhostSchedules(
+    context: ModelContext,
+    activities: [DeviceActivityName]? = nil,
+    remove: (DeviceActivityName) -> Void = { DeviceActivityCenterUtil.removeScheduleTimerActivities(for: $0) }
+  ) {
     guard !ScreenshotDemoMode.isActive else { return }
-    let allActivities = DeviceActivityCenterUtil.getDeviceActivities()
-    let scheduleTimerActivity = ScheduleTimerActivity()
-    let scheduleActivities = scheduleTimerActivity.getAllScheduleTimerActivities(
-      from: allActivities)
+    let allActivities = activities ?? DeviceActivityCenterUtil.getDeviceActivities()
+    let stopPrefix = StopScheduleTimerActivity.id + ":"
+    let scheduleActivities = allActivities.filter {
+      UUID(uuidString: $0.rawValue) != nil || $0.rawValue.hasPrefix(stopPrefix)
+    }
 
     Log.info(
       "Found \(scheduleActivities.count) schedule timer activities out of \(allActivities.count) total activities",
@@ -1556,7 +1562,8 @@ class StrategyManager: ObservableObject {
 
     for activity in scheduleActivities {
       let rawValue = activity.rawValue
-      guard let profileId = UUID(uuidString: rawValue) else {
+      let id = rawValue.hasPrefix(stopPrefix) ? String(rawValue.dropFirst(stopPrefix.count)) : rawValue
+      guard let profileId = UUID(uuidString: id) else {
         // This shouldn't happen since we filtered above, but print just in case
         Log.info(
           "Unexpected: failed to parse profile id from filtered activity: \(rawValue)",
@@ -1566,15 +1573,11 @@ class StrategyManager: ObservableObject {
 
       do {
         if let profile = try BlockedProfiles.findProfile(byID: profileId, in: context) {
-          let hasScheduledStart =
-            profile.startTriggers.schedule
-            && profile.startSchedule?.isActive == true
-          let hasLegacySchedule = profile.schedule?.isActive == true
-          if !hasScheduledStart && !hasLegacySchedule {
-            Log.info(
-              "Profile '\(profile.name)' has no schedule but has device activity registered. Removing ghost schedule...",
-              category: .strategy)
-            DeviceActivityCenterUtil.removeScheduleTimerActivities(for: profile)
+          // Unknown schema is read-only; a failed fetch also leaves monitoring untouched.
+          guard !profile.isNewerSchemaVersion else { continue }
+          if !DeviceActivityCenterUtil.requiredActivities(for: profile).contains(activity) {
+            Log.info("Removing obsolete profile schedule activity", category: .strategy)
+            remove(activity)
           } else {
             Log.info(
               "Profile '\(profile.name)' has schedule - activity is valid", category: .strategy)
@@ -1584,7 +1587,7 @@ class StrategyManager: ObservableObject {
           Log.info(
             "No profile found for activity \(rawValue). Removing orphaned schedule...",
             category: .strategy)
-          DeviceActivityCenterUtil.removeScheduleTimerActivities(for: activity)
+          remove(activity)
         }
       } catch {
         // Database error occurred - do NOT delete the schedule since we don't know the true state
