@@ -511,7 +511,11 @@ public enum SharedData {
       self.breakStartTime = try values.decodeIfPresent(Date.self, forKey: .breakStartTime)
       self.breakEndTime = try values.decodeIfPresent(Date.self, forKey: .breakEndTime)
       self.forceStarted = try values.decode(Bool.self, forKey: .forceStarted)
-      self.oneMoreMinuteUsed = try values.decodeIfPresent(Bool.self, forKey: .oneMoreMinuteUsed) ?? false
+      if values.contains(.oneMoreMinuteUsed) {
+        self.oneMoreMinuteUsed = try values.decode(Bool.self, forKey: .oneMoreMinuteUsed)
+      } else {
+        self.oneMoreMinuteUsed = false
+      }
       self.oneMoreMinuteStartTime = try values.decodeIfPresent(Date.self, forKey: .oneMoreMinuteStartTime)
       self.breakEndDeadline = try values.decodeIfPresent(Date.self, forKey: .breakEndDeadline)
       self.oneMoreMinuteDeadline = try values.decodeIfPresent(Date.self, forKey: .oneMoreMinuteDeadline)

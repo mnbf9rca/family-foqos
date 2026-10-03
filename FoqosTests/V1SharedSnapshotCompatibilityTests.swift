@@ -87,6 +87,16 @@ final class V1SharedSnapshotCompatibilityTests: XCTestCase {
     XCTAssertEqual(SharedData.completedSessionsInScheduler.first?.id, completed["id"] as? String)
   }
 
+  func testPresentNullOneMoreMinuteValueIsRejectedWithoutClearingSharedState() throws {
+    var json = try XCTUnwrap(JSONSerialization.jsonObject(with: capturedSession) as? [String: Any])
+    json["oneMoreMinuteUsed"] = NSNull()
+    let malformed = try JSONSerialization.data(withJSONObject: json)
+    XCTAssertThrowsError(try JSONDecoder().decode(SharedData.SessionSnapshot.self, from: malformed))
+    suite.set(malformed, forKey: "activeScheduleSession")
+    SharedData.flushActiveSession(expectedSessionId: "01DCA90F-AFD0-48F7-9088-C57F350318C1")
+    XCTAssertEqual(suite.data(forKey: "activeScheduleSession"), malformed)
+  }
+
   func testPresentOneMoreMinuteValueIsRetainedAndWrongTypeIsRejected() throws {
     var json = try XCTUnwrap(JSONSerialization.jsonObject(with: capturedSession) as? [String: Any])
     json["oneMoreMinuteUsed"] = true
