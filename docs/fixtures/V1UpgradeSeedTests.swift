@@ -29,7 +29,7 @@ final class RCUpgradeSeedTests: XCTestCase {
     try context.save()
     SharedData.flushActiveSession()
     SharedData.profileSnapshots = [:]
-    SharedData.completedSessionsInScheduler = []
+    SharedData.flushCompletedSessionsForSchedular()
     let timer = try JSONEncoder().encode(StrategyTimerData(durationInMinutes: 37))
     let rows: [(String, String, Data?, String?, String?)] = [
       ("RC plain NFC", "NFCBlockingStrategy", nil, nil, nil),
