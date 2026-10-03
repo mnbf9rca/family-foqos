@@ -7,7 +7,6 @@ struct StopConditionSelector: View {
   @Binding var stopNFCTagIds: [String]
   @Binding var stopQRCodeIds: [String]
   @Binding var stopSchedule: ProfileScheduleTime?
-  let startTriggers: ProfileStartTriggers
   let nfcTags: [(id: String, name: String)]
   let qrTags: [(id: String, name: String)]
   let disabled: Bool
@@ -15,6 +14,7 @@ struct StopConditionSelector: View {
   let onScanNFCTag: () -> Void
   let onScanQRCode: () -> Void
   let onConfigureSchedule: () -> Void
+  let onConfigureTimer: () -> Void
 
   @State private var nfcOption: NFCStopOption = .none
   @State private var qrOption: QRStopOption = .none
@@ -26,12 +26,36 @@ struct StopConditionSelector: View {
         .disabled(disabled)
 
       // Timer
-      Toggle("Timer", isOn: binding(\.timer))
-        .disabled(disabled)
+      HStack {
+        Toggle("Timer", isOn: binding(\.timer))
+          .disabled(disabled)
+        if conditions.timer {
+          Spacer()
+          Button("Configure", action: onConfigureTimer)
+            .buttonStyle(.bordered)
+            .disabled(disabled)
+        }
+      }
+      if conditions.timer {
+        if let minutes = conditions.timerDurationMinutes {
+          Text(DateFormatters.formatMinutes(minutes))
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        } else {
+          Text("Set a timer duration. Timer won’t stop this profile until you do.")
+            .font(.caption)
+            .foregroundStyle(.orange)
+        }
+        Toggle("Allow changing timer before start", isOn: binding(\.allowChangingTimerBeforeStart))
+          .disabled(disabled)
+        Text("You can choose a different duration for an interactive start. Tag, link, Shortcut and scheduled starts use the saved duration.")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
 
       // NFC picker
       Picker("NFC", selection: $nfcOption) {
-        ForEach(NFCStopOption.availableOptions(forStart: startTriggers)) { option in
+        ForEach(NFCStopOption.allCases) { option in
           Text(option.label).tag(option)
         }
       }
@@ -40,12 +64,10 @@ struct StopConditionSelector: View {
         newValue.apply(to: &conditions)
         onConditionChange()
       }
-      .onChange(of: startTriggers.hasNFC) { _, hasNFC in
-        if !hasNFC && nfcOption == .same {
-          nfcOption = .none
-          NFCStopOption.none.apply(to: &conditions)
-          onConditionChange()
-        }
+      if nfcOption == .same {
+        Text("Stop with the same NFC tag that started this session. Other starts need another stop.")
+          .font(.caption)
+          .foregroundStyle(.secondary)
       }
       if nfcOption == .specific {
         TagPickerRows(
@@ -55,7 +77,7 @@ struct StopConditionSelector: View {
 
       // QR picker
       Picker("QR", selection: $qrOption) {
-        ForEach(QRStopOption.availableOptions(forStart: startTriggers)) { option in
+        ForEach(QRStopOption.allCases) { option in
           Text(option.label).tag(option)
         }
       }
@@ -64,12 +86,10 @@ struct StopConditionSelector: View {
         newValue.apply(to: &conditions)
         onConditionChange()
       }
-      .onChange(of: startTriggers.hasQR) { _, hasQR in
-        if !hasQR && qrOption == .same {
-          qrOption = .none
-          QRStopOption.none.apply(to: &conditions)
-          onConditionChange()
-        }
+      if qrOption == .same {
+        Text("Stop with the same QR code that started this session. Other starts need another stop.")
+          .font(.caption)
+          .foregroundStyle(.secondary)
       }
       if qrOption == .specific {
         TagPickerRows(
@@ -96,16 +116,12 @@ struct StopConditionSelector: View {
           .foregroundStyle(.secondary)
       }
 
-      // Deep Link
-      Toggle("Written NFC / printed QR", isOn: binding(\.deepLink))
-        .disabled(disabled)
-
     } header: {
       Text("Continue until...")
     } footer: {
       VStack(alignment: .leading, spacing: 4) {
-        if !conditions.isValid {
-          Text("Select at least one stop condition")
+        if !conditions.manual && !conditions.timer && !conditions.hasNFC && !conditions.hasQR && !conditions.schedule {
+          Text("Add at least one stop before saving this profile.")
             .foregroundStyle(.red)
         }
         if conditions.requiresPhysicalItemOnly {

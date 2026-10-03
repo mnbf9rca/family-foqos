@@ -1,4 +1,5 @@
 import CloudKit
+import FoqosShared
 import Foundation
 
 /// Payload equality excludes sync metadata (`lastModified`, `originDeviceId`, `version`)
@@ -41,10 +42,22 @@ enum SyncPayloadEquality {
       && a.stopQRCodeId == b.stopQRCodeId
       && a.schedule == b.schedule
       && a.geofenceRule == b.geofenceRule
-      && a.startTriggers == b.startTriggers
-      && a.stopConditions == b.stopConditions
-      && a.startSchedule == b.startSchedule
-      && a.stopSchedule == b.stopSchedule
+      && decodedConditionDataEqual(a.startTriggersData, b.startTriggersData, as: ProfileStartTriggers.self)
+      && decodedConditionDataEqual(a.stopConditionsData, b.stopConditionsData, as: ProfileStopConditions.self)
+      && decodedConditionDataEqual(a.startScheduleData, b.startScheduleData, as: ProfileScheduleTime.self)
+      && decodedConditionDataEqual(a.stopScheduleData, b.stopScheduleData, as: ProfileScheduleTime.self)
+  }
+
+  private static func decodedConditionDataEqual<T: Decodable & Equatable>(
+    _ lhs: Data?, _ rhs: Data?, as type: T.Type
+  ) -> Bool {
+    if let lhs, let rhs,
+      let a = try? JSONDecoder().decode(type, from: lhs),
+      let b = try? JSONDecoder().decode(type, from: rhs)
+    {
+      return a == b
+    }
+    return lhs == rhs
   }
 
   static func locationsPayloadEqual(_ a: SyncedLocation, _ b: SyncedLocation) -> Bool {

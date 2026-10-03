@@ -107,11 +107,13 @@ final class TriggerMigrationTests: XCTestCase {
 
   // MARK: - Unknown Strategy
 
-  func testGivenUnknownStrategyV1_WhenMigrating_ThenDefaultsToManual() {
+  func testGivenUnknownStrategyV1_WhenMigrating_ThenDefaultsToPlainNFC() {
     let (start, stop) = TriggerMigration.migrateFromStrategy("UnknownStrategy")
 
-    XCTAssertTrue(start.manual)
-    XCTAssertTrue(stop.manual)
+    XCTAssertTrue(start.anyNFC)
+    XCTAssertFalse(start.manual)
+    XCTAssertTrue(stop.sameNFC)
+    XCTAssertFalse(stop.manual)
   }
 
   // MARK: - Physical Unlock Migration

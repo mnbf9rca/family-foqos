@@ -34,4 +34,27 @@ final class TimerDurationSnapTests: XCTestCase {
       for: 1435, snapPoints: [720, 1440], threshold: threshold, maxMinutes: maxMinutes)
     XCTAssertEqual(result, 1439)
   }
+  func testSavedDurationIsConfirmedExactlyWithoutSnapping() {
+    for minutes in [37, 1439] {
+      var confirmed: Int?
+      let view = TimerDurationView(profileName: "Timer", initialDurationMinutes: minutes) { confirmed = $0.durationInMinutes }
+      XCTAssertNil(confirmed)
+      view.handleConfirm()
+      XCTAssertEqual(confirmed, minutes)
+    }
+    var confirmed: Int?
+    let view = TimerDurationView(profileName: "New") { confirmed = $0.durationInMinutes }
+    XCTAssertNil(confirmed)
+    view.handleConfirm()
+    XCTAssertEqual(confirmed, 60)
+  }
+
+  func testOneMinuteButtonsReachExactDurationAndEndpoint() {
+    XCTAssertEqual(TimerDurationView.adjustedDuration(36, by: 1), 37)
+    XCTAssertEqual(TimerDurationView.adjustedDuration(38, by: -1), 37)
+    XCTAssertEqual(TimerDurationView.adjustedDuration(1438, by: 1), 1439)
+    XCTAssertEqual(TimerDurationView.adjustedDuration(1439, by: 1), 1439)
+    XCTAssertEqual(TimerDurationView.adjustedDuration(15, by: -1), 15)
+  }
+
 }

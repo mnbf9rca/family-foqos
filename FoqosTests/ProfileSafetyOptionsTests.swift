@@ -124,6 +124,9 @@ final class ProfileSafetyOptionsTests: XCTestCase {
     let context = container.mainContext
     let profile = try BlockedProfiles.createProfile(
       in: context, name: "Safety", blockAdultWebsites: true, blockAppInstallation: true)
+    profile.startTriggers = .init(manual: true)
+    profile.stopConditions = .init(manual: true)
+    try context.save()
     let clone = try BlockedProfiles.cloneProfile(profile, in: context, newName: "Copy")
     XCTAssertTrue(clone.blockAdultWebsites)
     XCTAssertTrue(clone.blockAppInstallation)
