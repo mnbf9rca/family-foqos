@@ -109,9 +109,7 @@ enum StartStopActionResolver {
         return .cannotStop(reason: "This profile can only be stopped when the timer runs out")
       } else if conditions.schedule {
         return .cannotStop(reason: "This profile stops at its scheduled time")
-      } else if conditions.deepLink {
-        return .cannotStop(
-          reason: "This profile can only be stopped via a programmed NFC tag or QR code")
+
       }
       return .cannotStop(reason: "This profile has no manual stop method configured")
     }
@@ -166,7 +164,7 @@ enum StartStopActionResolver {
       return .denied("Scheduled stop is not enabled for this profile")
 
     case .deepLink:
-      if conditions.deepLink {
+      if legacySession && conditions.deepLink {
         return .allowed()
       }
       return .denied("Deep link stop is not enabled for this profile")
