@@ -3,6 +3,7 @@ import SwiftUI
 
 struct BlockedProfileCard: View {
   @EnvironmentObject var themeManager: ThemeManager
+  @State private var showConditionSummary = false
 
   let data: BlockedProfileCardData
 
@@ -62,6 +63,18 @@ struct BlockedProfileCard: View {
       .lineLimit(2)
       .fixedSize(horizontal: false, vertical: true)
       .accessibilityLabel("\(title): \(text)")
+  }
+
+  private func fullConditionSummaries(start: String, stop: String) -> some View {
+    VStack(alignment: .leading, spacing: 12) {
+      Label("Start: \(start)", systemImage: "play.fill")
+      Label("Stop: \(stop)", systemImage: "stop.fill")
+    }
+    .font(.caption2)
+    .foregroundStyle(.secondary)
+    .fixedSize(horizontal: false, vertical: true)
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("condition-summary-details")
   }
 
   var body: some View {
@@ -160,9 +173,26 @@ struct BlockedProfileCard: View {
             // Strategy and schedule side-by-side with divider
             HStack(spacing: 16) {
               if let startSummary, let stopSummary {
-                VStack(alignment: .leading, spacing: 4) {
-                  conditionSummary("Start", text: startSummary, icon: "play.fill")
-                  conditionSummary("Stop", text: stopSummary, icon: "stop.fill")
+                Button {
+                  showConditionSummary = true
+                } label: {
+                  VStack(alignment: .leading, spacing: 4) {
+                    conditionSummary("Start", text: startSummary, icon: "play.fill")
+                    conditionSummary("Stop", text: stopSummary, icon: "stop.fill")
+                  }
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("condition-summary")
+                .popover(isPresented: $showConditionSummary) {
+                  ViewThatFits(in: .vertical) {
+                    fullConditionSummaries(start: startSummary, stop: stopSummary)
+                    ScrollView {
+                      fullConditionSummaries(start: startSummary, stop: stopSummary)
+                    }
+                  }
+                  .frame(maxWidth: 300, alignment: .leading)
+                  .padding()
+                  .presentationCompactAdaptation(.popover)
                 }
               } else {
                 StrategyInfoView(strategyId: data.blockingStrategyId)
