@@ -7,26 +7,33 @@ class DeviceActivityCenterUtil {
   /// Required device-local names, shared by registration and missing-registration warnings.
   static func requiredActivities(for profile: BlockedProfiles) -> [DeviceActivityName] {
     guard !profile.isNewerSchemaVersion else { return [] }
-    let hasV2Start = profile.startTriggers.schedule && profile.startSchedule?.isActive == true
-    let requiresV2Start = hasV2Start && !profile.needsAppSelection
     var names: [DeviceActivityName] = []
-    if (hasV2Start || profile.schedule?.isActive == true) && !profile.needsAppSelection {
+    let hasStart =
+      profile.profileSchemaVersion < 2
+      ? profile.schedule?.isActive == true
+      : profile.startTriggers.schedule && profile.startSchedule?.isValid == true
+    if hasStart && !profile.needsAppSelection {
       names.append(ScheduleTimerActivity().getDeviceActivityName(from: profile.id.uuidString))
     }
-    if profile.stopConditions.schedule && profile.stopSchedule?.isActive == true && !requiresV2Start {
+    if profile.stopConditions.schedule && profile.stopSchedule?.isValid == true {
       names.append(StopScheduleTimerActivity().getDeviceActivityName(from: profile.id.uuidString))
     }
     return names
   }
 
   @MainActor
-  static func scheduleTimerActivity(for profile: BlockedProfiles) -> [String] {
+  static func scheduleTimerActivity(
+    for profile: BlockedProfiles, now: Date = Date(),
+    scheduleFor: (DeviceActivityName) -> DeviceActivitySchedule? = { DeviceActivityCenter().schedule(for: $0) },
+    startMonitoring: (DeviceActivityName, DeviceActivitySchedule) throws -> Void = { try DeviceActivityCenter().startMonitoring($0, during: $1) },
+    stopMonitoring: ([DeviceActivityName]) -> Void = { DeviceActivityCenter().stopMonitoring($0) },
+    publishStartCutoff: (UUID, Date) -> Bool = { SharedData.setStartRegistrationNotBefore($1, for: $0) }
+  ) -> [String] {
     guard !profile.isNewerSchemaVersion else { return [] }
     var failures: [String] = []
     // Always cancel any existing pre-activation reminders first
     TimersUtil.cancelAllPreActivationReminders(for: profile.id)
 
-    let center = DeviceActivityCenter()
     let scheduleTimerActivity = ScheduleTimerActivity()
     let deviceActivityName = scheduleTimerActivity.getDeviceActivityName(
       from: profile.id.uuidString
@@ -34,14 +41,15 @@ class DeviceActivityCenterUtil {
 
     // Determine if we have a V2 start schedule
     let hasV2StartSchedule =
-      profile.startTriggers.schedule
-      && profile.startSchedule?.isActive == true
+      profile.profileSchemaVersion >= 2 && profile.startTriggers.schedule
+      && profile.startSchedule?.isValid == true
 
     guard requiredActivities(for: profile).contains(deviceActivityName) else {
       // No start schedule — remove any existing schedule activity
-      stopActivities(for: [deviceActivityName], with: center)
+      if scheduleFor(deviceActivityName) != nil { stopMonitoring([deviceActivityName]) }
+      SharedData.setStartRegistrationNotBefore(nil, for: profile.id)
       // Still check for stop-only schedule
-      return scheduleStopActivity(for: profile)
+      return scheduleStopActivity(for: profile, scheduleFor: scheduleFor, startMonitoring: startMonitoring, stopMonitoring: stopMonitoring)
     }
 
     // Build interval from V2 or legacy
@@ -52,24 +60,14 @@ class DeviceActivityCenterUtil {
       let startSched = profile.startSchedule!
       intervalStart = DateComponents(hour: startSched.hour, minute: startSched.minute)
 
-      // For interval end: use V2 stop schedule if available, otherwise use start time + 23:59
-      if profile.stopConditions.schedule,
-        let stopSched = profile.stopSchedule, stopSched.isActive
-      {
-        intervalEnd = DateComponents(hour: stopSched.hour, minute: stopSched.minute)
-      } else {
-        // No scheduled stop — set end to exactly 1 minute before start (full day window)
-        if startSched.minute > 0 {
-          intervalEnd = DateComponents(hour: startSched.hour, minute: startSched.minute - 1)
-        } else {
-          intervalEnd = DateComponents(hour: (startSched.hour + 23) % 24, minute: 59)
-        }
-      }
-    } else {
-      // Legacy path
-      let schedule = profile.schedule!
+      // The end is artificial; the independent stop activity owns completion.
+      let endMinute = (startSched.hour * 60 + startSched.minute + 1439) % 1440
+      intervalEnd = DateComponents(hour: endMinute / 60, minute: endMinute % 60)
+    } else if profile.profileSchemaVersion < 2, let schedule = profile.schedule {
       intervalStart = DateComponents(hour: schedule.startHour, minute: schedule.startMinute)
       intervalEnd = DateComponents(hour: schedule.endHour, minute: schedule.endMinute)
+    } else {
+      return scheduleStopActivity(for: profile, scheduleFor: scheduleFor, startMonitoring: startMonitoring, stopMonitoring: stopMonitoring)
     }
 
     let deviceActivitySchedule = DeviceActivitySchedule(
@@ -78,26 +76,32 @@ class DeviceActivityCenterUtil {
       repeats: true
     )
 
-    do {
-      // Remove any existing schedule and create a new one
-      stopActivities(for: [deviceActivityName], with: center)
-      try center.startMonitoring(deviceActivityName, during: deviceActivitySchedule)
-      Log.info("Scheduled daily restrictions", category: .timer)
-
-      // Schedule pre-activation reminder if enabled
+    if !sameClockSchedule(scheduleFor(deviceActivityName), deviceActivitySchedule) {
+      // Publish before replacing monitoring: its immediate callback may describe an old start.
+      if hasV2StartSchedule && !publishStartCutoff(profile.id, now) {
+        failures.append("These settings couldn’t be saved. Please check this profile and try again.")
+        Log.error("Failed to publish scheduled start registration cutoff", category: .timer)
+      } else {
+        do {
+          if scheduleFor(deviceActivityName) != nil { stopMonitoring([deviceActivityName]) }
+          try startMonitoring(deviceActivityName, deviceActivitySchedule)
+          Log.info("Scheduled daily restrictions", category: .timer)
+        } catch {
+          failures.append("Start schedule: \(error.localizedDescription)")
+          Log.error("Start schedule: \(error.localizedDescription)", category: .timer)
+        }
+      }
+    }
+    if failures.isEmpty {
       if hasV2StartSchedule, let startSchedule = profile.startSchedule {
         schedulePreActivationReminderV2(for: profile, startSchedule: startSchedule)
-      } else if let schedule = profile.schedule {
+      } else if profile.profileSchemaVersion < 2, let schedule = profile.schedule {
         schedulePreActivationReminder(for: profile, schedule: schedule)
       }
-    } catch {
-      let message = "Start schedule: \(error.localizedDescription)"
-      Log.error("Start schedule: \(error.localizedDescription)", category: .timer)
-      failures.append(message)
     }
 
     // A failed start must not prevent an independent stop from registering.
-    failures += scheduleStopActivity(for: profile)
+    failures += scheduleStopActivity(for: profile, scheduleFor: scheduleFor, startMonitoring: startMonitoring, stopMonitoring: stopMonitoring)
     return failures
   }
 
@@ -116,18 +120,22 @@ class DeviceActivityCenterUtil {
   /// Register a stop-only DeviceActivity for profiles with scheduled stop but no scheduled start.
   /// Uses StopScheduleTimerActivity which fires intervalDidEnd at the stop time.
   @MainActor
-  static func scheduleStopActivity(for profile: BlockedProfiles) -> [String] {
+  static func scheduleStopActivity(
+    for profile: BlockedProfiles,
+    scheduleFor: (DeviceActivityName) -> DeviceActivitySchedule? = { DeviceActivityCenter().schedule(for: $0) },
+    startMonitoring: (DeviceActivityName, DeviceActivitySchedule) throws -> Void = { try DeviceActivityCenter().startMonitoring($0, during: $1) },
+    stopMonitoring: ([DeviceActivityName]) -> Void = { DeviceActivityCenter().stopMonitoring($0) }
+  ) -> [String] {
     defer { ScheduleRegistrationRefreshNotifier.post() }
     guard !profile.isNewerSchemaVersion else { return [] }
     let stopTimerActivity = StopScheduleTimerActivity()
     let deviceActivityName = stopTimerActivity.getDeviceActivityName(
       from: profile.id.uuidString
     )
-    let center = DeviceActivityCenter()
 
     // A selection-pending V2 start does not own the stop callback.
     guard requiredActivities(for: profile).contains(deviceActivityName) else {
-      stopActivities(for: [deviceActivityName], with: center)
+      if scheduleFor(deviceActivityName) != nil { stopMonitoring([deviceActivityName]) }
       return []
     }
 
@@ -142,9 +150,10 @@ class DeviceActivityCenterUtil {
       repeats: true
     )
 
+    guard !sameClockSchedule(scheduleFor(deviceActivityName), deviceActivitySchedule) else { return [] }
     do {
-      stopActivities(for: [deviceActivityName], with: center)
-      try center.startMonitoring(deviceActivityName, during: deviceActivitySchedule)
+      if scheduleFor(deviceActivityName) != nil { stopMonitoring([deviceActivityName]) }
+      try startMonitoring(deviceActivityName, deviceActivitySchedule)
       Log.info(
         "Scheduled stop-only activity at \(stopSchedule.hour):\(String(format: "%02d", stopSchedule.minute))",
         category: .timer
@@ -157,7 +166,18 @@ class DeviceActivityCenterUtil {
     return []
   }
 
+  private static func sameClockSchedule(_ existing: DeviceActivitySchedule?, _ desired: DeviceActivitySchedule) -> Bool {
+    guard let existing else { return false }
+    return existing.repeats == desired.repeats
+      && existing.intervalStart.hour == desired.intervalStart.hour
+      && existing.intervalStart.minute == desired.intervalStart.minute
+      && existing.intervalEnd.hour == desired.intervalEnd.hour
+      && existing.intervalEnd.minute == desired.intervalEnd.minute
+  }
+
   static func removeStopScheduleActivity(for profile: BlockedProfiles) {
+    // A V2 stop recurrence remains registered between sessions, regardless of their origin.
+    if profile.profileSchemaVersion >= 2 && profile.stopConditions.schedule && profile.stopSchedule?.isValid == true { return }
     let stopTimerActivity = StopScheduleTimerActivity()
     let deviceActivityName = stopTimerActivity.getDeviceActivityName(
       from: profile.id.uuidString
@@ -324,6 +344,7 @@ class DeviceActivityCenterUtil {
   }
 
   static func removeScheduleTimerActivities(for profile: BlockedProfiles) {
+    SharedData.setStartRegistrationNotBefore(nil, for: profile.id)
     let scheduleTimerActivity = ScheduleTimerActivity()
     let deviceActivityName = scheduleTimerActivity.getDeviceActivityName(
       from: profile.id.uuidString
@@ -332,6 +353,7 @@ class DeviceActivityCenterUtil {
   }
 
   static func removeScheduleTimerActivities(for activity: DeviceActivityName) {
+    if let id = UUID(uuidString: activity.rawValue) { SharedData.setStartRegistrationNotBefore(nil, for: id) }
     stopActivities(for: [activity])
   }
 

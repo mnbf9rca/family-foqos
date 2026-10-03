@@ -319,4 +319,84 @@ final class ProfileScheduleTimeTests: XCTestCase {
     XCTAssertEqual(original.hour, decoded.hour)
     XCTAssertEqual(original.minute, decoded.minute)
   }
+  func testOccurrenceQueriesRespectOwnWeekdaysAndInclusiveBounds() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let now = calendar.date(from: DateComponents(year: 2026, month: 6, day: 15, hour: 18))!
+    let mondayStart = calendar.date(bySettingHour: 9, minute: 0, second: 0, of: now)!
+    let fridayStop = calendar.date(byAdding: .day, value: 4, to: calendar.date(bySettingHour: 17, minute: 0, second: 0, of: now)!)!
+    let start = ProfileScheduleTime(days: [.monday], hour: 9, minute: 0, updatedAt: .distantPast)
+    let stop = ProfileScheduleTime(days: [.friday], hour: 17, minute: 0, updatedAt: .distantPast)
+    XCTAssertEqual(start.previousDailyClockOccurrence(atOrBefore: now, calendar: calendar), mondayStart)
+    XCTAssertFalse(stop.hasOccurrence(from: mondayStart, through: now, calendar: calendar))
+    XCTAssertTrue(stop.hasOccurrence(from: mondayStart, through: fridayStop, calendar: calendar))
+    XCTAssertTrue(stop.hasOccurrence(from: fridayStop, through: fridayStop, calendar: calendar))
+    XCTAssertFalse(stop.hasOccurrence(from: fridayStop.addingTimeInterval(1), through: fridayStop, calendar: calendar))
+    XCTAssertEqual(stop.previousOccurrence(atOrBefore: fridayStop.addingTimeInterval(60), calendar: calendar), fridayStop)
+    let tuesdayBeforeClock = calendar.date(byAdding: .hour, value: 14, to: now)!
+    let tuesdayClock = calendar.date(byAdding: .day, value: 1, to: mondayStart)!
+    XCTAssertEqual(start.previousDailyClockOccurrence(atOrBefore: tuesdayBeforeClock, calendar: calendar), mondayStart)
+    XCTAssertEqual(start.previousDailyClockOccurrence(atOrBefore: tuesdayClock, calendar: calendar), tuesdayClock)
+    XCTAssertEqual(start.previousOccurrence(atOrBefore: tuesdayClock, calendar: calendar), mondayStart)
+    let nextMonday = calendar.date(byAdding: .day, value: 7, to: mondayStart)!
+    XCTAssertEqual(start.nextScheduledStartTime(after: mondayStart, calendar: calendar), nextMonday)
+  }
+
+  func testOvernightOccurrencesUseStopWeekdays() {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let now = calendar.date(from: DateComponents(year: 2026, month: 6, day: 15, hour: 22))!
+    let stop = ProfileScheduleTime(days: [.tuesday], hour: 6, minute: 0, updatedAt: .distantPast)
+    let beforeStop = calendar.date(byAdding: .hour, value: 5, to: now)!
+    let afterStop = calendar.date(byAdding: .hour, value: 9, to: now)!
+    XCTAssertFalse(stop.hasOccurrence(from: now, through: beforeStop, calendar: calendar))
+    XCTAssertTrue(stop.hasOccurrence(from: now, through: afterStop, calendar: calendar))
+  }
+
+  func testOccurrenceQueriesFollowCalendarGapAndFoldConventions() {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(identifier: "America/New_York")!
+    let now = calendar.date(from: DateComponents(year: 2025, month: 3, day: 9, hour: 1))!
+    let gap = ProfileScheduleTime(days: Weekday.allCases, hour: 2, minute: 30, updatedAt: .distantPast)
+    let adjustedGap = calendar.date(from: DateComponents(year: 2025, month: 3, day: 9, hour: 3, minute: 30))!
+    XCTAssertEqual(gap.nextScheduledStartTime(after: now, calendar: calendar), adjustedGap)
+    XCTAssertEqual(gap.previousDailyClockOccurrence(atOrBefore: adjustedGap, calendar: calendar), adjustedGap)
+    let nextDay = calendar.date(from: DateComponents(year: 2025, month: 3, day: 10, hour: 2, minute: 30))!
+    XCTAssertEqual(gap.nextScheduledStartTime(after: adjustedGap, calendar: calendar), nextDay)
+    let firstFold = calendar.date(from: DateComponents(year: 2025, month: 11, day: 2, hour: 1, minute: 30))!
+    let fold = ProfileScheduleTime(days: [.sunday], hour: 1, minute: 30, updatedAt: .distantPast)
+    XCTAssertEqual(fold.previousDailyClockOccurrence(atOrBefore: firstFold.addingTimeInterval(3600), calendar: calendar), firstFold)
+    XCTAssertEqual(fold.previousOccurrence(atOrBefore: firstFold.addingTimeInterval(3600), calendar: calendar), firstFold)
+  }
+
+  func testOccurrenceResolutionUsesCurrentDeviceTimezoneAfterTravel() {
+    var eastern = Calendar(identifier: .gregorian)
+    eastern.timeZone = TimeZone(identifier: "America/New_York")!
+    var pacific = eastern
+    pacific.timeZone = TimeZone(identifier: "America/Los_Angeles")!
+    let now = eastern.date(from: DateComponents(year: 2026, month: 6, day: 19, hour: 19))!
+    let schedule = ProfileScheduleTime(days: [.friday], hour: 17, minute: 0, updatedAt: .distantPast)
+    let easternDue = eastern.date(from: DateComponents(year: 2026, month: 6, day: 19, hour: 17))!
+    let pacificFuture = pacific.date(from: DateComponents(year: 2026, month: 6, day: 19, hour: 17))!
+    XCTAssertEqual(schedule.previousOccurrence(atOrBefore: now, calendar: eastern), easternDue)
+    XCTAssertFalse(schedule.hasOccurrence(from: easternDue, through: now, calendar: pacific))
+    XCTAssertEqual(schedule.nextScheduledStartTime(after: now, calendar: pacific), pacificFuture)
+    XCTAssertEqual(schedule.previousOccurrence(atOrBefore: pacificFuture, calendar: pacific), pacificFuture)
+  }
+
+  func testInvalidRecurrencesFailClosedAndConflictsRequireSharedDays() {
+    let now = referenceDate
+    for (days, hour, minute) in [([Weekday](), 9, 0), ([.monday], -1, 0), ([.monday], 24, 0), ([.monday], 9, -1), ([.monday], 9, 60)] {
+      let invalid = ProfileScheduleTime(days: days, hour: hour, minute: minute, updatedAt: now)
+      XCTAssertNil(invalid.previousOccurrence(atOrBefore: now, calendar: calendar))
+      XCTAssertNil(invalid.previousDailyClockOccurrence(atOrBefore: now, calendar: calendar))
+      XCTAssertNil(invalid.nextScheduledStartTime(after: now, calendar: calendar))
+      XCTAssertFalse(invalid.hasOccurrence(from: now, through: now, calendar: calendar))
+    }
+    let monday = ProfileScheduleTime(days: [.monday], hour: 9, minute: 0, updatedAt: now)
+    XCTAssertFalse(monday.conflicts(with: .init(days: [.friday], hour: 9, minute: 0, updatedAt: now)))
+    XCTAssertFalse(monday.conflicts(with: .init(days: [.monday], hour: 9, minute: 1, updatedAt: now)))
+    XCTAssertTrue(monday.conflicts(with: .init(days: [.monday, .friday], hour: 9, minute: 0, updatedAt: now)))
+  }
+
 }

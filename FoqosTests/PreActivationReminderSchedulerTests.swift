@@ -185,13 +185,13 @@ final class PreActivationReminderSchedulerTests: XCTestCase {
       (false, false, false, false, false, false),
       (false, false, false, true, false, false),
       (true, false, false, false, true, false),
-      (true, false, true, false, true, false),
+      (true, false, true, false, true, true),
       (true, false, false, true, false, false),
       (true, false, true, true, false, true),
       (false, false, true, false, false, true),
       (false, false, true, true, false, true),
-      (false, true, false, false, true, false),
-      (false, true, true, false, true, true),
+      (false, true, false, false, false, false),
+      (false, true, true, false, false, true),
       (false, true, false, true, false, false),
       (false, true, true, true, false, true),
     ]
@@ -355,6 +355,24 @@ final class PreActivationReminderSchedulerTests: XCTestCase {
     XCTAssertEqual(profile.scheduleLastStoppedAt, now)
     XCTAssertEqual(SharedData.snapshot(for: profile.id.uuidString)?.scheduleLastStoppedAt, now)
     XCTAssertEqual(try context.fetch(FetchDescriptor<BlockedProfiles>()).first?.scheduleLastStoppedAt, now)
+  }
+
+  func testUnreadableOrInvalidRecurrenceFailsClosedWithoutPreventingOtherEvent() {
+    let now = Date(timeIntervalSince1970: 1_800_000_000)
+    let profile = BlockedProfiles(name: "Invalid")
+    profile.startTriggers = .init(schedule: true)
+    profile.stopConditions = .init(schedule: true)
+    profile.startSchedule = .init(days: [.monday], hour: 24, minute: 0, updatedAt: now)
+    profile.stopSchedule = .init(days: [.friday], hour: 17, minute: 0, updatedAt: now)
+    let stop = StopScheduleTimerActivity().getDeviceActivityName(from: profile.id.uuidString)
+    XCTAssertEqual(DeviceActivityCenterUtil.requiredActivities(for: profile), [stop])
+    profile.startScheduleData = Data("bad".utf8)
+    XCTAssertEqual(DeviceActivityCenterUtil.requiredActivities(for: profile), [stop])
+    profile.stopSchedule?.minute = 60
+    XCTAssertTrue(DeviceActivityCenterUtil.requiredActivities(for: profile).isEmpty)
+    profile.profileSchemaVersion = 1
+    profile.schedule = .init(days: [.monday], startHour: 9, startMinute: 0, endHour: 17, endMinute: 0, updatedAt: now)
+    XCTAssertEqual(DeviceActivityCenterUtil.requiredActivities(for: profile), [DeviceActivityName(profile.id.uuidString)])
   }
 
 }
