@@ -36,13 +36,13 @@ struct ProfileWidgetEntryView: View {
     return entry.useProfileURL == true
   }
 
-  private var linkToOpen: URL {
+  private var linkToOpen: URL? {
     // Don't open the app via profile to stop the session
     if entry.isBreakActive || entry.isSessionActive {
       return URL(string: "https://family-foqos.app")!
     }
 
-    return entry.deepLinkURL ?? URL(string: "family-foqos://")!
+    return entry.deepLinkURL
   }
 
   var body: some View {
@@ -124,11 +124,14 @@ struct ProfileWidgetEntryView: View {
               }
             }
           } else {
-            Link(destination: linkToOpen) {
-              Text(quickLaunchEnabled ? "Tap to launch" : "Tap to open")
-                .font(.body)
-                .fontWeight(.medium)
-                .foregroundColor(shouldUseWhiteText ? .white : .secondary)
+            let label = Text(quickLaunchEnabled ? "Tap to launch" : "Tap to open")
+              .font(.body)
+              .fontWeight(.medium)
+              .foregroundColor(shouldUseWhiteText ? .white : .secondary)
+            if let linkToOpen {
+              Link(destination: linkToOpen) { label }
+            } else {
+              label
             }
           }
         }
@@ -323,7 +326,7 @@ struct ProfileWidgetEntryView: View {
     profileName: "No Profile Selected",
     activeSession: nil,
     profileSnapshot: nil,
-    deepLinkURL: URL(string: "family-foqos://"),
+    deepLinkURL: nil,
     focusMessage: "Select a profile to get started",
     useProfileURL: false
   )
