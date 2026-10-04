@@ -53,7 +53,7 @@ final class UpgradePersonaUITests: XCTestCase {
       : symbols.contains(title) && !direct.firstMatch.exists
         ? app.buttons.containing(.image, identifier: title)
         : direct
-    let button = matches.allElementsBoundByIndex.first { $0.isHittable } ?? matches.firstMatch
+    let button = matches.allElementsBoundByIndex.first { self.app.frame.contains($0.frame) && $0.isHittable } ?? matches.firstMatch
     XCTAssertTrue(button.waitForExistence(timeout: 10), "Missing button: \(title)\n\(app.debugDescription)")
     if title.contains("Hold") { button.press(forDuration: 1.5) } else { button.tap() }
   }
@@ -368,7 +368,7 @@ final class UpgradePersonaUITests: XCTestCase {
   private func assertAdjacentValue(_ label: String, expected: String) {
     let matches = app.staticTexts.matching(identifier: label)
     XCTAssertTrue(matches.firstMatch.waitForExistence(timeout: 10))
-    guard let title = matches.allElementsBoundByIndex.first(where: { $0.isHittable }) else {
+    guard let title = matches.allElementsBoundByIndex.first(where: { self.app.frame.contains($0.frame) && $0.isHittable }) else {
       XCTFail("No visible count label: \(label)")
       return
     }
