@@ -426,25 +426,60 @@ final class UpgradePersonaUITests: XCTestCase {
     }
     if persona == "schedule" {
       for (upperTitle, lowerTitle) in [("Start by...", "Continue until..."), ("Continue until...", "Breaks")] {
-        let upper = app.staticTexts[upperTitle]
-        let lower = app.staticTexts[lowerTitle]
-        scrollTo(upper, up: upperTitle != "Start by...")
         var found = false
-        for _ in 0..<5 {
-          guard upper.exists else {
-            XCTFail("Schedule section heading unavailable: \(upperTitle)\n\(app.debugDescription)")
-            return
+        var upward = 0
+        var downward = 0
+        var geometry = "No snapshot captured"
+        for _ in 0..<18 {
+          let snapshot = try! app.snapshot()
+          let window = snapshot.frame
+          var pending = snapshot.children
+          var elements: [any XCUIElementSnapshot] = []
+          while let element = pending.popLast() {
+            pending.append(contentsOf: element.children)
+            if [upperTitle, lowerTitle, "Schedule", "Configure"].contains(element.label) {
+              elements.append(element)
+            }
           }
-          let bounded: (XCUIElement) -> Bool = { element in
-            self.app.frame.contains(element.frame) && element.frame.minY > upper.frame.maxY
-              && (lower.exists ? element.frame.maxY < lower.frame.minY : upperTitle == "Continue until...")
+          geometry = "\(upperTitle): \(elements.map { ($0.elementType.rawValue, $0.label, $0.value, $0.frame) }), window=\(window)"
+          let visible = elements.filter {
+            let frame = $0.frame
+            return frame.origin.x.isFinite && frame.origin.y.isFinite && frame.width.isFinite
+              && frame.height.isFinite && !frame.isEmpty && window.contains(frame)
           }
-          let schedules = app.switches.matching(identifier: "Schedule").allElementsBoundByIndex.filter(bounded)
-          let configure = app.buttons.matching(identifier: "Configure").allElementsBoundByIndex.filter(bounded)
-          if schedules.count == 1 && configure.count == 1 && configure[0].isHittable {
+          let upper = visible.filter { $0.elementType == .staticText && $0.label == upperTitle }
+          let lower = elements.filter { $0.elementType == .staticText && $0.label == lowerTitle }
+          let usableLower = lower.filter {
+            let frame = $0.frame
+            return frame.origin.x.isFinite && frame.origin.y.isFinite && frame.width.isFinite
+              && frame.height.isFinite && !frame.isEmpty
+          }
+          let bounded: (any XCUIElementSnapshot) -> Bool = { element in
+            upper.count == 1 && element.frame.minY > upper[0].frame.maxY
+              && (usableLower.count == 1
+                ? element.frame.maxY < usableLower[0].frame.minY
+                : lower.isEmpty && upperTitle == "Continue until...")
+          }
+          let schedules = visible.filter { $0.elementType == .switch && $0.label == "Schedule" && bounded($0) }
+          let configure = visible.filter { $0.elementType == .button && $0.label == "Configure" && bounded($0) }
+          let lowerReady =
+            upperTitle == "Continue until..."
+            || visible.contains {
+              $0.elementType == .staticText && $0.label == lowerTitle
+            }
+          if schedules.count == 1 && configure.count == 1 && lowerReady {
             XCTAssertEqual(schedules[0].value as? String, "1", "Converted \(upperTitle) schedule must stay enabled")
+            let target = configure[0].frame
+            let buttons = app.buttons.matching(NSPredicate(format: "label == %@", "Configure")).allElementsBoundByIndex.filter {
+              let frame = $0.frame
+              return abs(frame.minX - target.minX) <= 1 && abs(frame.minY - target.minY) <= 1
+                && abs(frame.width - target.width) <= 1 && abs(frame.height - target.height) <= 1
+            }
+            guard buttons.count == 1 && buttons[0].isHittable else { continue }
             screenshot("schedule-\(upperTitle)-enabled")
-            configure[0].tap()
+            buttons[0].tap()
+            let title = upperTitle == "Start by..." ? "Start Schedule" : "Stop Schedule"
+            XCTAssertTrue(app.navigationBars[title].waitForExistence(timeout: 10))
             let expected = (0..<7).map { DateFormatter().weekdaySymbols[(Calendar.current.firstWeekday - 1 + $0) % 7] }
             let frames = expected.map { day -> CGFloat in
               let row = app.buttons[day]
@@ -457,9 +492,19 @@ final class UpgradePersonaUITests: XCTestCase {
             found = true
             break
           }
-          app.swipeUp()
+          let down = upper.isEmpty
+          if down { downward += 1 } else { upward += 1 }
+          guard upward <= 6 && downward <= 6 else { break }
+          let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.75, dy: 0.6))
+          let end = start.withOffset(CGVector(dx: 0, dy: down ? 120 : -120))
+          guard window.contains(start.screenPoint) && window.contains(end.screenPoint) else { break }
+          start.press(forDuration: 0.05, thenDragTo: end)
         }
-        XCTAssertTrue(found, "Unique schedule controls unavailable inside \(upperTitle) bounds\n\(app.debugDescription)")
+        let evidence = XCTAttachment(string: geometry)
+        evidence.name = "schedule-section-snapshot-\(upperTitle)"
+        evidence.lifetime = .keepAlways
+        add(evidence)
+        XCTAssertTrue(found, "Unique schedule controls unavailable inside \(upperTitle) bounds\n\(geometry)\n\(app.debugDescription)")
         guard found else { return }
       }
     }
