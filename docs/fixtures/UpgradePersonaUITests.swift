@@ -351,7 +351,7 @@ final class UpgradePersonaUITests: XCTestCase {
     scrollTo(app.buttons["Manage"])
     let carousel = app.scrollViews.element(boundBy: 1)
     for _ in 0..<24 {
-      if title.exists && title.isHittable && title.frame.minX >= 0 && title.frame.maxX <= app.frame.maxX {
+      if title.exists && title.frame.minX >= 0 && title.frame.maxX <= app.frame.maxX && title.isHittable {
         libraryIndex = index
         return
       }
