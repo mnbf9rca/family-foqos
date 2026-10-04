@@ -31,7 +31,7 @@ final class UpgradePersonaUITests: XCTestCase {
     }
     app.launchArguments += ["--upgrade-scan-script", ProcessInfo.processInfo.environment["UPGRADE_SCANS"] ?? "wrong,correct,correct,correct"]
     app.launch()
-    XCTAssertTrue(app.staticTexts[persona == "library" ? (phase == "relaunch" ? "RC Library 06" : "RC Library 01") : "RC \(persona)"].waitForExistence(timeout: 20))
+    XCTAssertTrue(app.staticTexts[persona == "library" ? "RC Library 01" : "RC \(persona)"].waitForExistence(timeout: 20))
     if !seed { waitForReport(after: 0) }
   }
 
@@ -204,7 +204,15 @@ final class UpgradePersonaUITests: XCTestCase {
     } else {
       XCTAssertFalse(app.staticTexts[title].exists || springboard.staticTexts[title].exists, "StoreKit prompt has no Not Now control")
     }
-    if checkIdle { XCTAssertTrue(app.staticTexts["Hold to Start"].isHittable) }
+    if checkIdle {
+      let ready = XCTNSPredicateExpectation(
+        predicate: NSPredicate { _, _ in
+          self.app.staticTexts.matching(identifier: "Hold to Start").allElementsBoundByIndex.contains {
+            self.app.frame.contains($0.frame) && $0.isHittable
+          }
+        }, object: nil)
+      XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 10), .completed, "Visible Home start control is not usable")
+    }
   }
 
   private func completeQRScan() {
@@ -287,6 +295,8 @@ final class UpgradePersonaUITests: XCTestCase {
     dismissRatingPrompt(checkIdle: false)
     XCTAssertFalse(app.alerts.firstMatch.exists, "Emergency unblock must succeed without a hidden failure")
     // The production action dismisses the sheet on successful completion.
+    XCTAssertTrue(app.staticTexts["Emergency Access"].waitForNonExistence(timeout: 10))
+    if persona == "library" { libraryIndex = 1 }
     XCTAssertTrue(app.staticTexts["Hold to Start"].waitForExistence(timeout: 10))
     assertIdle()
   }
@@ -529,6 +539,7 @@ final class UpgradePersonaUITests: XCTestCase {
   @MainActor
   func testV2Relaunch() throws {
     launch("relaunch")
+    if persona == "library" { selectLibraryProfile(6) }
     XCTAssertTrue(app.staticTexts["Hold to Start"].waitForExistence(timeout: 10))
     XCTAssertFalse(app.buttons["Stop"].exists)
     if persona == "emergency" {
