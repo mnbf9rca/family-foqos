@@ -31,16 +31,8 @@ enum UserDefaultsMigration {
   ]
 
   static func migrateIfNeeded(defaults: UserDefaults = .standard) {
-    guard !defaults.bool(forKey: standardMigrationFlag) else { return }
-
-    for (old, new) in standardKeyMapping {
-      if defaults.object(forKey: new) == nil, let value = defaults.object(forKey: old) {
-        defaults.set(value, forKey: new)
-      }
-      defaults.removeObject(forKey: old)
-    }
-
     // V1 stores weeks, not days. Existing V2 settings (including synced ones) win.
+    // Earlier V2 migrations left this key behind, so convert independently of their flag.
     let weeksKey = "emergencyUnblocksResetPeriodInWeeks"
     let daysKey = "family_foqos_emergency_unblocks_reset_period_in_days"
     if defaults.object(forKey: daysKey) == nil,
@@ -49,6 +41,15 @@ enum UserDefaultsMigration {
       defaults.set(weeks * 7, forKey: daysKey)
     }
     defaults.removeObject(forKey: weeksKey)
+
+    guard !defaults.bool(forKey: standardMigrationFlag) else { return }
+
+    for (old, new) in standardKeyMapping {
+      if defaults.object(forKey: new) == nil, let value = defaults.object(forKey: old) {
+        defaults.set(value, forKey: new)
+      }
+      defaults.removeObject(forKey: old)
+    }
 
     defaults.set(true, forKey: standardMigrationFlag)
   }
