@@ -338,7 +338,19 @@ final class UpgradePersonaUITests: XCTestCase {
     XCTAssertTrue(app.staticTexts["Continue until..."].exists)
     screenshot("converted-settings")
     if ["manual-nfc", "manual-qr"].contains(persona) {
-      XCTAssertTrue(app.staticTexts["Specific"].exists)
+      let heading = app.staticTexts["Continue until..."]
+      let option = persona == "manual-nfc" ? "Specific tag" : "Specific code"
+      let selection = app.descendants(matching: .any).matching(
+        NSPredicate(format: "label == %@ OR value == %@", option, option)
+      ).firstMatch
+      XCTAssertTrue(selection.exists)
+      XCTAssertGreaterThan(selection.frame.minY, heading.frame.maxY, "Specific picker must belong to the stop section")
+      let key = persona == "manual-nfc" ? "tag" : "code"
+      let selected = app.buttons["RC \(persona) stop \(key)"]
+      scrollTo(selected)
+      XCTAssertEqual(selected.value as? String, "Selected")
+      XCTAssertGreaterThan(selected.frame.minY, heading.frame.maxY, "Selected key must belong to the stop section")
+      screenshot("specific-stop-key")
     }
     if persona == "schedule" {
       let schedules = app.switches.matching(identifier: "Schedule")
