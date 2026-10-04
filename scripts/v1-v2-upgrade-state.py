@@ -91,16 +91,18 @@ def pin_xctestrun(source, destination, runner, runner_path, app_path):
 
 
 def compare_scans(persona, phase, generation, entries):
+    entries = list(entries)
     values = []
-    if phase == "journey":
+    if phase in ("journey", "relaunch"):
         if persona in ("nfc", "qr"): values = ["wrong", "correct", "correct", "correct"]
         elif persona in ("manual-nfc", "manual-qr"): values = ["wrong", "correct", "wrong", "correct"]
         elif persona in ("nfc-timer", "qr-timer"): values = ["correct", "correct"]
     kind = "qr" if "qr" in persona else "nfc"
-    expected = [{"phase": phase, "generation": generation, "kind": kind, "requestIndex": i,
+    if phase == "relaunch" and entries:
+        generation = entries[0].get("generation")  # Preserve the already-verified journey log; relaunch must append nothing.
+    expected = [{"phase": "journey", "generation": generation, "kind": kind, "requestIndex": i,
                  "scriptIndex": i, "value": value} for i, value in enumerate(values)]
-    actual = [entry for entry in entries if entry["phase"] == phase]
-    if actual != expected:
+    if entries != expected:
         fail(f"FAIL: {phase}: required scan delivery sequence differs")
 
 

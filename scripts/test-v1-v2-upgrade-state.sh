@@ -258,6 +258,15 @@ class SafetyTests(unittest.TestCase):
         seed['persona']='manual'; report['sessions'][-1]['origin']['kind']='manual'
         with self.assertRaises(SystemExit): m.compare_report(seed,report,'journey',self.accepted(report),scan_entries=scans)
 
+    def test_scans_reject_entries_from_other_phases(self):
+        entries=[{'phase':'journey','generation':'fresh','kind':'nfc','requestIndex':i,'scriptIndex':i,'value':value} for i,value in enumerate(['wrong','correct','correct','correct'])]
+        entries.append({'phase':'first-launch','generation':'earlier','kind':'nfc','requestIndex':0,'scriptIndex':0,'value':'correct'})
+        with self.assertRaises(SystemExit): m.compare_scans('nfc','journey','fresh',entries)
+
+    def test_non_scanner_relaunch_rejects_any_scan_history(self):
+        entry={'phase':'journey','generation':'earlier','kind':'nfc','requestIndex':0,'scriptIndex':0,'value':'correct'}
+        with self.assertRaises(SystemExit): m.compare_scans('manual','relaunch','fresh',[entry])
+
     def test_converted_schedule_recurrence_is_preserved(self):
         seed,report=self.comparison(); seed['persona']='schedule'
         schedule={'days':[1,2,3,4,5,6,7],'startHour':8,'startMinute':30,'endHour':17,'endMinute':45}
