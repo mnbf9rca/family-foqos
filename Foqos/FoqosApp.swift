@@ -70,7 +70,6 @@ struct FoqosApp: App {
   @StateObject private var requestAuthorizer = RequestAuthorizer()
   @StateObject private var navigationManager = NavigationManager.shared
   @StateObject private var nfcWriter = NFCWriter()
-  @StateObject private var ratingManager = RatingManager.shared
 
   // Singletons for shared functionality
   @StateObject private var strategyManager = StrategyManager.shared
@@ -310,7 +309,6 @@ struct FoqosApp: App {
         .environmentObject(emergencyManager)
         .environmentObject(navigationManager)
         .environmentObject(nfcWriter)
-        .environmentObject(ratingManager)
         .environmentObject(liveActivityManager)
         .environmentObject(themeManager)
         .environmentObject(appModeManager)
