@@ -681,12 +681,7 @@ final class UpgradePersonaUITests: XCTestCase {
     if persona == "library" { selectLibraryProfile(6) }
     XCTAssertTrue(app.staticTexts["Hold to Start"].waitForExistence(timeout: 10))
     XCTAssertFalse(app.buttons["Stop"].exists)
-    if persona == "emergency" {
-      press("Emergency")
-      XCTAssertTrue(app.staticTexts["Unblocks remaining"].waitForExistence(timeout: 10))
-      assertAdjacentValue("Unblocks remaining", expected: "0")
-      screenshot("zero-emergency-after-relaunch")
-    }
+    // Emergency is reachable only while blocking; the mandatory relaunch report proves zero remains.
     screenshot("relaunch")
     attachReportCount()
     app.terminate()

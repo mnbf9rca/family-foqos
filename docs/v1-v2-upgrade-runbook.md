@@ -6,6 +6,10 @@ Build frozen V1 **1.31.3 / 4 at `589bee9228abb5b32cc3506f7c0e23782a571d03`**, la
 
 Expected behavior and the persona matrix are in the [approved plan](superpowers/plans/2026-10-04-simulated-users-upgrade.md#persona-matrix), [conditions rulebook](superpowers/specs/2026-10-02-508-v2-conditions-rulebook.md) and [#507 rulings](https://github.com/mnbf9rca/family-foqos/issues/507). Slugs: `manual`, `nfc`, `qr`, `nfc-timer`, `qr-timer`, `shortcut-timer`, `manual-nfc`, `manual-qr`, `schedule`, `break`, `emergency`, `parent`, `child`, `library`; no silent skips.
 
+| Persona evidence detail | Required proof |
+| --- | --- |
+| Emergency user | Show the retained allowance of 1 and successful last unblock in the UI. On idle relaunch, Emergency is reachable only during an active session, so the mandatory fresh report proves exactly 0 remaining and 14 reset days; keep the idle screenshot and global no-Stop check. A missing or stale report is UNRUN. |
+
 ## 1. Pin sources and compile fixtures before touching app data
 
 Use Bash for the blocks below. Start in the clean fixture-bearing feature head; choose the requested V2 revision explicitly. Every simulator operation uses the same owner gate and UUID destination; never provide a destination/DerivedData override or borrow another owner. A second runtime/session requires orchestrator authorization; the standing build1 exception is `collab-ios27` with installed iOS 27.0 for a new owner. An override cannot change an existing owner's runtime.
