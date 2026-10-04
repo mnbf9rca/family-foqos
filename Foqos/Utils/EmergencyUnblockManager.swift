@@ -54,6 +54,13 @@ class EmergencyUnblockManager: ObservableObject {
     self.defaults = defaults
     self.geofenceEvaluator = geofenceEvaluator
     self.profileSyncManager = profileSyncManager
+    // Initialization can precede the app's migration call. Hydrate only after conversion.
+    UserDefaultsMigration.migrateIfNeeded(defaults: defaults)
+    emergencyUnblocksResetPeriodInDays = defaults.object(forKey: DefaultsKey.resetPeriodInDays) as? Int ?? 28
+    lastEmergencyUnblocksResetDateTimestamp = defaults.double(forKey: DefaultsKey.lastResetDate)
+    emergencySettingsLockedStorage = defaults.bool(forKey: DefaultsKey.settingsLocked)
+    emergencySettingsVersion = defaults.integer(forKey: DefaultsKey.settingsVersion)
+    migrateLegacyRemainingUnblocks()
   }
 
   private enum DefaultsKey {
@@ -61,6 +68,7 @@ class EmergencyUnblockManager: ObservableObject {
     static let lastResetDate = "family_foqos_last_emergency_unblocks_reset_date"
     static let settingsLocked = "family_foqos_emergency_settings_locked"
     static let settingsVersion = "family_foqos_emergency_settings_version"
+    static let legacyRemaining = "family_foqos_emergency_unblocks_remaining"
   }
 
   private enum LedgerKey {
@@ -69,45 +77,52 @@ class EmergencyUnblockManager: ObservableObject {
     static let allowance = 3
   }
 
-  @Published private var emergencyUnblocksResetPeriodInDays: Int =
-    UserDefaults.standard.object(forKey: DefaultsKey.resetPeriodInDays) != nil
-    ? UserDefaults.standard.integer(forKey: DefaultsKey.resetPeriodInDays)
-    : 28
-  {
+  @Published private var emergencyUnblocksResetPeriodInDays: Int {
     didSet {
-      UserDefaults.standard.set(
+      defaults.set(
         emergencyUnblocksResetPeriodInDays, forKey: DefaultsKey.resetPeriodInDays)
     }
   }
 
-  @Published private var lastEmergencyUnblocksResetDateTimestamp: Double =
-    UserDefaults.standard.object(forKey: DefaultsKey.lastResetDate) != nil
-    ? UserDefaults.standard.double(forKey: DefaultsKey.lastResetDate)
-    : 0
-  {
+  @Published private var lastEmergencyUnblocksResetDateTimestamp: Double {
     didSet {
-      UserDefaults.standard.set(
+      defaults.set(
         lastEmergencyUnblocksResetDateTimestamp, forKey: DefaultsKey.lastResetDate)
     }
   }
 
-  @Published private var emergencySettingsLockedStorage: Bool =
-    UserDefaults.standard.object(forKey: DefaultsKey.settingsLocked) != nil
-    ? UserDefaults.standard.bool(forKey: DefaultsKey.settingsLocked)
-    : false
-  {
+  @Published private var emergencySettingsLockedStorage: Bool {
     didSet {
-      UserDefaults.standard.set(emergencySettingsLockedStorage, forKey: DefaultsKey.settingsLocked)
+      defaults.set(emergencySettingsLockedStorage, forKey: DefaultsKey.settingsLocked)
     }
   }
 
-  private(set) var emergencySettingsVersion: Int =
-    UserDefaults.standard.object(forKey: DefaultsKey.settingsVersion) != nil
-    ? UserDefaults.standard.integer(forKey: DefaultsKey.settingsVersion)
-    : 0
-  {
+  private(set) var emergencySettingsVersion: Int {
     didSet {
-      UserDefaults.standard.set(emergencySettingsVersion, forKey: DefaultsKey.settingsVersion)
+      defaults.set(emergencySettingsVersion, forKey: DefaultsKey.settingsVersion)
+    }
+  }
+
+  private func migrateLegacyRemainingUnblocks() {
+    guard let remaining = defaults.object(forKey: DefaultsKey.legacyRemaining) as? Int else { return }
+    let consumed = LedgerKey.allowance - min(LedgerKey.allowance, max(0, remaining))
+    var events = unblockEvents
+    // Stable epoch-zero slots represent pre-ledger usage. Peer upgrades and crash replays
+    // union by ID, so V1 per-device counts converge to the lower remaining allowance.
+    for slot in 0..<consumed {
+      let id = UUID(uuidString: "00000000-0000-4000-8000-00000000000\(slot)")!
+      guard !events.contains(where: { $0.id == id }) else { continue }
+      events.append(
+        SyncedEmergencyUnblockEvent(
+          id: id, deviceId: "v1-migration",
+          consumedAt: Date(timeIntervalSinceReferenceDate: lastEmergencyUnblocksResetDateTimestamp),
+          resetEpoch: 0))
+    }
+    do {
+      defaults.set(try JSONEncoder().encode(events), forKey: LedgerKey.events)
+      defaults.removeObject(forKey: DefaultsKey.legacyRemaining)
+    } catch {
+      Log.error("Failed to migrate V1 emergency unblock usage: \(error.localizedDescription)", category: .app)
     }
   }
 

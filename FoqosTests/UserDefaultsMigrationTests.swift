@@ -97,6 +97,62 @@ final class UserDefaultsMigrationTests: XCTestCase {
 
   // MARK: - App group suite tests
 
+  func testV1WeeksConvertToDaysWithoutReplacingExistingV2Setting() {
+    defaults.set(6, forKey: "emergencyUnblocksResetPeriodInWeeks")
+    defaults.set(14, forKey: "family_foqos_emergency_unblocks_reset_period_in_days")
+
+    UserDefaultsMigration.migrateIfNeeded(defaults: defaults)
+
+    XCTAssertEqual(defaults.integer(forKey: "family_foqos_emergency_unblocks_reset_period_in_days"), 14)
+    XCTAssertNil(defaults.object(forKey: "emergencyUnblocksResetPeriodInWeeks"))
+  }
+
+  func testPositiveV1WeeksConvertDirectlyRatherThanUsingMenuFallback() {
+    defaults.set(3, forKey: "emergencyUnblocksResetPeriodInWeeks")
+
+    UserDefaultsMigration.migrateIfNeeded(defaults: defaults)
+
+    XCTAssertEqual(defaults.integer(forKey: "family_foqos_emergency_unblocks_reset_period_in_days"), 21)
+  }
+
+  func testOlderV2DaysWinOverV1WeeksOnFirstMigration() {
+    defaults.set(6, forKey: "emergencyUnblocksResetPeriodInWeeks")
+    defaults.set(14, forKey: "emergencyUnblocksResetPeriodInDays")
+
+    UserDefaultsMigration.migrateIfNeeded(defaults: defaults)
+    UserDefaultsMigration.migrateIfNeeded(defaults: defaults)
+
+    XCTAssertEqual(defaults.integer(forKey: "family_foqos_emergency_unblocks_reset_period_in_days"), 14)
+    XCTAssertNil(defaults.object(forKey: "emergencyUnblocksResetPeriodInDays"))
+    XCTAssertNil(defaults.object(forKey: "emergencyUnblocksResetPeriodInWeeks"))
+  }
+
+  func testV1WeeksConvertAfterEarlierStandardMigrationWithoutRepeatingOtherKeys() {
+    defaults.set(true, forKey: "family_foqos_user_defaults_migrated")
+    defaults.set(6, forKey: "emergencyUnblocksResetPeriodInWeeks")
+    defaults.set(42, forKey: "family_foqos_launch_count")
+    defaults.set(7, forKey: "launchCount")
+
+    UserDefaultsMigration.migrateIfNeeded(defaults: defaults)
+    UserDefaultsMigration.migrateIfNeeded(defaults: defaults)
+
+    XCTAssertEqual(defaults.integer(forKey: "family_foqos_emergency_unblocks_reset_period_in_days"), 42)
+    XCTAssertNil(defaults.object(forKey: "emergencyUnblocksResetPeriodInWeeks"))
+    XCTAssertEqual(defaults.integer(forKey: "family_foqos_launch_count"), 42)
+    XCTAssertEqual(defaults.integer(forKey: "launchCount"), 7, "do not rerun the older migration")
+  }
+
+  func testEarlierMigrationWithSavedV2DaysKeepsSyncedValueOverV1Weeks() {
+    defaults.set(true, forKey: "family_foqos_user_defaults_migrated")
+    defaults.set(6, forKey: "emergencyUnblocksResetPeriodInWeeks")
+    defaults.set(14, forKey: "family_foqos_emergency_unblocks_reset_period_in_days")
+
+    UserDefaultsMigration.migrateIfNeeded(defaults: defaults)
+
+    XCTAssertEqual(defaults.integer(forKey: "family_foqos_emergency_unblocks_reset_period_in_days"), 14)
+    XCTAssertNil(defaults.object(forKey: "emergencyUnblocksResetPeriodInWeeks"))
+  }
+
   func testGivenOldAppGroupKeys_WhenMigrate_ThenValuesCopiedToNewKeys() {
     // Given
     defaults.set("Warm Sandstone", forKey: "familyFoqosThemeColorName")
