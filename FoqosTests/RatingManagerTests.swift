@@ -172,6 +172,74 @@ final class RatingManagerTests: XCTestCase {
     XCTAssertEqual(requests, 0)
   }
 
+  func testShortcutCompletionDoesNotEarnReviewOrConsumeVersionGate() async throws {
+    let now = Date()
+    configureManager()
+    let session = try start(now: now.addingTimeInterval(-60))
+    try await manager.stopSessionFromBackground(session.blockedProfile.id, context: context, requireUnlock: { false })
+    XCTAssertFalse(session.isActive)
+    XCTAssertNil(manager.errorMessage)
+    XCTAssertEqual(defaults.stringArray(forKey: "family_foqos_successful_session_days") ?? [], [])
+
+    hasScene = false
+    for day in -3..<0 { rating().recordSuccessfulSessionEnd(now: calendar.date(byAdding: .day, value: day, to: now)!) }
+    hasScene = true
+    let eligibleSession = try start(now: now)
+    try await manager.stopSessionFromBackground(eligibleSession.blockedProfile.id, context: context, requireUnlock: { false })
+    XCTAssertFalse(eligibleSession.isActive)
+    XCTAssertEqual(requests, 0, "A foreground scene must not turn a Shortcut completion into an in-app completion")
+    _ = try start(now: now)
+    await stop(now: now.addingTimeInterval(60))
+    XCTAssertEqual(requests, 1, "The next in-app completion can still request review")
+  }
+
+  func testExternalTagCompletionDoesNotEarnReview() async throws {
+    let now = Date()
+    configureManager()
+    let session = try start(now: now.addingTimeInterval(-60))
+    let event = TagEvent(type: .nfc, namespace: .opaque, key: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+    await manager.handleDelivery(.tag(event), context: context, now: now)
+    XCTAssertFalse(session.isActive)
+    XCTAssertNil(manager.errorMessage)
+    XCTAssertEqual(defaults.stringArray(forKey: "family_foqos_successful_session_days") ?? [], [])
+
+    hasScene = false
+    for day in -3..<0 { rating().recordSuccessfulSessionEnd(now: calendar.date(byAdding: .day, value: day, to: now)!) }
+    hasScene = true
+    _ = try start(now: now)
+    await manager.handleDelivery(.tag(event), context: context, now: now.addingTimeInterval(60))
+    XCTAssertEqual(requests, 0)
+  }
+
+  func testExternalTagConfirmationRetainsExcludedRatingProvenance() async throws {
+    let now = Date()
+    configureManager()
+    let session = try start(now: now.addingTimeInterval(-60))
+    let key = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    session.blockedProfile.stopConditions = .init(nfc: .specific)
+    session.blockedProfile.stopNFCTagIds = ["nfc:opaque:\(key)"]
+    try context.save()
+    await manager.handleDelivery(
+      .tag(.init(type: .nfc, namespace: .opaque, key: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")), context: context, now: now)
+    XCTAssertTrue(manager.showTagConfirmation)
+    await manager.handleTagEvent(
+      .init(type: .nfc, namespace: .opaque, key: key), operation: .confirmSwitch,
+      context: context, now: now.addingTimeInterval(1))
+    XCTAssertFalse(session.isActive)
+    XCTAssertNil(manager.errorMessage)
+    XCTAssertEqual(defaults.stringArray(forKey: "family_foqos_successful_session_days") ?? [], [])
+  }
+
+  func testHomeManualStopRecordsSuccessfulUse() throws {
+    let now = Date()
+    configureManager()
+    let session = try start(now: now.addingTimeInterval(-60))
+    manager.toggleBlocking(context: context, activeProfile: session.blockedProfile)
+    XCTAssertFalse(session.isActive)
+    XCTAssertNil(manager.errorMessage)
+    XCTAssertEqual(defaults.stringArray(forKey: "family_foqos_successful_session_days")?.count, 1)
+  }
+
   func testRemoteCompletionCannotRequestReviewEvenWhenEligible() throws {
     let now = Date()
     configureManager()

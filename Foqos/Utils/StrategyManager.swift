@@ -539,6 +539,7 @@ class StrategyManager: ObservableObject {
     let targetProfileId: UUID?
     let event: TagEvent
     let requiredType: TagType
+    let recordSuccessfulUse: Bool
   }
   @Published private(set) var pendingTagSwitch: PendingTagSwitch?
   @Published var showTagConfirmation = false
@@ -562,7 +563,7 @@ class StrategyManager: ObservableObject {
           cancelTagOperation()
           await handleLegacyLink(profileId: target, sessionId: session.id, context: context)
         } else {
-          await handleTagEvent(event, operation: .scan, context: context, now: now)
+          await handleTagEvent(event, operation: .scan, context: context, now: now, recordSuccessfulUse: false)
         }
       } catch { errorMessage = error.localizedDescription }
     case .link(let id):
@@ -622,7 +623,7 @@ class StrategyManager: ObservableObject {
     } catch { errorMessage = error.localizedDescription }
   }
 
-  func handleTagEvent(_ event: TagEvent, operation: TagOperation, context: ModelContext, now: Date = Date()) async {
+  func handleTagEvent(_ event: TagEvent, operation: TagOperation, context: ModelContext, now: Date = Date(), recordSuccessfulUse: Bool = true) async {
     do {
       if case .confirmSwitch = operation {
         guard let pending = pendingTagSwitch else { return }
@@ -682,7 +683,7 @@ class StrategyManager: ObservableObject {
             throw NSError(domain: "ProfileStart", code: 1, userInfo: [NSLocalizedDescriptionKey: needsAppSelectionMessage(for: profile)])
           }
         }
-        let pending = PendingTagSwitch(operationId: operationId, victimId: victim.id, targetProfileId: target, event: event, requiredType: event.type)
+        let pending = PendingTagSwitch(operationId: operationId, victimId: victim.id, targetProfileId: target, event: event, requiredType: event.type, recordSuccessfulUse: recordSuccessfulUse)
         if !tagStopResult(event, session: victim).allowed {
           pendingTagSwitch = pending
           showTagConfirmation = true
@@ -743,7 +744,7 @@ class StrategyManager: ObservableObject {
           expectedVictimId: victim.id, allowLinkForTag: true)
         finishDepartingSession(victim, context: context, now: now)
       } else if victim.blockedProfile.profileSchemaVersion >= 2 {
-        endV2Session(victim, context: context, now: now)
+        endV2Session(victim, context: context, now: now, recordSuccessfulUse: pending.recordSuccessfulUse)
       } else {
         stopBlocking(context: context, bypassStrategy: true)
       }
@@ -1595,7 +1596,7 @@ class StrategyManager: ObservableObject {
   }
 
   @discardableResult
-  private func endV2Session(_ session: BlockedProfileSession, context: ModelContext, now: Date = Date(), emergency: Bool = false) -> Bool {
+  private func endV2Session(_ session: BlockedProfileSession, context: ModelContext, now: Date = Date(), emergency: Bool = false, recordSuccessfulUse: Bool = false) -> Bool {
     guard
       SharedData.completeSession(
         expectedSessionId: session.id, now: now, localSession: session.toSnapshot(),
@@ -1608,7 +1609,7 @@ class StrategyManager: ObservableObject {
       return false
     }
     let saved = finishDepartingSession(session, context: context, now: now)
-    if saved, !emergency, !processingRemoteChange, activeSession == nil, errorMessage == nil {
+    if recordSuccessfulUse, saved, !emergency, !processingRemoteChange, activeSession == nil, errorMessage == nil {
       ratingManager.recordSuccessfulSessionEnd(now: now)
     }
     return true
@@ -1622,7 +1623,7 @@ class StrategyManager: ObservableObject {
     }
 
     if session.blockedProfile.profileSchemaVersion >= 2 {
-      endV2Session(session, context: context)
+      endV2Session(session, context: context, recordSuccessfulUse: true)
       return
     }
     // When bypassStrategy is true, the caller has already handled any required
