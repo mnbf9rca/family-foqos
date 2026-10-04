@@ -256,19 +256,20 @@ final class UpgradePersonaUITests: XCTestCase {
   }
 
   private func assertCountdown(minutes: Int) {
-    let timer = app.staticTexts.matching(NSPredicate(format: "label MATCHES %@", "[0-9]{2}:[0-9]{2}:[0-9]{2}")).firstMatch
+    // These 37/60-minute timers show M:SS or MM:SS; the separate elapsed clock shows HH:MM:SS.
+    let timer = app.staticTexts.matching(NSPredicate(format: "label MATCHES %@", "^[0-9]{1,2}:[0-9]{2}$")).firstMatch
     XCTAssertTrue(timer.waitForExistence(timeout: 10))
     let before = timer.label
     let values = before.split(separator: ":").compactMap { Int($0) }
-    XCTAssertEqual(values.count, 3)
-    let seconds = values[0] * 3600 + values[1] * 60 + values[2]
+    XCTAssertEqual(values.count, 2)
+    let seconds = values[0] * 60 + values[1]
     XCTAssertGreaterThan(seconds, (minutes - 2) * 60)
     XCTAssertLessThanOrEqual(seconds, minutes * 60)
     let changed = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in timer.label != before }, object: nil)
     XCTAssertEqual(XCTWaiter.wait(for: [changed], timeout: 8), .completed, "Countdown did not decrease")
     let after = timer.label.split(separator: ":").compactMap { Int($0) }
-    XCTAssertEqual(after.count, 3)
-    XCTAssertLessThan(after[0] * 3600 + after[1] * 60 + after[2], seconds)
+    XCTAssertEqual(after.count, 2)
+    XCTAssertLessThan(after[0] * 60 + after[1], seconds)
     screenshot("countdown-decreased")
     foreground()
     XCTAssertTrue(timer.waitForExistence(timeout: 10))
