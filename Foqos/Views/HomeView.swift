@@ -579,6 +579,10 @@ struct HomeView: View {
   }
 
   private func handleStartTap(_ profile: BlockedProfiles) {
+    do { try strategyManager.prepareProfileForStart(profile, context: context) } catch {
+      strategyManager.errorMessage = error.localizedDescription
+      return
+    }
     let action = StartStopActionResolver.determineStartAction(
       for: profile.startTriggers,
       stopConditions: profile.stopConditions
@@ -615,6 +619,11 @@ struct HomeView: View {
   }
 
   private func handleStopTap(_ profile: BlockedProfiles) {
+    // An active V1 profile deliberately has no V2 conditions until its session ends.
+    if strategyManager.activeSession?.blockedProfile.profileSchemaVersion == 1 {
+      strategyManager.toggleBlocking(context: context, activeProfile: profile)
+      return
+    }
     let action = StartStopActionResolver.determineStopAction(
       for: profile.stopConditions
     )
