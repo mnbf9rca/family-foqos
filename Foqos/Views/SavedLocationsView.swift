@@ -17,10 +17,12 @@ struct SavedLocationsView: View {
 
   @State private var showingAddLocation = false
   @State private var locationToEdit: SavedLocation?
-  @State private var showingLockCodeEntry = false
-  @State private var pendingDeleteLocationId: UUID?
-  @State private var pendingEditLocationId: UUID?
-  @State private var showingLockCodeEntryForEdit = false
+  private struct LockedLocation: Identifiable {
+    let id: UUID
+  }
+
+  @State private var pendingDeleteLocation: LockedLocation?
+  @State private var pendingEditLocation: LockedLocation?
   @State private var errorMessage: String?
 
   /// Location IDs that are in use by profiles with active sessions
@@ -132,7 +134,7 @@ struct SavedLocationsView: View {
           }
         )
       }
-      .sheet(isPresented: $showingLockCodeEntry) {
+      .sheet(item: $pendingDeleteLocation) { target in
         LockCodeEntryView(
           title: "Enter Lock Code",
           subtitle: "This location is locked. Enter the lock code to delete it.",
@@ -140,16 +142,14 @@ struct SavedLocationsView: View {
             lockCodeManager.validateCode(code)
           },
           onSuccess: {
-            if let locationId = pendingDeleteLocationId,
-              let location = try? Self.validSavedLocation(locationId: locationId, in: context)
-            {
+            if let location = try? Self.validSavedLocation(locationId: target.id, in: context) {
               deleteLocation(location)
             }
-            pendingDeleteLocationId = nil
+            pendingDeleteLocation = nil
           }
         )
       }
-      .sheet(isPresented: $showingLockCodeEntryForEdit) {
+      .sheet(item: $pendingEditLocation) { target in
         LockCodeEntryView(
           title: "Enter Lock Code",
           subtitle: "This location is locked. Enter the lock code to edit it.",
@@ -157,12 +157,10 @@ struct SavedLocationsView: View {
             lockCodeManager.validateCode(code)
           },
           onSuccess: {
-            if let locationId = pendingEditLocationId,
-              let location = try? Self.validSavedLocation(locationId: locationId, in: context)
-            {
+            if let location = try? Self.validSavedLocation(locationId: target.id, in: context) {
               locationToEdit = location
             }
-            pendingEditLocationId = nil
+            pendingEditLocation = nil
           }
         )
       }
@@ -231,8 +229,7 @@ struct SavedLocationsView: View {
       }
 
       if target.requiresLockCode {
-        pendingEditLocationId = target.location.id
-        showingLockCodeEntryForEdit = true
+        pendingEditLocation = LockedLocation(id: target.location.id)
       } else {
         locationToEdit = target.location
       }
@@ -246,8 +243,7 @@ struct SavedLocationsView: View {
       mode: appModeManager.currentMode,
       canVerifyCode: lockCodeManager.canVerifyCode)
     {
-      pendingDeleteLocationId = location.id
-      showingLockCodeEntry = true
+      pendingDeleteLocation = LockedLocation(id: location.id)
     } else {
       // Directly delete - confirmation was already shown in AddLocationView
       deleteLocation(location)

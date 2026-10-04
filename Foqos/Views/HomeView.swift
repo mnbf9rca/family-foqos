@@ -90,15 +90,18 @@ struct HomeView: View {
   @State private var pendingPickerProfile: BlockedProfiles?
 
   // Scanner state for trigger-based starts
-  @State private var showStartQRScanner = false
-  @State private var scannerProfile: BlockedProfiles?
-  @State private var scannerProfileId: UUID?
+  private struct ScannerProfile: Identifiable {
+    let id: UUID
+    let name: String
+  }
+
+  @State private var startQRProfile: ScannerProfile?
+  @State private var stopQRProfile: ScannerProfile?
   @State private var confirmationScanAttempt = 0
   @ObservedObject private var startupRecoveryRuntime = StartupRecoveryRuntime.shared
   @StateObject private var nfcScanner = NFCScannerUtil()
 
   // Stop picker state
-  @State private var showStopQRScanner = false
   @State private var showStopPicker = false
   @State private var stopOptions: [StopAction] = []
 
@@ -474,51 +477,41 @@ struct HomeView: View {
         }
       }
     }
-    .sheet(isPresented: $showStartQRScanner) {
-      if let profile = scannerProfile {
-        BlockingStrategyActionView(
-          customView: LabeledCodeScannerView(
-            heading: "Scan to Start",
-            subtitle: "Scan a QR code to start \(profile.name)"
-          ) { result in
-            switch result {
-            case .success(let hashedCode):
-              showStartQRScanner = false
-              if let id = scannerProfileId, let event = hashedCode.event {
-                Task { await strategyManager.handleTagEvent(event, operation: .explicitStart(id), context: context) }
-              }
-              scannerProfile = nil
-            case .failure(let error):
-              strategyManager.errorMessage = error.localizedDescription
-              showStartQRScanner = false
-              scannerProfile = nil
+    .sheet(item: $startQRProfile) { profile in
+      BlockingStrategyActionView(
+        customView: LabeledCodeScannerView(
+          heading: "Scan to Start",
+          subtitle: "Scan a QR code to start \(profile.name)"
+        ) { result in
+          startQRProfile = nil
+          switch result {
+          case .success(let hashedCode):
+            if let event = hashedCode.event {
+              Task { await strategyManager.handleTagEvent(event, operation: .explicitStart(profile.id), context: context) }
             }
+          case .failure(let error):
+            strategyManager.errorMessage = error.localizedDescription
           }
-        )
-      }
+        }
+      )
     }
-    .sheet(isPresented: $showStopQRScanner) {
-      if let profile = scannerProfile {
-        BlockingStrategyActionView(
-          customView: LabeledCodeScannerView(
-            heading: "Scan to Stop",
-            subtitle: "Scan a QR code to stop \(profile.name)"
-          ) { result in
-            switch result {
-            case .success(let hashedCode):
-              showStopQRScanner = false
-              if let event = hashedCode.event {
-                Task { await strategyManager.handleTagEvent(event, operation: .scan, context: context) }
-              }
-              scannerProfile = nil
-            case .failure(let error):
-              strategyManager.errorMessage = error.localizedDescription
-              showStopQRScanner = false
-              scannerProfile = nil
+    .sheet(item: $stopQRProfile) { profile in
+      BlockingStrategyActionView(
+        customView: LabeledCodeScannerView(
+          heading: "Scan to Stop",
+          subtitle: "Scan a QR code to stop \(profile.name)"
+        ) { result in
+          stopQRProfile = nil
+          switch result {
+          case .success(let hashedCode):
+            if let event = hashedCode.event {
+              Task { await strategyManager.handleTagEvent(event, operation: .scan, context: context) }
             }
+          case .failure(let error):
+            strategyManager.errorMessage = error.localizedDescription
           }
-        )
-      }
+        }
+      )
     }
   }
 
@@ -587,13 +580,10 @@ struct HomeView: View {
       strategyManager.toggleBlocking(context: context, activeProfile: profile)
 
     case .scanNFC:
-      scannerProfile = profile
       startNFCScan(for: profile)
 
     case .scanQR:
-      scannerProfile = profile
-      scannerProfileId = profile.id
-      showStartQRScanner = true
+      startQRProfile = ScannerProfile(id: profile.id, name: profile.name)
 
     case .waitForSchedule:
       strategyManager.errorMessage = "This profile starts on schedule"
@@ -627,12 +617,10 @@ struct HomeView: View {
       strategyManager.toggleBlocking(context: context, activeProfile: profile)
 
     case .scanNFC:
-      scannerProfile = profile
       stopNFCScan(for: profile)
 
     case .scanQR:
-      scannerProfile = profile
-      showStopQRScanner = true
+      stopQRProfile = ScannerProfile(id: profile.id, name: profile.name)
 
     case .cannotStop(let reason):
       strategyManager.errorMessage = reason
@@ -650,13 +638,10 @@ struct HomeView: View {
       strategyManager.toggleBlocking(context: context, activeProfile: profile)
 
     case .scanNFC:
-      scannerProfile = profile
       startNFCScan(for: profile)
 
     case .scanQR:
-      scannerProfile = profile
-      scannerProfileId = profile.id
-      showStartQRScanner = true
+      startQRProfile = ScannerProfile(id: profile.id, name: profile.name)
 
     case .waitForSchedule, .deepLinkOnly, .showPicker, .cannotStart:
       break  // Should not be called with these
@@ -669,12 +654,10 @@ struct HomeView: View {
       strategyManager.toggleBlocking(context: context, activeProfile: profile)
 
     case .scanNFC:
-      scannerProfile = profile
       stopNFCScan(for: profile)
 
     case .scanQR:
-      scannerProfile = profile
-      showStopQRScanner = true
+      stopQRProfile = ScannerProfile(id: profile.id, name: profile.name)
 
     case .showPicker, .cannotStop:
       break  // Should not be called with these
@@ -687,11 +670,9 @@ struct HomeView: View {
       if let event = result.event {
         Task { await strategyManager.handleTagEvent(event, operation: .explicitStart(id), context: context) }
       }
-      scannerProfile = nil
     }
     nfcScanner.onError = { error in
       strategyManager.errorMessage = error
-      scannerProfile = nil
     }
     nfcScanner.scan(profileName: profile.name)
   }
@@ -701,11 +682,9 @@ struct HomeView: View {
       if let event = result.event {
         Task { await strategyManager.handleTagEvent(event, operation: .scan, context: context) }
       }
-      scannerProfile = nil
     }
     nfcScanner.onError = { error in
       strategyManager.errorMessage = error
-      scannerProfile = nil
     }
     nfcScanner.scan(profileName: profile.name)
   }
