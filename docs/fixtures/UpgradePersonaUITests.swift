@@ -257,7 +257,7 @@ final class UpgradePersonaUITests: XCTestCase {
     if app.buttons["Start Now"].exists { press("Start Now") }
     if app.buttons["Scan NFC Tag"].exists { press("Scan NFC Tag") }
     if app.buttons["Scan QR Code"].exists { press("Scan QR Code") }
-    completeQRScan()
+    if persona == "qr" { completeQRScan() }
     if app.staticTexts["Timer Settings"].exists {
       let duration = timerMinutes == 60 ? "1h" : "\(timerMinutes)m"
       XCTAssertTrue(app.staticTexts[duration].exists, "Interactive timer must retain its saved duration")
