@@ -7,13 +7,22 @@ struct QRScanResult: Equatable, Sendable {
   let hash: String
   let rawHash: String
   var event: TagEvent? = nil
+  var originalText: String? = nil
+
+  func matchesLegacySessionTag(_ stored: String) -> Bool {
+    stored == originalText || stored == "qr:\(hash)" || stored == "qr:\(rawHash)"
+  }
+
+  func matchesLegacyPhysicalKey(_ stored: String) -> Bool {
+    stored == originalText || stored == hash || stored == rawHash
+  }
 
   static func read(_ text: String) throws -> QRScanResult {
     let hash = QRCodeHasher.hash(text)
     let rawHash = QRCodeHasher.rawHash(text)
     let url = URL(string: text.trimmingCharacters(in: .whitespacesAndNewlines))
     let event = try ProfileTagLink.scannedEvent(type: .qr, urls: url.map { [$0] } ?? [], legacyKey: hash, rawKey: rawHash)
-    return QRScanResult(hash: hash, rawHash: rawHash, event: event)
+    return QRScanResult(hash: hash, rawHash: rawHash, event: event, originalText: text)
   }
 }
 

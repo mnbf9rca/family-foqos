@@ -701,11 +701,12 @@ class StrategyManager: ObservableObject {
   }
 
   private func admittedTagOrigin(_ event: TagEvent, profile: BlockedProfiles) -> SessionOrigin {
-    if event.namespace == .qrDigest, profile.startTriggers.specificQR,
-      let raw = event.rawKey, profile.startQRCodeIds.contains(raw),
-      !profile.startQRCodeIds.contains(event.key ?? "")
+    let specific = event.type == .nfc ? profile.startTriggers.specificNFC : profile.startTriggers.specificQR
+    let keys = event.type == .nfc ? profile.startNFCTagIds : profile.startQRCodeIds
+    if specific, !keys.contains(event.matchingKey ?? ""),
+      let matched = keys.first(where: event.matchesStoredKey), let namespace = event.namespace
     {
-      return SessionOrigin(kind: .qr, key: raw, namespace: .qrDigest)
+      return SessionOrigin(kind: event.type == .nfc ? .nfc : .qr, key: matched, namespace: namespace)
     }
     return event.origin
   }
