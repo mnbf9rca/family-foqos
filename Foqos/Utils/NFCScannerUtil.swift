@@ -5,14 +5,33 @@ struct NFCResult: Equatable, Sendable {
   var id: String
   var dateScanned: Date
   var event: TagEvent? = nil
+  var legacyURL: String? = nil
+
+  func matchesLegacySessionTag(_ stored: String) -> Bool {
+    stored == (legacyURL ?? id) || stored == "nfc:\(id)"
+  }
+
+  func matchesLegacyPhysicalKey(_ stored: String) -> Bool {
+    stored == (legacyURL ?? id) || stored == id
+  }
 
   static func read(id: String, message: NFCNDEFMessage?, error: Error?, now: Date) throws -> NFCResult {
     let blank = (error as? NFCReaderError)?.code == .ndefReaderSessionErrorZeroLengthMessage
     guard error == nil || blank else { throw ProfileTagLink.Failure.read(.nfc) }
-    return NFCResult(
-      id: id, dateScanned: now,
-      event: try ProfileTagLink.scannedEvent(
-        type: .nfc, urls: try ProfileTagLink.uriURLs(blank ? nil : message, requireValidRecords: false), legacyKey: id))
+    let readMessage = blank ? nil : message
+    // V1 used URLComponents.string for exactly one matching well-known URI.
+    let legacyURLs = (readMessage?.records ?? []).compactMap { record -> String? in
+      guard let url = record.wellKnownTypeURIPayload(),
+        let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+        components.scheme == "https", components.host == "family-foqos.app"
+      else { return nil }
+      return components.string
+    }
+    let legacyURL = legacyURLs.count == 1 ? legacyURLs[0] : nil
+    var event = try ProfileTagLink.scannedEvent(
+      type: .nfc, urls: try ProfileTagLink.uriURLs(readMessage, requireValidRecords: false), legacyKey: id)
+    if event.namespace == .nfcUID { event.legacyNFCURL = legacyURL }
+    return NFCResult(id: id, dateScanned: now, event: event, legacyURL: legacyURL)
   }
 }
 
