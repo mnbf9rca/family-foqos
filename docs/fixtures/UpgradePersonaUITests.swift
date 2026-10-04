@@ -470,8 +470,16 @@ final class UpgradePersonaUITests: XCTestCase {
           abs($0.minX - title.minX) < 2 && $0.minY >= title.maxY && $0.minY - title.maxY < 25
         }
       }, object: nil)
+    let result = XCTWaiter.wait(for: [adjacent], timeout: 10)
+    if result != .completed {
+      let evidence = XCTAttachment(string: "Scoped hierarchy:\n\(container.debugDescription)\nApplication hierarchy:\n\(app.debugDescription)")
+      evidence.name = "adjacent-value-timeout"
+      evidence.lifetime = .keepAlways
+      add(evidence)
+      screenshot("adjacent-value-timeout")
+    }
     XCTAssertEqual(
-      XCTWaiter.wait(for: [adjacent], timeout: 10), .completed,
+      result, .completed,
       "Wrong adjacent value for \(label): expected \(expected)\n\(geometry)")
   }
 
