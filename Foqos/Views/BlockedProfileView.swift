@@ -74,8 +74,13 @@ struct BlockedProfileView: View {
   @State private var showingGeofencePicker = false
 
   /// QR code generator
-  @State private var showingGeneratedQRCode = false
-  @State private var generatedQRPayload: ProfileTagPayload?
+  private struct GeneratedQRCode: Identifiable {
+    let url: URL
+    let profileName: String
+    var id: URL { url }
+  }
+
+  @State private var generatedQRCode: GeneratedQRCode?
 
   /// Sheet for activity picker
   @State private var showingActivityPicker = false
@@ -742,15 +747,8 @@ struct BlockedProfileView: View {
             nfcWriter.errorMessage = nil
           }
         }
-        .sheet(isPresented: $showingGeneratedQRCode) {
-          if let profileToWrite = profile, let payload = generatedQRPayload {
-            let url = payload.url.absoluteString
-            QRCodeView(
-              url: url,
-              profileName: profileToWrite
-                .name
-            )
-          }
+        .sheet(item: $generatedQRCode) { code in
+          QRCodeView(url: code.url.absoluteString, profileName: code.profileName)
         }
         .sheet(isPresented: $showingInsights) {
           if let validProfile = profile {
@@ -1088,8 +1086,8 @@ struct BlockedProfileView: View {
   private func generateProfileQR() {
     guard let profile else { return }
     do {
-      generatedQRPayload = try QRCodeView.makePayload(for: profile)
-      showingGeneratedQRCode = true
+      let payload = try QRCodeView.makePayload(for: profile)
+      generatedQRCode = GeneratedQRCode(url: payload.url, profileName: profile.name)
     } catch { showError(message: error.localizedDescription) }
   }
 
