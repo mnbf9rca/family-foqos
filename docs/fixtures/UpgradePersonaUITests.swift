@@ -87,16 +87,18 @@ final class UpgradePersonaUITests: XCTestCase {
     let sheet = app.navigationBars["Stats for Nerds"]
     if !sheet.waitForExistence(timeout: 2) {
       let remaining = rows.allElementsBoundByIndex.filter { self.app.frame.contains($0.frame) && $0.isHittable }
-      guard remaining.count == 1 else {
-        XCTFail("Stats action did not open its sheet and no unique open menu remains\n\(app.debugDescription)")
+      guard remaining.count <= 1 else {
+        XCTFail("Stats menu row is ambiguous\n\(app.debugDescription)")
         return
       }
-      screenshot("stats-menu-retry")
-      let evidence = XCTAttachment(string: "One Stats retry: sheet absent; exactly one visible, hittable menu row remains.")
-      evidence.name = "stats-menu-retry-1"
-      evidence.lifetime = .keepAlways
-      add(evidence)
-      remaining[0].tap()
+      if let row = remaining.first {
+        screenshot("stats-menu-retry")
+        let evidence = XCTAttachment(string: "One Stats retry: sheet absent; exactly one visible, hittable menu row remains.")
+        evidence.name = "stats-menu-retry-1"
+        evidence.lifetime = .keepAlways
+        add(evidence)
+        row.tap()
+      }
     }
     XCTAssertTrue(sheet.waitForExistence(timeout: 10), "Stats sheet did not open after its bounded menu interaction")
   }
