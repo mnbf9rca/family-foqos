@@ -317,12 +317,13 @@ final class TagSwitchingTests: XCTestCase {
     let now = Date()
     for type in [TagType.nfc, .qr] {
       for flag in [false, true] {
-        for linkStop in [false, true] {
+        for hasStaleV2Blob in [false, true] {
           let p = try profile("V1", type: type, now: now)
           p.profileSchemaVersion = 1
           p.blockingStrategyId = ManualBlockingStrategy.id
           p.disableBackgroundStops = flag
-          p.stopConditions = .init(deepLink: linkStop, nfc: flag && type == .nfc ? .any : .none, qr: flag && type == .qr ? .any : .none)
+          p.startTriggersData = nil
+          p.stopConditionsData = hasStaleV2Blob ? try JSONEncoder().encode(ProfileStopConditions()) : nil
           let victim = BlockedProfileSession(tag: "manual", blockedProfile: p, startTime: now)
           context.insert(victim)
           try context.save()
@@ -330,7 +331,7 @@ final class TagSwitchingTests: XCTestCase {
           BlockedProfiles.updateSnapshot(for: p)
           SharedData.createActiveSharedSession(for: victim.toSnapshot())
           await manager.handleDelivery(try classifiedActivity(type, key: bKey, target: p.id), context: context, now: now)
-          let refused = flag || !linkStop
+          let refused = flag
           XCTAssertEqual(victim.isActive, refused)
           if refused {
             XCTAssertNotNil(manager.errorMessage)
