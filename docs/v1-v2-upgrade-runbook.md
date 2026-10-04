@@ -143,6 +143,8 @@ The same report call retains `upgrade-session-report.json`, keyed by session ID,
 
 ## 3. Inspect, classify and report
 
+The Stats menu driver waits up to two seconds for a hittable row with the same frame across two samples at least 100 ms apart; it permits one retry only if the sheet is still absent and exactly one hittable menu row remains. Record its `stats-menu-retry-1` attachment and screenshot in that persona’s evidence/table; sheet, unique Stats scope and exact history checks still must pass.
+
 Open the exported `.keepAlways` images for V1 immediately before update, V2 first launch/foreground, meaningful actions/refusals/settings and final relaunch. Check actual wording, enabled controls, clipping and visibility; AX existence alone is insufficient. The driver derives weekday order from the simulator's locale, validates saved reminders/domains/30-minute breaks and exercises retained history and Parent/Child edit-lock flows. Timers must visibly decrease; an active-looking card alone is not countdown proof.
 
 For unexplained hangs/errors, [research online early](multi-agent-coordination.md#investigate-unexplained-behavior); preserve links alongside local logs. [Apple forum 805060](https://developer.apple.com/forums/thread/805060) reports simulator-only XCTest connection hangs and an uninstall workaround, which is forbidden after V1 capture. Use `-collect-test-diagnostics never` for these deliberate failure runs; if diagnosis already stalls, follow [Test](development-workflow.md#test). AX recovery uses only the [supported owner-gated reboot](simulator-ui-verification.md#recover-only-your-simulator), after the previous test exits; never erase or ignore errors.

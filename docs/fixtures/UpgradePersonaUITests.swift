@@ -60,6 +60,48 @@ final class UpgradePersonaUITests: XCTestCase {
   }
 
   @MainActor
+  private func openStats() {
+    let rows = app.buttons.matching(identifier: "Stats for Nerds")
+    let deadline = Date().addingTimeInterval(2)
+    var previousFrame: CGRect?
+    var settledRow: XCUIElement?
+    while Date() < deadline {
+      let visible = rows.allElementsBoundByIndex.filter { self.app.frame.contains($0.frame) && $0.isHittable }
+      if visible.count == 1 {
+        let frame = visible[0].frame
+        if frame == previousFrame {
+          settledRow = visible[0]
+          break
+        }
+        previousFrame = frame
+      } else {
+        previousFrame = nil
+      }
+      Thread.sleep(forTimeInterval: 0.1)
+    }
+    guard let settledRow else {
+      XCTFail("Stats menu row did not settle within 2 seconds\n\(app.debugDescription)")
+      return
+    }
+    settledRow.tap()
+    let sheet = app.navigationBars["Stats for Nerds"]
+    if !sheet.waitForExistence(timeout: 2) {
+      let remaining = rows.allElementsBoundByIndex.filter { self.app.frame.contains($0.frame) && $0.isHittable }
+      guard remaining.count == 1 else {
+        XCTFail("Stats action did not open its sheet and no unique open menu remains\n\(app.debugDescription)")
+        return
+      }
+      screenshot("stats-menu-retry")
+      let evidence = XCTAttachment(string: "One Stats retry: sheet absent; exactly one visible, hittable menu row remains.")
+      evidence.name = "stats-menu-retry-1"
+      evidence.lifetime = .keepAlways
+      add(evidence)
+      remaining[0].tap()
+    }
+    XCTAssertTrue(sheet.waitForExistence(timeout: 10), "Stats sheet did not open after its bounded menu interaction")
+  }
+
+  @MainActor
   func testV1Setup() throws {
     launch("v1", seed: true)
     if persona == "library" { XCTAssertFalse(app.buttons["Stop"].exists) } else { XCTAssertTrue(app.buttons["Stop"].waitForExistence(timeout: 10)) }
@@ -74,8 +116,7 @@ final class UpgradePersonaUITests: XCTestCase {
     screenshot("first-launch")
     if persona == "library" { selectLibraryProfile(24) }
     press("ellipsis")
-    press("Stats for Nerds")
-    XCTAssertTrue(app.navigationBars["Stats for Nerds"].waitForExistence(timeout: 10))
+    openStats()
     let statistics = app.scrollViews.containing(.staticText, identifier: "Total Focus Time")
     XCTAssertTrue(statistics.firstMatch.waitForExistence(timeout: 10))
     XCTAssertEqual(statistics.count, 1, "History must resolve to exactly one Stats scroll view")
