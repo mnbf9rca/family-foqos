@@ -183,12 +183,12 @@ enum StartStopActionResolver {
       return .denied(event.type == .nfc ? "NFC stop is not enabled for this profile" : "QR code stop is not enabled for this profile")
     case .any: return .allowed()
     case .specific:
-      if let key = event.matchingKey, keys.contains(key) || (event.namespace == .qrDigest && event.rawKey.map { keys.contains($0) } == true) { return .allowed() }
+      if keys.contains(where: event.matchesStoredKey) { return .allowed() }
     case .same:
       if origin?.kind == originKind {
         if origin?.isUnidentifiedLegacyTag == true { return .allowed() }
         if origin?.namespace == event.namespace, let key = origin?.initiatingKey,
-          key == event.matchingKey || (event.namespace == .qrDigest && key == event.rawKey)
+          event.matchesStoredKey(key)
         {
           return .allowed()
         }
