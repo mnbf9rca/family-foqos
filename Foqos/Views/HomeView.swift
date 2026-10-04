@@ -18,7 +18,6 @@ struct HomeView: View {
   @EnvironmentObject var strategyManager: StrategyManager
   @EnvironmentObject var geofenceEvaluator: GeofenceEvaluator
   @EnvironmentObject var navigationManager: NavigationManager
-  @EnvironmentObject var ratingManager: RatingManager
 
   // Profile management
   @SafeQuery(sort: [
@@ -222,11 +221,9 @@ struct HomeView: View {
             },
             onStartTapped: { profile in
               handleStartTap(profile)
-              ratingManager.incrementLaunchCount()
             },
             onStopTapped: { profile in
               handleStopTap(profile)
-              ratingManager.incrementLaunchCount()
             },
             onEditTapped: { profile in
               profileToEdit = profile
@@ -823,7 +820,6 @@ struct HomeView: View {
     .environmentObject(GeofenceEvaluator.shared)
     .environmentObject(NavigationManager.shared)
     .environmentObject(StrategyManager.shared)
-    .environmentObject(RatingManager.shared)
     .defaultAppStorage(UserDefaults(suiteName: "preview")!)
     .onAppear {
       let defaults = UserDefaults(suiteName: "preview")!

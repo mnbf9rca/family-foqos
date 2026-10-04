@@ -15,6 +15,7 @@ class StrategyManager: ObservableObject {
   private let sessionSyncService: SessionSyncService
   private let locationManager: LocationManager
   private let remoteActiveDefaults: UserDefaults
+  private let ratingManager: RatingManager
 
   /// #201: persisted intents for session-stops dropped by a failed/exhausted CAS write.
   /// Internal (not private) so Phase-E tests can assert routing without a live CloudKit call.
@@ -60,8 +61,10 @@ class StrategyManager: ObservableObject {
     saveSession: @escaping (ModelContext) throws -> Void = { try $0.save() },
     scheduleReconciler: @escaping @MainActor (ModelContext) -> Void = {
       PreActivationReminderScheduler.reconcileScheduleRegistrations(context: $0)
-    }
+    },
+    ratingManager: RatingManager = .shared
   ) {
+    self.ratingManager = ratingManager
     self.geofenceEvaluator = geofenceEvaluator
     self.emergencyUnblockManager = emergencyUnblockManager
     self.liveActivityManager = liveActivityManager
@@ -1549,14 +1552,19 @@ class StrategyManager: ObservableObject {
     }
   }
 
-  private func finishDepartingSession(_ session: BlockedProfileSession, context: ModelContext, now: Date = Date(), syncDisplacedSession: Bool = false) {
+  @discardableResult
+  private func finishDepartingSession(_ session: BlockedProfileSession, context: ModelContext, now: Date = Date(), syncDisplacedSession: Bool = false) -> Bool {
     if session.blockedProfile.profileSchemaVersion < 2 {
       DeviceActivityCenterUtil.removeStrategyTimerActivity(profileId: session.blockedProfile.id)
     } else {
       cancelTimer(session.blockedProfile.id, session.id)
     }
     session.endSession(now: now)
-    do { try context.save() } catch {
+    var saved = false
+    do {
+      try saveSession(context)
+      saved = true
+    } catch {
       Log.error("Failed to save completed local session: \(error.localizedDescription)", category: .session)
     }
     if activeSession?.id == session.id {
@@ -1583,6 +1591,7 @@ class StrategyManager: ObservableObject {
       }
     }
     WidgetCenter.shared.reloadTimelines(ofKind: "ProfileControlWidget")
+    return saved
   }
 
   @discardableResult
@@ -1598,7 +1607,10 @@ class StrategyManager: ObservableObject {
       errorMessage = "This session changed. Please try again."
       return false
     }
-    finishDepartingSession(session, context: context, now: now)
+    let saved = finishDepartingSession(session, context: context, now: now)
+    if saved, !emergency, !processingRemoteChange, activeSession == nil, errorMessage == nil {
+      ratingManager.recordSuccessfulSessionEnd(now: now)
+    }
     return true
   }
 
