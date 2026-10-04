@@ -410,14 +410,19 @@ final class UpgradePersonaUITests: XCTestCase {
 
   private func assertAdjacentValue(_ label: String, expected: String) {
     let matches = app.staticTexts.matching(identifier: label)
-    XCTAssertTrue(matches.firstMatch.waitForExistence(timeout: 10))
-    guard let title = matches.allElementsBoundByIndex.first(where: { self.app.frame.contains($0.frame) && $0.isHittable }) else {
+    let visible = XCTNSPredicateExpectation(
+      predicate: NSPredicate { _, _ in
+        matches.allElementsBoundByIndex.contains { self.app.frame.contains($0.frame) }
+      }, object: nil)
+    XCTAssertEqual(XCTWaiter.wait(for: [visible], timeout: 10), .completed)
+    guard let title = matches.allElementsBoundByIndex.first(where: { self.app.frame.contains($0.frame) }) else {
       XCTFail("No visible count label: \(label)")
       return
     }
     let frame = title.frame
     let adjacent = app.staticTexts.matching(identifier: expected).allElementsBoundByIndex.filter {
-      abs($0.frame.minX - frame.minX) < 2 && $0.frame.minY >= frame.maxY && $0.frame.minY - frame.maxY < 25
+      self.app.frame.contains($0.frame)
+        && abs($0.frame.minX - frame.minX) < 2 && $0.frame.minY >= frame.maxY && $0.frame.minY - frame.maxY < 25
     }
     XCTAssertFalse(adjacent.isEmpty, "Wrong adjacent value for \(label): expected \(expected)\n\(app.debugDescription)")
   }
