@@ -425,22 +425,43 @@ final class UpgradePersonaUITests: XCTestCase {
       screenshot("specific-stop-key")
     }
     if persona == "schedule" {
-      let schedules = app.switches.matching(identifier: "Schedule")
-      XCTAssertEqual(schedules.count, 2)
-      XCTAssertEqual(schedules.element(boundBy: 0).value as? String, "1")
-      XCTAssertEqual(schedules.element(boundBy: 1).value as? String, "1")
-      let configure = app.buttons["Configure"].firstMatch
-      scrollTo(configure)
-      configure.tap()
-      let expected = (0..<7).map { DateFormatter().weekdaySymbols[(Calendar.current.firstWeekday - 1 + $0) % 7] }
-      let frames = expected.map { day -> CGFloat in
-        let row = app.buttons[day]
-        XCTAssertTrue(row.exists)
-        return row.frame.minY
+      for (upperTitle, lowerTitle) in [("Start by...", "Continue until..."), ("Continue until...", "Breaks")] {
+        let upper = app.staticTexts[upperTitle]
+        let lower = app.staticTexts[lowerTitle]
+        scrollTo(upper, up: upperTitle != "Start by...")
+        var found = false
+        for _ in 0..<5 {
+          guard upper.exists else {
+            XCTFail("Schedule section heading unavailable: \(upperTitle)\n\(app.debugDescription)")
+            return
+          }
+          let bounded: (XCUIElement) -> Bool = { element in
+            self.app.frame.contains(element.frame) && element.frame.minY > upper.frame.maxY
+              && (lower.exists ? element.frame.maxY < lower.frame.minY : upperTitle == "Continue until...")
+          }
+          let schedules = app.switches.matching(identifier: "Schedule").allElementsBoundByIndex.filter(bounded)
+          let configure = app.buttons.matching(identifier: "Configure").allElementsBoundByIndex.filter(bounded)
+          if schedules.count == 1 && configure.count == 1 && configure[0].isHittable {
+            XCTAssertEqual(schedules[0].value as? String, "1", "Converted \(upperTitle) schedule must stay enabled")
+            screenshot("schedule-\(upperTitle)-enabled")
+            configure[0].tap()
+            let expected = (0..<7).map { DateFormatter().weekdaySymbols[(Calendar.current.firstWeekday - 1 + $0) % 7] }
+            let frames = expected.map { day -> CGFloat in
+              let row = app.buttons[day]
+              XCTAssertTrue(row.waitForExistence(timeout: 10))
+              return row.frame.minY
+            }
+            XCTAssertEqual(frames, frames.sorted(), "Weekdays must follow this simulator's locale")
+            screenshot("schedule-\(upperTitle)-locale-order")
+            press("Cancel")
+            found = true
+            break
+          }
+          app.swipeUp()
+        }
+        XCTAssertTrue(found, "Unique schedule controls unavailable inside \(upperTitle) bounds\n\(app.debugDescription)")
+        guard found else { return }
       }
-      XCTAssertEqual(frames, frames.sorted(), "Weekdays must follow this simulator's locale")
-      screenshot("schedule-locale-order")
-      press("Cancel")
     }
     let domains = app.staticTexts["1 domain selected"]
     scrollTo(domains, up: false)
