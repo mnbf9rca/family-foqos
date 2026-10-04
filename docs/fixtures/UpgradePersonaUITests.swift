@@ -413,22 +413,23 @@ final class UpgradePersonaUITests: XCTestCase {
 
   private func assertAdjacentValue(_ label: String, expected: String, within scope: XCUIElement? = nil) {
     let container = scope ?? app
-    let matches = container.staticTexts.matching(identifier: label)
-    let visible = XCTNSPredicateExpectation(
+    var geometry = "No snapshot captured"
+    let adjacent = XCTNSPredicateExpectation(
       predicate: NSPredicate { _, _ in
-        matches.allElementsBoundByIndex.contains { self.app.frame.contains($0.frame) }
+        let window = self.app.frame
+        let labels = container.staticTexts.matching(NSPredicate(format: "label == %@", label))
+          .allElementsBoundByIndex.map { $0.frame }.filter { !$0.isEmpty && window.contains($0) }
+        let values = container.staticTexts.matching(NSPredicate(format: "label == %@", expected))
+          .allElementsBoundByIndex.map { $0.frame }.filter { !$0.isEmpty && window.contains($0) }
+        geometry = "label=\(labels), expected value=\(values), window=\(window)"
+        guard labels.count == 1, let title = labels.first else { return false }
+        return values.contains {
+          abs($0.minX - title.minX) < 2 && $0.minY >= title.maxY && $0.minY - title.maxY < 25
+        }
       }, object: nil)
-    XCTAssertEqual(XCTWaiter.wait(for: [visible], timeout: 10), .completed)
-    guard let title = matches.allElementsBoundByIndex.first(where: { self.app.frame.contains($0.frame) }) else {
-      XCTFail("No visible count label: \(label)")
-      return
-    }
-    let frame = title.frame
-    let adjacent = container.staticTexts.matching(identifier: expected).allElementsBoundByIndex.filter {
-      self.app.frame.contains($0.frame)
-        && abs($0.frame.minX - frame.minX) < 2 && $0.frame.minY >= frame.maxY && $0.frame.minY - frame.maxY < 25
-    }
-    XCTAssertFalse(adjacent.isEmpty, "Wrong adjacent value for \(label): expected \(expected)\n\(app.debugDescription)")
+    XCTAssertEqual(
+      XCTWaiter.wait(for: [adjacent], timeout: 10), .completed,
+      "Wrong adjacent value for \(label): expected \(expected)\n\(geometry)")
   }
 
   private func childEditingJourney() throws {
