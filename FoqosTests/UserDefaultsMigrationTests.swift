@@ -97,6 +97,24 @@ final class UserDefaultsMigrationTests: XCTestCase {
 
   // MARK: - App group suite tests
 
+  func testV1WeeksConvertToDaysWithoutReplacingExistingV2Setting() {
+    defaults.set(6, forKey: "emergencyUnblocksResetPeriodInWeeks")
+    defaults.set(14, forKey: "family_foqos_emergency_unblocks_reset_period_in_days")
+
+    UserDefaultsMigration.migrateIfNeeded(defaults: defaults)
+
+    XCTAssertEqual(defaults.integer(forKey: "family_foqos_emergency_unblocks_reset_period_in_days"), 14)
+    XCTAssertNil(defaults.object(forKey: "emergencyUnblocksResetPeriodInWeeks"))
+  }
+
+  func testPositiveV1WeeksConvertDirectlyRatherThanUsingMenuFallback() {
+    defaults.set(3, forKey: "emergencyUnblocksResetPeriodInWeeks")
+
+    UserDefaultsMigration.migrateIfNeeded(defaults: defaults)
+
+    XCTAssertEqual(defaults.integer(forKey: "family_foqos_emergency_unblocks_reset_period_in_days"), 21)
+  }
+
   func testGivenOldAppGroupKeys_WhenMigrate_ThenValuesCopiedToNewKeys() {
     // Given
     defaults.set("Warm Sandstone", forKey: "familyFoqosThemeColorName")
