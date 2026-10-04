@@ -75,8 +75,11 @@ final class UpgradePersonaUITests: XCTestCase {
     if persona == "library" { selectLibraryProfile(24) }
     press("ellipsis")
     press("Stats for Nerds")
-    XCTAssertTrue(app.staticTexts["Total Sessions"].waitForExistence(timeout: 10))
-    assertAdjacentValue("Total Sessions", expected: "1")  // Stats counts completed sessions; the active V1 session remains open.
+    XCTAssertTrue(app.navigationBars["Stats for Nerds"].waitForExistence(timeout: 10))
+    let statistics = app.scrollViews.containing(.staticText, identifier: "Total Focus Time")
+    XCTAssertTrue(statistics.firstMatch.waitForExistence(timeout: 10))
+    XCTAssertEqual(statistics.count, 1, "History must resolve to exactly one Stats scroll view")
+    assertAdjacentValue("Total Sessions", expected: "1", within: statistics.firstMatch)  // Completed history only.
     screenshot("retained-history")
     press("Close")
     if persona == "library" { selectLibraryProfile(1) }
@@ -408,8 +411,9 @@ final class UpgradePersonaUITests: XCTestCase {
     for digit in value { press(String(digit)) }
   }
 
-  private func assertAdjacentValue(_ label: String, expected: String) {
-    let matches = app.staticTexts.matching(identifier: label)
+  private func assertAdjacentValue(_ label: String, expected: String, within scope: XCUIElement? = nil) {
+    let container = scope ?? app
+    let matches = container.staticTexts.matching(identifier: label)
     let visible = XCTNSPredicateExpectation(
       predicate: NSPredicate { _, _ in
         matches.allElementsBoundByIndex.contains { self.app.frame.contains($0.frame) }
@@ -420,7 +424,7 @@ final class UpgradePersonaUITests: XCTestCase {
       return
     }
     let frame = title.frame
-    let adjacent = app.staticTexts.matching(identifier: expected).allElementsBoundByIndex.filter {
+    let adjacent = container.staticTexts.matching(identifier: expected).allElementsBoundByIndex.filter {
       self.app.frame.contains($0.frame)
         && abs($0.frame.minX - frame.minX) < 2 && $0.frame.minY >= frame.maxY && $0.frame.minY - frame.maxY < 25
     }
