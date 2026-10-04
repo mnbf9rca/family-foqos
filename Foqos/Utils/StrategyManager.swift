@@ -240,6 +240,10 @@ class StrategyManager: ObservableObject {
   func toggleBlocking(context: ModelContext, activeProfile: BlockedProfiles?) {
     guard !ScreenshotDemoMode.isActive else { return }
     if isBlocking {
+      guard activeProfile?.id == activeSession?.blockedProfile.id else {
+        errorMessage = "A session is already active. Stop it before starting another."
+        return
+      }
       // #237 / MD3: reconcile against cross-process state before ending a possibly stale
       // on-screen session. The next Stop acts on the refreshed state.
       if let displayed = activeSession,
@@ -1485,7 +1489,7 @@ class StrategyManager: ObservableObject {
     do { _ = try startOriginatingSession(context: context, profile: profile, origin: origin) } catch { errorMessage = error.localizedDescription }
   }
 
-  private func rejectionForStart(_ profile: BlockedProfiles, context: ModelContext) -> String? {
+  func rejectionForStart(_ profile: BlockedProfiles, context: ModelContext) -> String? {
     rejectionForStart(profile) {
       try getActiveSession(context: context)
     }

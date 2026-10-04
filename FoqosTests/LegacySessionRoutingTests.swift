@@ -291,4 +291,28 @@ final class LegacySessionRoutingTests: XCTestCase {
     }
   }
 
+  func testAnotherProfilesTapCannotStopTheActiveSession() throws {
+    let now = Date()
+    for schema in [1, 3] {
+      let owner = try legacyProfile(ManualBlockingStrategy.id, now: now)
+      owner.profileSchemaVersion = schema
+      if schema == 3 { owner.stopConditions = .init(manual: true) }
+      let other = BlockedProfiles(name: "Other", createdAt: now, updatedAt: now)
+      other.startTriggers = .init(manual: true)
+      other.stopConditions = .init(manual: true)
+      context.insert(other)
+      let session = try active(owner, tag: ManualBlockingStrategy.id, now: now)
+      manager.errorMessage = nil
+      manager.toggleBlocking(context: context, activeProfile: other)
+      XCTAssertTrue(session.isActive)
+      XCTAssertEqual(manager.activeSession?.id, session.id)
+      XCTAssertEqual(SharedData.getActiveSharedSession()?.id, session.id)
+      XCTAssertEqual(owner.profileSchemaVersion, schema)
+      XCTAssertEqual(manager.errorMessage, "A session is already active. Stop it before starting another.")
+      XCTAssertTrue(other.sessions.isEmpty)
+      session.endSession(now: now)
+      manager.activeSession = nil
+    }
+  }
+
 }

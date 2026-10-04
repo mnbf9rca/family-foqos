@@ -221,10 +221,12 @@ struct HomeView: View {
               navigateToProfileId = nil
             },
             onStartTapped: { profile in
-              strategyButtonPress(profile)
+              handleStartTap(profile)
+              ratingManager.incrementLaunchCount()
             },
             onStopTapped: { profile in
-              strategyButtonPress(profile)
+              handleStopTap(profile)
+              ratingManager.incrementLaunchCount()
             },
             onEditTapped: { profile in
               profileToEdit = profile
@@ -569,16 +571,11 @@ struct HomeView: View {
     }
   }
 
-  private func strategyButtonPress(_ profile: BlockedProfiles) {
-    if strategyManager.isBlocking {
-      handleStopTap(profile)
-    } else {
-      handleStartTap(profile)
-    }
-    ratingManager.incrementLaunchCount()
-  }
-
   private func handleStartTap(_ profile: BlockedProfiles) {
+    if let rejection = strategyManager.rejectionForStart(profile, context: context) {
+      strategyManager.errorMessage = rejection
+      return
+    }
     do { try strategyManager.prepareProfileForStart(profile, context: context) } catch {
       strategyManager.errorMessage = error.localizedDescription
       return
