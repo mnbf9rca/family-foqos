@@ -3,8 +3,12 @@ import SwiftUI
 struct LogExportView: View {
   @Environment(\.dismiss) private var dismiss
   @State private var isExporting = false
-  @State private var showingShareSheet = false
-  @State private var shareURL: URL?
+  private struct LogExport: Identifiable {
+    let url: URL
+    var id: URL { url }
+  }
+
+  @State private var logExport: LogExport?
   @State private var errorMessage: String?
   @State private var showingPreview = false
   @State private var logStats: LogStats = LogStats()
@@ -129,10 +133,8 @@ struct LogExportView: View {
       } message: {
         Text(errorMessage ?? "")
       }
-      .sheet(isPresented: $showingShareSheet) {
-        if let url = shareURL {
-          ShareSheet(activityItems: [url])
-        }
+      .sheet(item: $logExport) { export in
+        ShareSheet(activityItems: [export.url])
       }
       .sheet(isPresented: $showingPreview) {
         LogPreviewView()
@@ -175,8 +177,7 @@ struct LogExportView: View {
           )
           : nil
         let url = try await LogExportManager.shared.createLogArchive(familyRoster: familyRoster)
-        shareURL = url
-        showingShareSheet = true
+        logExport = LogExport(url: url)
       } catch {
         errorMessage = error.localizedDescription
       }

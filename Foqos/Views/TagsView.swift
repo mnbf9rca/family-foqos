@@ -82,9 +82,9 @@ struct TagsView: View {
       }
       .sheet(
         isPresented: $showingQRScanner,
-        onDismiss: {
-          if let id = scannedQR {
-            scannedQR = nil
+        onDismiss: { [scannedQR = $scannedQR] in
+          if let id = scannedQR.wrappedValue {
+            scannedQR.wrappedValue = nil
             handleScan(id: id, kind: "qr")
           }
         }
