@@ -56,6 +56,7 @@ final class UpgradePersonaUITests: XCTestCase {
     let button = matches.allElementsBoundByIndex.first { self.app.frame.contains($0.frame) && $0.isHittable } ?? matches.firstMatch
     XCTAssertTrue(button.waitForExistence(timeout: 10), "Missing button: \(title)\n\(app.debugDescription)")
     if title.contains("Hold") { button.press(forDuration: 1.5) } else { button.tap() }
+    if title == "Stop" || title == "Hold to Start" { dismissRatingPrompt(checkIdle: false) }
   }
 
   @MainActor
@@ -112,7 +113,7 @@ final class UpgradePersonaUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["Hold to Start Break"].exists, "A used break must not offer a fresh allowance")
       }
       if ["nfc", "qr", "manual-nfc", "manual-qr"].contains(persona) {
-        stopWithScan(wrong: true)
+        stopWithScan(wrong: true, legacy: true)
       } else if ["nfc-timer", "qr-timer"].contains(persona) {
         stopWithScan(wrong: false)
       } else if persona == "emergency" {
@@ -188,13 +189,18 @@ final class UpgradePersonaUITests: XCTestCase {
     XCTAssertTrue(app.staticTexts["Hold to Start"].waitForExistence(timeout: 10))
   }
 
-  private func dismissRatingPrompt() {
-    let later = app.buttons["Not Now"]
-    if later.waitForExistence(timeout: 2) {
+  private func dismissRatingPrompt(checkIdle: Bool = true) {
+    let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+    let inApp = app.buttons["Not Now"]
+    let later = inApp.waitForExistence(timeout: 2) ? inApp : springboard.buttons["Not Now"]
+    if later.exists {
       screenshot("rating-prompt")
       later.tap()  // A normal StoreKit request, never an error or action refusal.
+    } else {
+      let title = "Enjoying Family Foqos?"
+      XCTAssertFalse(app.staticTexts[title].exists || springboard.staticTexts[title].exists, "StoreKit prompt has no Not Now control")
     }
-    XCTAssertTrue(app.staticTexts["Hold to Start"].isHittable)
+    if checkIdle { XCTAssertTrue(app.staticTexts["Hold to Start"].isHittable) }
   }
 
   private func completeQRScan() {
@@ -205,16 +211,24 @@ final class UpgradePersonaUITests: XCTestCase {
     }
   }
 
-  private func stopWithScan(wrong: Bool) {
+  private func stopWithScan(wrong: Bool, legacy: Bool = false) {
     press("Stop")
     if app.buttons["Scan NFC Tag"].exists { press("Scan NFC Tag") }
     if app.buttons["Scan QR Code"].exists { press("Scan QR Code") }
     completeQRScan()
     if wrong {
-      XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 10), "Wrong scan must be refused")
+      let item = persona.contains("qr") ? "QR code" : "NFC tag"
+      let message =
+        legacy
+        ? persona.hasPrefix("manual-")
+          ? "This \(item) is not allowed to unblock this profile. Physical unblock setting is on for this profile"
+          : persona == "nfc" ? "You must scan the original tag to stop focus" : "You must scan the original QR code to stop focus"
+        : "That \(item) doesn’t match. Scan the required \(persona.contains("qr") ? "code" : "tag")."
+      let refusal = app.alerts.containing(.staticText, identifier: message).firstMatch
+      XCTAssertTrue(refusal.waitForExistence(timeout: 10), "Wrong scan must show its actual refusal")
       screenshot("wrong-scan-refused")
       XCTAssertTrue(app.buttons["Stop"].exists)
-      press("OK")  // Dismiss the verified, expected refusal through its actual UI.
+      refusal.buttons["OK"].tap()
       press("Stop")
       if app.buttons["Scan NFC Tag"].exists { press("Scan NFC Tag") }
       if app.buttons["Scan QR Code"].exists { press("Scan QR Code") }
@@ -472,9 +486,10 @@ final class UpgradePersonaUITests: XCTestCase {
     selectLibraryProfile(6)
     press("Hold to Start")
     let text = "Please edit this profile before starting. Its start and stop settings need updating."
-    XCTAssertTrue(app.alerts.staticTexts[text].waitForExistence(timeout: 10))
+    let refusal = app.alerts.containing(.staticText, identifier: text).firstMatch
+    XCTAssertTrue(refusal.waitForExistence(timeout: 10))
     screenshot("invalid-timer-refused")
-    press("OK")
+    refusal.buttons["OK"].tap()
     assertIdle()
     openEditor("RC Library 06")
     scrollTo(app.buttons["Configure"].firstMatch)
