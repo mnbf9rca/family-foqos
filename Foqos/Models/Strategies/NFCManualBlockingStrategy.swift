@@ -14,7 +14,11 @@ class NFCManualBlockingStrategy: BlockingStrategy {
   var onSessionCreation: ((SessionStatus) -> Void)?
   var onErrorMessage: ((String) -> Void)?
 
-  private let nfcScanner: NFCScannerUtil = NFCScannerUtil()
+  private let nfcScanner: NFCScannerUtil
+
+  init(nfcScanner: NFCScannerUtil = NFCScannerUtil()) {
+    self.nfcScanner = nfcScanner
+  }
   private let appBlocker: AppBlockerUtil = AppBlockerUtil()
 
   func getIdentifier() -> String {
@@ -48,10 +52,8 @@ class NFCManualBlockingStrategy: BlockingStrategy {
     session: BlockedProfileSession
   ) -> (any View)? {
     nfcScanner.onTagScanned = { tag in
-      let tag = tag.id
-
       if let physicalUnblockNFCTagId = session.blockedProfile.physicalUnblockNFCTagId,
-        physicalUnblockNFCTagId != tag
+        !tag.matchesLegacyPhysicalKey(physicalUnblockNFCTagId)
       {
         self.onErrorMessage?(
           "This NFC tag is not allowed to unblock this profile. Physical unblock setting is on for this profile"

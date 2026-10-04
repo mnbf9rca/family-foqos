@@ -18,9 +18,17 @@ struct TagEvent: Equatable, Sendable {
   var targetProfileId: UUID? = nil
   var rawKey: String? = nil
   var unidentifiedLegacyTag = false
+  var legacyNFCURL: String? = nil
 
   var matchingKey: String? {
     key.map { namespace == .opaque ? "\(type.rawValue):opaque:\($0)" : $0 }
+  }
+
+  /// Compatibility aliases never cross the scan's comparison namespace.
+  func matchesStoredKey(_ stored: String) -> Bool {
+    stored == matchingKey
+      || (namespace == .qrDigest && stored == rawKey)
+      || (namespace == .nfcUID && stored == legacyNFCURL)
   }
 
   var origin: SessionOrigin {
