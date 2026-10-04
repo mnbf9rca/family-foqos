@@ -507,19 +507,38 @@ final class UpgradePersonaUITests: XCTestCase {
     let adjacent = XCTNSPredicateExpectation(
       predicate: NSPredicate { _, _ in
         let window = self.app.frame
-        let labels = container.staticTexts.matching(NSPredicate(format: "label == %@", label))
-          .allElementsBoundByIndex.map { $0.frame }.filter { !$0.isEmpty && window.contains($0) }
-        let values = container.staticTexts.matching(NSPredicate(format: "label == %@", expected))
-          .allElementsBoundByIndex.map { $0.frame }.filter { !$0.isEmpty && window.contains($0) }
-        geometry = "label=\(labels), expected value=\(values), window=\(window)"
+        guard let snapshot = try? container.snapshot() else {
+          geometry = "Container snapshot unavailable"
+          return false
+        }
+        var pending = snapshot.children
+        var texts: [any XCUIElementSnapshot] = []
+        while let element = pending.popLast() {
+          pending.append(contentsOf: element.children)
+          if element.elementType == .staticText && (element.label == label || element.label == expected) {
+            texts.append(element)
+          }
+        }
+        geometry = "snapshot exact staticTexts=\(texts.map { ($0.label, $0.frame) }), window=\(window)"
+        let visible = texts.filter {
+          let frame = $0.frame
+          return frame.origin.x.isFinite && frame.origin.y.isFinite && frame.width.isFinite
+            && frame.height.isFinite && !frame.isEmpty && window.contains(frame)
+        }
+        let labels = visible.filter { $0.label == label }.map { $0.frame }
+        let values = visible.filter { $0.label == expected }.map { $0.frame }
         guard labels.count == 1, let title = labels.first else { return false }
         return values.contains {
           abs($0.minX - title.minX) < 2 && $0.minY >= title.maxY && $0.minY - title.maxY < 25
         }
       }, object: nil)
     let result = XCTWaiter.wait(for: [adjacent], timeout: 10)
+    let matched = XCTAttachment(string: geometry)
+    matched.name = "adjacent-value-snapshot-\(label)"
+    matched.lifetime = .keepAlways
+    add(matched)
     if result != .completed {
-      let evidence = XCTAttachment(string: "Scoped hierarchy:\n\(container.debugDescription)\nApplication hierarchy:\n\(app.debugDescription)")
+      let evidence = XCTAttachment(string: "Last snapshot relevant descendants:\n\(geometry)\nScoped hierarchy:\n\(container.debugDescription)\nApplication hierarchy:\n\(app.debugDescription)")
       evidence.name = "adjacent-value-timeout"
       evidence.lifetime = .keepAlways
       add(evidence)
