@@ -15,6 +15,7 @@ class StrategyManager: ObservableObject {
   private let sessionSyncService: SessionSyncService
   private let locationManager: LocationManager
   private let remoteActiveDefaults: UserDefaults
+  private let ratingManager: RatingManager
 
   /// #201: persisted intents for session-stops dropped by a failed/exhausted CAS write.
   /// Internal (not private) so Phase-E tests can assert routing without a live CloudKit call.
@@ -60,8 +61,10 @@ class StrategyManager: ObservableObject {
     saveSession: @escaping (ModelContext) throws -> Void = { try $0.save() },
     scheduleReconciler: @escaping @MainActor (ModelContext) -> Void = {
       PreActivationReminderScheduler.reconcileScheduleRegistrations(context: $0)
-    }
+    },
+    ratingManager: RatingManager = .shared
   ) {
+    self.ratingManager = ratingManager
     self.geofenceEvaluator = geofenceEvaluator
     self.emergencyUnblockManager = emergencyUnblockManager
     self.liveActivityManager = liveActivityManager
@@ -536,6 +539,7 @@ class StrategyManager: ObservableObject {
     let targetProfileId: UUID?
     let event: TagEvent
     let requiredType: TagType
+    let recordSuccessfulUse: Bool
   }
   @Published private(set) var pendingTagSwitch: PendingTagSwitch?
   @Published var showTagConfirmation = false
@@ -559,7 +563,7 @@ class StrategyManager: ObservableObject {
           cancelTagOperation()
           await handleLegacyLink(profileId: target, sessionId: session.id, context: context)
         } else {
-          await handleTagEvent(event, operation: .scan, context: context, now: now)
+          await handleTagEvent(event, operation: .scan, context: context, now: now, recordSuccessfulUse: false)
         }
       } catch { errorMessage = error.localizedDescription }
     case .link(let id):
@@ -619,7 +623,7 @@ class StrategyManager: ObservableObject {
     } catch { errorMessage = error.localizedDescription }
   }
 
-  func handleTagEvent(_ event: TagEvent, operation: TagOperation, context: ModelContext, now: Date = Date()) async {
+  func handleTagEvent(_ event: TagEvent, operation: TagOperation, context: ModelContext, now: Date = Date(), recordSuccessfulUse: Bool = true) async {
     do {
       if case .confirmSwitch = operation {
         guard let pending = pendingTagSwitch else { return }
@@ -679,7 +683,7 @@ class StrategyManager: ObservableObject {
             throw NSError(domain: "ProfileStart", code: 1, userInfo: [NSLocalizedDescriptionKey: needsAppSelectionMessage(for: profile)])
           }
         }
-        let pending = PendingTagSwitch(operationId: operationId, victimId: victim.id, targetProfileId: target, event: event, requiredType: event.type)
+        let pending = PendingTagSwitch(operationId: operationId, victimId: victim.id, targetProfileId: target, event: event, requiredType: event.type, recordSuccessfulUse: recordSuccessfulUse)
         if !tagStopResult(event, session: victim).allowed {
           pendingTagSwitch = pending
           showTagConfirmation = true
@@ -741,7 +745,7 @@ class StrategyManager: ObservableObject {
           expectedVictimId: victim.id, allowLinkForTag: true)
         finishDepartingSession(victim, context: context, now: now)
       } else if victim.blockedProfile.profileSchemaVersion >= 2 {
-        endV2Session(victim, context: context, now: now)
+        endV2Session(victim, context: context, now: now, recordSuccessfulUse: pending.recordSuccessfulUse)
       } else {
         stopBlocking(context: context, bypassStrategy: true)
       }
@@ -1550,14 +1554,19 @@ class StrategyManager: ObservableObject {
     }
   }
 
-  private func finishDepartingSession(_ session: BlockedProfileSession, context: ModelContext, now: Date = Date(), syncDisplacedSession: Bool = false) {
+  @discardableResult
+  private func finishDepartingSession(_ session: BlockedProfileSession, context: ModelContext, now: Date = Date(), syncDisplacedSession: Bool = false) -> Bool {
     if session.blockedProfile.profileSchemaVersion < 2 {
       DeviceActivityCenterUtil.removeStrategyTimerActivity(profileId: session.blockedProfile.id)
     } else {
       cancelTimer(session.blockedProfile.id, session.id)
     }
     session.endSession(now: now)
-    do { try context.save() } catch {
+    var saved = false
+    do {
+      try saveSession(context)
+      saved = true
+    } catch {
       Log.error("Failed to save completed local session: \(error.localizedDescription)", category: .session)
     }
     if activeSession?.id == session.id {
@@ -1584,10 +1593,11 @@ class StrategyManager: ObservableObject {
       }
     }
     WidgetCenter.shared.reloadTimelines(ofKind: "ProfileControlWidget")
+    return saved
   }
 
   @discardableResult
-  private func endV2Session(_ session: BlockedProfileSession, context: ModelContext, now: Date = Date(), emergency: Bool = false) -> Bool {
+  private func endV2Session(_ session: BlockedProfileSession, context: ModelContext, now: Date = Date(), emergency: Bool = false, recordSuccessfulUse: Bool = false) -> Bool {
     guard
       SharedData.completeSession(
         expectedSessionId: session.id, now: now, localSession: session.toSnapshot(),
@@ -1599,7 +1609,10 @@ class StrategyManager: ObservableObject {
       errorMessage = "This session changed. Please try again."
       return false
     }
-    finishDepartingSession(session, context: context, now: now)
+    let saved = finishDepartingSession(session, context: context, now: now)
+    if recordSuccessfulUse, saved, !emergency, !processingRemoteChange, activeSession == nil, errorMessage == nil {
+      ratingManager.recordSuccessfulSessionEnd(now: now)
+    }
     return true
   }
 
@@ -1611,7 +1624,7 @@ class StrategyManager: ObservableObject {
     }
 
     if session.blockedProfile.profileSchemaVersion >= 2 {
-      endV2Session(session, context: context)
+      endV2Session(session, context: context, recordSuccessfulUse: true)
       return
     }
     // When bypassStrategy is true, the caller has already handled any required
