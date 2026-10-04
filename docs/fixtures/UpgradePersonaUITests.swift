@@ -193,11 +193,15 @@ final class UpgradePersonaUITests: XCTestCase {
     let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
     let inApp = app.buttons["Not Now"]
     let later = inApp.waitForExistence(timeout: 2) ? inApp : springboard.buttons["Not Now"]
+    let title = "Enjoying Family Foqos?"
     if later.exists {
+      let owner = inApp.exists ? app : springboard
+      let reviewTitle = owner.staticTexts[title]
+      XCTAssertTrue(reviewTitle.waitForExistence(timeout: 2), "Not Now does not belong to the StoreKit review prompt")
+      guard reviewTitle.exists else { return }
       screenshot("rating-prompt")
       later.tap()  // A normal StoreKit request, never an error or action refusal.
     } else {
-      let title = "Enjoying Family Foqos?"
       XCTAssertFalse(app.staticTexts[title].exists || springboard.staticTexts[title].exists, "StoreKit prompt has no Not Now control")
     }
     if checkIdle { XCTAssertTrue(app.staticTexts["Hold to Start"].isHittable) }
@@ -237,14 +241,15 @@ final class UpgradePersonaUITests: XCTestCase {
     assertIdle()
   }
 
-  private func startFocus() {
+  private func startFocus(timerMinutes: Int = 37) {
     press("Hold to Start")
     if app.buttons["Start Now"].exists { press("Start Now") }
     if app.buttons["Scan NFC Tag"].exists { press("Scan NFC Tag") }
     if app.buttons["Scan QR Code"].exists { press("Scan QR Code") }
     completeQRScan()
     if app.staticTexts["Timer Settings"].exists {
-      XCTAssertTrue(app.staticTexts["37m"].exists, "Interactive timer must retain its saved duration")
+      let duration = timerMinutes == 60 ? "1h" : "\(timerMinutes)m"
+      XCTAssertTrue(app.staticTexts[duration].exists, "Interactive timer must retain its saved duration")
       screenshot("saved-timer-duration")
       press("Set Duration")
     }
@@ -278,6 +283,7 @@ final class UpgradePersonaUITests: XCTestCase {
     XCTAssertTrue(unblock.exists)
     for _ in 0..<3 { unblock.tap() }
     press("Emergency Unblock")
+    dismissRatingPrompt(checkIdle: false)
     XCTAssertFalse(app.alerts.firstMatch.exists, "Emergency unblock must succeed without a hidden failure")
     // The production action dismisses the sheet on successful completion.
     XCTAssertTrue(app.staticTexts["Hold to Start"].waitForExistence(timeout: 10))
@@ -499,13 +505,13 @@ final class UpgradePersonaUITests: XCTestCase {
     press("Update")
     closeProfiles()
     openEditor("RC Library 06")
-    scrollTo(app.staticTexts["1h"])
-    XCTAssertTrue(app.staticTexts["1h"].exists)
+    scrollTo(app.staticTexts["60 min"])
+    XCTAssertTrue(app.staticTexts["60 min"].exists)
     screenshot("repaired-timer-settings")
     press("Cancel")
     closeProfiles()
     selectLibraryProfile(6)
-    startFocus()
+    startFocus(timerMinutes: 60)
     assertCountdown(minutes: 60)
     emergencyUnblock(expectedRemaining: 3)
   }
