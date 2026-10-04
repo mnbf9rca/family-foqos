@@ -115,6 +115,18 @@ final class UserDefaultsMigrationTests: XCTestCase {
     XCTAssertEqual(defaults.integer(forKey: "family_foqos_emergency_unblocks_reset_period_in_days"), 21)
   }
 
+  func testOlderV2DaysWinOverV1WeeksOnFirstMigration() {
+    defaults.set(6, forKey: "emergencyUnblocksResetPeriodInWeeks")
+    defaults.set(14, forKey: "emergencyUnblocksResetPeriodInDays")
+
+    UserDefaultsMigration.migrateIfNeeded(defaults: defaults)
+    UserDefaultsMigration.migrateIfNeeded(defaults: defaults)
+
+    XCTAssertEqual(defaults.integer(forKey: "family_foqos_emergency_unblocks_reset_period_in_days"), 14)
+    XCTAssertNil(defaults.object(forKey: "emergencyUnblocksResetPeriodInDays"))
+    XCTAssertNil(defaults.object(forKey: "emergencyUnblocksResetPeriodInWeeks"))
+  }
+
   func testV1WeeksConvertAfterEarlierStandardMigrationWithoutRepeatingOtherKeys() {
     defaults.set(true, forKey: "family_foqos_user_defaults_migrated")
     defaults.set(6, forKey: "emergencyUnblocksResetPeriodInWeeks")

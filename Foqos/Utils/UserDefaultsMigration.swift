@@ -31,11 +31,12 @@ enum UserDefaultsMigration {
   ]
 
   static func migrateIfNeeded(defaults: UserDefaults = .standard) {
-    // V1 stores weeks, not days. Existing V2 settings (including synced ones) win.
+    // V1 stores weeks, not days. V2 days under either key (including synced ones) win.
     // Earlier V2 migrations left this key behind, so convert independently of their flag.
     let weeksKey = "emergencyUnblocksResetPeriodInWeeks"
     let daysKey = "family_foqos_emergency_unblocks_reset_period_in_days"
     if defaults.object(forKey: daysKey) == nil,
+      defaults.object(forKey: "emergencyUnblocksResetPeriodInDays") == nil,
       let weeks = defaults.object(forKey: weeksKey) as? Int, weeks > 0
     {
       defaults.set(weeks * 7, forKey: daysKey)
