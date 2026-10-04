@@ -87,6 +87,7 @@ class StrategyManager: ObservableObject {
     context: ModelContext, profile: BlockedProfiles, origin: SessionOrigin,
     durationOverrideMinutes: Int? = nil, now: Date = Date(), expectedVictimId: String? = nil, allowLinkForTag: Bool = false
   ) throws -> BlockedProfileSession {
+    try prepareProfileForStart(profile, context: context)
     let snapshot = BlockedProfiles.getSnapshot(for: profile)
     func refusal(_ message: String) -> NSError {
       NSError(domain: "ProfileStart", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
@@ -239,6 +240,10 @@ class StrategyManager: ObservableObject {
   func toggleBlocking(context: ModelContext, activeProfile: BlockedProfiles?) {
     guard !ScreenshotDemoMode.isActive else { return }
     if isBlocking {
+      guard activeProfile?.id == activeSession?.blockedProfile.id else {
+        errorMessage = "A session is already active. Stop it before starting another."
+        return
+      }
       // #237 / MD3: reconcile against cross-process state before ending a possibly stale
       // on-screen session. The next Stop acts on the refreshed state.
       if let displayed = activeSession,
@@ -258,12 +263,12 @@ class StrategyManager: ObservableObject {
         geofenceRule.hasLocations
       {
         geofenceEvaluator.checkGeofenceAndStop(context: context, profile: session.blockedProfile) {
-          self.stopBlocking(context: context, bypassStrategy: true)
+          self.stopBlocking(context: context)
         }
         return
       }
 
-      stopBlocking(context: context, bypassStrategy: true)
+      stopBlocking(context: context)
     } else {
       if geofenceEvaluator.isCheckingGeofence,
         !geofenceEvaluator.recoverStaleGeofenceCheck()
@@ -275,7 +280,7 @@ class StrategyManager: ObservableObject {
 
       geofenceEvaluator.checkGeofenceAndStart(context: context, activeProfile: activeProfile) {
         ctx, profile in
-        self.startBlocking(context: ctx, activeProfile: profile, bypassStrategy: true)
+        self.startBlocking(context: ctx, activeProfile: profile)
       }
     }
   }
@@ -600,14 +605,6 @@ class StrategyManager: ObservableObject {
       errorMessage = "profile: \(session.blockedProfile.name) has disable background stops enabled, not stopping it"
       return
     }
-    let stop = StartStopActionResolver.canStop(
-      with: .deepLink, conditions: session.blockedProfile.stopConditions,
-      sessionTag: session.tag, stopNFCTagIds: [], stopQRCodeIds: [], legacySession: true
-    )
-    guard stop.allowed else {
-      errorMessage = stop.errorMessage ?? "\(session.blockedProfile.name) cannot be stopped via written NFC or printed QR"
-      return
-    }
     guard await tagStopGeofenceAllowed(sessionId: sessionId, context: context),
       let current = try? BlockedProfileSession.findSession(byID: sessionId, in: context), current.isActive,
       activeSession?.id == sessionId, SharedData.getActiveSharedSession()?.id == sessionId
@@ -648,6 +645,7 @@ class StrategyManager: ObservableObject {
       if case .explicitStart(let id) = operation {
         guard let profile = try BlockedProfiles.findProfile(byID: id, in: context) else { throw ProfileTagLink.Failure.invalidTag }
         guard let rejection = rejectionForStart(profile, context: context) else {
+          try prepareProfileForStart(profile, context: context)
           let origin = admittedTagOrigin(event, profile: profile)
           _ = try startOriginatingSession(context: context, profile: profile, origin: origin, now: now)
           tagOperationId = nil
@@ -671,6 +669,7 @@ class StrategyManager: ObservableObject {
         }
         if let target {
           guard let profile = try BlockedProfiles.findProfile(byID: target, in: context) else { throw ProfileTagLink.Failure.invalidTag }
+          try prepareProfileForStart(profile, context: context)
           if let rejection = ProfileConditionValidation.startRejection(
             for: BlockedProfiles.getSnapshot(for: profile), origin: admittedTagOrigin(event, profile: profile), allowLinkForTag: true)
           {
@@ -689,6 +688,7 @@ class StrategyManager: ObservableObject {
         await commitTagTransition(pending, context: context, now: now)
       } else if let target = event.targetProfileId {
         guard let profile = try BlockedProfiles.findProfile(byID: target, in: context) else { throw ProfileTagLink.Failure.invalidTag }
+        try prepareProfileForStart(profile, context: context)
         _ = try startOriginatingSession(context: context, profile: profile, origin: admittedTagOrigin(event, profile: profile), now: now, allowLinkForTag: true)
         tagOperationId = nil
       } else {
@@ -879,7 +879,8 @@ class StrategyManager: ObservableObject {
         channel: .shortcut,
         sessionMatchesProfile: currentSession.blockedProfile.id == profileId,
         geofence: geofenceState,
-        stopConditions: currentProfile.stopConditions
+        // V1 Shortcuts could stop unless disableBackgroundStops vetoed above.
+        stopConditions: currentProfile.profileSchemaVersion == 1 ? .init(manual: true) : currentProfile.stopConditions
       )
 
       switch decision {
@@ -1341,15 +1342,8 @@ class StrategyManager: ObservableObject {
     }
   }
 
-  /// Start blocking for the given profile.
-  /// - Parameter bypassStrategy: When true, uses ManualBlockingStrategy to create the session
-  ///   directly. Use this when the V2 trigger system has already routed the start action
-  ///   (e.g., NFC tag was already scanned) to avoid redundant scanning by legacy strategies.
-  private func startBlocking(
-    context: ModelContext,
-    activeProfile: BlockedProfiles?,
-    bypassStrategy: Bool = false
-  ) {
+  /// Starts only after inactive V1 data has crossed the conversion boundary.
+  private func startBlocking(context: ModelContext, activeProfile: BlockedProfiles?) {
     guard let definedProfile = activeProfile else {
       Log.info(
         "No active profile found, calling stop blocking with no session", category: .strategy)
@@ -1362,6 +1356,10 @@ class StrategyManager: ObservableObject {
       return
     }
 
+    do { try prepareProfileForStart(definedProfile, context: context) } catch {
+      errorMessage = error.localizedDescription
+      return
+    }
     if definedProfile.profileSchemaVersion >= 2 {
       let snapshot = BlockedProfiles.getSnapshot(for: definedProfile)
       if let rejection = ProfileConditionValidation.startRejection(for: snapshot, origin: .init(kind: .manual)) {
@@ -1389,27 +1387,6 @@ class StrategyManager: ObservableObject {
       }
       return
     }
-    // When bypassStrategy is true, the V2 trigger system has already routed
-    // the start action. Use ManualBlockingStrategy to create the session
-    // directly, avoiding redundant NFC/QR scans from legacy strategies.
-    let strategyId =
-      bypassStrategy
-      ? ManualBlockingStrategy.id
-      : definedProfile.blockingStrategyId
-
-    if let strategyId {
-      let strategy = getStrategy(id: strategyId)
-      let view = strategy.startBlocking(
-        context: context,
-        profile: definedProfile,
-        forceStart: false
-      )
-
-      if let customView = view {
-        showCustomStrategyView = true
-        customStrategyView = customView
-      }
-    }
   }
 
   /// Start blocking with a pre-scanned NFC tag (for trigger-based start)
@@ -1421,8 +1398,7 @@ class StrategyManager: ObservableObject {
         return
       }
     }
-    let prefixedTag = "nfc:\(tagId)"
-    startWithTag(context: context, profile: profile, tag: prefixedTag, origin: .init(kind: .nfc, key: tagId, namespace: .nfcUID))
+    startWithTag(context: context, profile: profile, origin: .init(kind: .nfc, key: tagId, namespace: .nfcUID))
   }
 
   /// Start blocking with a pre-scanned QR code (for trigger-based start)
@@ -1437,8 +1413,7 @@ class StrategyManager: ObservableObject {
     let matchedKey =
       profile.startTriggers.specificQR
       ? (profile.startQRCodeIds.first { $0 == codeValue || $0 == rawHash } ?? codeValue) : codeValue
-    let prefixedTag = "qr:\(matchedKey)"
-    startWithTag(context: context, profile: profile, tag: prefixedTag, origin: .init(kind: .qr, key: matchedKey, namespace: .qrDigest))
+    startWithTag(context: context, profile: profile, origin: .init(kind: .qr, key: matchedKey, namespace: .qrDigest))
   }
 
   /// Stop blocking with a scanned NFC tag (for stop-condition-based stop)
@@ -1504,32 +1479,17 @@ class StrategyManager: ObservableObject {
   }
 
   /// Start blocking with a pre-scanned tag (internal helper)
-  private func startWithTag(context: ModelContext, profile: BlockedProfiles, tag: String, origin: SessionOrigin) {
+  private func startWithTag(context: ModelContext, profile: BlockedProfiles, origin: SessionOrigin) {
     if let rejection = rejectionForStart(profile, context: context) {
       errorMessage = rejection
       Log.info("Refusing tag start", category: .strategy)
       return
     }
 
-    if profile.profileSchemaVersion >= 2 {
-      do { _ = try startOriginatingSession(context: context, profile: profile, origin: origin) } catch { errorMessage = error.localizedDescription }
-      return
-    }
-    AppBlockerUtil().activateRestrictions(for: BlockedProfiles.getSnapshot(for: profile))
-
-    let session = BlockedProfileSession.createSession(
-      in: context,
-      withTag: tag,
-      withProfile: profile,
-      forceStart: false
-    )
-
-    activateSession(session, context: context)
-
-    Log.info("Started session for profile '\(profile.name)' with tag", category: .strategy)
+    do { _ = try startOriginatingSession(context: context, profile: profile, origin: origin) } catch { errorMessage = error.localizedDescription }
   }
 
-  private func rejectionForStart(_ profile: BlockedProfiles, context: ModelContext) -> String? {
+  func rejectionForStart(_ profile: BlockedProfiles, context: ModelContext) -> String? {
     rejectionForStart(profile) {
       try getActiveSession(context: context)
     }
@@ -1561,15 +1521,30 @@ class StrategyManager: ObservableObject {
     IntentError.needsAppSelectionMessage(profileName: profile.name)
   }
 
+  /// New sessions always use V2 rules; an active V1 profile must remain untouched.
+  func prepareProfileForStart(_ profile: BlockedProfiles, context: ModelContext) throws {
+    guard profile.profileSchemaVersion == 1 else { return }
+    guard try getActiveSession(context: context)?.blockedProfile.id != profile.id else {
+      throw NSError(domain: "ProfileStart", code: 1, userInfo: [NSLocalizedDescriptionKey: "A session is already active. Stop it before starting another."])
+    }
+    try migrateInactiveProfile(profile)
+    guard profile.profileSchemaVersion >= 2 else {
+      throw NSError(domain: "ProfileStart", code: 1, userInfo: [NSLocalizedDescriptionKey: "Please edit this profile before starting. Its start and stop settings need updating."])
+    }
+  }
+
+  private func migrateInactiveProfile(_ profile: BlockedProfiles) throws {
+    if try ProfileMigrationUtil.migrate(profile, hasActiveSession: false) {
+      BlockedProfiles.updateSnapshot(for: profile)
+      let failures = DeviceActivityCenterUtil.scheduleTimerActivity(for: profile)
+      if !failures.isEmpty { errorMessage = failures.joined(separator: "\n") }
+    }
+  }
+
   /// Retry deferred V1 migration after its session ends.
   private func migrateDepartingProfile(_ profile: BlockedProfiles) {
-    do {
-      if try ProfileMigrationUtil.migrate(profile, hasActiveSession: false) {
-        BlockedProfiles.updateSnapshot(for: profile)
-        let failures = DeviceActivityCenterUtil.scheduleTimerActivity(for: profile)
-        if !failures.isEmpty { errorMessage = failures.joined(separator: "\n") }
-      }
-    } catch {
+    do { try migrateInactiveProfile(profile) } catch {
+      errorMessage = "Couldn’t update this profile after its session ended. Please try again."
       Log.error("Failed to migrate deferred profile: \(error.localizedDescription)", category: .strategy)
     }
   }
