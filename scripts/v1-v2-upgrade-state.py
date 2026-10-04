@@ -95,7 +95,7 @@ def compare_scans(persona, phase, generation, entries):
     values = []
     if phase in ("journey", "relaunch"):
         if persona in ("nfc", "qr"): values = ["wrong", "correct", "correct", "correct"]
-        elif persona in ("manual-nfc", "manual-qr"): values = ["wrong", "correct", "wrong", "correct"]
+        elif persona in ("manual-nfc", "manual-qr"): values = ["wrong", "correct", "wrong", "wrong", "correct"]
         elif persona in ("nfc-timer", "qr-timer"): values = ["correct", "correct"]
     kind = "qr" if "qr" in persona else "nfc"
     if phase == "relaunch" and entries:
@@ -348,7 +348,7 @@ def main(argv=None):
             target.setdefault("EnvironmentVariables", {}).update(
                 UPGRADE_PERSONA=state["persona"], UPGRADE_STORE_TOKEN=state["storeToken"], UPGRADE_GENERATION=args.generation,
                 UPGRADE_SOURCE_REVISION=("V1-589bee9228abb5b32cc3506f7c0e23782a571d03" if version == "v1" else json.loads((root / "v2-source.json").read_text())["commit"]),
-                UPGRADE_SCANS=("wrong,correct,wrong,correct" if state["persona"] in ("manual-nfc", "manual-qr")
+                UPGRADE_SCANS=("wrong,correct,wrong,wrong,correct" if state["persona"] in ("manual-nfc", "manual-qr")
                                else "wrong,correct,correct,correct" if state["persona"] in ("nfc", "qr") else "correct,correct,correct"))
             destination.write_bytes(plistlib.dumps(tree))
             print(json.dumps({"xctestrun": str(destination), "phase": args.phase, "generation": args.generation, "product": candidate}))

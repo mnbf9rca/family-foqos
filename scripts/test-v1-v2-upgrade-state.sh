@@ -262,6 +262,12 @@ class SafetyTests(unittest.TestCase):
         entries=[{'phase':'journey','generation':'fresh','kind':'nfc','requestIndex':i,'scriptIndex':i,'value':value} for i,value in enumerate(['wrong','correct','correct','correct'])]
         entries.append({'phase':'first-launch','generation':'earlier','kind':'nfc','requestIndex':0,'scriptIndex':0,'value':'correct'})
         with self.assertRaises(SystemExit): m.compare_scans('nfc','journey','fresh',entries)
+    def test_specific_stops_require_wrong_confirmation_and_correct_scan(self):
+        for persona,kind in [('manual-nfc','nfc'),('manual-qr','qr')]:
+            entries=[{'phase':'journey','generation':'fresh','kind':kind,'requestIndex':i,'scriptIndex':i,'value':value}
+                     for i,value in enumerate(['wrong','correct','wrong','wrong','correct'])]
+            m.compare_scans(persona,'journey','fresh',entries)
+            with self.assertRaises(SystemExit): m.compare_scans(persona,'journey','fresh',entries[:3]+entries[4:])
 
     def test_non_scanner_relaunch_rejects_any_scan_history(self):
         entry={'phase':'journey','generation':'earlier','kind':'nfc','requestIndex':0,'scriptIndex':0,'value':'correct'}

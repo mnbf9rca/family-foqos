@@ -135,6 +135,8 @@ Reports are read-only, Debug-only and opt-in with `--upgrade-diagnostics`; each 
 
 Every synthetic NFC request and QR scanner consumption appends phase/generation, request/script index, kind and delivered value to `upgrade-scans.jsonl` at the existing hardware boundary; an exhausted script takes the existing read-error path. The helper requires the exact journey sequence, zero scans in other personas/phases, and the correct persisted origin for every new session. QR also requires its actual scanner UI; NFC calls CoreNFC directly, so no artificial NFC screen is added.
 
+The manual-NFC/QR Specific stop sequence is `wrong,correct` for the legacy alert, then `wrong,wrong,correct` for V2: the first wrong scan opens confirmation, the second shows its inline refusal, and the correct scan dismisses the sheet and stops the session.
+
 Also run `testV2DiagnosticsOptOut` once after a Manual journey using its pinned runner, between helper `begin-optout` and `verify-optout` actions. The helper compares report existence, bytes and modification time through the owner gate; unflagged Debug must create no new report or overwrite the old one. Use a fresh `prepare-run --phase relaunch --generation <new-UUID>` and select only that test; always run `verify-run --phase relaunch` afterward too. This check is additional to the 28 persona journeys.
 
 After each new start, background/return and wait for the fixture-only `upgrade-report-<phase>-<count>` accessibility marker before Stop; wait again before final termination. The marker advances only after successful atomic writes, and its exported count is a lower bound required by capture alongside phase/generation. It has no visible content or routing; confirm XCTest sees it and screenshots remain unchanged.

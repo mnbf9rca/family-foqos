@@ -271,6 +271,32 @@ final class UpgradePersonaUITests: XCTestCase {
 
   private func stopWithScan(wrong: Bool, legacy: Bool = false) {
     press("Stop")
+    if wrong && !legacy {
+      completeQRScan()  // The first wrong scan opens the real V2 confirmation sheet.
+      let cancel = app.buttons["Cancel"]
+      XCTAssertTrue(cancel.waitForExistence(timeout: 10), "Specific stop must require scan confirmation")
+      if persona == "manual-nfc" {
+        XCTAssertTrue(app.buttons["Scan NFC Tag"].waitForExistence(timeout: 10))
+      } else {
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "You're running in the simulator")).firstMatch.waitForExistence(timeout: 10))
+      }
+      XCTAssertTrue(app.buttons["Stop"].exists, "A wrong scan must keep the session active")
+      XCTAssertFalse(
+        app.staticTexts.matching(identifier: "Hold to Start").allElementsBoundByIndex.contains {
+          self.app.frame.contains($0.frame) && $0.isHittable
+        }, "Idle Home must remain inaccessible")
+      screenshot("specific-stop-confirmation")
+      if persona == "manual-nfc" { press("Scan NFC Tag") } else { completeQRScan() }
+      let message = persona == "manual-nfc" ? "That NFC tag doesn’t match. Scan the required tag." : "That QR code doesn’t match. Scan the required code."
+      XCTAssertTrue(app.staticTexts[message].waitForExistence(timeout: 10), "Wrong confirmation scan must show its inline refusal")
+      XCTAssertTrue(cancel.exists)
+      XCTAssertTrue(app.buttons["Stop"].exists)
+      screenshot("specific-stop-wrong-refused")
+      if persona == "manual-nfc" { press("Scan NFC Tag") } else { completeQRScan() }
+      XCTAssertTrue(cancel.waitForNonExistence(timeout: 10), "Correct scan must dismiss confirmation")
+      assertIdle()
+      return
+    }
     if app.buttons["Scan NFC Tag"].exists { press("Scan NFC Tag") }
     if app.buttons["Scan QR Code"].exists { press("Scan QR Code") }
     completeQRScan()
