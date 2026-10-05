@@ -781,7 +781,42 @@ final class UpgradePersonaUITests: XCTestCase {
           }
           guard live.count == 1 && live[0].isHittable else { continue }
           XCTAssertEqual(switches[0].value as? String, "0", "New profile condition must initially be off")
-          live[0].tap()
+          var descendants = switches[0].children
+          var children: [any XCUIElementSnapshot] = []
+          while let child = descendants.popLast() {
+            descendants.append(contentsOf: child.children)
+            if child.elementType == .switch { children.append(child) }
+          }
+          XCTAssertLessThanOrEqual(children.count, 1, "Condition must have at most one switch child")
+          guard children.count <= 1 else { return }
+          let path: String
+          if let child = children.first {
+            let frame = child.frame
+            XCTAssertTrue(
+              frame.origin.x.isFinite && frame.origin.y.isFinite && frame.width.isFinite
+                && frame.height.isFinite && !frame.isEmpty && target.contains(frame) && window.contains(frame))
+            guard
+              frame.origin.x.isFinite && frame.origin.y.isFinite && frame.width.isFinite
+                && frame.height.isFinite && !frame.isEmpty && target.contains(frame) && window.contains(frame)
+            else { return }
+            let controls = live[0].descendants(matching: .switch).allElementsBoundByIndex
+            guard controls.count == 1 else { continue }
+            let current = controls[0].frame
+            guard
+              abs(current.minX - frame.minX) <= 1 && abs(current.minY - frame.minY) <= 1
+                && abs(current.width - frame.width) <= 1 && abs(current.height - frame.height) <= 1
+                && controls[0].isHittable
+            else { continue }
+            controls[0].tap()
+            path = "unique-switch-child"
+          } else {
+            live[0].coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+            path = "bounded-parent-trailing-coordinate"
+          }
+          let tapEvidence = XCTAttachment(string: "\(title): path=\(path), parent=\(target), child=\(String(describing: children.first?.frame))")
+          tapEvidence.name = "child-condition-tap-path"
+          tapEvidence.lifetime = .keepAlways
+          add(tapEvidence)
           let enabled = NSPredicate { _, _ in live[0].value as? String == "1" }
           XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: enabled, object: nil)], timeout: 10), .completed)
           screenshot("child-created-\(title)-enabled")
