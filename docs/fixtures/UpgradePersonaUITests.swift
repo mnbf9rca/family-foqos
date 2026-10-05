@@ -200,12 +200,27 @@ final class UpgradePersonaUITests: XCTestCase {
 
   private func foreground() {
     let previous = reportCount()
+    var states = "before-home=\(app.state.rawValue)"
     XCUIDevice.shared.press(.home)
     let background = XCTNSPredicateExpectation(
       predicate: NSPredicate { _, _ in
-        self.app.state == .runningBackground || self.app.state == .runningBackgroundSuspended
+        let state = self.app.state
+        states += "\n\(Date().timeIntervalSinceReferenceDate):\(state.rawValue)"
+        return state == .runningBackground || state == .runningBackgroundSuspended
       }, object: nil)
-    XCTAssertEqual(XCTWaiter.wait(for: [background], timeout: 10), .completed)
+    let result = XCTWaiter.wait(for: [background], timeout: 10)
+    let evidence = XCTAttachment(string: states)
+    evidence.name = "foreground-background-states"
+    evidence.lifetime = .keepAlways
+    add(evidence)
+    if result != .completed {
+      screenshot("background-timeout")
+      let hierarchy = XCTAttachment(string: app.debugDescription)
+      hierarchy.name = "background-timeout-hierarchy"
+      hierarchy.lifetime = .keepAlways
+      add(hierarchy)
+    }
+    XCTAssertEqual(result, .completed, "App did not enter background\n\(states)")
     app.activate()
     waitForReport(after: previous)
   }
@@ -597,12 +612,27 @@ final class UpgradePersonaUITests: XCTestCase {
   private func childEditingJourney() throws {
     // Normal Stop/start/Stop has already completed before entering any edit code.
     openEditor()
-    XCTAssertFalse(app.textFields["Profile Name"].isEnabled)
+    XCTAssertTrue(app.buttons["Unlock"].waitForExistence(timeout: 10))
+    XCTAssertFalse(app.buttons["Update"].exists)
+    let name = app.textFields["Profile Name"]
+    XCTAssertEqual(name.value as? String, "RC child")
+    name.tap()
+    name.typeText(" unsaved draft")
+    XCTAssertFalse(app.buttons["Update"].exists)
+    screenshot("child-unsaved-name-draft")
+    press("Cancel")
+    selectProfileRow("RC child")
+    XCTAssertEqual(name.value as? String, "RC child", "Locked draft must not persist after Cancel")
+    let tapStart = app.switches["Tap to start"]
+    scrollTo(tapStart)
+    XCTAssertFalse(tapStart.isEnabled, "Locked start condition must remain disabled")
+    scrollTo(app.buttons["Unlock"], up: false)
     press("Unlock")
     XCTAssertTrue(app.staticTexts["Enter Lock Code"].waitForExistence(timeout: 10))
     screenshot("child-edit-verification")
     press("Cancel")
-    XCTAssertFalse(app.textFields["Profile Name"].isEnabled)
+    XCTAssertTrue(app.buttons["Unlock"].exists)
+    XCTAssertFalse(app.buttons["Update"].exists)
     press("Profile Actions")
     press("Delete Profile")
     XCTAssertTrue(app.staticTexts["Enter Lock Code"].waitForExistence(timeout: 10))
@@ -614,10 +644,11 @@ final class UpgradePersonaUITests: XCTestCase {
     XCTAssertTrue(app.staticTexts["Incorrect code. Please try again."].waitForExistence(timeout: 10))
     screenshot("child-wrong-code")
     press("Cancel")
-    XCTAssertFalse(app.textFields["Profile Name"].isEnabled)
+    XCTAssertTrue(app.buttons["Unlock"].exists)
+    XCTAssertFalse(app.buttons["Update"].exists)
     press("Unlock")
     enterCode("2468")
-    XCTAssertTrue(app.textFields["Profile Name"].isEnabled)
+    XCTAssertTrue(app.buttons["Update"].waitForExistence(timeout: 10))
     press("Update")
     closeProfiles()
     inspectSettings(save: false, unlock: false)  // The original locked flag stays persisted; edit lease may remain this launch.
