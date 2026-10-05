@@ -684,7 +684,9 @@ class StrategyManager: ObservableObject {
           }
         }
         let pending = PendingTagSwitch(operationId: operationId, victimId: victim.id, targetProfileId: target, event: event, requiredType: event.type, recordSuccessfulUse: recordSuccessfulUse)
-        if !tagStopResult(event, session: victim).allowed {
+        let stopResult = tagStopResult(event, session: victim)
+        if !stopResult.allowed {
+          if target == nil { tagScanError = stopResult.errorMessage }
           pendingTagSwitch = pending
           showTagConfirmation = true
           return

@@ -177,6 +177,7 @@ final class TagSwitchingTests: XCTestCase {
               XCTAssertEqual(manager.errorMessage, "A can’t stop with this tag or code. Stop it another way before starting B.")
             } else {
               XCTAssertNotNil(manager.pendingTagSwitch)
+              XCTAssertNil(manager.tagScanError, "A deliberate target switch must keep its existing guidance")
               await manager.handleTagEvent(event(type, key: aKey), operation: .confirmSwitch, context: context, now: now)
               XCTAssertEqual(manager.activeSession?.blockedProfile.id, b.id)
               XCTAssertFalse(victim.isActive)
@@ -267,6 +268,45 @@ final class TagSwitchingTests: XCTestCase {
           XCTAssertNil(manager.activeSession)
           XCTAssertNil(SharedData.getActiveSharedSession())
         }
+      }
+    }
+  }
+
+  func testFirstWrongStopScanExplainsMismatchAndCanCancelOrRetry() async throws {
+    let now = Date()
+    for type in [TagType.nfc, .qr] {
+      for kind in [TagStopKind.specific, .same] {
+        let a = try profile("A", type: type, stop: kind, now: now)
+        a.stopConditions = type == .nfc ? .init(nfc: kind) : .init(qr: kind)
+        a.stopNFCTagIds = ["nfc:opaque:\(aKey)"]
+        a.stopQRCodeIds = ["qr:opaque:\(aKey)"]
+        try context.save()
+        let victim = try active(a, type: type, now: now)
+        let message = type == .nfc ? "That NFC tag doesn’t match. Scan the required tag." : "That QR code doesn’t match. Scan the required code."
+        for target in [nil, a.id] as [UUID?] {
+          await manager.handleTagEvent(event(type, key: bKey, target: target), operation: .scan, context: context, now: now)
+          XCTAssertEqual(manager.tagScanError, message, "First wrong scan must explain the refusal")
+          XCTAssertTrue(manager.showTagConfirmation)
+          XCTAssertTrue(victim.isActive)
+          XCTAssertEqual(manager.activeSession?.id, victim.id)
+          XCTAssertEqual(SharedData.getActiveSharedSession()?.id, victim.id)
+          XCTAssertNil(manager.pendingTagSwitch?.targetProfileId)
+          manager.cancelTagOperation()
+          XCTAssertNil(manager.tagScanError)
+          XCTAssertNil(manager.pendingTagSwitch)
+          XCTAssertFalse(manager.showTagConfirmation)
+          XCTAssertTrue(victim.isActive)
+        }
+        await manager.handleTagEvent(event(type, key: bKey), operation: .scan, context: context, now: now)
+        await manager.handleTagEvent(event(type, key: cKey), operation: .confirmSwitch, context: context, now: now)
+        XCTAssertEqual(manager.tagScanError, message)
+        XCTAssertTrue(victim.isActive)
+        await manager.handleTagEvent(event(type, key: aKey), operation: .confirmSwitch, context: context, now: now)
+        XCTAssertFalse(victim.isActive)
+        XCTAssertNil(manager.activeSession)
+        XCTAssertNil(SharedData.getActiveSharedSession())
+        XCTAssertNil(manager.tagScanError)
+        XCTAssertFalse(manager.showTagConfirmation)
       }
     }
   }
