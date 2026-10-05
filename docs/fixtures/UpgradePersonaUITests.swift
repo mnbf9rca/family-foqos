@@ -447,6 +447,7 @@ final class UpgradePersonaUITests: XCTestCase {
         var lastDown: Bool?
         var step: CGFloat = 120
         var attempts: [String] = []
+        var previousPositions: [String: CGFloat] = [:]
         var geometry = "No snapshot captured"
         for _ in 0..<18 {
           let snapshot = try! app.snapshot()
@@ -461,6 +462,13 @@ final class UpgradePersonaUITests: XCTestCase {
           }
           geometry = "\(upperTitle): \(elements.map { ($0.elementType.rawValue, $0.label, $0.value, $0.frame) }), window=\(window)"
           attempts.append(geometry)
+          let positions = Dictionary(grouping: elements, by: { "\($0.elementType.rawValue):\($0.label)" }).compactMapValues {
+            $0.count == 1 && $0[0].frame.minY.isFinite ? $0[0].frame.minY : nil
+          }
+          if !previousPositions.isEmpty {
+            attempts.append("measured movement=\(positions.compactMap { key, y in previousPositions[key].map { "\(key):\(y - $0)" } }.sorted())")
+          }
+          previousPositions = positions
           let visible = elements.filter {
             let frame = $0.frame
             return frame.origin.x.isFinite && frame.origin.y.isFinite && frame.width.isFinite
@@ -516,11 +524,11 @@ final class UpgradePersonaUITests: XCTestCase {
           lastDown = down
           if down { downward += 1 } else { upward += 1 }
           guard upward <= 6 && downward <= 6 else { break }
-          attempts.append("drag=\(down ? "down" : "up"), step=\(step), upward=\(upward), downward=\(downward)")
+          attempts.append("drag=\(down ? "down" : "up"), step=\(step), velocity=slow, endHold=0.3, upward=\(upward), downward=\(downward)")
           let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.75, dy: 0.6))
           let end = start.withOffset(CGVector(dx: 0, dy: down ? step : -step))
           guard window.contains(start.screenPoint) && window.contains(end.screenPoint) else { break }
-          start.press(forDuration: 0.05, thenDragTo: end)
+          start.press(forDuration: 0.05, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.3)
         }
         let evidence = XCTAttachment(string: attempts.joined(separator: "\n"))
         evidence.name = "schedule-section-snapshot-\(upperTitle)"
