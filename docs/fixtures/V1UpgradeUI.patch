@@ -1,0 +1,202 @@
+diff --git a/Foqos/Components/Strategy/QRCodeScanner.swift b/Foqos/Components/Strategy/QRCodeScanner.swift
+index f264d33..ef07814 100644
+--- a/Foqos/Components/Strategy/QRCodeScanner.swift
++++ b/Foqos/Components/Strategy/QRCodeScanner.swift
+@@ -12,6 +12,15 @@ struct LabeledCodeScannerView: View {
+   @State private var errorMessage: String? = nil
+   @State private var scanError: ScanError? = nil
+   @State private var isTorchOn = false
++  #if DEBUG
++    @State private var upgradeScanInput = ""
++  #endif
++  private var upgradeSimulatedData: String {
++    #if DEBUG
++      if UpgradeUI.isActive { return upgradeScanInput == "correct" ? UpgradeUI.qr : "WRONG-QR" }
++    #endif
++    return ""
++  }
+
+   init(
+     heading: String,
+@@ -54,6 +63,7 @@ struct LabeledCodeScannerView: View {
+               .dataMatrix,
+             ],
+             showViewfinder: true,
++            simulatedData: upgradeSimulatedData,
+             shouldVibrateOnSuccess: true,
+             isTorchOn: isTorchOn,
+             completion: handleScanResult
+@@ -119,6 +129,12 @@ struct LabeledCodeScannerView: View {
+     }
+     .padding()
+     .onAppear {
++      #if DEBUG
++        if UpgradeUI.isActive {
++          upgradeScanInput = UpgradeUI.nextScan(kind: "qr")
++          if upgradeScanInput == "cancel" || upgradeScanInput == "exhausted" { handleScanResult(.failure(.badOutput)); return }
++        }
++      #endif
+       isShowingScanner = true
+       errorMessage = nil
+       scanError = nil
+diff --git a/Foqos/Utils/DeviceActivityCenterUtil.swift b/Foqos/Utils/DeviceActivityCenterUtil.swift
+index 6917ec4..d2832de 100644
+--- a/Foqos/Utils/DeviceActivityCenterUtil.swift
++++ b/Foqos/Utils/DeviceActivityCenterUtil.swift
+@@ -29,7 +29,11 @@ class DeviceActivityCenterUtil {
+     do {
+       // Remove any existing schedule and create a new one
+       stopActivities(for: [deviceActivityName], with: center)
+-      try center.startMonitoring(deviceActivityName, during: deviceActivitySchedule)
++      #if DEBUG
++        if !UpgradeUI.isActive { try center.startMonitoring(deviceActivityName, during: deviceActivitySchedule) }
++      #else
++        try center.startMonitoring(deviceActivityName, during: deviceActivitySchedule)
++      #endif
+       Log.info("Scheduled restrictions from \(intervalStart) to \(intervalEnd) daily", category: .timer)
+     } catch {
+       Log.info("Failed to start monitoring: \(error.localizedDescription)", category: .timer)
+@@ -52,7 +56,11 @@ class DeviceActivityCenterUtil {
+     do {
+       // Remove any existing schedule and create a new one
+       stopActivities(for: [deviceActivityName], with: center)
+-      try center.startMonitoring(deviceActivityName, during: deviceActivitySchedule)
++      #if DEBUG
++        if !UpgradeUI.isActive { try center.startMonitoring(deviceActivityName, during: deviceActivitySchedule) }
++      #else
++        try center.startMonitoring(deviceActivityName, during: deviceActivitySchedule)
++      #endif
+       Log.info("Scheduled break timer activity from \(intervalStart) to \(intervalEnd) daily", category: .timer)
+     } catch {
+       Log.info("Failed to start break timer activity: \(error.localizedDescription)", category: .timer)
+@@ -83,7 +91,11 @@ class DeviceActivityCenterUtil {
+     do {
+       // Remove any existing activity and create a new one
+       stopActivities(for: [deviceActivityName], with: center)
+-      try center.startMonitoring(deviceActivityName, during: deviceActivitySchedule)
++      #if DEBUG
++        if !UpgradeUI.isActive { try center.startMonitoring(deviceActivityName, during: deviceActivitySchedule) }
++      #else
++        try center.startMonitoring(deviceActivityName, during: deviceActivitySchedule)
++      #endif
+       Log.info("Scheduled strategy timer activity from \(intervalStart) to \(intervalEnd) daily", category: .timer)
+     } catch {
+       Log.info("Failed to start strategy timer activity: \(error.localizedDescription)", category: .timer)
+diff --git a/Foqos/Utils/LockCodeManager.swift b/Foqos/Utils/LockCodeManager.swift
+index 89258a6..2e75269 100644
+--- a/Foqos/Utils/LockCodeManager.swift
++++ b/Foqos/Utils/LockCodeManager.swift
+@@ -113,6 +113,12 @@ class LockCodeManager: ObservableObject {
+
+     /// Fetch all lock codes created by this user (parent or individual mode)
+     func fetchLockCodes() async {
++        #if DEBUG
++            if UpgradeUI.isActive {
++                await MainActor.run { self.lockCodes = [FamilyLockCode(code: "2468", scope: .allChildren)] }
++                return
++            }
++        #endif
+         guard appModeManager.currentMode != .child else { return }
+
+         await MainActor.run { isLoading = true }
+@@ -169,6 +175,12 @@ class LockCodeManager: ObservableObject {
+     /// Fetch shared lock codes for verification (child operation)
+     /// Verifies child authorization before fetching to ensure security
+     private func fetchSharedLockCodes() async {
++        #if DEBUG
++            if UpgradeUI.isActive {
++                await MainActor.run { self.cachedLockCodes = [FamilyLockCode(code: "2468", scope: .allChildren)] }
++                return
++            }
++        #endif
+         guard appModeManager.currentMode == .child else { return }
+
+         await MainActor.run { isLoading = true }
+diff --git a/Foqos/Utils/NFCScannerUtil.swift b/Foqos/Utils/NFCScannerUtil.swift
+index 8c34d42..04a7d73 100644
+--- a/Foqos/Utils/NFCScannerUtil.swift
++++ b/Foqos/Utils/NFCScannerUtil.swift
+@@ -16,6 +16,20 @@ class NFCScannerUtil: NSObject {
+   private var urlToWrite: String?
+
+   func scan(profileName: String) {
++    #if DEBUG
++      if UpgradeUI.isActive {
++        let input = UpgradeUI.nextScan(kind: "nfc")
++        if input == "exhausted" { self.onError?("Upgrade scan script exhausted"); return }
++        DispatchQueue.main.async {
++          if input == "cancel" {
++            self.onError?("Scan cancelled")
++            return
++          }
++          self.onTagScanned?(NFCResult(id: input == "correct" ? UpgradeUI.nfc : "04DEADBEEF", url: nil, DateScanned: Date()))
++        }
++        return
++      }
++    #endif
+     guard NFCReaderSession.readingAvailable else {
+       self.onError?("NFC scanning not available on this device")
+       return
+diff --git a/Foqos/Utils/RequestAuthorizer.swift b/Foqos/Utils/RequestAuthorizer.swift
+index 0b12731..ad6c37d 100644
+--- a/Foqos/Utils/RequestAuthorizer.swift
++++ b/Foqos/Utils/RequestAuthorizer.swift
+@@ -9,6 +9,12 @@ class RequestAuthorizer: ObservableObject {
+
+     private let appModeManager = AppModeManager.shared
+
++    init() {
++        #if DEBUG
++            if UpgradeUI.isActive { isAuthorized = true }
++        #endif
++    }
++
+     /// Request authorization for the current app mode
+     func requestAuthorization() {
+         requestAuthorization(for: appModeManager.currentMode)
+@@ -48,6 +54,9 @@ class RequestAuthorizer: ObservableObject {
+     }
+
+     func getAuthorizationStatus() -> AuthorizationStatus {
++        #if DEBUG
++            if UpgradeUI.isActive { return .approved }
++        #endif
+         return AuthorizationCenter.shared.authorizationStatus
+     }
+
+diff --git a/Foqos/foqosApp.swift b/Foqos/foqosApp.swift
+index 91a9755..765a0ec 100644
+--- a/Foqos/foqosApp.swift
++++ b/Foqos/foqosApp.swift
+@@ -70,6 +70,11 @@ struct foqosApp: App {
+   @Environment(\.scenePhase) private var scenePhase
+
+   init() {
++    #if DEBUG
++      if UpgradeUI.isActive, let persona = UpgradeUI.argument("--upgrade-seed") {
++        do { try RCUpgradeSeedData.seed(persona: persona, context: container.mainContext, now: Date()) } catch { fatalError("Upgrade seed failed: \(error)") }
++      }
++    #endif
+     Log.info("init() called", category: .app)
+     TimersUtil.registerBackgroundTasks()
+
+@@ -97,6 +102,9 @@ struct foqosApp: App {
+             verifyChildAuthorizationIfNeeded()
+             // Self-heal FamilyMember record if in a family mode
+             Task {
++              #if DEBUG
++                if UpgradeUI.isActive { return }
++              #endif
+               await CloudKitManager.shared.verifySelfFamilyMemberRecord()
+             }
+           }
+@@ -496,6 +504,9 @@ func completeShareAcceptance(metadata: CKShare.Metadata, role: FamilyRole) {
+ /// Verify child authorization when app becomes active (if in child mode)
+ /// If authorization is lost, clear shared data and switch to individual mode
+ func verifyChildAuthorizationIfNeeded() {
++  #if DEBUG
++    if UpgradeUI.isActive { return }
++  #endif
+   Task { @MainActor in
+     if let message = await AuthorizationVerifier.shared.verifyIfNeeded() {
+       CloudKitManager.shared.shareAcceptedMessage = message

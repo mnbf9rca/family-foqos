@@ -1,0 +1,281 @@
+diff --git a/Foqos/Components/Strategy/QRCodeScanner.swift b/Foqos/Components/Strategy/QRCodeScanner.swift
+index 5743a99..23ac2d1 100644
+--- a/Foqos/Components/Strategy/QRCodeScanner.swift
++++ b/Foqos/Components/Strategy/QRCodeScanner.swift
+@@ -31,6 +31,15 @@ struct LabeledCodeScannerView: View {
+   @State private var errorMessage: String? = nil
+   @State private var scanError: ScanError? = nil
+   @State private var isTorchOn = false
++  #if DEBUG
++    @State private var upgradeScanInput = ""
++  #endif
++  private var upgradeSimulatedData: String {
++    #if DEBUG
++      if UpgradeUI.isActive { return upgradeScanInput == "correct" ? UpgradeUI.qr : "WRONG-QR" }
++    #endif
++    return ""
++  }
+ 
+   init(
+     heading: String,
+@@ -73,6 +82,7 @@ struct LabeledCodeScannerView: View {
+               .dataMatrix,
+             ],
+             showViewfinder: true,
++            simulatedData: upgradeSimulatedData,
+             shouldVibrateOnSuccess: true,
+             isTorchOn: isTorchOn,
+             videoCaptureDevice: camera,
+@@ -159,6 +169,12 @@ struct LabeledCodeScannerView: View {
+     }
+     .padding()
+     .onAppear {
++      #if DEBUG
++        if UpgradeUI.isActive {
++          upgradeScanInput = UpgradeUI.nextScan(kind: "qr")
++          if upgradeScanInput == "cancel" || upgradeScanInput == "exhausted" { handleScanResult(.failure(.badOutput)); return }
++        }
++      #endif
+       isShowingScanner = true
+       errorMessage = nil
+       scanError = nil
+diff --git a/Foqos/FoqosApp.swift b/Foqos/FoqosApp.swift
+index 255d03d..ed4744e 100644
+--- a/Foqos/FoqosApp.swift
++++ b/Foqos/FoqosApp.swift
+@@ -390,7 +390,11 @@ struct FoqosApp: App {
+       guard !startupRecoveryRuntime.isHeld else { return }
+     }
+ 
+-    if !ScreenshotDemoMode.isActive {
++    var checkCloudTransport = !ScreenshotDemoMode.isActive
++    #if DEBUG
++      if UpgradeUI.isActive { checkCloudTransport = false }
++    #endif
++    if checkCloudTransport {
+       await CloudKitManager.shared.checkAccountStatus()
+       await CloudKitManager.shared.verifySelfFamilyMemberRecord()
+       await verifyChildAuthorizationIfNeeded()
+@@ -420,6 +424,11 @@ struct FoqosApp: App {
+     if shouldRefreshSchedules && !ScreenshotDemoMode.isActive {
+       reconcileSchedulesForCurrentState()
+     }
++    #if DEBUG
++      if UpgradeUI.isActive, let phase = UpgradeUI.argument("--upgrade-report-phase") {
++        do { try UpgradeDiagnostics.writeReport(context: container.mainContext, phase: phase) } catch { Log.error("Upgrade report failed: \(redactedErrorForLog(error))", category: .app) }
++      }
++    #endif
+   }
+ 
+   private func reconcileSchedulesForCurrentState() {
+@@ -862,6 +871,9 @@ func completeShareAcceptance(metadata: CKShare.Metadata, role: FamilyRole) {
+ /// Family Controls failures are recoverable and preserve the current family mode.
+ @MainActor
+ func verifyChildAuthorizationIfNeeded() async {
++  #if DEBUG
++    if UpgradeUI.isActive { return }
++  #endif
+   await verifyChildAuthorizationIfNeeded {
+     await AuthorizationVerifier.shared.verifyChildAuthorization()
+   }
+diff --git a/Foqos/Utils/DeviceActivityCenterUtil.swift b/Foqos/Utils/DeviceActivityCenterUtil.swift
+index 712d0d1..746053e 100644
+--- a/Foqos/Utils/DeviceActivityCenterUtil.swift
++++ b/Foqos/Utils/DeviceActivityCenterUtil.swift
+@@ -25,7 +25,12 @@ class DeviceActivityCenterUtil {
+   static func scheduleTimerActivity(
+     for profile: BlockedProfiles, now: Date = Date(),
+     scheduleFor: (DeviceActivityName) -> DeviceActivitySchedule? = { DeviceActivityCenter().schedule(for: $0) },
+-    startMonitoring: (DeviceActivityName, DeviceActivitySchedule) throws -> Void = { try DeviceActivityCenter().startMonitoring($0, during: $1) },
++    startMonitoring: (DeviceActivityName, DeviceActivitySchedule) throws -> Void = { name, schedule in
++      #if DEBUG
++        if UpgradeUI.isActive { return }
++      #endif
++      try DeviceActivityCenter().startMonitoring(name, during: schedule)
++    },
+     stopMonitoring: ([DeviceActivityName]) -> Void = { DeviceActivityCenter().stopMonitoring($0) },
+     publishStartCutoff: (UUID, Date) -> Bool = { SharedData.setStartRegistrationNotBefore($1, for: $0) }
+   ) -> [String] {
+@@ -123,7 +128,12 @@ class DeviceActivityCenterUtil {
+   static func scheduleStopActivity(
+     for profile: BlockedProfiles,
+     scheduleFor: (DeviceActivityName) -> DeviceActivitySchedule? = { DeviceActivityCenter().schedule(for: $0) },
+-    startMonitoring: (DeviceActivityName, DeviceActivitySchedule) throws -> Void = { try DeviceActivityCenter().startMonitoring($0, during: $1) },
++    startMonitoring: (DeviceActivityName, DeviceActivitySchedule) throws -> Void = { name, schedule in
++      #if DEBUG
++        if UpgradeUI.isActive { return }
++      #endif
++      try DeviceActivityCenter().startMonitoring(name, during: schedule)
++    },
+     stopMonitoring: ([DeviceActivityName]) -> Void = { DeviceActivityCenter().stopMonitoring($0) }
+   ) -> [String] {
+     defer { ScheduleRegistrationRefreshNotifier.post() }
+@@ -325,7 +335,10 @@ class DeviceActivityCenterUtil {
+   }
+ 
+   static func registerStrategyTimer(profileId: UUID, sessionId: String, minutes: Int, now: Date) throws -> Date {
+-    try StrategyTimerActivity.register(profileId: profileId, sessionId: sessionId, minutes: minutes, now: now)
++    #if DEBUG
++      if UpgradeUI.isActive { return try StrategyTimerActivity.timerInterval(minutes: minutes, now: now).deadline }
++    #endif
++    return try StrategyTimerActivity.register(profileId: profileId, sessionId: sessionId, minutes: minutes, now: now)
+   }
+ 
+   static func removeStrategyTimerActivity(profileId: UUID, sessionId: String) {
+@@ -333,6 +346,9 @@ class DeviceActivityCenterUtil {
+   }
+ 
+   static func registerStrategyTimer(profileId: UUID, minutes: Int, now: Date) throws -> Date {
++    #if DEBUG
++      if UpgradeUI.isActive { return try StrategyTimerActivity.timerInterval(minutes: minutes, now: now).deadline }
++    #endif
+     let center = DeviceActivityCenter()
+     let name = StrategyTimerActivity().getDeviceActivityName(from: profileId.uuidString)
+     let interval = timerInterval(from: minutes, now: now)
+diff --git a/Foqos/Utils/LockCodeManager.swift b/Foqos/Utils/LockCodeManager.swift
+index 2cd7c07..28a218f 100644
+--- a/Foqos/Utils/LockCodeManager.swift
++++ b/Foqos/Utils/LockCodeManager.swift
+@@ -151,6 +151,12 @@ class LockCodeManager: ObservableObject {
+ 
+   /// Fetch all lock codes created by this user (parent or individual mode)
+   func fetchLockCodes() async {
++    #if DEBUG
++      if UpgradeUI.isActive {
++        lockCodes = [FamilyLockCode(code: "2468", scope: .allChildren)]
++        return
++      }
++    #endif
+     guard !ScreenshotDemoMode.isActive else { return }
+     guard appModeManager.currentMode != .child else { return }
+ 
+@@ -263,6 +269,14 @@ class LockCodeManager: ObservableObject {
+   }
+ 
+   private func refreshSharedLockCodes() async -> ChildSharedDataRefreshResult {
++    #if DEBUG
++      if UpgradeUI.isActive {
++        let codes = [FamilyLockCode(code: "2468", scope: .allChildren)]
++        cachedLockCodes = codes
++        persistLockCodes(codes)
++        return .newData
++      }
++    #endif
+     do {
+       let result = try await cloudKitManager.fetchSharedLockCodes()
+       // Fail-closed-with-cache (#197): trust a CONNECTED result (even empty = parent cleared)
+diff --git a/Foqos/Utils/NFCScannerUtil.swift b/Foqos/Utils/NFCScannerUtil.swift
+index 4b100b2..16f3522 100644
+--- a/Foqos/Utils/NFCScannerUtil.swift
++++ b/Foqos/Utils/NFCScannerUtil.swift
+@@ -28,6 +28,21 @@ class NFCScannerUtil: NSObject, ObservableObject {
+   private var scanCompleted = false
+ 
+   func scan(profileName: String) {
++    #if DEBUG
++      if UpgradeUI.isActive {
++        let input = UpgradeUI.nextScan(kind: "nfc")
++        if input == "exhausted" { self.onError?("Upgrade scan script exhausted"); return }
++        Task { @MainActor in
++          if input == "cancel" {
++            self.onCancel?()
++            return
++          }
++          let id = input == "correct" ? UpgradeUI.nfc : "04DEADBEEF"
++          do { self.onTagScanned?(try NFCResult.read(id: id, message: nil, error: nil, now: Date())) } catch { self.onError?(error.localizedDescription) }
++        }
++        return
++      }
++    #endif
+     guard NFCReaderSession.readingAvailable else {
+       self.onError?("NFC scanning not available on this device")
+       return
+diff --git a/Foqos/Utils/RequestAuthorizer.swift b/Foqos/Utils/RequestAuthorizer.swift
+index 87d4056..3e9f6cc 100644
+--- a/Foqos/Utils/RequestAuthorizer.swift
++++ b/Foqos/Utils/RequestAuthorizer.swift
+@@ -15,7 +15,10 @@ class RequestAuthorizer: ObservableObject {
+ 
+   init(authorizationCenter: AuthorizationRequesting = AuthorizationCenterRequester.shared) {
+     self.authorizationCenter = authorizationCenter
+-    let status = authorizationCenter.authorizationStatus
++    var status = authorizationCenter.authorizationStatus
++    #if DEBUG
++      if UpgradeUI.isActive { status = .approved }
++    #endif
+     let approved = Self.isApproved(status)
+     self.isAuthorized = approved
+     self.authorizationStatus = status
+@@ -26,6 +29,9 @@ class RequestAuthorizer: ObservableObject {
+     cancellable = authorizationCenter.authorizationStatusPublisher
+       .sink { [weak self] newStatus in
+         guard let self else { return }
++        #if DEBUG
++          if UpgradeUI.isActive { return }
++        #endif
+         let approved = Self.isApproved(newStatus)
+         if self.authorizationStatus != newStatus {
+           Log.info(
+diff --git a/Foqos/Utils/StrategyManager.swift b/Foqos/Utils/StrategyManager.swift
+index a7f9f3f..94e8735 100644
+--- a/Foqos/Utils/StrategyManager.swift
++++ b/Foqos/Utils/StrategyManager.swift
+@@ -69,8 +69,13 @@ class StrategyManager: ObservableObject {
+     self.sessionSyncService = sessionSyncService
+     self.locationManager = locationManager
+     self.remoteActiveDefaults = remoteActiveDefaults
+-    self.appBlocker = appBlocker
+-    self.backstopRegistrar = backstopRegistrar
++    #if DEBUG
++      self.appBlocker = UpgradeUI.isActive ? UpgradeRestrictions() : appBlocker
++      self.backstopRegistrar = UpgradeUI.isActive ? UpgradeBackstops() : backstopRegistrar
++    #else
++      self.appBlocker = appBlocker
++      self.backstopRegistrar = backstopRegistrar
++    #endif
+     self.timersUtil = timersUtil
+     self.registerTimer = registerTimer
+     self.cancelTimer = cancelTimer
+diff --git a/Foqos/Views/HomeView.swift b/Foqos/Views/HomeView.swift
+index 61641f4..13b13a2 100644
+--- a/Foqos/Views/HomeView.swift
++++ b/Foqos/Views/HomeView.swift
+@@ -13,6 +13,9 @@ struct HomeView: View {
+   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+ 
+   @Environment(\.scenePhase) private var scenePhase
++  #if DEBUG
++    @ObservedObject private var upgradeReportSignal = UpgradeReportSignal.shared
++  #endif
+ 
+   @EnvironmentObject var requestAuthorizer: RequestAuthorizer
+   @EnvironmentObject var strategyManager: StrategyManager
+@@ -314,6 +317,16 @@ struct HomeView: View {
+         loadApp()
+       }
+     }
++    .overlay(alignment: .topLeading) {
++      #if DEBUG
++        if UpgradeUI.isActive, let phase = UpgradeUI.argument("--upgrade-report-phase") {
++          Color.clear.frame(width: 1, height: 1)
++            .accessibilityElement()
++            .accessibilityLabel("Upgrade report complete")
++            .accessibilityIdentifier("upgrade-report-\(phase)-\(upgradeReportSignal.count)")
++        }
++      #endif
++    }
+     .onChange(of: scenePhase) { oldPhase, newPhase in
+       if newPhase == .active {
+         loadApp()
+@@ -751,6 +764,11 @@ struct HomeView: View {
+       }
+     #endif
+     try? strategyManager.loadActiveSession(context: context)
++    #if DEBUG
++      if UpgradeUI.isActive, let phase = UpgradeUI.argument("--upgrade-report-phase") {
++        do { try UpgradeDiagnostics.writeReport(context: context, phase: phase) } catch { Log.error("Upgrade report failed: \(redactedErrorForLog(error))", category: .app) }
++      }
++    #endif
+   }
+ 
+   private func onAppearApp() {

@@ -1,169 +1,175 @@
 # Agent-run V1 → V2 source upgrade verification
 
-An agent runs this procedure and reports the result. The human does not create profiles, execute the matrix, or interpret simulator output. Use it after changing migration, shared snapshots, tag routing, or session starts/stops; the full release-candidate pass covers both simulator runtimes under [Agent Acceptance](development-workflow.md#agent-acceptance-runbooks).
+Agents execute this procedure and inspect its screenshots; the human does not seed stores or interpret simulator output. Run the 14 personas on iOS 26.5 and iOS 27 for release-candidate acceptance under [Agent Acceptance](development-workflow.md#agent-acceptance-runbooks).
 
-This builds V1 **1.31.3 from `589bee9`** as a proxy for the App Store app, generates its actual on-disk store and shared JSON, and installs the chosen V2 revision over that data. It is not the physical App Store → TestFlight check: signed reader handoffs, real Screen Time shields, OS callback delivery and cross-device iCloud still require the RC device checklist.
+Build frozen V1 **1.31.3 / 4 at `589bee9228abb5b32cc3506f7c0e23782a571d03`**, launch its normal persisted app with a one-shot synthetic seed, and install the chosen V2 app over that data. An external `FoqosUITests` runner drives actual views; never host this procedure in `FoqosTests`, use `--screenshot-demo`, seed V2, call migration/start/stop APIs from tests, or dismiss an unexpected failure to obtain a pass.
 
-## Contract and coverage
+Expected behavior and the persona matrix are in the [approved plan](superpowers/plans/2026-10-04-simulated-users-upgrade.md#persona-matrix), [conditions rulebook](superpowers/specs/2026-10-02-508-v2-conditions-rulebook.md) and [#507 rulings](https://github.com/mnbf9rca/family-foqos/issues/507). Slugs: `manual`, `nfc`, `qr`, `nfc-timer`, `qr-timer`, `shortcut-timer`, `manual-nfc`, `manual-qr`, `schedule`, `break`, `emergency`, `parent`, `child`, `library`; no silent skips.
 
-The agent owns one **disposable test app** on its assigned simulator. `prepare` backs up the previous app data and group, uninstalls that app and clears its backed-up store/preferences remnants. It does not erase the simulator, remove other apps, or use a device supplied by the reader. If existing app data is not known to be disposable, stop and route that decision through the orchestrator. All device operations, including backups, captures and version reads, enter through `scripts/xcode-stream.sh` with the same agent and `collab` session.
+| Persona evidence detail | Required proof |
+| --- | --- |
+| Emergency user | Show the retained allowance of 1 and successful last unblock in the UI. On idle relaunch, Emergency is reachable only during an active session, so the mandatory fresh report proves exactly 0 remaining and 14 reset days; keep the idle screenshot and global no-Stop check. A missing or stale report is UNRUN. |
+| Child | Locked items show Unlock, withhold Update and disable condition controls. Name accepts an unsaved draft: Cancel/reopen must retain the original name, and the mandatory report must retain its name and managed flag; correct code permits saving. New profiles choose Tap to start and Tap to stop through the UI before Create; the report checks those choices and that new/duplicated profiles are unlocked. |
 
-The matrix lives in [V1UpgradeSeedTests.swift](fixtures/V1UpgradeSeedTests.swift); its checks live in [V2UpgradeVerificationTests.swift](fixtures/V2UpgradeVerificationTests.swift). Keep them together when adding cases. They generate fresh IDs/timestamps and cover conversion, retained settings, active-session identity and deferred conversion, scan starts/stops, legacy background identities, saved Shortcut timer duration and retained-but-invalid profiles. Expected behavior comes from [the conditions rulebook](superpowers/specs/2026-10-02-508-v2-conditions-rulebook.md) and the [#507 rulings](https://github.com/mnbf9rca/family-foqos/issues/507). The output JSON names each seeded profile and its resulting configuration.
+## 1. Pin sources and compile fixtures before touching app data
 
-The drivers are documentation fixtures, not normal test-target members. **Every run must first compile both in throwaway worktrees, before changing simulator app data.** An API mismatch means **“fixtures out of date: update them in a PR”**. Preserve the failing log, update the fixture through review, and rerun; never skip cases or weaken expectations to produce a pass. A gate/tool/build-environment failure is also a failed preflight, not proof of fixture drift or an upgrade pass.
-
-## 1. Pin inputs, create throwaway worktrees, compile fixtures
-
-Run in Bash from a clean checkout containing this runbook and helper. Replace `<agent>` with your own assigned fleet identity; an unchanged placeholder stops before creating worktrees or touching the simulator. `HEAD` is the V2 revision under test; use another reviewed commit if the task names one. Never test a moving branch without recording its resolved commit.
+Use Bash for the blocks below. Start in the clean fixture-bearing feature head; choose the requested V2 revision explicitly. Every simulator operation uses the same owner gate and UUID destination; never provide a destination/DerivedData override or borrow another owner. A second runtime/session requires orchestrator authorization; the standing build1 exception is `collab-ios27` with installed iOS 27.0 for a new owner. An override cannot change an existing owner's runtime.
 
 ```bash
 set -euo pipefail
-for tool in git python3 xcodebuild xcrun plutil xcbeautify swift-format mktemp mkdir cp rm; do
+for tool in git cp mktemp python3 shasum xcrun; do
   command -v "$tool" >/dev/null || { echo "$tool is required" >&2; exit 127; }
 done
-export UPGRADE_AGENT='<agent>'
-[ "$UPGRADE_AGENT" != '<agent>' ] && [ -n "$UPGRADE_AGENT" ] || {
-  echo 'Replace <agent> with your assigned fleet identity; never borrow another stream' >&2; exit 1;
-}
-export UPGRADE_REPO=$(git rev-parse --show-toplevel)
-[ -z "$(git status --porcelain)" ] || { echo 'Start from a clean checkout' >&2; exit 1; }
-git check-ignore -q .worktrees/ || { echo '.worktrees must already be ignored' >&2; exit 1; }
-git fetch origin main release/v1
-export UPGRADE_TARGET=$(git rev-parse HEAD)
-export UPGRADE_V1_SHA=$(git rev-parse '589bee9^{commit}')
-export UPGRADE_RUN=$(mktemp -d /private/tmp/family-foqos-v1-v2.XXXXXX)
-export UPGRADE_GATE="$UPGRADE_REPO/scripts/xcode-stream.sh"
-export UPGRADE_STATE="$UPGRADE_REPO/scripts/v1-v2-upgrade-state.py"
-export UPGRADE_V1="$UPGRADE_REPO/.worktrees/$UPGRADE_AGENT-v1-${UPGRADE_RUN##*.}"
-export UPGRADE_V2="$UPGRADE_REPO/.worktrees/$UPGRADE_AGENT-v2-${UPGRADE_RUN##*.}"
-for name in UPGRADE_AGENT UPGRADE_REPO UPGRADE_TARGET UPGRADE_V1_SHA UPGRADE_RUN UPGRADE_GATE UPGRADE_STATE UPGRADE_V1 UPGRADE_V2; do
-  printf 'export %s=%q\n' "$name" "${!name}"
-done > "$UPGRADE_RUN/env.sh"
-printf 'Saved run environment: %s\n' "$UPGRADE_RUN/env.sh"
-printf 'V1=%s\nV2=%s\nAgent=%s\n' "$UPGRADE_V1_SHA" "$UPGRADE_TARGET" "$UPGRADE_AGENT" > "$UPGRADE_RUN/source-refs.txt"
+UPGRADE_REPO=$(git rev-parse --show-toplevel)
+UPGRADE_AGENT=build1
+UPGRADE_SESSION=collab
+UPGRADE_V1_SHA=589bee9228abb5b32cc3506f7c0e23782a571d03
+UPGRADE_TARGET=$(git rev-parse origin/main) # Replace with the requested clean V2 revision.
+UPGRADE_RUN=$(mktemp -d /private/tmp/family-foqos-v1-v2.XXXXXXXX)
+UPGRADE_PRODUCTS=$(mktemp -d /private/tmp/family-foqos-v1-v2.XXXXXXXX)
+UPGRADE_V1="$UPGRADE_RUN/source-v1"
+UPGRADE_V2="$UPGRADE_RUN/source-v2"
+UPGRADE_GATE="$UPGRADE_REPO/scripts/xcode-stream.sh"
+UPGRADE_STATE="$UPGRADE_REPO/scripts/v1-v2-upgrade-state.py"
 git worktree add --detach "$UPGRADE_V1" "$UPGRADE_V1_SHA"
 git worktree add --detach "$UPGRADE_V2" "$UPGRADE_TARGET"
-cp "$UPGRADE_V1/FoqosTests/LogTailTests.swift" "$UPGRADE_RUN/original-LogTailTests.swift"
-# V1 has explicit project membership: replace this existing test file temporarily.
-cp "$UPGRADE_REPO/docs/fixtures/V1UpgradeSeedTests.swift" "$UPGRADE_V1/FoqosTests/LogTailTests.swift"
-# V2 has a synchronized test directory: no project.pbxproj edit is needed.
-[ ! -e "$UPGRADE_V2/FoqosTests/RCUpgradeVerificationTests.swift" ] || { echo 'Driver target already exists' >&2; exit 1; }
-cp "$UPGRADE_REPO/docs/fixtures/V2UpgradeVerificationTests.swift" "$UPGRADE_V2/FoqosTests/RCUpgradeVerificationTests.swift"
+for version in V1 V2; do
+  if [[ "$version" == V1 ]]; then tree="$UPGRADE_V1"; else tree="$UPGRADE_V2"; fi
+  git -C "$tree" apply --check "$UPGRADE_REPO/docs/fixtures/${version}UpgradeUI.patch"
+  git -C "$tree" apply "$UPGRADE_REPO/docs/fixtures/${version}UpgradeUI.patch"
+done
+[[ ! -e "$UPGRADE_V1/Foqos/Utils/V1UpgradeSeedData.swift" &&
+   ! -e "$UPGRADE_V2/Foqos/Utils/UpgradeDiagnostics.swift" &&
+   ! -e "$UPGRADE_V2/FoqosUITests/UpgradePersonaUITests.swift" ]] \
+  || { echo 'Fixture target already exists' >&2; exit 1; }
+cp "$UPGRADE_REPO/docs/fixtures/V1UpgradeSeedData.swift" "$UPGRADE_V1/Foqos/Utils/"
+cp "$UPGRADE_REPO/docs/fixtures/UpgradeDiagnostics.swift" "$UPGRADE_V2/Foqos/Utils/"
+cp "$UPGRADE_REPO/docs/fixtures/UpgradePersonaUITests.swift" "$UPGRADE_V2/FoqosUITests/"
 "$UPGRADE_REPO/scripts/test-v1-v2-upgrade-state.sh"
-
-(cd "$UPGRADE_V2"
- "$UPGRADE_GATE" --agent "$UPGRADE_AGENT" --session collab --xcbeautify -- \
-  xcodebuild build-for-testing -project FamilyFoqos.xcodeproj -scheme FamilyFoqos \
-  -only-testing:FoqosTests/RCUpgradeVerificationTests \
-  > "$UPGRADE_RUN/preflight-v2.log" 2>&1) || {
- status=$?; echo 'V2 preflight failed; API mismatch means fixtures out of date: update them in a PR' >&2; exit "$status";
-}
 (cd "$UPGRADE_V1"
- "$UPGRADE_GATE" --agent "$UPGRADE_AGENT" --session collab --xcbeautify -- \
-  xcodebuild build-for-testing -project FamilyFoqos.xcodeproj -scheme FamilyFoqos \
-  -only-testing:foqosTests/RCUpgradeSeedTests \
-  > "$UPGRADE_RUN/preflight-v1.log" 2>&1) || {
- status=$?; echo 'V1 preflight failed; API mismatch means fixtures out of date: update them in a PR' >&2; exit "$status";
-}
-```
-
-V1 uses the frozen lowercase `foqosTests` target; V2 uses `FoqosTests`. V2 compiles first so V1 remains the gate's last build product for `prepare`. The current wrapper is used from both worktrees because the frozen V1 checkout predates it. No custom destination or DerivedData argument is allowed.
-
-Step 1 saves only the named `UPGRADE_*` variables to the printed `env.sh` path. Agent tool calls often start new shells: set `UPGRADE_ENV` to that exact path in each later shell before running its block. Do not source a past run or another agent’s environment file. Missing environment input stops the block.
-
-## 2. Reset the disposable app, seed real V1 data, capture it
-
-```bash
-set -euo pipefail
-: "${UPGRADE_ENV:?Set UPGRADE_ENV to the env.sh path printed by step 1}"
-[ -f "$UPGRADE_ENV" ] || { echo 'Run environment file is missing' >&2; exit 1; }
-source "$UPGRADE_ENV"
-"$UPGRADE_GATE" --agent "$UPGRADE_AGENT" --session collab -- \
- python3 "$UPGRADE_STATE" prepare "$UPGRADE_RUN"
-(cd "$UPGRADE_V1"
- "$UPGRADE_GATE" --agent "$UPGRADE_AGENT" --session collab --xcbeautify -- \
-  xcodebuild test -project FamilyFoqos.xcodeproj -scheme FamilyFoqos \
-  -only-testing:foqosTests/RCUpgradeSeedTests -collect-test-diagnostics never \
-  -resultBundlePath "$UPGRADE_RUN/v1-seed.xcresult" \
-  > "$UPGRADE_RUN/v1-seed.log" 2>&1)
-"$UPGRADE_GATE" --agent "$UPGRADE_AGENT" --session collab -- \
- python3 "$UPGRADE_STATE" capture-v1 "$UPGRADE_RUN"
-```
-
-Require the seed test to execute and pass, not merely compile. The helper records installed 1.31.3, checks the store belongs to this simulator, checks the shared active ID and profile IDs match the seed, rejects stale V2 keys and requires V1's omission of `oneMoreMinuteUsed`. It shuts down the owner before copying SQLite plus its sidecars and preferences. The fresh JSON is saved beside the container backups. Do not substitute a current-model encoder for the V1 writer: that would hide failures like [#537](https://github.com/mnbf9rca/family-foqos/issues/537).
-
-## 3. Install V2 over the captured data and verify the matrix
-
-Do **not** uninstall, clear preferences or restore a V2 store here. Clean only the owner's DerivedData before changing source versions; that leaves the V1 containers intact and avoids stale XCTest host/framework artifacts. Use `test`, not an unverified `test-without-building` product.
-
-```bash
-set -euo pipefail
-: "${UPGRADE_ENV:?Set UPGRADE_ENV to the env.sh path printed by step 1}"
-[ -f "$UPGRADE_ENV" ] || { echo 'Run environment file is missing' >&2; exit 1; }
-source "$UPGRADE_ENV"
+ "$UPGRADE_GATE" --agent "$UPGRADE_AGENT" --session "$UPGRADE_SESSION" --xcbeautify -- \
+  xcodebuild build -project FamilyFoqos.xcodeproj -scheme FamilyFoqos -configuration Debug \
+  > "$UPGRADE_RUN/preflight-v1.log" 2>&1)
+"$UPGRADE_GATE" --agent "$UPGRADE_AGENT" --session "$UPGRADE_SESSION" -- \
+ python3 "$UPGRADE_STATE" preserve-products "$UPGRADE_PRODUCTS" --phase v1 --source-revision "$UPGRADE_V1_SHA"
 (cd "$UPGRADE_V2"
- "$UPGRADE_GATE" --agent "$UPGRADE_AGENT" --session collab -- \
-  "$UPGRADE_REPO/scripts/clean-build.sh"
- "$UPGRADE_GATE" --agent "$UPGRADE_AGENT" --session collab --xcbeautify -- \
-  xcodebuild test -project FamilyFoqos.xcodeproj -scheme FamilyFoqos \
-  -only-testing:FoqosTests/RCUpgradeVerificationTests -collect-test-diagnostics never \
-  -resultBundlePath "$UPGRADE_RUN/v2-upgrade.xcresult" \
-  > "$UPGRADE_RUN/v2-upgrade.log" 2>&1)
-"$UPGRADE_GATE" --agent "$UPGRADE_AGENT" --session collab -- \
- python3 "$UPGRADE_STATE" capture-v2 "$UPGRADE_RUN"
+ "$UPGRADE_GATE" --agent "$UPGRADE_AGENT" --session "$UPGRADE_SESSION" --xcbeautify -- \
+  xcodebuild build-for-testing -project FamilyFoqos.xcodeproj -scheme FoqosScreenshots \
+  -configuration Debug -only-testing:FoqosUITests/UpgradePersonaUITests \
+  > "$UPGRADE_RUN/preflight-v2.log" 2>&1)
+"$UPGRADE_GATE" --agent "$UPGRADE_AGENT" --session "$UPGRADE_SESSION" -- \
+ python3 "$UPGRADE_STATE" preserve-products "$UPGRADE_PRODUCTS" --phase first-launch --source-revision "$UPGRADE_TARGET"
+shasum -a 256 "$UPGRADE_REPO"/docs/fixtures/*Upgrade* "$UPGRADE_REPO/docs/fixtures/UpgradePersonaUITests.swift" \
+ > "$UPGRADE_RUN/fixture-hashes.txt"
+declare -p UPGRADE_REPO UPGRADE_AGENT UPGRADE_SESSION UPGRADE_V1_SHA UPGRADE_TARGET \
+ UPGRADE_RUN UPGRADE_PRODUCTS UPGRADE_V1 UPGRADE_V2 UPGRADE_GATE UPGRADE_STATE > "$UPGRADE_RUN/env.sh"
+echo "$UPGRADE_RUN/env.sh"
 ```
 
-The first verification read checks the existing V1 session and shared JSON before migration. The fixture exercises the retained V1 scanner, then the production migration/start/stop APIs. Timer registration and restriction application are substituted because they cannot prove actual shielding or OS delivery in the simulator. Parser/producer and schedule behavior get their normal unit coverage next. A captured file is evidence, not an alternative to a passing executed test.
+The helper requires exact V1 version/build `1.31.3/4`; V2 version/build must exactly match the requested source SHA’s `project.pbxproj`, with every target/configuration agreeing. Built products and installed apps must match both values; missing `git` or inconsistent source settings stop before any state change.
 
-## 4. Run production regressions and report
+Preserve each product immediately after its successful build, before the other version overwrites the owner's DerivedData. The helper discovers the generated UI runner, validates its structure and bundle, and copies/hash-pins app and runner products outside DerivedData. Compile or patch drift stops as **“fixtures out of date: update them in a PR”**, with the original log retained; never improvise an unrecorded substitution. `AppPicker.swift` needs no compatibility patch: the missing-Combine message observed with Xcode 27 was a warning in successful builds too.
 
-The upgrade test consumes its one active V1 session, so exclude this temporary driver from the subsequent full unit suite.
+The patches exist only in disposable source trees: every hook compiles inside `#if DEBUG` and requires `--upgrade-ui-check`. Substitutions cover authorization, CloudKit/lock-record responses, restrictions, DeviceActivity registration/backstops and hardware scan delivery. Migration, mode/lock checks, real scan callbacks, routing, validation and persistence remain production behavior. The public CodeScanner `simulatedData` seam still requires tapping its simulator scanner UI.
+
+## 2. Fresh V1 setup, then install-over UI phases
+
+Set `UPGRADE_ENV` to the exact `env.sh` printed above in each new shell; never source a past run. Each persona attempt gets a new evidence directory and fresh disposable V1 store. `prepare` backs up the previous app/group before uninstalling that disposable app and clearing only its backed-up store/preferences remnants; obtain an orchestrator ruling first if the existing app is not known to be disposable.
 
 ```bash
 set -euo pipefail
-: "${UPGRADE_ENV:?Set UPGRADE_ENV to the env.sh path printed by step 1}"
-[ -f "$UPGRADE_ENV" ] || { echo 'Run environment file is missing' >&2; exit 1; }
+: "${UPGRADE_ENV:?Set the current env.sh path}"
 source "$UPGRADE_ENV"
-(cd "$UPGRADE_V2"
- "$UPGRADE_GATE" --agent "$UPGRADE_AGENT" --session collab --xcbeautify -- \
-  xcodebuild test -project FamilyFoqos.xcodeproj -scheme FamilyFoqos \
-  -only-testing:FoqosTests -skip-testing:FoqosTests/RCUpgradeVerificationTests \
-  -collect-test-diagnostics never -resultBundlePath "$UPGRADE_RUN/v2-units.xcresult" \
-  > "$UPGRADE_RUN/v2-units.log" 2>&1)
-```
-
-Confirm XCTest actually ran the seed, upgrade and production tests with zero failures. Preserve all logs, result bundles, source refs, installed-version manifests, original/captured shared JSON, container backups and `v2-app-data/Documents/rc-upgrade-verification.json`. Record `IOS_SIM_GATE_RUNTIME_VERSION` from inside the gate and the actual unit count/runtime from the results; historical counts are not acceptance criteria. Use the wrapper's UUID destination as simulator identity, not a device-name match.
-
-Report to the orchestrator (and the release issue only when requested):
-
-- Exact V1 and V2 commits, installed versions/builds, simulator UUID/OS and evidence directory.
-- PASS/FAIL/UNRUN for source upgrade, each fixture profile, retained active session, decoder compatibility, scan identity, Shortcut timer and invalid conversion, plus the production unit result.
-- The failing test/operation and original error if anything fails. Preserve that failed run, fix through the normal reviewed workflow, and use a fresh directory plus a fresh seed for the next attempt. Never overwrite a failure with a successful retry.
-- Physical App Store → TestFlight, NFC radio/Camera/Code Scanner/signed Universal Links, actual timer/schedule shields and iCloud/device pairs remain genuinely device-only human checks, once on the iOS 27 release-candidate TestFlight build after all work merges, never per PR/slice. Injected callbacks, bitmap decoding or Safari web fallback do not certify a physical handoff.
-
-Do not report overall PASS if an operation was unavailable, output was malformed or tests did not execute. `-collect-test-diagnostics never` avoids Xcode's lengthy automatic simulator diagnosis after a failure; it does not ignore that failure.
-
-## 5. Restore source files and remove only the created worktrees
-
-Run cleanup after either success or failure. Do not reset someone else's worktree or erase their simulator. The state helper is deliberately not an automatic rollback of previous sessions: previous app/group backups remain in the evidence directory, and the disposable app keeps the tested V2 state.
-
-```bash
-set -euo pipefail
-: "${UPGRADE_ENV:?Set UPGRADE_ENV to the env.sh path printed by step 1}"
-[ -f "$UPGRADE_ENV" ] || { echo 'Run environment file is missing' >&2; exit 1; }
-source "$UPGRADE_ENV"
-if [ -d "$UPGRADE_V1" ] && [ -f "$UPGRADE_RUN/original-LogTailTests.swift" ]; then
-  cp "$UPGRADE_RUN/original-LogTailTests.swift" "$UPGRADE_V1/FoqosTests/LogTailTests.swift"
-fi
-if [ -f "$UPGRADE_V2/FoqosTests/RCUpgradeVerificationTests.swift" ]; then
-  rm -- "$UPGRADE_V2/FoqosTests/RCUpgradeVerificationTests.swift"
-fi
-for worktree in "$UPGRADE_V1" "$UPGRADE_V2"; do
-  if [ -d "$worktree" ]; then
-    [ -z "$(git -C "$worktree" status --porcelain)" ] || { echo "Worktree has additional changes: preserve and inspect $worktree" >&2; exit 1; }
-    git worktree remove "$worktree"
+UPGRADE_PERSONA=manual # Repeat for every slug, using a fresh attempt directory.
+UPGRADE_ATTEMPT=$(mktemp -d /private/tmp/family-foqos-v1-v2.XXXXXXXX)
+"$UPGRADE_GATE" --agent "$UPGRADE_AGENT" --session "$UPGRADE_SESSION" -- \
+ python3 "$UPGRADE_STATE" prepare "$UPGRADE_ATTEMPT" --persona "$UPGRADE_PERSONA" --v1-app "$UPGRADE_PRODUCTS/v1.app"
+"$UPGRADE_GATE" --agent "$UPGRADE_AGENT" --session "$UPGRADE_SESSION" -- \
+ python3 "$UPGRADE_STATE" install-runner "$UPGRADE_ATTEMPT" \
+ --runner-app "$UPGRADE_PRODUCTS/runner.app" --xctestrun "$UPGRADE_PRODUCTS/generated.xctestrun"
+for phase in v1 first-launch journey relaunch; do
+  if [[ "$phase" == first-launch ]]; then
+    "$UPGRADE_GATE" --agent "$UPGRADE_AGENT" --session "$UPGRADE_SESSION" -- \
+     python3 "$UPGRADE_STATE" install-v2 "$UPGRADE_ATTEMPT" \
+     --v2-app "$UPGRADE_PRODUCTS/v2.app" --source-revision "$UPGRADE_TARGET"
+  fi
+  generation=$(python3 -c 'import uuid; print(uuid.uuid4())')
+  case "$phase" in
+    v1) test=testV1Setup;; first-launch) test=testV2FirstLaunch;;
+    journey) test=testV2Journey;; relaunch) test=testV2Relaunch;;
+  esac
+  "$UPGRADE_GATE" --agent "$UPGRADE_AGENT" --session "$UPGRADE_SESSION" -- \
+   python3 "$UPGRADE_STATE" prepare-run "$UPGRADE_ATTEMPT" --phase "$phase" --generation "$generation"
+  test_status=0
+  "$UPGRADE_GATE" --agent "$UPGRADE_AGENT" --session "$UPGRADE_SESSION" -- \
+   xcodebuild test-without-building -xctestrun "$UPGRADE_ATTEMPT/$phase.$generation.xctestrun" \
+   -only-testing:"FoqosUITests/UpgradePersonaUITests/$test" -collect-test-diagnostics never \
+   -resultBundlePath "$UPGRADE_ATTEMPT/$phase.xcresult" \
+   > "$UPGRADE_ATTEMPT/$phase.log" 2>&1 || test_status=$?
+  # Required even when XCTest fails: mismatched installation/sentinel means UNRUN.
+  "$UPGRADE_GATE" --agent "$UPGRADE_AGENT" --session "$UPGRADE_SESSION" -- \
+   python3 "$UPGRADE_STATE" verify-run "$UPGRADE_ATTEMPT" --phase "$phase"
+  [[ "$test_status" == 0 ]] || { echo "Test failed: $phase ($test_status)" >&2; exit "$test_status"; }
+  xcrun xcresulttool export attachments --path "$UPGRADE_ATTEMPT/$phase.xcresult" \
+   --output-path "$UPGRADE_ATTEMPT/$phase-attachments"
+  if [[ "$phase" == v1 ]]; then
+    "$UPGRADE_GATE" --agent "$UPGRADE_AGENT" --session "$UPGRADE_SESSION" -- \
+     python3 "$UPGRADE_STATE" capture-v1 "$UPGRADE_ATTEMPT"
+  else
+    report_count=$(python3 - "$UPGRADE_ATTEMPT/$phase-attachments/manifest.json" "$phase" <<'PYCOUNT'
+import json, re, sys
+manifest = json.load(open(sys.argv[1]))
+pattern = re.compile(r"upgrade-report-count-" + sys.argv[2] + r"-([0-9]+)")
+counts = [int(match.group(1)) for test in manifest for item in test["attachments"]
+          if (match := pattern.search(item["suggestedHumanReadableName"]))]
+if len(counts) != 1: raise SystemExit("Missing or ambiguous UI report completion count")
+print(counts[0])
+PYCOUNT
+)
+    "$UPGRADE_GATE" --agent "$UPGRADE_AGENT" --session "$UPGRADE_SESSION" -- \
+     python3 "$UPGRADE_STATE" capture-v2 "$UPGRADE_ATTEMPT" --phase "$phase" --generation "$generation" --report-count "$report_count"
   fi
 done
+"$UPGRADE_GATE" --agent "$UPGRADE_AGENT" --session "$UPGRADE_SESSION" -- \
+ python3 "$UPGRADE_STATE" compare-reports "$UPGRADE_ATTEMPT"
 ```
 
-If setup stopped before creating a file/worktree, clean only the artifacts that actually exist. Preserve the evidence directory until its durable report has been saved once, briefly, on the issue; send long evidence directly to the orchestrator. The checked-in runbook, helper and Swift fixtures are the reusable procedure; a past `/private/tmp` directory is never a prerequisite for a new run.
+The approved plan's `UseDestinationArtifacts` command was corrected through reviewer approval: Xcode rejects it for simulators (“the destination must be an iOS device”). Use the normal generated `.xctestrun`, with `TestHostPath`, `TestBundlePath`, `UITargetAppPath` and `DependentProductPaths` rewritten to the immutable hashed runner and the intended phase app. `prepare-run` rechecks hashes and all four path fields before each invocation; V1 must contain no V2 build-product path. Xcode installs that pinned app in place, preserving data; the separate V2 install pins/verifies the same product.
+
+After **every** test, including reds, require the intended installed `CFBundleVersion` and unchanged V1 sentinel; mismatch is UNRUN, never PASS. V1 capture verifies actual legacy app-group JSON and schema. From that capture until the final V2 relaunch, never uninstall, clear preferences, restore another store or reseed; restarting/rebooting an owner cannot change that premise. Captures stop only the owner's simulator to copy SQLite, sidecars and preferences, then boot that UUID through the same gate.
+
+Reports are read-only, Debug-only and opt-in with `--upgrade-diagnostics`; each must match the source revision, installed build, persona, phase and fresh generation. They supplement hidden persistence assertions and never run migration/repair. `compare-reports` checks original IDs/settings/history, deferred conversion while the original session runs, subsequent conversion, accepted session origins and timer deadlines (one foreground-written supplement retained after Stop), mode/locked flags, saved locations and Emergency carry-over. Missing/stale reports or missing executed tests/screenshots are UNRUN. Compare `writtenAt - setupTime` before accepting the Break first-launch report; exceeding its 30-minute window is UNRUN; use a fresh seed for retry and retain the failed attempt.
+
+Every synthetic NFC request and QR scanner consumption appends phase/generation, request/script index, kind and delivered value to `upgrade-scans.jsonl` at the existing hardware boundary; an exhausted script takes the existing read-error path. The helper requires the exact journey sequence, zero scans in other personas/phases, and the correct persisted origin for every new session. QR also requires its actual scanner UI; NFC calls CoreNFC directly, so no artificial NFC screen is added.
+
+The manual-NFC/QR Specific stop sequence is `wrong,correct` for the legacy alert, then `wrong,wrong,correct` for V2: the first wrong scan opens confirmation, the second shows its inline refusal, and the correct scan dismisses the sheet and stops the session.
+
+Also run `testV2DiagnosticsOptOut` once after a Manual journey using its pinned runner, between helper `begin-optout` and `verify-optout` actions. The helper compares report existence, bytes and modification time through the owner gate; unflagged Debug must create no new report or overwrite the old one. Use a fresh `prepare-run --phase relaunch --generation <new-UUID>` and select only that test; always run `verify-run --phase relaunch` afterward too. This check is additional to the 28 persona journeys.
+
+After each new start, background/return and wait for the fixture-only `upgrade-report-<phase>-<count>` accessibility marker before Stop; wait again before final termination. The marker advances only after successful atomic writes, and its exported count is a lower bound required by capture alongside phase/generation. It has no visible content or routing; confirm XCTest sees it and screenshots remain unchanged.
+The driver backgrounds through `XCUIApplication(bundleIdentifier: "com.apple.springboard").activate()`, requires runningBackground or runningBackgroundSuspended within ten seconds, then activates the app; a timeout remains UNRUN. An iOS 26.5 probe showed Home on the device screenshot while the app state still reported foreground, whereas SpringBoard activation produced the required background state; retain raw-state diagnostics and never accept foreground as background.
+
+The shared launch/foreground driver deliberately grants notification permission on the first prompt: match only SpringBoard’s exact `“Family Foqos” Would Like to Send You Notifications` title and its `Allow` button. Absence passes without a tap; a present prompt without Allow fails. Keep the handled device screenshot and record which persona/runtime runs encountered it; never dismiss a generic system or app alert.
+For Child creation, find each exact Tap switch between its section headings in one snapshot. Tap its unique switch child only when its frame is inside the parent and window and the live frame still matches within one point; if no child is exposed, tap the parent’s trailing control area. Record the path, make one tap and require the parent value to become 1 before Create.
+
+The same report call retains `upgrade-session-report.json`, keyed by session ID, only while sessions are active; final stopped reports do not overwrite it. Normal Stop clears both origin and timerEndTime, so compare the accepted snapshots instead of stopped rows; Library requires two new snapshots. Capture requires matching source/build/persona/phase/generation/timezone. Timers must visibly decrease; compare their accepted deadline to `floor((startTime + minutes*60)/60)*60` in reference-date seconds within 1 ms, matching production minute-aligned registration, and retain the simulator timezone.
+
+## 3. Inspect, classify and report
+
+The Stats menu driver waits up to two seconds for a hittable row with the same frame across two samples at least 100 ms apart; it permits one retry only if the sheet is still absent and exactly one hittable menu row remains. Record its `stats-menu-retry-1` attachment and screenshot in that persona’s evidence/table; sheet, unique Stats scope and exact history checks still must pass.
+
+Open the exported `.keepAlways` images for V1 immediately before update, V2 first launch/foreground, meaningful actions/refusals/settings and final relaunch. Check actual wording, enabled controls, clipping and visibility; AX existence alone is insufficient. The driver derives weekday order from the simulator's locale, validates saved reminders/domains/30-minute breaks and exercises retained history and Parent/Child edit-lock flows. Timers must visibly decrease; an active-looking card alone is not countdown proof.
+
+For unexplained hangs/errors, [research online early](multi-agent-coordination.md#investigate-unexplained-behavior); preserve links alongside local logs. [Apple forum 805060](https://developer.apple.com/forums/thread/805060) reports simulator-only XCTest connection hangs and an uninstall workaround, which is forbidden after V1 capture. Use `-collect-test-diagnostics never` for these deliberate failure runs; if diagnosis already stalls, follow [Test](development-workflow.md#test). AX recovery uses only the [supported owner-gated reboot](simulator-ui-verification.md#recover-only-your-simulator), after the previous test exits; never erase or ignore errors.
+
+Record PASS/FAIL/UNRUN per persona/runtime and phase, executed test IDs/counts, exact wrapper statuses, product/fixture hashes, the driver source commit and runner product hash for each result, exact V1/V2 commits and installed versions, UUID/`IOS_SIM_GATE_RUNTIME_VERSION`, locale/timezone, report comparisons, inspected screenshot paths and every substituted boundary. Identify any persona passing on an earlier driver so exact-head review can assess whether its evidence still applies. A product regression is FAIL and requires a separate reviewed product repair; never alter expectations or patch the fixture to conceal it. Overall PASS requires all 28 journeys and the opt-out check; send the detailed packet to the orchestrator and record per-persona results on [#506](https://github.com/mnbf9rca/family-foqos/issues/506) once when requested.
+
+Simulator evidence never substitutes for device rows on [#506](https://github.com/mnbf9rca/family-foqos/issues/506) and the [#509 RC checklist](https://github.com/mnbf9rca/family-foqos/issues/509#issuecomment-5968985898); those receive one iOS 27 TestFlight pass after all changes merge.
+
+## 4. Restore only the recorded fixture footprint
+
+After success or failure, inspect each disposable worktree's status against its recorded footprint. Allowed tracked edits are the V1/V2 app entry point, `Foqos/Utils/{StrategyManager,DeviceActivityCenterUtil,NFCScannerUtil,LockCodeManager,RequestAuthorizer}.swift`, `Foqos/Components/Strategy/QRCodeScanner.swift` and `Foqos/Views/HomeView.swift`; allowed copied files are V1 `Foqos/Utils/V1UpgradeSeedData.swift`, V2 `Foqos/Utils/UpgradeDiagnostics.swift` and V2 `FoqosUITests/UpgradePersonaUITests.swift`. Refuse cleanup if any other change exists; never use a blanket reset/clean or touch another stream's worktree.
+
+Restore only those tracked paths from their recorded detached HEAD; remove only the three copied files. Require `git diff --exit-code HEAD -- <recorded tracked paths>` and empty `git status --porcelain`, then `git worktree remove` only the two created worktrees. Keep all immutable products, backups, failures and result bundles; cleanup does not restore previous sessions or erase a simulator.
+
+The feature worktree never receives either patch. Check its diff against the reservations, run fixture/helper checks, and run clean normal Debug/Release builds plus appropriate normal regressions through the gate after fixtures are removed. Preserve existing screenshot-scheme tests and captures. Obtain reviewer exact-head approval before reporting the ready PR; production code carries no seed, diagnostic hook or simulated boundary.
