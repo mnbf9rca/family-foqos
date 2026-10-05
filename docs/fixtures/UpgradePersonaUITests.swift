@@ -715,6 +715,7 @@ final class UpgradePersonaUITests: XCTestCase {
       ("Tap to start", "Start by...", "Continue until..."),
       ("Tap to stop", "Continue until...", "Breaks"),
     ] {
+      scrollTo(app.switches[title])
       var selected = false
       var upward = 0
       var downward = 0
