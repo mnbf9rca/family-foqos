@@ -27,16 +27,17 @@ class SafetyTests(unittest.TestCase):
         self.sibling.mkdir(parents=True); (self.sibling / 'sentinel').write_text('keep')
         self.data.mkdir(parents=True); (self.data / 'sentinel').write_text('prior data')
         self.app = device / 'Bundle/Application/app'; self.app.mkdir(parents=True)
-        (self.app/'Info.plist').write_bytes(plistlib.dumps({'CFBundleIdentifier':m.BUNDLE,'CFBundleShortVersionString':'1.31.3','CFBundleVersion':'1'}))
+        (self.app/'Info.plist').write_bytes(plistlib.dumps({'CFBundleIdentifier':m.BUNDLE,'CFBundleShortVersionString':'1.31.3','CFBundleVersion':'4'}))
         (self.group / 'Library/Application Support').mkdir(parents=True)
         self.store = self.group / 'Library/Application Support/default.store'
         self.store.write_text('prior store')
         self.dd = self.home / 'Library/Caches/ios-sim-gate/DerivedData/family-foqos/build2/session-collab'
         product = self.dd / 'Build/Products/Debug-iphonesimulator/FamilyFoqos.app'
         product.mkdir(parents=True)
-        (product / 'Info.plist').write_bytes(plistlib.dumps({'CFBundleIdentifier':m.BUNDLE,'CFBundleShortVersionString':'1.31.3','CFBundleVersion':'1'}))
+        (product / 'Info.plist').write_bytes(plistlib.dumps({'CFBundleIdentifier':m.BUNDLE,'CFBundleShortVersionString':'1.31.3','CFBundleVersion':'4'}))
         self.product = product
         self.calls = []
+        self.project = 'MARKETING_VERSION = 2.0.79;\nCURRENT_PROJECT_VERSION = 97;\n' * 2
         self.env = {'IOS_SIM_GATE_PROJECT':'family-foqos','IOS_SIM_GATE_RUNTIME_VERSION':'26.5','IOS_SIM_GATE_AGENT':'build2','IOS_SIM_GATE_SESSION':'collab','IOS_SIM_GATE_UDID':self.udid,'IOS_SIM_GATE_DERIVED_DATA_PATH':str(self.dd),'IOS_SIM_GATE_DESTINATION':f'platform=iOS Simulator,id={self.udid}'}
         self.home_patch = patch.object(m.Path, 'home', return_value=self.home); self.home_patch.start()
         self.env_patch = patch.dict(os.environ, self.env); self.env_patch.start()
@@ -46,6 +47,7 @@ class SafetyTests(unittest.TestCase):
         self.run_patch.stop(); self.env_patch.stop(); self.home_patch.stop(); self.temp.cleanup()
     def simctl(self, *args, **kwargs):
         self.calls.append(args)
+        if args[0] == 'git': return self.project.encode()
         if args[0] == 'plutil': return json.dumps({m.BUNDLE:{}}).encode()
         op = args[2]
         if op == 'list': return json.dumps({'devices':{'iOS':[{'udid':self.udid,'state':'Booted','isAvailable':True}]}}).encode()
@@ -64,10 +66,55 @@ class SafetyTests(unittest.TestCase):
         (prefs/f'{m.GROUP}.plist').write_bytes(plistlib.dumps({'profileSnapshots':json.dumps({'profile':{'id':'profile'}}).encode()}))
         if capture: self.invoke('capture-v1')
     def test_wrong_product_fails_before_simulator_change(self):
-        (self.product/'Info.plist').write_bytes(plistlib.dumps({'CFBundleIdentifier':'other','CFBundleShortVersionString':'1.31.3','CFBundleVersion':'1'}))
+        (self.product/'Info.plist').write_bytes(plistlib.dumps({'CFBundleIdentifier':'other','CFBundleShortVersionString':'1.31.3','CFBundleVersion':'4'}))
         self.rejected(self.invoke, "unexpected application/runner bundle identifier")
         self.assertEqual(self.calls, [])
         self.assertEqual(self.store.read_text(), 'prior store')
+    def test_v1_exact_version_and_build_before_any_state_change(self):
+        self.assertEqual(m.product(self.product)['build'], '4')
+        for key,value in [('CFBundleShortVersionString','1.31.30'),('CFBundleVersion','40')]:
+            with self.subTest(key=key):
+                info=plistlib.loads((self.product/'Info.plist').read_bytes())
+                changed={**info,key:value}; (self.product/'Info.plist').write_bytes(plistlib.dumps(changed))
+                try:
+                    self.rejected(self.invoke, 'product requires version 1.31.3 build 4')
+                    self.assertEqual(self.calls,[])
+                    self.assertEqual(self.store.read_text(),'prior store')
+                    self.assertFalse((self.root/'prepared.json').exists())
+                finally:
+                    (self.product/'Info.plist').write_bytes(plistlib.dumps(info))
+    def test_v2_prefix_wrong_build_and_stale_version_cannot_install(self):
+        self.seeded(); self.calls.clear()
+        candidate=self.root/'candidate.app'; candidate.mkdir()
+        info={'CFBundleIdentifier':m.BUNDLE,'CFBundleShortVersionString':'2.0.79','CFBundleVersion':'97'}
+        (candidate/'Info.plist').write_bytes(plistlib.dumps(info))
+        self.assertEqual(m.product(candidate)['build'], '97')
+        for key,value in [('CFBundleShortVersionString','2.0.790'),('CFBundleVersion','970'),('CFBundleShortVersionString','2.0.78')]:
+            with self.subTest(key=key,value=value):
+                (candidate/'Info.plist').write_bytes(plistlib.dumps({**info,key:value}))
+                self.rejected(lambda: m.entry(['install-v2',str(self.root),'--v2-app',str(candidate),'--source-revision','a'*40]), 'product requires version 2.0.79 build 97')
+                self.assertFalse(any(c[0]=='xcrun' for c in self.calls))
+                self.assertFalse((self.root/'v2.app').exists())
+                self.assertEqual(self.store.read_text(),'V1 synthetic store')
+    def test_source_targets_and_configurations_must_agree(self):
+        self.seeded(); self.calls.clear()
+        candidate=self.root/'candidate.app'; candidate.mkdir()
+        (candidate/'Info.plist').write_bytes(plistlib.dumps({'CFBundleIdentifier':m.BUNDLE,'CFBundleShortVersionString':'2.0.79','CFBundleVersion':'97'}))
+        valid=self.project
+        for setting,value in [('MARKETING_VERSION','2.0.78'),('CURRENT_PROJECT_VERSION','98')]:
+            with self.subTest(setting=setting):
+                self.project=valid+setting+' = '+value+';\n'
+                self.rejected(lambda: m.entry(['install-v2',str(self.root),'--v2-app',str(candidate),'--source-revision','a'*40]), 'source requires one '+setting+' value across all targets/configurations')
+                self.assertFalse(any(c[0]=='xcrun' for c in self.calls))
+                self.assertFalse((self.root/'v2.app').exists())
+        self.project=valid.replace('MARKETING_VERSION = 2.0.79;','')
+        self.rejected(lambda: m.entry(['install-v2',str(self.root),'--v2-app',str(candidate),'--source-revision','a'*40]), 'source requires one MARKETING_VERSION value across all targets/configurations')
+    def test_missing_git_fails_before_any_state_change(self):
+        original=shutil.which
+        with patch.object(m.shutil,'which',side_effect=lambda tool: None if tool=='git' else original(tool)):
+            self.rejected(self.invoke, 'git is required', status=127)
+        self.assertEqual(self.calls,[])
+        self.assertEqual(self.store.read_text(),'prior store')
     def test_wrong_owner_fails_before_simulator_change(self):
         self.seeded(); self.calls.clear()
         with patch.dict(os.environ, {'IOS_SIM_GATE_UDID':'00000000-0000-0000-0000-000000000002','IOS_SIM_GATE_DESTINATION':'platform=iOS Simulator,id=00000000-0000-0000-0000-000000000002'}):
@@ -188,6 +235,18 @@ class SafetyTests(unittest.TestCase):
         (self.app/'Info.plist').write_bytes(plistlib.dumps(info))
         self.rejected(lambda: m.entry(['verify-run',str(self.root),'--phase','v1']), 'UNRUN: installed app differs from pinned product')
         self.assertTrue((self.root/'v1-installed.json').exists())
+    def test_installed_version_and_build_each_must_match_pinned_source(self):
+        self.v2()
+        m.entry(['verify-run',str(self.root),'--phase','journey'])
+        info=plistlib.loads((self.app/'Info.plist').read_bytes())
+        for key,value in [('CFBundleShortVersionString','2.0.790'),('CFBundleVersion','970')]:
+            with self.subTest(key=key):
+                (self.app/'Info.plist').write_bytes(plistlib.dumps({**info,key:value}))
+                self.rejected(lambda: m.entry(['verify-run',str(self.root),'--phase','journey']), 'UNRUN: installed app differs from pinned product')
+                self.assertTrue((self.root/'v1-installed.json').exists())
+        (self.app/'Info.plist').write_bytes(plistlib.dumps(info))
+        self.project=self.project.replace('2.0.79','2.0.78')
+        self.rejected(lambda: m.entry(['verify-run',str(self.root),'--phase','journey']), 'UNRUN: installed app differs from requested source version/build')
     def test_post_run_sentinel_mismatch_is_unrun(self):
         self.v2()
         m.entry(['verify-run',str(self.root),'--phase','journey'])
@@ -228,10 +287,10 @@ class SafetyTests(unittest.TestCase):
         report['profiles'][0]['domains']=['example.com']; report['sessions'][1]['endTime']=21
         self.rejected(lambda: m.compare_report(seed,report,'first-launch'), 'FAIL: first-launch: completed history time changed')
 
-    def rejected(self, action, message):
+    def rejected(self, action, message, status=1):
         with patch('sys.stderr', new_callable=io.StringIO) as output:
             with self.assertRaises(SystemExit) as error: action()
-        self.assertEqual(error.exception.code, 1)
+        self.assertEqual(error.exception.code, status)
         self.assertIn('v1-v2-upgrade-state: ' + message, output.getvalue())
 
     def accepted(self, report):
@@ -341,7 +400,7 @@ class SafetyTests(unittest.TestCase):
         self.rejected(lambda: m.entry(['preserve-products',str(self.root),'--phase','first-launch','--source-revision','a'*40]), 'fixtures out of date: expected one generated UI xctestrun')
         self.assertFalse((self.root/'v2.app').exists())
         self.assertEqual(self.store.read_text(),'prior store')
-        self.assertEqual(self.calls,[])
+        self.assertFalse(any(c[0]=='xcrun' for c in self.calls))
     def test_optout_unchanged_report_passes_and_new_report_fails(self):
         report=self.v2(); report.write_text('{"old":"generation"}')
         m.entry(['begin-optout',str(self.root)])

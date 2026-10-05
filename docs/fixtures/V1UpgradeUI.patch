@@ -15,7 +15,7 @@ index f264d33..ef07814 100644
 +    #endif
 +    return ""
 +  }
- 
+
    init(
      heading: String,
 @@ -54,6 +63,7 @@ struct LabeledCodeScannerView: View {
@@ -83,588 +83,42 @@ index 6917ec4..d2832de 100644
      } catch {
        Log.info("Failed to start strategy timer activity: \(error.localizedDescription)", category: .timer)
 diff --git a/Foqos/Utils/LockCodeManager.swift b/Foqos/Utils/LockCodeManager.swift
-index 89258a6..c1c3780 100644
+index 89258a6..2e75269 100644
 --- a/Foqos/Utils/LockCodeManager.swift
 +++ b/Foqos/Utils/LockCodeManager.swift
-@@ -7,307 +7,319 @@ import SwiftUI
- /// - Parents: Can create, view, and update lock codes
- /// - Children: Can only verify codes (cannot see them)
- class LockCodeManager: ObservableObject {
--    static let shared = LockCodeManager()
-+  static let shared = LockCodeManager()
- 
--    private let cloudKitManager: CloudKitManager
--    private let appModeManager: AppModeManager
-+  private let cloudKitManager: CloudKitManager
-+  private let appModeManager: AppModeManager
- 
--    /// All lock codes (only populated for parents)
--    @Published private(set) var lockCodes: [FamilyLockCode] = []
-+  /// All lock codes (only populated for parents)
-+  @Published private(set) var lockCodes: [FamilyLockCode] = []
- 
--    /// Whether lock codes are currently being synced
--    @Published private(set) var isLoading: Bool = false
-+  /// Whether lock codes are currently being synced
-+  @Published private(set) var isLoading: Bool = false
- 
--    /// Last sync error
--    @Published var error: String?
-+  /// Last sync error
-+  @Published var error: String?
- 
--    /// Cached lock codes for verification (used by children)
--    private var cachedLockCodes: [FamilyLockCode] = []
-+  /// Cached lock codes for verification (used by children)
-+  private var cachedLockCodes: [FamilyLockCode] = []
- 
--    private var cancellables = Set<AnyCancellable>()
-+  private var cancellables = Set<AnyCancellable>()
- 
--    private init(
--        cloudKitManager: CloudKitManager = .shared,
--        appModeManager: AppModeManager = .shared
--    ) {
--        self.cloudKitManager = cloudKitManager
--        self.appModeManager = appModeManager
--        setupBindings()
--    }
-+  private init(
-+    cloudKitManager: CloudKitManager = .shared,
-+    appModeManager: AppModeManager = .shared
-+  ) {
-+    self.cloudKitManager = cloudKitManager
-+    self.appModeManager = appModeManager
-+    setupBindings()
-+  }
- 
--    // MARK: - Setup
--
--    private func setupBindings() {
--        // Listen for app mode changes
--        appModeManager.$currentMode
--            .receive(on: DispatchQueue.main)
--            .sink { [weak self] mode in
--                Task {
--                    await self?.handleModeChange(mode)
--                }
--            }
--            .store(in: &cancellables)
--    }
-+  // MARK: - Setup
- 
--    private func handleModeChange(_ mode: AppMode) async {
--        switch mode {
--        case .parent, .individual:
--            // Parents and individual users can manage lock codes
--            await fetchLockCodes()
--        case .child:
--            // Children need to fetch shared lock codes for verification
--            await fetchSharedLockCodes()
-+  private func setupBindings() {
-+    // Listen for app mode changes
-+    appModeManager.$currentMode
-+      .receive(on: DispatchQueue.main)
-+      .sink { [weak self] mode in
-+        Task {
-+          await self?.handleModeChange(mode)
-         }
-+      }
-+      .store(in: &cancellables)
-+  }
-+
-+  private func handleModeChange(_ mode: AppMode) async {
-+    switch mode {
-+    case .parent, .individual:
-+      // Parents and individual users can manage lock codes
-+      await fetchLockCodes()
-+    case .child:
-+      // Children need to fetch shared lock codes for verification
-+      await fetchSharedLockCodes()
-     }
-+  }
- 
--    // MARK: - Parent Operations
--
--    /// Create or update a lock code (parent operation)
--    /// Individual mode users can also set lock codes via the Family Controls Dashboard
--    func setLockCode(_ code: String, scope: LockCodeScope = .allChildren) async throws {
--        guard appModeManager.currentMode != .child else {
--            throw LockCodeError.notAuthorized
--        }
--
--        await MainActor.run { isLoading = true }
--        defer { Task { await MainActor.run { self.isLoading = false } } }
--
--        // Check if a code with this scope already exists
--        if let existingIndex = lockCodes.firstIndex(where: { $0.scope == scope }) {
--            var updatedCode = lockCodes[existingIndex]
--            updatedCode.updateCode(code)
-+  // MARK: - Parent Operations
- 
--            try await cloudKitManager.saveLockCode(updatedCode)
--
--            let savedCode = updatedCode
--            await MainActor.run {
--                lockCodes[existingIndex] = savedCode
--            }
--        } else {
--            // Create new lock code
--            let newLockCode = FamilyLockCode(code: code, scope: scope)
--            try await cloudKitManager.saveLockCode(newLockCode)
--
--            await MainActor.run {
--                lockCodes.append(newLockCode)
--            }
--        }
-+  /// Create or update a lock code (parent operation)
-+  /// Individual mode users can also set lock codes via the Family Controls Dashboard
-+  func setLockCode(_ code: String, scope: LockCodeScope = .allChildren) async throws {
-+    guard appModeManager.currentMode != .child else {
-+      throw LockCodeError.notAuthorized
-     }
- 
--    /// Delete a lock code (parent operation)
--    /// Individual mode users can also delete lock codes via the Family Controls Dashboard
--    func deleteLockCode(_ lockCode: FamilyLockCode) async throws {
--        guard appModeManager.currentMode != .child else {
--            throw LockCodeError.notAuthorized
--        }
-+    await MainActor.run { isLoading = true }
-+    defer { Task { await MainActor.run { self.isLoading = false } } }
- 
--        await MainActor.run { isLoading = true }
--        defer { Task { await MainActor.run { self.isLoading = false } } }
-+    // Check if a code with this scope already exists
-+    if let existingIndex = lockCodes.firstIndex(where: { $0.scope == scope }) {
-+      var updatedCode = lockCodes[existingIndex]
-+      updatedCode.updateCode(code)
- 
--        try await cloudKitManager.deleteLockCode(lockCode)
-+      try await cloudKitManager.saveLockCode(updatedCode)
- 
--        await MainActor.run {
--            lockCodes.removeAll { $0.id == lockCode.id }
--        }
--    }
-+      let savedCode = updatedCode
-+      await MainActor.run {
-+        lockCodes[existingIndex] = savedCode
-+      }
-+    } else {
-+      // Create new lock code
-+      let newLockCode = FamilyLockCode(code: code, scope: scope)
-+      try await cloudKitManager.saveLockCode(newLockCode)
- 
--    /// Fetch all lock codes created by this user (parent or individual mode)
--    func fetchLockCodes() async {
--        guard appModeManager.currentMode != .child else { return }
--
--        await MainActor.run { isLoading = true }
--        defer { Task { await MainActor.run { self.isLoading = false } } }
--
--        do {
--            let codes = try await cloudKitManager.fetchLockCodes()
--            await MainActor.run {
--                self.lockCodes = codes
--                self.error = nil
--            }
--        } catch {
--            await MainActor.run {
--                self.error = error.localizedDescription
--            }
--        }
-+      await MainActor.run {
-+        lockCodes.append(newLockCode)
-+      }
-     }
-+  }
- 
--    /// Get the lock code for a specific scope
--    func getLockCode(for scope: LockCodeScope) -> FamilyLockCode? {
--        return lockCodes.first { $0.scope == scope }
-+  /// Delete a lock code (parent operation)
-+  /// Individual mode users can also delete lock codes via the Family Controls Dashboard
-+  func deleteLockCode(_ lockCode: FamilyLockCode) async throws {
-+    guard appModeManager.currentMode != .child else {
-+      throw LockCodeError.notAuthorized
-     }
- 
--    /// Get the lock code for a specific child
--    func getLockCode(forChildId childId: String?) -> FamilyLockCode? {
--        // First try to find a specific code for this child
--        if let childId = childId {
--            if let specificCode = lockCodes.first(where: {
--                if case .specificChild(let id) = $0.scope {
--                    return id == childId
--                }
--                return false
--            }) {
--                return specificCode
--            }
--        }
-+    await MainActor.run { isLoading = true }
-+    defer { Task { await MainActor.run { self.isLoading = false } } }
- 
--        // Fall back to the "all children" code
--        return lockCodes.first { $0.scope == .allChildren }
--    }
-+    try await cloudKitManager.deleteLockCode(lockCode)
- 
--    /// Check if a lock code exists for the given scope
--    func hasLockCode(for scope: LockCodeScope) -> Bool {
--        return lockCodes.contains { $0.scope == scope }
-+    await MainActor.run {
-+      lockCodes.removeAll { $0.id == lockCode.id }
-     }
--
--    /// Check if any lock code exists
--    var hasAnyLockCode: Bool {
--        !lockCodes.isEmpty
-+  }
-+
-+  /// Fetch all lock codes created by this user (parent or individual mode)
-+  func fetchLockCodes() async {
-+    #if DEBUG
-+      if UpgradeUI.isActive {
-+        await MainActor.run { self.lockCodes = [FamilyLockCode(code: "2468", scope: .allChildren)] }
-+        return
-+      }
-+    #endif
-+    guard appModeManager.currentMode != .child else { return }
-+
-+    await MainActor.run { isLoading = true }
-+    defer { Task { await MainActor.run { self.isLoading = false } } }
-+
-+    do {
-+      let codes = try await cloudKitManager.fetchLockCodes()
-+      await MainActor.run {
-+        self.lockCodes = codes
-+        self.error = nil
-+      }
-+    } catch {
-+      await MainActor.run {
-+        self.error = error.localizedDescription
-+      }
-     }
--
--    // MARK: - Child Operations
--
--    /// Fetch shared lock codes for verification (child operation)
--    /// Verifies child authorization before fetching to ensure security
--    private func fetchSharedLockCodes() async {
--        guard appModeManager.currentMode == .child else { return }
--
--        await MainActor.run { isLoading = true }
--        defer { Task { await MainActor.run { self.isLoading = false } } }
--
--        // Use centralized authorization verification
--        let result = await AuthorizationVerifier.shared.verifyChildAuthorization()
--        guard result.isAuthorized else {
--            // Let the centralized handler deal with authorization loss
--            if let message = await AuthorizationVerifier.shared.verifyIfNeeded() {
--                await MainActor.run {
--                    self.cachedLockCodes = []
--                    self.error = message
--                }
--            }
--            return
-+  }
-+
-+  /// Get the lock code for a specific scope
-+  func getLockCode(for scope: LockCodeScope) -> FamilyLockCode? {
-+    return lockCodes.first { $0.scope == scope }
-+  }
-+
-+  /// Get the lock code for a specific child
-+  func getLockCode(forChildId childId: String?) -> FamilyLockCode? {
-+    // First try to find a specific code for this child
-+    if let childId = childId {
-+      if let specificCode = lockCodes.first(where: {
-+        if case .specificChild(let id) = $0.scope {
-+          return id == childId
-         }
--
--        do {
--            let codes = try await cloudKitManager.fetchSharedLockCodes()
--            await MainActor.run {
--                self.cachedLockCodes = codes
--                self.error = nil
--            }
--        } catch {
--            await MainActor.run {
--                self.error = error.localizedDescription
--            }
--        }
--    }
--
--    /// Verify a code entered by a child
--    /// Returns true if the code is valid for the given child
--    /// For child mode, verifies authorization status before checking codes
--    @MainActor
--    func verifyCode(_ code: String, forChildId childId: String?) -> Bool {
--        // Use cached codes for verification
--        let codesToCheck = appModeManager.currentMode == .parent ? lockCodes : cachedLockCodes
--
--        // For child mode, verify the authorization type is still valid
--        if appModeManager.currentMode == .child {
--            let authType = AuthorizationVerifier.shared.currentAuthorizationType
--            guard authType == .child else {
--                Log.info("Authorization type mismatch, clearing cached codes", category: .app)
--                return false
--            }
--        }
--
--        // First try to find a specific code for this child
--        if let childId = childId {
--            if let specificCode = codesToCheck.first(where: {
--                if case .specificChild(let id) = $0.scope {
--                    return id == childId
--                }
--                return false
--            }) {
--                return specificCode.verifyCode(code)
--            }
--        }
--
--        // Fall back to the "all children" code
--        if let generalCode = codesToCheck.first(where: { $0.scope == .allChildren }) {
--            return generalCode.verifyCode(code)
--        }
--
-         return false
-+      }) {
-+        return specificCode
-+      }
-     }
- 
--    /// Verify a code for a managed profile
--    @MainActor
--    func verifyCodeForProfile(_ code: String, profile: BlockedProfiles) -> Bool {
--        return verifyCode(code, forChildId: profile.managedByChildId)
-+    // Fall back to the "all children" code
-+    return lockCodes.first { $0.scope == .allChildren }
-+  }
-+
-+  /// Check if a lock code exists for the given scope
-+  func hasLockCode(for scope: LockCodeScope) -> Bool {
-+    return lockCodes.contains { $0.scope == scope }
-+  }
-+
-+  /// Check if any lock code exists
-+  var hasAnyLockCode: Bool {
-+    !lockCodes.isEmpty
-+  }
-+
-+  // MARK: - Child Operations
-+
-+  /// Fetch shared lock codes for verification (child operation)
-+  /// Verifies child authorization before fetching to ensure security
-+  private func fetchSharedLockCodes() async {
-+    #if DEBUG
-+      if UpgradeUI.isActive {
-+        await MainActor.run { self.cachedLockCodes = [FamilyLockCode(code: "2468", scope: .allChildren)] }
-+        return
-+      }
-+    #endif
-+    guard appModeManager.currentMode == .child else { return }
-+
-+    await MainActor.run { isLoading = true }
-+    defer { Task { await MainActor.run { self.isLoading = false } } }
-+
-+    // Use centralized authorization verification
-+    let result = await AuthorizationVerifier.shared.verifyChildAuthorization()
-+    guard result.isAuthorized else {
-+      // Let the centralized handler deal with authorization loss
-+      if let message = await AuthorizationVerifier.shared.verifyIfNeeded() {
-+        await MainActor.run {
-+          self.cachedLockCodes = []
-+          self.error = message
-+        }
-+      }
-+      return
-     }
- 
--    /// Simple validation - checks if code matches any available lock code
--    func validateCode(_ code: String) -> Bool {
--        let codesToCheck = appModeManager.currentMode == .parent ? lockCodes : cachedLockCodes
--        return codesToCheck.contains { $0.verifyCode(code) }
-+    do {
-+      let codes = try await cloudKitManager.fetchSharedLockCodes()
-+      await MainActor.run {
-+        self.cachedLockCodes = codes
-+        self.error = nil
-+      }
-+    } catch {
-+      await MainActor.run {
-+        self.error = error.localizedDescription
-+      }
-     }
--
--    /// Check if there's a lock code available for verification
--    var canVerifyCode: Bool {
--        let codesToCheck = appModeManager.currentMode == .parent ? lockCodes : cachedLockCodes
--        return !codesToCheck.isEmpty
-+  }
-+
-+  /// Verify a code entered by a child
-+  /// Returns true if the code is valid for the given child
-+  /// For child mode, verifies authorization status before checking codes
-+  @MainActor
-+  func verifyCode(_ code: String, forChildId childId: String?) -> Bool {
-+    // Use cached codes for verification
-+    let codesToCheck = appModeManager.currentMode == .parent ? lockCodes : cachedLockCodes
-+
-+    // For child mode, verify the authorization type is still valid
-+    if appModeManager.currentMode == .child {
-+      let authType = AuthorizationVerifier.shared.currentAuthorizationType
-+      guard authType == .child else {
-+        Log.info("Authorization type mismatch, clearing cached codes", category: .app)
-+        return false
-+      }
-     }
- 
--    // MARK: - Temporary Unlock Session
--
--    /// Temporary unlock state for the current session
--    /// Unlocked until the profile view is dismissed (which calls revokeUnlock)
--    @Published private(set) var unlockedProfileId: UUID?
--
--    /// Grant edit access to a managed profile until the view is dismissed
--    func grantTemporaryUnlock(for profileId: UUID) {
--        unlockedProfileId = profileId
-+    // First try to find a specific code for this child
-+    if let childId = childId {
-+      if let specificCode = codesToCheck.first(where: {
-+        if case .specificChild(let id) = $0.scope {
-+          return id == childId
-+        }
-+        return false
-+      }) {
-+        return specificCode.verifyCode(code)
-+      }
-     }
- 
--    /// Check if a profile is currently unlocked for editing
--    func isUnlocked(_ profileId: UUID) -> Bool {
--        return unlockedProfileId == profileId
-+    // Fall back to the "all children" code
-+    if let generalCode = codesToCheck.first(where: { $0.scope == .allChildren }) {
-+      return generalCode.verifyCode(code)
-     }
- 
--    /// Revoke temporary unlock (called when profile view is dismissed)
--    func revokeUnlock() {
--        unlockedProfileId = nil
--    }
-+    return false
-+  }
-+
-+  /// Verify a code for a managed profile
-+  @MainActor
-+  func verifyCodeForProfile(_ code: String, profile: BlockedProfiles) -> Bool {
-+    return verifyCode(code, forChildId: profile.managedByChildId)
-+  }
-+
-+  /// Simple validation - checks if code matches any available lock code
-+  func validateCode(_ code: String) -> Bool {
-+    let codesToCheck = appModeManager.currentMode == .parent ? lockCodes : cachedLockCodes
-+    return codesToCheck.contains { $0.verifyCode(code) }
-+  }
-+
-+  /// Check if there's a lock code available for verification
-+  var canVerifyCode: Bool {
-+    let codesToCheck = appModeManager.currentMode == .parent ? lockCodes : cachedLockCodes
-+    return !codesToCheck.isEmpty
-+  }
-+
-+  // MARK: - Temporary Unlock Session
-+
-+  /// Temporary unlock state for the current session
-+  /// Unlocked until the profile view is dismissed (which calls revokeUnlock)
-+  @Published private(set) var unlockedProfileId: UUID?
-+
-+  /// Grant edit access to a managed profile until the view is dismissed
-+  func grantTemporaryUnlock(for profileId: UUID) {
-+    unlockedProfileId = profileId
-+  }
-+
-+  /// Check if a profile is currently unlocked for editing
-+  func isUnlocked(_ profileId: UUID) -> Bool {
-+    return unlockedProfileId == profileId
-+  }
-+
-+  /// Revoke temporary unlock (called when profile view is dismissed)
-+  func revokeUnlock() {
-+    unlockedProfileId = nil
-+  }
- }
- 
- // MARK: - Error Types
- 
- enum LockCodeError: LocalizedError {
--    case notAuthorized
--    case codeNotFound
--    case verificationFailed
--
--    var errorDescription: String? {
--        switch self {
--        case .notAuthorized:
--            return "You are not authorized to perform this action."
--        case .codeNotFound:
--            return "No lock code found."
--        case .verificationFailed:
--            return "The code you entered is incorrect."
--        }
-+  case notAuthorized
-+  case codeNotFound
-+  case verificationFailed
-+
-+  var errorDescription: String? {
-+    switch self {
-+    case .notAuthorized:
-+      return "You are not authorized to perform this action."
-+    case .codeNotFound:
-+      return "No lock code found."
-+    case .verificationFailed:
-+      return "The code you entered is incorrect."
-     }
-+  }
- }
- 
- // MARK: - Safety Check Extension
- 
- extension LockCodeManager {
--    /// Check if the current device can have managed profiles
--    /// Parent/individual devices should NOT have managed profiles on them
--    var canHaveManagedProfiles: Bool {
--        return appModeManager.currentMode == .child
--    }
--
--    /// Check if the current device can create managed profiles
--    /// Parent and individual mode users can mark profiles as managed (for children's devices)
--    var canCreateManagedProfiles: Bool {
--        return appModeManager.currentMode != .child
--    }
-+  /// Check if the current device can have managed profiles
-+  /// Parent/individual devices should NOT have managed profiles on them
-+  var canHaveManagedProfiles: Bool {
-+    return appModeManager.currentMode == .child
-+  }
-+
-+  /// Check if the current device can create managed profiles
-+  /// Parent and individual mode users can mark profiles as managed (for children's devices)
-+  var canCreateManagedProfiles: Bool {
-+    return appModeManager.currentMode != .child
-+  }
- }
+@@ -113,6 +113,12 @@ class LockCodeManager: ObservableObject {
+
+     /// Fetch all lock codes created by this user (parent or individual mode)
+     func fetchLockCodes() async {
++        #if DEBUG
++            if UpgradeUI.isActive {
++                await MainActor.run { self.lockCodes = [FamilyLockCode(code: "2468", scope: .allChildren)] }
++                return
++            }
++        #endif
+         guard appModeManager.currentMode != .child else { return }
+
+         await MainActor.run { isLoading = true }
+@@ -169,6 +175,12 @@ class LockCodeManager: ObservableObject {
+     /// Fetch shared lock codes for verification (child operation)
+     /// Verifies child authorization before fetching to ensure security
+     private func fetchSharedLockCodes() async {
++        #if DEBUG
++            if UpgradeUI.isActive {
++                await MainActor.run { self.cachedLockCodes = [FamilyLockCode(code: "2468", scope: .allChildren)] }
++                return
++            }
++        #endif
+         guard appModeManager.currentMode == .child else { return }
+
+         await MainActor.run { isLoading = true }
 diff --git a/Foqos/Utils/NFCScannerUtil.swift b/Foqos/Utils/NFCScannerUtil.swift
 index 8c34d42..04a7d73 100644
 --- a/Foqos/Utils/NFCScannerUtil.swift
 +++ b/Foqos/Utils/NFCScannerUtil.swift
 @@ -16,6 +16,20 @@ class NFCScannerUtil: NSObject {
    private var urlToWrite: String?
- 
+
    func scan(profileName: String) {
 +    #if DEBUG
 +      if UpgradeUI.isActive {
@@ -684,161 +138,39 @@ index 8c34d42..04a7d73 100644
        self.onError?("NFC scanning not available on this device")
        return
 diff --git a/Foqos/Utils/RequestAuthorizer.swift b/Foqos/Utils/RequestAuthorizer.swift
-index 0b12731..6c69572 100644
+index 0b12731..ad6c37d 100644
 --- a/Foqos/Utils/RequestAuthorizer.swift
 +++ b/Foqos/Utils/RequestAuthorizer.swift
-@@ -4,76 +4,85 @@ import ManagedSettings
- import SwiftUI
- 
- class RequestAuthorizer: ObservableObject {
--    @Published var isAuthorized = false
--    @Published var authorizationError: String?
-+  @Published var isAuthorized = false
-+  @Published var authorizationError: String?
- 
--    private let appModeManager = AppModeManager.shared
-+  private let appModeManager = AppModeManager.shared
- 
--    /// Request authorization for the current app mode
--    func requestAuthorization() {
--        requestAuthorization(for: appModeManager.currentMode)
--    }
-+  init() {
-+    #if DEBUG
-+      if UpgradeUI.isActive { isAuthorized = true }
-+    #endif
-+  }
- 
--    /// Request authorization for a specific app mode
--    /// - Parameter mode: The app mode to request authorization for
--    func requestAuthorization(for mode: AppMode) {
--        Task {
--            do {
--                switch mode {
--                case .individual, .parent:
--                    // Individual and parent modes use .individual authorization
--                    // Parent still controls their own device, just creates policies for others
--                    try await AuthorizationCenter.shared.requestAuthorization(for: .individual)
--                    Log.info("Individual authorization successful for mode: \(mode)", category: .authorization)
-+  /// Request authorization for the current app mode
-+  func requestAuthorization() {
-+    requestAuthorization(for: appModeManager.currentMode)
-+  }
- 
--                case .child:
--                    // Child mode uses .child authorization
--                    // This requires parent approval via Screen Time Family Sharing
--                    try await AuthorizationCenter.shared.requestAuthorization(for: .child)
--                    Log.info("Child authorization successful", category: .authorization)
--                }
-+  /// Request authorization for a specific app mode
-+  /// - Parameter mode: The app mode to request authorization for
-+  func requestAuthorization(for mode: AppMode) {
-+    Task {
-+      do {
-+        switch mode {
-+        case .individual, .parent:
-+          // Individual and parent modes use .individual authorization
-+          // Parent still controls their own device, just creates policies for others
-+          try await AuthorizationCenter.shared.requestAuthorization(for: .individual)
-+          Log.info("Individual authorization successful for mode: \(mode)", category: .authorization)
- 
--                await MainActor.run {
--                    self.isAuthorized = true
--                    self.authorizationError = nil
--                }
--            } catch {
--                Log.info("Error requesting authorization: \(error)", category: .authorization)
--                await MainActor.run {
--                    self.isAuthorized = false
--                    self.authorizationError = self.describeAuthorizationError(error, for: mode)
--                }
--            }
-+        case .child:
-+          // Child mode uses .child authorization
-+          // This requires parent approval via Screen Time Family Sharing
-+          try await AuthorizationCenter.shared.requestAuthorization(for: .child)
-+          Log.info("Child authorization successful", category: .authorization)
-         }
--    }
- 
--    func getAuthorizationStatus() -> AuthorizationStatus {
--        return AuthorizationCenter.shared.authorizationStatus
-+        await MainActor.run {
-+          self.isAuthorized = true
-+          self.authorizationError = nil
-+        }
-+      } catch {
-+        Log.info("Error requesting authorization: \(error)", category: .authorization)
-+        await MainActor.run {
-+          self.isAuthorized = false
-+          self.authorizationError = self.describeAuthorizationError(error, for: mode)
-+        }
-+      }
-     }
-+  }
- 
--    /// Check if the device is eligible for child mode
--    /// Child mode requires the device to be set up as a child in Family Sharing
--    func isChildModeEligible() -> Bool {
--        // We can't directly check Family Sharing status, but we can attempt
--        // child authorization and see if it fails
--        // For now, return true and let the authorization flow handle eligibility
--        return true
--    }
-+  func getAuthorizationStatus() -> AuthorizationStatus {
-+    #if DEBUG
-+      if UpgradeUI.isActive { return .approved }
-+    #endif
-+    return AuthorizationCenter.shared.authorizationStatus
-+  }
- 
--    /// Provides a user-friendly description of authorization errors
--    private func describeAuthorizationError(_ error: Error, for mode: AppMode) -> String {
--        let nsError = error as NSError
-+  /// Check if the device is eligible for child mode
-+  /// Child mode requires the device to be set up as a child in Family Sharing
-+  func isChildModeEligible() -> Bool {
-+    // We can't directly check Family Sharing status, but we can attempt
-+    // child authorization and see if it fails
-+    // For now, return true and let the authorization flow handle eligibility
-+    return true
-+  }
- 
--        switch mode {
--        case .child:
--            // Child authorization has specific requirements
--            if nsError.domain == "FamilyControls" {
--                return "Child mode requires this device to be set up as a child account in Apple Family Sharing. To set this up: (1) The parent should go to Settings > Family, (2) Add this device's Apple ID as a child, (3) Enable Screen Time for this child in Family settings."
--            }
--            return "Unable to authorize child mode. This device must be configured as a child in Apple Family Sharing with Screen Time enabled. Please ask your parent to set this up in Settings > Family."
-+  /// Provides a user-friendly description of authorization errors
-+  private func describeAuthorizationError(_ error: Error, for mode: AppMode) -> String {
-+    let nsError = error as NSError
- 
--        case .individual, .parent:
--            return "Unable to authorize Screen Time access. Please enable Screen Time in Settings and try again."
--        }
-+    switch mode {
-+    case .child:
-+      // Child authorization has specific requirements
-+      if nsError.domain == "FamilyControls" {
-+        return "Child mode requires this device to be set up as a child account in Apple Family Sharing. To set this up: (1) The parent should go to Settings > Family, (2) Add this device's Apple ID as a child, (3) Enable Screen Time for this child in Family settings."
-+      }
-+      return "Unable to authorize child mode. This device must be configured as a child in Apple Family Sharing with Screen Time enabled. Please ask your parent to set this up in Settings > Family."
+@@ -9,6 +9,12 @@ class RequestAuthorizer: ObservableObject {
+
+     private let appModeManager = AppModeManager.shared
+
++    init() {
++        #if DEBUG
++            if UpgradeUI.isActive { isAuthorized = true }
++        #endif
++    }
 +
-+    case .individual, .parent:
-+      return "Unable to authorize Screen Time access. Please enable Screen Time in Settings and try again."
+     /// Request authorization for the current app mode
+     func requestAuthorization() {
+         requestAuthorization(for: appModeManager.currentMode)
+@@ -48,6 +54,9 @@ class RequestAuthorizer: ObservableObject {
      }
-+  }
- }
+
+     func getAuthorizationStatus() -> AuthorizationStatus {
++        #if DEBUG
++            if UpgradeUI.isActive { return .approved }
++        #endif
+         return AuthorizationCenter.shared.authorizationStatus
+     }
+
 diff --git a/Foqos/foqosApp.swift b/Foqos/foqosApp.swift
 index 91a9755..765a0ec 100644
 --- a/Foqos/foqosApp.swift
 +++ b/Foqos/foqosApp.swift
 @@ -70,6 +70,11 @@ struct foqosApp: App {
    @Environment(\.scenePhase) private var scenePhase
- 
+
    init() {
 +    #if DEBUG
 +      if UpgradeUI.isActive, let persona = UpgradeUI.argument("--upgrade-seed") {
@@ -847,7 +179,7 @@ index 91a9755..765a0ec 100644
 +    #endif
      Log.info("init() called", category: .app)
      TimersUtil.registerBackgroundTasks()
- 
+
 @@ -97,6 +102,9 @@ struct foqosApp: App {
              verifyChildAuthorizationIfNeeded()
              // Self-heal FamilyMember record if in a family mode

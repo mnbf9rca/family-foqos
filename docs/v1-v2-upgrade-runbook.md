@@ -66,6 +66,8 @@ declare -p UPGRADE_REPO UPGRADE_AGENT UPGRADE_SESSION UPGRADE_V1_SHA UPGRADE_TAR
 echo "$UPGRADE_RUN/env.sh"
 ```
 
+The helper requires exact V1 version/build `1.31.3/4`; V2 version/build must exactly match the requested source SHA’s `project.pbxproj`, with every target/configuration agreeing. Built products and installed apps must match both values; missing `git` or inconsistent source settings stop before any state change.
+
 Preserve each product immediately after its successful build, before the other version overwrites the owner's DerivedData. The helper discovers the generated UI runner, validates its structure and bundle, and copies/hash-pins app and runner products outside DerivedData. Compile or patch drift stops as **“fixtures out of date: update them in a PR”**, with the original log retained; never improvise an unrecorded substitution. `AppPicker.swift` needs no compatibility patch: the missing-Combine message observed with Xcode 27 was a warning in successful builds too.
 
 The patches exist only in disposable source trees: every hook compiles inside `#if DEBUG` and requires `--upgrade-ui-check`. Substitutions cover authorization, CloudKit/lock-record responses, restrictions, DeviceActivity registration/backstops and hardware scan delivery. Migration, mode/lock checks, real scan callbacks, routing, validation and persistence remain production behavior. The public CodeScanner `simulatedData` seam still requires tapping its simulator scanner UI.

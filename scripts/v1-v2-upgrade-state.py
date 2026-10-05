@@ -47,15 +47,28 @@ def digest(path):
     return value.hexdigest()
 
 
-def product(path, version=None, runner=False):
+def source_version(revision):
+    project = run("git", "-C", str(Path(__file__).resolve().parent.parent), "show",
+                  f"{revision}:FamilyFoqos.xcodeproj/project.pbxproj").decode()
+    values = []
+    for setting, pattern in (("MARKETING_VERSION", r"[0-9]+(?:\.[0-9]+)+"), ("CURRENT_PROJECT_VERSION", r"[0-9]+")):
+        occurrences = re.findall(r"\b" + setting + r"\s*=\s*([^;]*);", project)
+        unique = {value.strip() for value in occurrences}
+        if len(unique) != 1 or not re.fullmatch(pattern, next(iter(unique))):
+            fail(f"source requires one {setting} value across all targets/configurations")
+        values.append(unique.pop())
+    return tuple(values)
+
+
+def product(path, version=None, build=None, runner=False):
     path = path.resolve(strict=True)
     info = plistlib.loads((path / "Info.plist").read_bytes())
     bundle = info["CFBundleIdentifier"]
     if (not runner and bundle != BUNDLE) or (runner and not bundle.endswith(".xctrunner")):
         fail("unexpected application/runner bundle identifier")
     actual_version = info["CFBundleShortVersionString"]
-    if version and not actual_version.startswith(version):
-        fail(f"product requires version {version}")
+    if version is not None and (actual_version != version or str(info["CFBundleVersion"]) != build):
+        fail(f"product requires version {version} build {build}")
     if runner and not (path / "PlugIns/FoqosUITests.xctest").is_dir():
         fail("runner lacks the expected external FoqosUITests bundle")
     return {"bundle": bundle, "version": actual_version, "build": str(info["CFBundleVersion"]), "sha256": digest(path)}
@@ -234,7 +247,7 @@ def main(argv=None):
         fail("missing required persona, product, phase or generation")
     if args.source_revision and not re.fullmatch(r"[0-9a-f]{40}", args.source_revision):
         fail("source revision must be a full commit SHA")
-    for tool in ("xcrun", "plutil"):
+    for tool in ("git", "xcrun", "plutil"):
         if not shutil.which(tool):
             fail(f"{tool} is required", 127)
     env = os.environ
@@ -269,9 +282,7 @@ def main(argv=None):
         version = "v1" if args.phase == "v1" else "v2"
         products = dd / "Build/Products"
         source_app = products / "Debug-iphonesimulator/FamilyFoqos.app"
-        selected = product(source_app, "1.31.3" if version == "v1" else "2.")
-        if version == "v1" and selected["version"] != "1.31.3":
-            fail("requires exact frozen V1")
+        selected = product(source_app, *(("1.31.3", "4") if version == "v1" else source_version(args.source_revision)))
         if version == "v2":
             sources = list(products.glob("FoqosScreenshots*.xctestrun"))
             if len(sources) != 1:
@@ -303,9 +314,7 @@ def main(argv=None):
     if args.action == "prepare":
         if marker.exists():
             fail("prepare already ran; preserve evidence and use a new directory")
-        selected = product(args.v1_app, "1.31.3")
-        if selected["version"] != "1.31.3":
-            fail("requires exact frozen V1 1.31.3")
+        selected = product(args.v1_app, "1.31.3", "4")
     else:
         if json.loads(marker.read_text()) != owner:
             fail("evidence belongs to another gate owner")
@@ -322,7 +331,7 @@ def main(argv=None):
         if args.action == "install-v2":
             if not (root / "v1-installed.json").is_file() or (root / "v2-installed.json").exists():
                 fail("install-over requires a preserved V1 capture and no prior V2 installation")
-            selected = product(args.v2_app, "2.")
+            selected = product(args.v2_app, *source_version(args.source_revision))
         elif args.action == "install-runner":
             if (root / "runner.json").exists():
                 fail("runner is already pinned")
@@ -336,7 +345,8 @@ def main(argv=None):
             runner = json.loads((root / "runner.json").read_text())
             version = "v1" if args.phase == "v1" else "v2"
             candidate = state["product"] if version == "v1" else json.loads((root / "v2-installed.json").read_text())
-            if product(root / "runner.app", runner=True) != runner or product(root / f"{version}.app") != candidate:
+            expected_version = ("1.31.3", "4") if version == "v1" else source_version(json.loads((root / "v2-source.json").read_text())["commit"])
+            if product(root / "runner.app", runner=True) != runner or product(root / f"{version}.app", *expected_version) != candidate:
                 fail("pinned runner or phase app changed")
             destination = root / f"{args.phase}.{args.generation}.xctestrun"
             pin_xctestrun(root / "generated.xctestrun", destination, runner, root / "runner.app", root / f"{version}.app")
@@ -431,8 +441,11 @@ def main(argv=None):
     app = container("app", "Bundle/Application")
     info = plistlib.loads((app / "Info.plist").read_bytes())
     selected = state["product"] if args.action == "capture-v1" or (args.action == "verify-run" and args.phase == "v1") else json.loads((root / "v2-installed.json").read_text())
+    expected_version = ("1.31.3", "4") if args.action == "capture-v1" or (args.action == "verify-run" and args.phase == "v1") else source_version(json.loads((root / "v2-source.json").read_text())["commit"])
     if any(str(info[key]) != selected[field] for key, field in (("CFBundleIdentifier", "bundle"), ("CFBundleShortVersionString", "version"), ("CFBundleVersion", "build"))):
         fail("UNRUN: installed app differs from pinned product")
+    if (str(info["CFBundleShortVersionString"]), str(info["CFBundleVersion"])) != expected_version:
+        fail("UNRUN: installed app differs from requested source version/build")
     data, group = container("data", "Data/Application"), container(GROUP, "Shared/AppGroup")
     seed_path = data / "Documents/rc-v1-seed.json"
     seed = json.loads(seed_path.read_text())
