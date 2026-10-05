@@ -444,6 +444,9 @@ final class UpgradePersonaUITests: XCTestCase {
         var found = false
         var upward = 0
         var downward = 0
+        var lastDown: Bool?
+        var step: CGFloat = 120
+        var attempts: [String] = []
         var geometry = "No snapshot captured"
         for _ in 0..<18 {
           let snapshot = try! app.snapshot()
@@ -457,6 +460,7 @@ final class UpgradePersonaUITests: XCTestCase {
             }
           }
           geometry = "\(upperTitle): \(elements.map { ($0.elementType.rawValue, $0.label, $0.value, $0.frame) }), window=\(window)"
+          attempts.append(geometry)
           let visible = elements.filter {
             let frame = $0.frame
             return frame.origin.x.isFinite && frame.origin.y.isFinite && frame.width.isFinite
@@ -508,14 +512,17 @@ final class UpgradePersonaUITests: XCTestCase {
             break
           }
           let down = upper.isEmpty
+          if let lastDown, lastDown != down { step = max(15, step / 2) }
+          lastDown = down
           if down { downward += 1 } else { upward += 1 }
           guard upward <= 6 && downward <= 6 else { break }
+          attempts.append("drag=\(down ? "down" : "up"), step=\(step), upward=\(upward), downward=\(downward)")
           let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.75, dy: 0.6))
-          let end = start.withOffset(CGVector(dx: 0, dy: down ? 120 : -120))
+          let end = start.withOffset(CGVector(dx: 0, dy: down ? step : -step))
           guard window.contains(start.screenPoint) && window.contains(end.screenPoint) else { break }
           start.press(forDuration: 0.05, thenDragTo: end)
         }
-        let evidence = XCTAttachment(string: geometry)
+        let evidence = XCTAttachment(string: attempts.joined(separator: "\n"))
         evidence.name = "schedule-section-snapshot-\(upperTitle)"
         evidence.lifetime = .keepAlways
         add(evidence)
