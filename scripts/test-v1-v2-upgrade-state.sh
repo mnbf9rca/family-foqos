@@ -55,23 +55,23 @@ class SafetyTests(unittest.TestCase):
         args = [action, str(self.root)]
         if action == 'prepare': args += ['--persona', 'manual', '--v1-app', str(self.product)]
         return m.entry(args)
-    def seeded(self):
+    def seeded(self, *, capture=True):
         self.invoke()
         self.store.write_text('V1 synthetic store')
         docs = self.data / 'Documents'; docs.mkdir(exist_ok=True)
         (docs/'rc-v1-seed.json').write_text(json.dumps({'persona':'manual','store':str(self.store),'profiles':[{'id':'profile','name':'RC Manual'}],'sessionID':None}))
         prefs = self.group/'Library/Preferences'; prefs.mkdir(parents=True, exist_ok=True)
         (prefs/f'{m.GROUP}.plist').write_bytes(plistlib.dumps({'profileSnapshots':json.dumps({'profile':{'id':'profile'}}).encode()}))
-        self.invoke('capture-v1')
+        if capture: self.invoke('capture-v1')
     def test_wrong_product_fails_before_simulator_change(self):
         (self.product/'Info.plist').write_bytes(plistlib.dumps({'CFBundleIdentifier':'other','CFBundleShortVersionString':'1.31.3','CFBundleVersion':'1'}))
-        with self.assertRaises(SystemExit): self.invoke()
+        self.rejected(self.invoke, "unexpected application/runner bundle identifier")
         self.assertEqual(self.calls, [])
         self.assertEqual(self.store.read_text(), 'prior store')
     def test_wrong_owner_fails_before_simulator_change(self):
-        self.invoke(); self.calls.clear()
+        self.seeded(); self.calls.clear()
         with patch.dict(os.environ, {'IOS_SIM_GATE_UDID':'00000000-0000-0000-0000-000000000002','IOS_SIM_GATE_DESTINATION':'platform=iOS Simulator,id=00000000-0000-0000-0000-000000000002'}):
-            with self.assertRaises(SystemExit): self.invoke('capture-v1')
+            self.rejected(lambda: self.invoke('capture-v1'), 'evidence belongs to another gate owner')
         self.assertEqual(self.calls, [])
     def test_inactive_v1_capture_is_accepted(self):
         self.seeded()
@@ -98,13 +98,13 @@ class SafetyTests(unittest.TestCase):
         self.assertFalse((self.root/'v2-installed.json').exists())
     def test_missing_phase_fails_before_simulator_change(self):
         self.seeded(); self.calls.clear()
-        with self.assertRaises(SystemExit): self.invoke('capture-v2')
+        self.rejected(lambda: self.invoke('capture-v2'), 'missing required persona, product, phase or generation')
         self.assertEqual(self.calls, [])
     def test_sibling_product_fails_before_simulator_change(self):
         sibling = self.dd.parent/'session-other/FamilyFoqos.app'
         sibling.mkdir(parents=True)
         (sibling/'Info.plist').write_bytes((self.product/'Info.plist').read_bytes())
-        with self.assertRaises(SystemExit): m.entry(['prepare',str(self.root),'--persona','manual','--v1-app',str(sibling)])
+        self.rejected(lambda: m.entry(['prepare',str(self.root),'--persona','manual','--v1-app',str(sibling)]), "refusing another owner's build product")
         self.assertEqual(self.calls, [])
     def v2(self):
         self.seeded()
@@ -118,7 +118,7 @@ class SafetyTests(unittest.TestCase):
         report = self.v2()
         report.write_text(json.dumps({'phase':'journey','generation':self.udid,'persona':'manual','build':'97','version':'2.0.79','source':'a'*40,'count':1}))
         self.calls.clear()
-        with self.assertRaises(SystemExit): m.entry(['capture-v2',str(self.root),'--report-count','1','--phase','first-launch','--generation',self.udid])
+        self.rejected(lambda: m.entry(['capture-v2',str(self.root),'--report-count','1','--phase','first-launch','--generation',self.udid]), 'missing/stale/wrong-phase diagnostic report')
         self.assertFalse(any(c[2] in ('shutdown','uninstall','install') for c in self.calls if c[0]=='xcrun'))
         self.assertFalse((self.root/'v2-first-launch-installed.json').exists())
         self.assertTrue((self.root/'v1-app-group/Library/Application Support/default.store').is_file())
@@ -129,9 +129,13 @@ class SafetyTests(unittest.TestCase):
         self.assertTrue((self.root/'v2-first-launch-report.json').is_file())
         self.assertTrue((self.root/'v1-app-group/Library/Application Support/default.store').is_file())
     def test_changed_sentinel_cannot_claim_upgrade(self):
-        self.v2()
-        (self.data/'Documents/rc-v1-seed.json').write_text('{}')
-        with self.assertRaises(SystemExit): m.entry(['capture-v2',str(self.root),'--report-count','1','--phase','first-launch','--generation',self.udid])
+        report=self.v2()
+        report.write_text(json.dumps({'phase':'first-launch','generation':self.udid,'persona':'manual','build':'97','version':'2.0.79','source':'a'*40,'count':1}))
+        m.entry(['verify-run',str(self.root),'--phase','first-launch'])
+        seed_path=self.data/'Documents/rc-v1-seed.json'
+        seed=json.loads(seed_path.read_text()); seed['profiles'][0]['name']='Changed sentinel'
+        seed_path.write_text(json.dumps(seed))
+        self.rejected(lambda: m.entry(['capture-v2',str(self.root),'--report-count','1','--phase','first-launch','--generation',self.udid]), 'V1 sentinel changed during install-over')
         self.assertFalse((self.root/'v2-first-launch-installed.json').exists())
     def test_xctestrun_only_installs_pinned_phase_products(self):
         source=self.root/'generated.xctestrun'
@@ -147,8 +151,13 @@ class SafetyTests(unittest.TestCase):
         self.assertEqual(actual['UITargetAppPath'],str(self.root/'v1.app'))
         self.assertEqual(set(actual['DependentProductPaths']),set((actual['TestHostPath'],actual['TestBundlePath'],actual['UITargetAppPath'])))
     def test_changed_runner_structure_fails_closed(self):
-        source=self.root/'wrong.xctestrun'; source.write_bytes(plistlib.dumps({'TestConfigurations':[{'TestTargets':[{'BlueprintName':'FoqosTests','IsUITestBundle':False}]}]}))
-        with self.assertRaises(SystemExit): m.pin_xctestrun(source,self.root/'ui.xctestrun',{'bundle':'runner.xctrunner'},self.root/'runner.app',self.root/'v1.app')
+        source=self.root/'wrong.xctestrun'
+        tree={'TestConfigurations':[{'TestTargets':[{'BlueprintName':'FoqosUITests','IsUITestBundle':True}]}]}
+        source.write_bytes(plistlib.dumps(tree))
+        m.pin_xctestrun(source,self.root/'positive.xctestrun',{'bundle':'runner.xctrunner'},self.root/'runner.app',self.root/'v1.app')
+        tree['TestConfigurations'][0]['TestTargets'][0]['BlueprintName']='FoqosTests'
+        source.write_bytes(plistlib.dumps(tree))
+        self.rejected(lambda: m.pin_xctestrun(source,self.root/'ui.xctestrun',{'bundle':'runner.xctrunner'},self.root/'runner.app',self.root/'v1.app'), 'fixtures out of date: unexpected external runner structure')
         self.assertFalse((self.root/'ui.xctestrun').exists())
     def runner(self):
         candidate=self.root/'candidate-runner.app'
@@ -161,7 +170,7 @@ class SafetyTests(unittest.TestCase):
         self.seeded(); self.runner()
         (self.root/'v1.app/changed').write_text('tampered')
         self.calls.clear()
-        with self.assertRaises(SystemExit): m.entry(['prepare-run',str(self.root),'--phase','v1','--generation',self.udid])
+        self.rejected(lambda: m.entry(['prepare-run',str(self.root),'--phase','v1','--generation',self.udid]), 'pinned runner or phase app changed')
         self.assertEqual(self.calls,[])
     def test_prepare_v1_run_removes_stray_v2_products(self):
         self.seeded(); self.runner()
@@ -174,13 +183,18 @@ class SafetyTests(unittest.TestCase):
         self.assertEqual(self.calls,[])
     def test_post_run_version_mismatch_is_unrun_and_keeps_evidence(self):
         self.seeded()
-        (self.app/'Info.plist').write_bytes(plistlib.dumps({'CFBundleIdentifier':m.BUNDLE,'CFBundleShortVersionString':'2.0.79','CFBundleVersion':'97'}))
-        with self.assertRaises(SystemExit): m.entry(['verify-run',str(self.root),'--phase','v1'])
+        m.entry(['verify-run',str(self.root),'--phase','v1'])
+        info=plistlib.loads((self.app/'Info.plist').read_bytes()); info['CFBundleVersion']='97'
+        (self.app/'Info.plist').write_bytes(plistlib.dumps(info))
+        self.rejected(lambda: m.entry(['verify-run',str(self.root),'--phase','v1']), 'UNRUN: installed app differs from pinned product')
         self.assertTrue((self.root/'v1-installed.json').exists())
     def test_post_run_sentinel_mismatch_is_unrun(self):
         self.v2()
-        (self.data/'Documents/rc-v1-seed.json').write_text('{}')
-        with self.assertRaises(SystemExit): m.entry(['verify-run',str(self.root),'--phase','journey'])
+        m.entry(['verify-run',str(self.root),'--phase','journey'])
+        seed_path=self.data/'Documents/rc-v1-seed.json'
+        seed=json.loads(seed_path.read_text()); seed['profiles'][0]['name']='Changed sentinel'
+        seed_path.write_text(json.dumps(seed))
+        self.rejected(lambda: m.entry(['verify-run',str(self.root),'--phase','journey']), 'UNRUN: V1 sentinel changed after the test')
     def test_post_run_correct_product_and_unchanged_sentinel(self):
         self.v2()
         m.entry(['verify-run',str(self.root),'--phase','journey'])
@@ -238,7 +252,7 @@ class SafetyTests(unittest.TestCase):
         report=self.v2()
         report.write_text(json.dumps({'phase':'first-launch','generation':self.udid,'persona':'manual','build':'97','version':'2.0.79','source':'a'*40,'count':1}))
         self.calls.clear()
-        with self.assertRaises(SystemExit): m.entry(['capture-v2',str(self.root),'--phase','first-launch','--generation',self.udid,'--report-count','2'])
+        self.rejected(lambda: m.entry(['capture-v2',str(self.root),'--phase','first-launch','--generation',self.udid,'--report-count','2']), 'UNRUN: diagnostic report predates the UI completion marker')
         self.assertFalse(any(c[2]=='shutdown' for c in self.calls if c[0]=='xcrun'))
 
     def test_new_session_origin_and_exact_session_count(self):
@@ -324,7 +338,7 @@ class SafetyTests(unittest.TestCase):
         self.assertEqual((self.root/'v1.app/Info.plist').read_bytes(),saved)
     def test_missing_generated_runner_preserves_app_and_evidence(self):
         (self.product/'Info.plist').write_bytes(plistlib.dumps({'CFBundleIdentifier':m.BUNDLE,'CFBundleShortVersionString':'2.0.79','CFBundleVersion':'97'}))
-        with self.assertRaises(SystemExit): m.entry(['preserve-products',str(self.root),'--phase','first-launch','--source-revision','a'*40])
+        self.rejected(lambda: m.entry(['preserve-products',str(self.root),'--phase','first-launch','--source-revision','a'*40]), 'fixtures out of date: expected one generated UI xctestrun')
         self.assertFalse((self.root/'v2.app').exists())
         self.assertEqual(self.store.read_text(),'prior store')
         self.assertEqual(self.calls,[])
@@ -333,13 +347,13 @@ class SafetyTests(unittest.TestCase):
         m.entry(['begin-optout',str(self.root)])
         m.entry(['verify-optout',str(self.root)])
         report.write_text('{"unexpected":"new generation"}')
-        with self.assertRaises(SystemExit): m.entry(['verify-optout',str(self.root)])
+        self.rejected(lambda: m.entry(['verify-optout',str(self.root)]), 'FAIL: unflagged Debug created or changed the diagnostic report')
     def test_optout_missing_report_must_remain_missing(self):
         report=self.v2()
         m.entry(['begin-optout',str(self.root)])
         m.entry(['verify-optout',str(self.root)])
         report.write_text('{}')
-        with self.assertRaises(SystemExit): m.entry(['verify-optout',str(self.root)])
+        self.rejected(lambda: m.entry(['verify-optout',str(self.root)]), 'FAIL: unflagged Debug created or changed the diagnostic report')
     def test_timer_supplement_requires_actual_minute_aligned_deadline(self):
         seed,report=self.comparison(); seed['persona']='nfc-timer'
         report['activeSessionCount']=0; report['sessions'][0]['active']=False
@@ -384,9 +398,9 @@ class SafetyTests(unittest.TestCase):
         self.timer_capture(stale=False)
         m.entry(['capture-v2',str(self.root),'--report-count','1','--phase','journey','--generation',self.udid])
     def test_missing_runtime_and_unauthorized_runtime_session_fail_closed(self):
-        for fields in ({'IOS_SIM_GATE_RUNTIME_VERSION':''},{'IOS_SIM_GATE_SESSION':'collab-ios27'}):
+        for fields,message in (({'IOS_SIM_GATE_RUNTIME_VERSION':''},'gate runtime version is missing or unusable'),({'IOS_SIM_GATE_SESSION':'collab-ios27'},'authorized collab-ios27 owner must actually run iOS 27')):
             with patch.dict(os.environ,fields):
-                with self.assertRaises(SystemExit): self.invoke()
+                self.rejected(self.invoke, message)
         self.assertEqual(self.calls,[])
         self.assertEqual(self.store.read_text(),'prior store')
     def test_ios27_owner_accepts_another_agent_with_actual_runtime(self):
@@ -399,11 +413,11 @@ class SafetyTests(unittest.TestCase):
         self.assertEqual(self.calls,[])
     def test_missing_gate_cannot_mutate(self):
         with patch.dict(os.environ, {'IOS_SIM_GATE_PROJECT':''}):
-            with self.assertRaises(SystemExit): self.invoke()
+            self.rejected(self.invoke, 'requires the Family Foqos collab (or authorized collab-ios27) gate')
         self.assertEqual(self.store.read_text(), 'prior store')
     def test_sibling_derived_data_cannot_mutate(self):
         with patch.dict(os.environ, {'IOS_SIM_GATE_DERIVED_DATA_PATH':str(self.dd.parent/'session-other')}):
-            with self.assertRaises(SystemExit): self.invoke()
+            self.rejected(self.invoke, 'refusing DerivedData outside this gate owner')
         self.assertEqual(self.store.read_text(), 'prior store')
     def test_container_escape_cannot_mutate(self):
         original = self.simctl
@@ -411,7 +425,7 @@ class SafetyTests(unittest.TestCase):
             if args[0]=='xcrun' and args[2]=='get_app_container': return str(self.sibling).encode()
             return original(*args, **kwargs)
         with patch.object(m, 'run', side_effect=escape):
-            with self.assertRaises(SystemExit): self.invoke()
+            self.rejected(self.invoke, 'refusing data container outside owned simulator')
         self.assertEqual((self.sibling/'sentinel').read_text(), 'keep')
         self.assertEqual(self.store.read_text(), 'prior store')
     def test_prepare_preserves_prior_state_and_sibling(self):
@@ -425,8 +439,10 @@ class SafetyTests(unittest.TestCase):
             with self.assertRaises(SystemExit) as error: real_run('xcrun','simctl','list','devices','--json')
         self.assertEqual(error.exception.code, 42)
     def test_capture_rejects_missing_seed_without_creating_evidence(self):
-        self.invoke()
-        with self.assertRaises(SystemExit): self.invoke('capture-v1')
+        self.seeded(capture=False)
+        m.entry(['verify-run',str(self.root),'--phase','v1'])
+        seed=self.data/'Documents/rc-v1-seed.json'; seed.unlink()
+        self.rejected(lambda: self.invoke('capture-v1'), 'unusable input/state: [Errno 2] No such file or directory:')
         self.assertFalse((self.root/'v1-app-data').exists())
 
 unittest.main(argv=['upgrade-state-self-test'], verbosity=2)
