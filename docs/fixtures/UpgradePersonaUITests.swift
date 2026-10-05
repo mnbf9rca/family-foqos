@@ -673,8 +673,28 @@ final class UpgradePersonaUITests: XCTestCase {
     XCTAssertTrue(app.textFields["Profile Name"].waitForExistence(timeout: 10))
     app.textFields["Profile Name"].tap()
     app.textFields["Profile Name"].typeText("RC Child Created")
-    scrollTo(app.buttons["Select Domains to Restrict"])
-    press("Select Domains to Restrict")
+    if app.keyboards.count > 0 {
+      let submit = app.keyboards.buttons["Return"]
+      XCTAssertTrue(submit.exists && submit.isHittable)
+      submit.tap()
+      XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+    }
+    let domainSelector = app.buttons["Select Domains to Restrict"]
+    scrollTo(domainSelector)
+    let settleDeadline = Date().addingTimeInterval(2)
+    var previousFrame: CGRect?
+    var settled = false
+    while Date() < settleDeadline {
+      let frame = domainSelector.frame
+      if frame == previousFrame && domainSelector.isHittable {
+        settled = true
+        break
+      }
+      previousFrame = frame
+      Thread.sleep(forTimeInterval: 0.1)
+    }
+    XCTAssertTrue(settled, "Domain selector must settle before its single tap\n\(app.debugDescription)")
+    domainSelector.tap()
     let domainBar = app.navigationBars["Block Domains"]
     XCTAssertTrue(domainBar.waitForExistence(timeout: 10))
     let domainForms = app.collectionViews.containing(.textField, identifier: "Enter domain (e.g., example.com)")
