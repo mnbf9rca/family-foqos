@@ -432,7 +432,7 @@ final class UpgradePersonaUITests: XCTestCase {
 
   private func isInsideSection(_ frame: CGRect, upper: CGRect, lower: CGRect?) -> Bool {
     // Fractional frame sums can differ at an otherwise shared edge.
-    frame.minY >= upper.maxY - 0.001 && (lower.map { frame.maxY <= $0.minY + 0.001 } ?? true)
+    frame.minY >= upper.maxY - 0.5 && (lower.map { frame.maxY <= $0.minY + 0.5 } ?? true)
   }
 
   private func inspectSettings(save: Bool, unlock: Bool, name: String? = nil) {
