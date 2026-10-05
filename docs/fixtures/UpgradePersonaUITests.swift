@@ -200,8 +200,8 @@ final class UpgradePersonaUITests: XCTestCase {
 
   private func foreground() {
     let previous = reportCount()
-    var states = "before-home=\(app.state.rawValue)"
-    XCUIDevice.shared.press(.home)
+    var states = "before-springboard=\(app.state.rawValue)"
+    XCUIApplication(bundleIdentifier: "com.apple.springboard").activate()
     let background = XCTNSPredicateExpectation(
       predicate: NSPredicate { _, _ in
         let state = self.app.state
