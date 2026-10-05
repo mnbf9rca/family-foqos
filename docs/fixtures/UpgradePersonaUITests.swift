@@ -667,13 +667,20 @@ final class UpgradePersonaUITests: XCTestCase {
     app.textFields["Profile Name"].typeText("RC Child Created")
     scrollTo(app.buttons["Select Domains to Restrict"])
     press("Select Domains to Restrict")
-    let domain = app.textFields.firstMatch
+    let domainBar = app.navigationBars["Block Domains"]
+    XCTAssertTrue(domainBar.waitForExistence(timeout: 10))
+    let domainForms = app.collectionViews.containing(.textField, identifier: "Enter domain (e.g., example.com)")
+    XCTAssertEqual(domainForms.count, 1, "Domain picker form must be unique")
+    let domainForm = domainForms.element
+    let domain = domainForm.textFields["Enter domain (e.g., example.com)"]
     XCTAssertTrue(domain.waitForExistence(timeout: 10))
     domain.tap()
     domain.typeText("example.org")
-    press("plus.circle.fill")
-    XCTAssertTrue(app.staticTexts["example.org"].waitForExistence(timeout: 10))
-    press("Done")
+    let addDomain = domainForm.buttons.containing(.image, identifier: "plus.circle.fill").element
+    XCTAssertTrue(addDomain.waitForExistence(timeout: 10) && addDomain.isHittable)
+    addDomain.tap()
+    XCTAssertTrue(domainForm.staticTexts["example.org"].waitForExistence(timeout: 10))
+    domainBar.buttons["Done"].tap()
     press("Create")
     selectProfileRow("RC Child Created")
     XCTAssertFalse(app.buttons["Unlock"].exists)
