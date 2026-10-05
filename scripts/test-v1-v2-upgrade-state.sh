@@ -275,30 +275,33 @@ class SafetyTests(unittest.TestCase):
         report['activeSessionCount']=0; report['sessions'][0]['active']=False
         report['profiles'][0].update(schema=3,needsMigration=False)
         report['sessions'].append({'id':'new','profileID':'original','startTime':456,'active':False,'origin':{'kind':'nfc'}})
-        with self.assertRaises(SystemExit): m.compare_report(seed,report,'journey')
         scans=[{'phase':'journey','generation':None,'kind':'nfc','requestIndex':i,'scriptIndex':i,'value':value} for i,value in enumerate(['wrong','correct','correct','correct'])]
-        m.compare_report(seed,report,'journey',self.accepted(report),scan_entries=scans)
+        accepted=self.accepted(report)
+        m.compare_report(seed,report,'journey',accepted,scan_entries=scans)
+        self.rejected(lambda: m.compare_report(seed,report,'journey',accepted,scan_entries=[]), 'FAIL: journey: required scan delivery sequence differs')
         scans[-1]['value']='exhausted'
-        with self.assertRaises(SystemExit): m.compare_report(seed,report,'journey',self.accepted(report),scan_entries=scans)
+        self.rejected(lambda: m.compare_report(seed,report,'journey',accepted,scan_entries=scans), 'FAIL: journey: required scan delivery sequence differs')
         seed['persona']='manual'; report['sessions'][-1]['origin']['kind']='manual'
-        with self.assertRaises(SystemExit): m.compare_report(seed,report,'journey',self.accepted(report),scan_entries=scans)
+        accepted=self.accepted(report)
+        m.compare_report(seed,report,'journey',accepted,scan_entries=[])
+        self.rejected(lambda: m.compare_report(seed,report,'journey',accepted,scan_entries=[scans[0]]), 'FAIL: journey: required scan delivery sequence differs')
 
     def test_scans_reject_entries_from_other_phases(self):
         entries=[{'phase':'journey','generation':'fresh','kind':'nfc','requestIndex':i,'scriptIndex':i,'value':value} for i,value in enumerate(['wrong','correct','correct','correct'])]
         m.compare_scans('nfc','journey','fresh',entries)
         entries.append({'phase':'first-launch','generation':'earlier','kind':'nfc','requestIndex':0,'scriptIndex':0,'value':'correct'})
-        with self.assertRaises(SystemExit): m.compare_scans('nfc','journey','fresh',entries)
+        self.rejected(lambda: m.compare_scans('nfc','journey','fresh',entries), 'FAIL: journey: required scan delivery sequence differs')
     def test_specific_stops_require_wrong_confirmation_and_correct_scan(self):
         for persona,kind in [('manual-nfc','nfc'),('manual-qr','qr')]:
             entries=[{'phase':'journey','generation':'fresh','kind':kind,'requestIndex':i,'scriptIndex':i,'value':value}
                      for i,value in enumerate(['wrong','correct','wrong','wrong','correct'])]
             m.compare_scans(persona,'journey','fresh',entries)
-            with self.assertRaises(SystemExit): m.compare_scans(persona,'journey','fresh',entries[:3]+entries[4:])
+            self.rejected(lambda: m.compare_scans(persona,'journey','fresh',entries[:3]+entries[4:]), 'FAIL: journey: required scan delivery sequence differs')
 
     def test_non_scanner_relaunch_rejects_any_scan_history(self):
         m.compare_scans('manual','relaunch','fresh',[])
         entry={'phase':'journey','generation':'earlier','kind':'nfc','requestIndex':0,'scriptIndex':0,'value':'correct'}
-        with self.assertRaises(SystemExit): m.compare_scans('manual','relaunch','fresh',[entry])
+        self.rejected(lambda: m.compare_scans('manual','relaunch','fresh',[entry]), 'FAIL: relaunch: required scan delivery sequence differs')
 
     def test_converted_schedule_recurrence_is_preserved(self):
         seed,report=self.comparison(); seed['persona']='schedule'
