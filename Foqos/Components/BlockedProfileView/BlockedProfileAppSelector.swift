@@ -37,7 +37,7 @@ struct BlockedProfileAppSelector: View {
     Button(action: buttonAction) {
       HStack {
         Text(buttonText)
-          .foregroundStyle(themeManager.themeColor)
+          .foregroundStyle(disabled ? .secondary : themeManager.themeColor)
         Spacer()
         Image(systemName: "chevron.right")
           .foregroundStyle(.gray)

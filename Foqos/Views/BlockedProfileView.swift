@@ -315,6 +315,7 @@ struct BlockedProfileView: View {
             TextField("Profile Name", text: $name)
               .textContentType(.none)
               .disabled(editingDisabled)
+              .foregroundStyle(editingDisabled ? .secondary : .primary)
           }
 
           Section((enableAllowMode ? "Allowed" : "Blocked") + " Apps") {
