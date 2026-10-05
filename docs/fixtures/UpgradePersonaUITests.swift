@@ -704,7 +704,9 @@ final class UpgradePersonaUITests: XCTestCase {
     XCTAssertTrue(domain.waitForExistence(timeout: 10))
     domain.tap()
     domain.typeText("example.org")
-    let addDomain = domainForm.buttons.containing(.image, identifier: "plus.circle.fill").element
+    let addDomains = domainForm.buttons.matching(identifier: "plus.circle.fill")
+    XCTAssertEqual(addDomains.count, 1, "Domain picker Add button must be unique")
+    let addDomain = addDomains.element
     XCTAssertTrue(addDomain.waitForExistence(timeout: 10) && addDomain.isHittable)
     addDomain.tap()
     XCTAssertTrue(domainForm.staticTexts["example.org"].waitForExistence(timeout: 10))
