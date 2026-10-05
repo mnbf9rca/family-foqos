@@ -31,6 +31,7 @@ final class UpgradePersonaUITests: XCTestCase {
     }
     app.launchArguments += ["--upgrade-scan-script", ProcessInfo.processInfo.environment["UPGRADE_SCANS"] ?? "wrong,correct,correct,correct"]
     app.launch()
+    grantNotificationPermissionIfRequested()
     XCTAssertTrue(app.staticTexts[persona == "library" ? "RC Library 01" : "RC \(persona)"].waitForExistence(timeout: 20))
     if !seed { waitForReport(after: 0) }
   }
@@ -199,6 +200,7 @@ final class UpgradePersonaUITests: XCTestCase {
   }
 
   private func foreground() {
+    grantNotificationPermissionIfRequested()
     let previous = reportCount()
     var states = "before-springboard=\(app.state.rawValue)"
     XCUIApplication(bundleIdentifier: "com.apple.springboard").activate()
@@ -222,7 +224,23 @@ final class UpgradePersonaUITests: XCTestCase {
     }
     XCTAssertEqual(result, .completed, "App did not enter background\n\(states)")
     app.activate()
+    grantNotificationPermissionIfRequested()
     waitForReport(after: previous)
+  }
+
+  private func grantNotificationPermissionIfRequested() {
+    let title = "“Family Foqos” Would Like to Send You Notifications"
+    let alerts = XCUIApplication(bundleIdentifier: "com.apple.springboard").alerts.containing(.staticText, identifier: title)
+    guard alerts.firstMatch.waitForExistence(timeout: 2) else { return }
+    XCTAssertEqual(alerts.count, 1, "Notification permission alert must be unique")
+    let allow = alerts.element.buttons["Allow"]
+    XCTAssertTrue(allow.exists && allow.isHittable, "Exact notification permission alert must offer Allow")
+    let evidence = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+    evidence.name = "\(persona).notification-permission-allow"
+    evidence.lifetime = .keepAlways
+    add(evidence)
+    allow.tap()
+    XCTAssertTrue(alerts.firstMatch.waitForNonExistence(timeout: 5))
   }
 
   private func reportCount() -> Int {

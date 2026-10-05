@@ -9,7 +9,7 @@ Expected behavior and the persona matrix are in the [approved plan](superpowers/
 | Persona evidence detail | Required proof |
 | --- | --- |
 | Emergency user | Show the retained allowance of 1 and successful last unblock in the UI. On idle relaunch, Emergency is reachable only during an active session, so the mandatory fresh report proves exactly 0 remaining and 14 reset days; keep the idle screenshot and global no-Stop check. A missing or stale report is UNRUN. |
-| Child | Locked items show Unlock, withhold Update and disable condition controls. Name accepts an unsaved draft: Cancel/reopen must retain the original name, and the mandatory report must retain its name and managed flag; correct code permits saving. |
+| Child | Locked items show Unlock, withhold Update and disable condition controls. Name accepts an unsaved draft: Cancel/reopen must retain the original name, and the mandatory report must retain its name and managed flag; correct code permits saving. New profiles choose Tap to start and Tap to stop through the UI before Create; the report checks those choices and that new/duplicated profiles are unlocked. |
 
 ## 1. Pin sources and compile fixtures before touching app data
 
@@ -146,6 +146,8 @@ Also run `testV2DiagnosticsOptOut` once after a Manual journey using its pinned 
 
 After each new start, background/return and wait for the fixture-only `upgrade-report-<phase>-<count>` accessibility marker before Stop; wait again before final termination. The marker advances only after successful atomic writes, and its exported count is a lower bound required by capture alongside phase/generation. It has no visible content or routing; confirm XCTest sees it and screenshots remain unchanged.
 The driver backgrounds through `XCUIApplication(bundleIdentifier: "com.apple.springboard").activate()`, requires runningBackground or runningBackgroundSuspended within ten seconds, then activates the app; a timeout remains UNRUN. An iOS 26.5 probe showed Home on the device screenshot while the app state still reported foreground, whereas SpringBoard activation produced the required background state; retain raw-state diagnostics and never accept foreground as background.
+
+The shared launch/foreground driver deliberately grants notification permission on the first prompt: match only SpringBoard’s exact `“Family Foqos” Would Like to Send You Notifications` title and its `Allow` button. Absence passes without a tap; a present prompt without Allow fails. Keep the handled device screenshot and record which persona/runtime runs encountered it; never dismiss a generic system or app alert.
 
 The same report call retains `upgrade-session-report.json`, keyed by session ID, only while sessions are active; final stopped reports do not overwrite it. Normal Stop clears both origin and timerEndTime, so compare the accepted snapshots instead of stopped rows; Library requires two new snapshots. Capture requires matching source/build/persona/phase/generation/timezone. Timers must visibly decrease; compare their accepted deadline to `floor((startTime + minutes*60)/60)*60` in reference-date seconds within 1 ms, matching production minute-aligned registration, and retain the simulator timezone.
 
