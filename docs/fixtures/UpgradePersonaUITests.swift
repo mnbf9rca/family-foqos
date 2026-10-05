@@ -430,6 +430,11 @@ final class UpgradePersonaUITests: XCTestCase {
     profile.tap()
   }
 
+  private func isInsideSection(_ frame: CGRect, upper: CGRect, lower: CGRect?) -> Bool {
+    // Fractional frame sums can differ at an otherwise shared edge.
+    frame.minY >= upper.maxY - 0.001 && (lower.map { frame.maxY <= $0.minY + 0.001 } ?? true)
+  }
+
   private func inspectSettings(save: Bool, unlock: Bool, name: String? = nil) {
     openEditor(name)
     if unlock {
@@ -500,10 +505,9 @@ final class UpgradePersonaUITests: XCTestCase {
               && frame.height.isFinite && !frame.isEmpty
           }
           let bounded: (any XCUIElementSnapshot) -> Bool = { element in
-            upper.count == 1 && element.frame.minY > upper[0].frame.maxY
-              && (usableLower.count == 1
-                ? element.frame.maxY < usableLower[0].frame.minY
-                : lower.isEmpty && upperTitle == "Continue until...")
+            upper.count == 1
+              && (usableLower.count == 1 || lower.isEmpty && upperTitle == "Continue until...")
+              && self.isInsideSection(element.frame, upper: upper[0].frame, lower: usableLower.first?.frame)
           }
           let schedules = visible.filter { $0.elementType == .switch && $0.label == "Schedule" && bounded($0) }
           let configure = visible.filter { $0.elementType == .button && $0.label == "Configure" && bounded($0) }
@@ -764,10 +768,8 @@ final class UpgradePersonaUITests: XCTestCase {
         }
         let switches = visible.filter {
           $0.elementType == .switch && $0.label == title && upper.count == 1
-            && $0.frame.minY > upper[0].frame.maxY
-            && (usableLower.count == 1
-              ? $0.frame.maxY < usableLower[0].frame.minY
-              : lower.isEmpty && upperTitle == "Continue until...")
+            && (usableLower.count == 1 || lower.isEmpty && upperTitle == "Continue until...")
+            && self.isInsideSection($0.frame, upper: upper[0].frame, lower: usableLower.first?.frame)
         }
         let lowerReady =
           upperTitle == "Continue until..."
