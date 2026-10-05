@@ -254,6 +254,22 @@ class SafetyTests(unittest.TestCase):
         report['sessions'].append({**new,'id':'unexpected'})
         self.rejected(lambda: m.compare_report(seed,report,'journey',self.accepted(report),scan_entries=scans), 'FAIL: journey: session count changed')
 
+    def test_child_created_manual_conditions_are_required(self):
+        seed,report=self.comparison(); seed['persona']='child'
+        report['activeSessionCount']=0; report['sessions'][0]['active']=False
+        report['profiles'][0].update(schema=3,needsMigration=False)
+        report['sessions'].append({'id':'new','profileID':'original','startTime':456,'active':False,'origin':{'kind':'manual'}})
+        for key,name in [('created','RC Child Created'),('copy','RC child Copy')]:
+            report['profiles'].append({'id':key,'name':name,'schema':3,'isManaged':False,'startTriggers':{'manual':True},'stopConditions':{'manual':True}})
+        report['profileCount']=3
+        accepted=self.accepted(report)
+        m.compare_report(seed,report,'journey',accepted)
+        for row in report['profiles'][1:]:
+            for condition in ('startTriggers','stopConditions'):
+                row[condition]['manual']=False
+                self.rejected(lambda: m.compare_report(seed,report,'journey',accepted), 'FAIL: journey: Child-created/duplicated manual start or stop missing')
+                row[condition]['manual']=True
+
     def test_scan_sequence_is_required_and_exhaustion_cannot_pass(self):
         seed,report=self.comparison(); seed['persona']='nfc'
         report['activeSessionCount']=0; report['sessions'][0]['active']=False

@@ -711,6 +711,77 @@ final class UpgradePersonaUITests: XCTestCase {
     addDomain.tap()
     XCTAssertTrue(domainForm.staticTexts["example.org"].waitForExistence(timeout: 10))
     domainBar.buttons["Done"].tap()
+    for (title, upperTitle, lowerTitle) in [
+      ("Tap to start", "Start by...", "Continue until..."),
+      ("Tap to stop", "Continue until...", "Breaks"),
+    ] {
+      var selected = false
+      var upward = 0
+      var downward = 0
+      var lastDown: Bool?
+      var step: CGFloat = 120
+      var geometry = "No snapshot captured"
+      for _ in 0..<18 {
+        let snapshot = try! app.snapshot()
+        let window = snapshot.frame
+        var pending = snapshot.children
+        var elements: [any XCUIElementSnapshot] = []
+        while let element = pending.popLast() {
+          pending.append(contentsOf: element.children)
+          if [title, upperTitle, lowerTitle].contains(element.label) { elements.append(element) }
+        }
+        geometry = "\(title): \(elements.map { ($0.elementType.rawValue, $0.label, $0.value, $0.frame) })"
+        let visible = elements.filter {
+          let frame = $0.frame
+          return frame.origin.x.isFinite && frame.origin.y.isFinite && frame.width.isFinite
+            && frame.height.isFinite && !frame.isEmpty && window.contains(frame)
+        }
+        let upper = visible.filter { $0.elementType == .staticText && $0.label == upperTitle }
+        let lower = elements.filter { $0.elementType == .staticText && $0.label == lowerTitle }
+        let usableLower = lower.filter {
+          let frame = $0.frame
+          return frame.origin.x.isFinite && frame.origin.y.isFinite && frame.width.isFinite
+            && frame.height.isFinite && !frame.isEmpty
+        }
+        let switches = visible.filter {
+          $0.elementType == .switch && $0.label == title && upper.count == 1
+            && $0.frame.minY > upper[0].frame.maxY
+            && (usableLower.count == 1
+              ? $0.frame.maxY < usableLower[0].frame.minY
+              : lower.isEmpty && upperTitle == "Continue until...")
+        }
+        let lowerReady =
+          upperTitle == "Continue until..."
+          || visible.contains { $0.elementType == .staticText && $0.label == lowerTitle }
+        if switches.count == 1 && lowerReady {
+          let target = switches[0].frame
+          let live = app.switches.matching(NSPredicate(format: "label == %@", title)).allElementsBoundByIndex.filter {
+            let frame = $0.frame
+            return abs(frame.minX - target.minX) <= 1 && abs(frame.minY - target.minY) <= 1
+              && abs(frame.width - target.width) <= 1 && abs(frame.height - target.height) <= 1
+          }
+          guard live.count == 1 && live[0].isHittable else { continue }
+          XCTAssertEqual(switches[0].value as? String, "0", "New profile condition must initially be off")
+          live[0].tap()
+          let enabled = NSPredicate { _, _ in live[0].value as? String == "1" }
+          XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: enabled, object: nil)], timeout: 10), .completed)
+          screenshot("child-created-\(title)-enabled")
+          selected = true
+          break
+        }
+        let down = upper.isEmpty
+        if let lastDown, lastDown != down { step = max(15, step / 2) }
+        lastDown = down
+        if down { downward += 1 } else { upward += 1 }
+        guard upward <= 6 && downward <= 6 else { break }
+        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.75, dy: 0.6))
+        let end = start.withOffset(CGVector(dx: 0, dy: down ? step : -step))
+        guard window.contains(start.screenPoint) && window.contains(end.screenPoint) else { break }
+        start.press(forDuration: 0.05, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.3)
+      }
+      XCTAssertTrue(selected, "New profile condition unavailable inside \(upperTitle) bounds\n\(geometry)\n\(app.debugDescription)")
+      guard selected else { return }
+    }
     press("Create")
     selectProfileRow("RC Child Created")
     XCTAssertFalse(app.buttons["Unlock"].exists)

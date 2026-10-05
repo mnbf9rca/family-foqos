@@ -171,6 +171,8 @@ def compare_report(seed, report, phase, session_report=None, scan_entries=()):
         created = [row for key, row in rows.items() if key not in {p["id"] for p in seed["profiles"]}]
         require({row["name"] for row in created} == {"RC Child Created", "RC child Copy"}
                 and all(row["isManaged"] is False and row["schema"] == 3 for row in created), "Child-created/duplicated profiles must remain unlocked")
+        require(all(row["startTriggers"]["manual"] is True and row["stopConditions"]["manual"] is True for row in created),
+                "Child-created/duplicated manual start or stop missing")
     if active_id:
         require(active_id in sessions, "original session missing/replaced")
         original, current = seed["session"], sessions[active_id]
