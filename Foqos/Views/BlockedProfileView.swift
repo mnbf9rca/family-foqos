@@ -314,6 +314,8 @@ struct BlockedProfileView: View {
           Section("Name") {
             TextField("Profile Name", text: $name)
               .textContentType(.none)
+              .disabled(editingDisabled)
+              .foregroundStyle(editingDisabled ? .secondary : .primary)
           }
 
           Section((enableAllowMode ? "Allowed" : "Blocked") + " Apps") {
@@ -321,7 +323,7 @@ struct BlockedProfileView: View {
               selection: selectedActivity,
               buttonAction: { showingActivityPicker = true },
               allowMode: enableAllowMode,
-              disabled: isBlocking
+              disabled: editingDisabled
             )
 
             CustomToggle(
@@ -329,7 +331,7 @@ struct BlockedProfileView: View {
               description:
                 "Pick apps to allow and block everything else. This will erase any other selection you've made.",
               isOn: $enableAllowMode,
-              isDisabled: isBlocking
+              isDisabled: editingDisabled
             )
 
             CustomToggle(
@@ -337,7 +339,7 @@ struct BlockedProfileView: View {
               description:
                 "Block Safari websites that are selected in the app selector above. This does not affect domain rules or the adult website filter.",
               isOn: $enableSafariBlocking,
-              isDisabled: isBlocking
+              isDisabled: editingDisabled
             )
           }
 
@@ -346,7 +348,7 @@ struct BlockedProfileView: View {
               domains: domains,
               buttonAction: { showingDomainPicker = true },
               allowMode: enableAllowModeDomain,
-              disabled: isBlocking
+              disabled: editingDisabled
             )
 
             CustomToggle(
@@ -354,7 +356,7 @@ struct BlockedProfileView: View {
               description:
                 "Pick domains to allow and block everything else. This will erase any other selection you've made.",
               isOn: $enableAllowModeDomain,
-              isDisabled: isBlocking
+              isDisabled: editingDisabled
             )
           }
 
@@ -457,7 +459,7 @@ struct BlockedProfileView: View {
               description:
                 "Take a single break during your session. The break will automatically end after the selected duration.",
               isOn: $enableBreaks,
-              isDisabled: isBlocking
+              isDisabled: editingDisabled
             )
 
             if enableBreaks {
@@ -467,7 +469,7 @@ struct BlockedProfileView: View {
                 Text("15 minutes").tag(15)
                 Text("30 minutes").tag(30)
               }
-              .disabled(isBlocking)
+              .disabled(editingDisabled)
             }
           }
 
@@ -477,7 +479,7 @@ struct BlockedProfileView: View {
               description:
                 "Block deleting apps from your phone, stops you from deleting Family Foqos to access apps",
               isOn: $enableStrictMode,
-              isDisabled: isBlocking
+              isDisabled: editingDisabled
             )
 
           }
@@ -490,7 +492,7 @@ struct BlockedProfileView: View {
                 description:
                   "When enabled, this profile will require a lock code to edit or delete. Use this when setting up a profile on your child's device.",
                 isOn: $isManaged,
-                isDisabled: isBlocking
+                isDisabled: editingDisabled
               )
             } header: {
               Text("Parent Controls")
@@ -507,7 +509,7 @@ struct BlockedProfileView: View {
               description:
                 "Shows a live activity on your lock screen with some inspirational quote",
               isOn: $enableLiveActivity,
-              isDisabled: isBlocking
+              isDisabled: editingDisabled
             )
 
             CustomToggle(
@@ -515,7 +517,7 @@ struct BlockedProfileView: View {
               description:
                 "Sends a reminder to start this profile when its ended",
               isOn: $enableReminder,
-              isDisabled: isBlocking
+              isDisabled: editingDisabled
             )
             if enableReminder {
               HStack {
@@ -529,7 +531,7 @@ struct BlockedProfileView: View {
                 .keyboardType(.numberPad)
                 .multilineTextAlignment(.trailing)
                 .frame(width: 50)
-                .disabled(isBlocking)
+                .disabled(editingDisabled)
                 .font(.subheadline)
                 .foregroundColor(.secondary)
                 .onChange(of: reminderTimeInMinutes) { _, newValue in
@@ -558,7 +560,7 @@ struct BlockedProfileView: View {
                     customReminderMessage = String(newValue.prefix(178))
                   }
                 }
-                .disabled(isBlocking)
+                .disabled(editingDisabled)
               }
             }
 
@@ -588,7 +590,7 @@ struct BlockedProfileView: View {
                     )
                   )
                   .tint(themeManager.themeColor)
-                  .disabled(isBlocking)
+                  .disabled(editingDisabled)
                 }
               }
             }
