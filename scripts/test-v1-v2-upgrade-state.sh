@@ -4,7 +4,7 @@ command -v python3 >/dev/null || { echo 'python3 is required' >&2; exit 127; }
 command -v dirname >/dev/null || { echo 'dirname is required' >&2; exit 127; }
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 python3 -B - "$ROOT/scripts/v1-v2-upgrade-state.py" <<'PY'
-import importlib.util, json, os, pathlib, plistlib, shutil, tempfile, unittest
+import importlib.util, io, json, os, pathlib, plistlib, shutil, tempfile, unittest
 from unittest.mock import patch
 import sys
 path = pathlib.Path(sys.argv[1])
@@ -196,20 +196,29 @@ class SafetyTests(unittest.TestCase):
         seed,report=self.comparison()
         m.compare_report(seed,report,'first-launch')
         report['sessions'][0]['id']='replacement'
-        with self.assertRaises(SystemExit): m.compare_report(seed,report,'first-launch')
+        self.rejected(lambda: m.compare_report(seed,report,'first-launch'), 'FAIL: first-launch: original session missing/replaced')
     def test_hidden_changed_break_or_refilled_emergency_fails(self):
         seed,report=self.comparison()
-        seed['session']['breakStartTime']=120; report['sessions'][0]['breakStartTime']=121
-        with self.assertRaises(SystemExit): m.compare_report(seed,report,'first-launch')
+        seed['session']['breakStartTime']=120; report['sessions'][0]['breakStartTime']=120
+        m.compare_report(seed,report,'first-launch')
+        report['sessions'][0]['breakStartTime']=121
+        self.rejected(lambda: m.compare_report(seed,report,'first-launch'), 'FAIL: first-launch: original session field changed: breakStartTime')
         report['sessions'][0]['breakStartTime']=120; report['emergencyRemaining']=4
-        with self.assertRaises(SystemExit): m.compare_report(seed,report,'first-launch')
+        self.rejected(lambda: m.compare_report(seed,report,'first-launch'), 'FAIL: first-launch: emergency allowance changed/refilled')
     def test_hidden_lost_settings_and_history_fail(self):
         seed,report=self.comparison()
+        m.compare_report(seed,report,'first-launch')
         report['profiles'][0]['domains']=[]
-        with self.assertRaises(SystemExit): m.compare_report(seed,report,'first-launch')
+        self.rejected(lambda: m.compare_report(seed,report,'first-launch'), 'FAIL: first-launch: retained profile setting changed: domains')
 
-        report['profiles'][0]['domains']=['example.com']; report['sessions'].pop()
-        with self.assertRaises(SystemExit): m.compare_report(seed,report,'first-launch')
+        report['profiles'][0]['domains']=['example.com']; report['sessions'][1]['endTime']=21
+        self.rejected(lambda: m.compare_report(seed,report,'first-launch'), 'FAIL: first-launch: completed history time changed')
+
+    def rejected(self, action, message):
+        with patch('sys.stderr', new_callable=io.StringIO) as output:
+            with self.assertRaises(SystemExit) as error: action()
+        self.assertEqual(error.exception.code, 1)
+        self.assertIn('v1-v2-upgrade-state: ' + message, output.getvalue())
 
     def accepted(self, report):
         return {'sessions': {s['id']: {**s,'active':True,'schema':3} for s in report['sessions'] if s['id'] not in ('active','history')}}
@@ -223,7 +232,7 @@ class SafetyTests(unittest.TestCase):
         report['sessions'][-1]['origin']=None
         m.compare_report(seed,report,'journey',supplement)
         supplement['sessions']['new']['origin']={'kind':'nfc'}
-        with self.assertRaises(SystemExit): m.compare_report(seed,report,'journey',supplement)
+        self.rejected(lambda: m.compare_report(seed,report,'journey',supplement), 'FAIL: journey: post-update session did not originate through its required start method')
 
     def test_capture_rejects_report_older_than_ui_marker(self):
         report=self.v2()
@@ -238,12 +247,12 @@ class SafetyTests(unittest.TestCase):
         report['profiles'][0].update(schema=3,needsMigration=False)
         new={'id':'new','profileID':'original','startTime':456,'active':False,'origin':{'kind':'manual'}}
         report['sessions'].append(new)
-        with self.assertRaises(SystemExit): m.compare_report(seed,report,'journey')
-        new['origin']['kind']='nfc'
         scans=[{'phase':'journey','generation':None,'kind':'nfc','requestIndex':i,'scriptIndex':i,'value':value} for i,value in enumerate(['wrong','correct','correct','correct'])]
+        self.rejected(lambda: m.compare_report(seed,report,'journey',self.accepted(report),scan_entries=scans), 'FAIL: journey: post-update session did not originate through its required start method')
+        new['origin']['kind']='nfc'
         m.compare_report(seed,report,'journey',self.accepted(report),scan_entries=scans)
         report['sessions'].append({**new,'id':'unexpected'})
-        with self.assertRaises(SystemExit): m.compare_report(seed,report,'journey')
+        self.rejected(lambda: m.compare_report(seed,report,'journey',self.accepted(report),scan_entries=scans), 'FAIL: journey: session count changed')
 
     def test_scan_sequence_is_required_and_exhaustion_cannot_pass(self):
         seed,report=self.comparison(); seed['persona']='nfc'
@@ -260,6 +269,7 @@ class SafetyTests(unittest.TestCase):
 
     def test_scans_reject_entries_from_other_phases(self):
         entries=[{'phase':'journey','generation':'fresh','kind':'nfc','requestIndex':i,'scriptIndex':i,'value':value} for i,value in enumerate(['wrong','correct','correct','correct'])]
+        m.compare_scans('nfc','journey','fresh',entries)
         entries.append({'phase':'first-launch','generation':'earlier','kind':'nfc','requestIndex':0,'scriptIndex':0,'value':'correct'})
         with self.assertRaises(SystemExit): m.compare_scans('nfc','journey','fresh',entries)
     def test_specific_stops_require_wrong_confirmation_and_correct_scan(self):
@@ -270,6 +280,7 @@ class SafetyTests(unittest.TestCase):
             with self.assertRaises(SystemExit): m.compare_scans(persona,'journey','fresh',entries[:3]+entries[4:])
 
     def test_non_scanner_relaunch_rejects_any_scan_history(self):
+        m.compare_scans('manual','relaunch','fresh',[])
         entry={'phase':'journey','generation':'earlier','kind':'nfc','requestIndex':0,'scriptIndex':0,'value':'correct'}
         with self.assertRaises(SystemExit): m.compare_scans('manual','relaunch','fresh',[entry])
 
@@ -284,7 +295,7 @@ class SafetyTests(unittest.TestCase):
                    startSchedule={'days':schedule['days'],'hour':8,'minute':30},stopSchedule={'days':schedule['days'],'hour':17,'minute':45})
         m.compare_report(seed,report,'journey',self.accepted(report))
         row['stopSchedule']['minute']=46
-        with self.assertRaises(SystemExit): m.compare_report(seed,report,'journey')
+        self.rejected(lambda: m.compare_report(seed,report,'journey',self.accepted(report)), 'FAIL: journey: converted schedule recurrence changed')
 
     def test_preserve_products_is_immutable_and_touches_no_simulator(self):
         m.entry(['preserve-products',str(self.root),'--phase','v1','--source-revision','a'*40])
@@ -307,6 +318,7 @@ class SafetyTests(unittest.TestCase):
     def test_optout_missing_report_must_remain_missing(self):
         report=self.v2()
         m.entry(['begin-optout',str(self.root)])
+        m.entry(['verify-optout',str(self.root)])
         report.write_text('{}')
         with self.assertRaises(SystemExit): m.entry(['verify-optout',str(self.root)])
     def test_timer_supplement_requires_actual_minute_aligned_deadline(self):
@@ -319,27 +331,39 @@ class SafetyTests(unittest.TestCase):
         scans=[{'phase':'journey','generation':None,'kind':'nfc','requestIndex':i,'scriptIndex':i,'value':'correct'} for i in range(2)]
         m.compare_report(seed,report,'journey',supplement,scans)
         supplement['sessions']['new']['timerEndTime']=3454.5
-        with self.assertRaises(SystemExit): m.compare_report(seed,report,'journey',supplement,scans)
+        self.rejected(lambda: m.compare_report(seed,report,'journey',supplement,scans), 'FAIL: journey: accepted timer deadline differs from canonical minute boundary')
     def test_missing_timer_supplement_cannot_pass(self):
         seed,report=self.comparison(); seed['persona']='nfc-timer'
         report['activeSessionCount']=0; report['sessions'][0]['active']=False
         report['profiles'][0].update(schema=3,needsMigration=False)
         report['sessions'].append({'id':'new','profileID':'original','startTime':1234.5,'active':False,'origin':{'kind':'manual'}})
         scans=[{'phase':'journey','generation':None,'kind':'nfc','requestIndex':i,'scriptIndex':i,'value':'correct'} for i in range(2)]
-        with self.assertRaises(SystemExit): m.compare_report(seed,report,'journey',self.accepted(report),scan_entries=scans)
-    def test_stale_timer_supplement_is_unrun_before_capture_mutation(self):
+        supplement=self.accepted(report); supplement['sessions']['new']['timerEndTime']=3420
+        m.compare_report(seed,report,'journey',supplement,scan_entries=scans)
+        del supplement['sessions']['new']['timerEndTime']
+        self.rejected(lambda: m.compare_report(seed,report,'journey',supplement,scan_entries=scans), 'FAIL: journey: missing or duplicate accepted countdown')
+    def timer_capture(self, *, stale):
         report=self.v2()
         state=json.loads((self.root/'prepared.json').read_text()); state['persona']='nfc-timer'
         (self.root/'prepared.json').write_text(json.dumps(state))
         for seed_path in (self.data/'Documents/rc-v1-seed.json',self.root/'v1-app-data/Documents/rc-v1-seed.json'):
             seed=json.loads(seed_path.read_text()); seed['persona']='nfc-timer'; seed_path.write_text(json.dumps(seed))
-        value={'phase':'journey','generation':self.udid,'persona':'nfc-timer','source':'a'*40,'version':'2.0.79','build':'97','timeZone':'Europe/London'}
+        value={'phase':'journey','generation':self.udid,'persona':'nfc-timer','source':'a'*40,'version':'2.0.79','build':'97','timeZone':'Europe/London','count':1}
         report.write_text(json.dumps(value))
-        (self.data/'Documents/upgrade-session-report.json').write_text(json.dumps({**value,'generation':'stale'}))
+        (self.data/'Documents/upgrade-session-report.json').write_text(json.dumps({**value,'generation':'stale' if stale else self.udid}))
+        entries=[{'phase':'journey','generation':self.udid,'kind':'nfc','requestIndex':i,'scriptIndex':i,'value':'correct'} for i in range(2)]
+        (self.data/'Documents/upgrade-scans.jsonl').write_text(''.join(json.dumps(entry)+'\n' for entry in entries))
         self.calls.clear()
-        with self.assertRaises(SystemExit): m.entry(['capture-v2',str(self.root),'--report-count','1','--phase','journey','--generation',self.udid])
+
+    def test_stale_timer_supplement_is_unrun_before_capture_mutation(self):
+        self.timer_capture(stale=True)
+        self.rejected(lambda: m.entry(['capture-v2',str(self.root),'--report-count','1','--phase','journey','--generation',self.udid]), 'UNRUN: missing/stale/wrong-phase accepted session supplement')
         self.assertFalse(any(c[2] in ('shutdown','uninstall','install') for c in self.calls if c[0]=='xcrun'))
         self.assertTrue((self.root/'v1-app-group/Library/Application Support/default.store').is_file())
+
+    def test_fresh_session_supplement_is_captured(self):
+        self.timer_capture(stale=False)
+        m.entry(['capture-v2',str(self.root),'--report-count','1','--phase','journey','--generation',self.udid])
     def test_missing_runtime_and_unauthorized_runtime_session_fail_closed(self):
         for fields in ({'IOS_SIM_GATE_RUNTIME_VERSION':''},{'IOS_SIM_GATE_SESSION':'collab-ios27'}):
             with patch.dict(os.environ,fields):
