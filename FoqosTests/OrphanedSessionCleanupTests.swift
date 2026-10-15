@@ -49,7 +49,7 @@ final class OrphanedSessionCleanupTests: XCTestCase {
     defer { manager.stopTimer() }
     SharedData.configureLockPath(nil)
 
-    XCTAssertThrowsError(try manager.loadActiveSession(context: container.mainContext))
+    XCTAssertNoThrow(try manager.loadActiveSession(context: container.mainContext))
     XCTAssertEqual(SharedData.getActiveSharedSession(), ghost)
     SharedData.resetLockPath()
     try manager.loadActiveSession(context: container.mainContext)
@@ -121,4 +121,49 @@ final class OrphanedSessionCleanupTests: XCTestCase {
 
     XCTAssertLessThan(start.duration(to: clock.now), .milliseconds(250))
   }
+  func testBusyLaunchCleanupStillLoadsLiveSessionAndRetriesCleanup() throws {
+    let now = Date()
+    let container = try TestModelContainer.create()
+    let context = container.mainContext
+    let profile = BlockedProfiles(name: "Active", createdAt: now, updatedAt: now)
+    context.insert(profile)
+    let session = BlockedProfileSession(tag: "manual", blockedProfile: profile, startTime: now)
+    context.insert(session)
+    try context.save()
+    SharedData.createActiveSharedSession(for: session.toSnapshot())
+    let orphan = BlockedProfiles(name: "Missing owner", createdAt: now, updatedAt: now)
+    let orphanId = orphan.id
+    BlockedProfiles.updateSnapshot(for: orphan)
+    var activityStarts = 0
+    let manager = StrategyManager(appBlocker: RecordingRestrictionApplier(), startSessionActivity: { _ in activityStarts += 1 })
+    manager.activeSession = session
+    defer { manager.stopTimer() }
+    let path = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).path
+    let fd = open(path, O_CREAT | O_RDWR, 0o600)
+    XCTAssertGreaterThanOrEqual(fd, 0)
+    guard fd >= 0 else { return }
+    defer {
+      close(fd)
+      unlink(path)
+    }
+    XCTAssertEqual(flock(fd, LOCK_EX), 0)
+    SharedData.configureLockPath(path)
+    let released = DispatchSemaphore(value: 0)
+    DispatchQueue.global().asyncAfter(deadline: .now() + 0.1) {
+      flock(fd, LOCK_UN)
+      released.signal()
+    }
+
+    XCTAssertNoThrow(try manager.loadActiveSession(context: context))
+    released.wait()
+
+    XCTAssertEqual(manager.activeSession?.id, session.id)
+    XCTAssertNotNil(manager.timerTask)
+    XCTAssertEqual(activityStarts, 1)
+    XCTAssertNotNil(SharedData.snapshot(for: orphanId.uuidString), "Busy cleanup remains pending")
+    try manager.loadActiveSession(context: context)
+    XCTAssertNil(SharedData.snapshot(for: orphanId.uuidString), "The next load retries cleanup")
+    XCTAssertEqual(manager.activeSession?.id, session.id)
+  }
+
 }

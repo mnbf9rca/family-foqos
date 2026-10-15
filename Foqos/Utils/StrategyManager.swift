@@ -346,11 +346,15 @@ class StrategyManager: ObservableObject {
   private var didCleanOrphanedSessionsAtLaunch = false
 
   func loadActiveSession(context: ModelContext) throws {
-    do {
-      if !didCleanOrphanedSessionsAtLaunch && !profileSyncManager.isReplacingLocalProfiles {
+    if !didCleanOrphanedSessionsAtLaunch && !profileSyncManager.isReplacingLocalProfiles {
+      do {
         try OrphanedSessionCleanup.run(context: context)
         didCleanOrphanedSessionsAtLaunch = true
+      } catch {
+        Log.error("Launch orphan cleanup deferred: \(redactedErrorForLog(error))", category: .session)
       }
+    }
+    do {
       activeSession = try getActiveSession(context: context)
     } catch {
       activeSession = nil
