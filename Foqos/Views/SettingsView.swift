@@ -20,6 +20,7 @@ struct SettingsView: View {
   @ObservedObject private var lockCodeManager = LockCodeManager.shared
 
   @State private var showResetBlockingStateAlert = false
+  @State private var resetBlockingStateMessage: String?
   @State private var showResetSyncAlert = false
   @State private var showWipeSyncConfirmation = false
   @State private var showParentDashboard = false
@@ -450,15 +451,15 @@ struct SettingsView: View {
           }
         }
 
-        if !strategyManager.isBlocking {
-          Section("Troubleshooting") {
-            Button {
-              showResetBlockingStateAlert = true
-            } label: {
-              Text("Reset Blocking State")
-                .foregroundColor(themeManager.themeColor)
-            }
+        Section("Troubleshooting") {
+          Button {
+            showResetBlockingStateAlert = true
+          } label: {
+            Text("Reset Blocking State")
+              .foregroundColor(themeManager.themeColor)
+          }
 
+          if !strategyManager.isBlocking {
             if profileSyncManager.isEnabled {
               Button {
                 showResetSyncAlert = true
@@ -495,10 +496,31 @@ struct SettingsView: View {
       .alert("Reset Blocking State", isPresented: $showResetBlockingStateAlert) {
         Button("Cancel", role: .cancel) {}
         Button("Reset", role: .destructive) {
-          strategyManager.resetBlockingState(context: context)
+          Task {
+            switch await strategyManager.resetBlockingState(context: context) {
+            case .completed: break
+            case .activeSession:
+              resetBlockingStateMessage = "A session is active on this device. Stop it first, or use an Emergency Unblock if you have any left, then reset again."
+            case .syncInProgress:
+              resetBlockingStateMessage = "Profiles are syncing. Wait for syncing to finish, then try again."
+            case .failed:
+              resetBlockingStateMessage = "Blocking state couldn't be reset. Restart the app and try once more. If it still fails, export the logs from Debug Mode so the problem can be investigated."
+            }
+          }
         }
       } message: {
         Text("This will clear all app restrictions and remove any ghost schedules. Only use this if you're locked out and no profile is active.")
+      }
+      .alert(
+        "Reset Blocking State",
+        isPresented: .init(
+          get: { resetBlockingStateMessage != nil },
+          set: { if !$0 { resetBlockingStateMessage = nil } }
+        )
+      ) {
+        Button("OK", role: .cancel) {}
+      } message: {
+        Text(resetBlockingStateMessage ?? "")
       }
       .alert("Reset Syncing", isPresented: $showResetSyncAlert) {
         Button("Cancel", role: .cancel) {}

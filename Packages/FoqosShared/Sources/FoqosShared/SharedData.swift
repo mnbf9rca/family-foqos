@@ -106,7 +106,7 @@ public enum SharedData {
 
   /// Like `withLock`, but reports whether a real flock was acquired. Non-blocking mode uses a
   /// bounded retry so extension wakes do not wedge behind a suspended lock holder.
-  public static func withLockStatus<T>(blocking: Bool, _ body: (LockOutcome) -> T) -> T {
+  public static func withLockStatus<T>(blocking: Bool, retryNonblocking: Bool = true, _ body: (LockOutcome) -> T) -> T {
     guard let lockPath else {
       Log.warning("SharedData: no lockPath (test mode?) — proceeding unlocked", category: .app)
       return body(.degraded)
@@ -132,14 +132,14 @@ public enum SharedData {
       }
     } else {
       var acquired = false
-      for _ in 0..<nonblockingLockRetryCount {
+      for attempt in 0..<(retryNonblocking ? nonblockingLockRetryCount : 1) {
         let ret = flock(fd, LOCK_NB | LOCK_EX)
         if ret == 0 {
           acquired = true
           break
         }
         if errno != EWOULDBLOCK && errno != EINTR { break }
-        usleep(nonblockingLockRetrySleepMicroseconds)
+        if retryNonblocking && attempt < nonblockingLockRetryCount - 1 { usleep(nonblockingLockRetrySleepMicroseconds) }
       }
       guard acquired else {
         Log.warning("SharedData: LOCK_NB timed out — proceeding unlocked", category: .app)
@@ -666,6 +666,72 @@ public enum SharedData {
   private static func checkedCompletedSessions() -> [SessionSnapshot]? {
     guard let raw = data(forKey: .completedScheduleSessions, legacyKey: .completedScheduleSessions) else { return [] }
     return try? JSONDecoder().decode([SessionSnapshot].self, from: raw)
+  }
+
+  /// Removes ownership under the same lock as extension starts. Effects must not reenter SharedData.
+  public static func removeProfileSessions(
+    where shouldRemove: (UUID) -> Bool, retryLock: Bool = true,
+    discardUnreadableSessions: Bool = false,
+    rebuildUnreadableProfiles: (() -> [String: ProfileSnapshot])? = nil,
+    allowRemoval: (SessionSnapshot?) -> Bool = { _ in true },
+    scheduledStops: () -> [UUID: Date] = { [:] },
+    onRemoveActive: () -> Void = {}, onCommit: () -> Void = {}
+  ) -> Set<UUID>? {
+    withLockStatus(blocking: false, retryNonblocking: retryLock) { outcome in
+      guard outcome == .acquired else { return nil }
+      let checkedActive = checkedActiveSession()
+      let checkedCompleted = checkedCompletedSessions()
+      guard discardUnreadableSessions || (checkedActive != nil && checkedCompleted != nil) else { return nil }
+      let active = checkedActive.flatMap { $0 }
+      let readableCompleted = checkedCompleted ?? []
+      let malformedCompleted = discardUnreadableSessions ? readableCompleted.filter { $0.endTime == nil } : []
+      let completed = discardUnreadableSessions ? readableCompleted.filter { $0.endTime != nil } : readableCompleted
+      guard allowRemoval(active) else { return nil }
+      var profiles: [String: ProfileSnapshot]
+      var rebuiltProfiles = false
+      if let raw = data(forKey: .profileSnapshots, legacyKey: .profileSnapshots) {
+        if let decoded = try? JSONDecoder().decode([String: ProfileSnapshot].self, from: raw) {
+          profiles = decoded
+        } else {
+          guard discardUnreadableSessions, let rebuildUnreadableProfiles else { return nil }
+          profiles = rebuildUnreadableProfiles()
+          rebuiltProfiles = true
+        }
+      } else {
+        profiles = [:]
+      }
+      var stampedSchedule = false
+      if discardUnreadableSessions {
+        for (id, stoppedAt) in scheduledStops() {
+          guard var profile = profiles[id.uuidString], !shouldRemove(id) else { continue }
+          profile.scheduleLastStoppedAt = max(profile.scheduleLastStoppedAt ?? .distantPast, stoppedAt)
+          profiles[id.uuidString] = profile
+          stampedSchedule = true
+        }
+      }
+      let ids = Set(profiles.values.map(\.id) + completed.map(\.blockedProfileId) + [active?.blockedProfileId].compactMap { $0 })
+        .filter(shouldRemove)
+      guard !ids.isEmpty || checkedActive == nil || checkedCompleted == nil || !malformedCompleted.isEmpty || rebuiltProfiles || stampedSchedule || (discardUnreadableSessions && active != nil) else {
+        onCommit()
+        return []
+      }
+      // Reset clears any stale active slot that passed its locked guard.
+      let removesActive = active.map { discardUnreadableSessions || ids.contains($0.blockedProfileId) } ?? false
+      guard
+        commitSessionTransition(
+          removesActive ? nil : active,
+          completed: completed.filter { !ids.contains($0.blockedProfileId) },
+          profiles: profiles.filter { !ids.contains($0.value.id) })
+      else { return nil }
+      if rebuiltProfiles { Log.error("Reset rebuilt unreadable shared profile snapshots", category: .session) }
+      if checkedActive == nil { Log.error("Reset discarded unreadable shared active session data", category: .session) }
+      if checkedCompleted == nil { Log.error("Reset discarded unreadable shared completed session data", category: .session) }
+      for _ in malformedCompleted { Log.error("Reset discarded malformed shared completed session", category: .session) }
+      for id in ids { suite.removeObject(forKey: startRegistrationKey(for: id)) }
+      if removesActive { onRemoveActive() }
+      onCommit()
+      return ids
+    }
   }
 
   /// Stage all encodings before writes, then verify exact bytes before ownership effects.

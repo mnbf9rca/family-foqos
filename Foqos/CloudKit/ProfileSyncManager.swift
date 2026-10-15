@@ -72,6 +72,12 @@ class ProfileSyncManager: ObservableObject {
   private var isAdoptingEstablishmentGeneration = false
   private var pendingAdoptionGeneration: Int?
 
+  var isReplacingLocalProfiles: Bool {
+    if isAdoptingEstablishmentGeneration { return true }
+    guard let userRecordName = attachedUserRecordName else { return false }
+    return SyncEngineStore(userRecordName: userRecordName, defaults: attachedStoreDefaults).resetIntent?.wipe == true
+  }
+
   private static let accountResolutionRetryDelayNanoseconds: UInt64 = 5_000_000_000
 
   #if DEBUG

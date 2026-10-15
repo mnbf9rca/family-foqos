@@ -356,7 +356,17 @@ class StrategyManager: ObservableObject {
     return baseMessage + " by enabling \(profile.name)"
   }
 
+  private var didCleanOrphanedSessionsAtLaunch = false
+
   func loadActiveSession(context: ModelContext) throws {
+    if !didCleanOrphanedSessionsAtLaunch && !profileSyncManager.isReplacingLocalProfiles {
+      do {
+        try OrphanedSessionCleanup.run(context: context)
+        didCleanOrphanedSessionsAtLaunch = true
+      } catch {
+        Log.error("Launch orphan cleanup deferred: \(redactedErrorForLog(error))", category: .session)
+      }
+    }
     do {
       activeSession = try getActiveSession(context: context)
     } catch {
@@ -386,6 +396,14 @@ class StrategyManager: ObservableObject {
         scheduleReconciler(context)
       }
     }
+  }
+
+  func discardDeletedProfileSession(profileId: UUID) {
+    guard activeSession?.blockedProfile.id == profileId else { return }
+    stopTimer()
+    activeSession = nil
+    elapsedTime = 0
+    liveActivityManager.endSessionActivity()
   }
 
   #if DEBUG
@@ -2013,17 +2031,44 @@ class StrategyManager: ObservableObject {
     }
   }
 
-  func resetBlockingState(context: ModelContext) {
-    guard !isBlocking else {
-      Log.info("Cannot reset blocking state while a profile is active", category: .strategy)
-      return
+  enum ResetBlockingStateResult: Equatable {
+    case completed, activeSession, syncInProgress, failed
+  }
+
+  @discardableResult
+  func resetBlockingState(context: ModelContext, now: Date = Date(), calendar: Calendar = .current) async -> ResetBlockingStateResult {
+    do {
+      guard !profileSyncManager.isReplacingLocalProfiles else { return .syncInProgress }
+      let ids = try OrphanedSessionCleanup.run(
+        context: context, retryLock: true, requireInactive: true,
+        publishedSession: activeSession, now: now, calendar: calendar,
+        deactivateRestrictions: {},
+        onCommit: {
+          self.stopTimer()
+          self.activeSession = nil
+          self.elapsedTime = 0
+          self.liveActivityManager.endSessionActivity()
+          self.appBlocker.deactivateRestrictions()
+          DeviceActivityCenterUtil.removeAllBreakTimerActivities()
+          DeviceActivityCenterUtil.removeAllOneMoreMinuteActivities()
+          self.removeAllStrategyTimers()
+        })
+      cleanUpGhostSchedules(context: context)
+      Log.info("Blocking state reset complete", category: .strategy)
+      if profileSyncManager.isEnabled {
+        for id in ids {
+          if !(await confirmSessionState(profileId: id)) {
+            Log.warning("Blocking reset kept unconfirmed remote session cache", category: .sync)
+          }
+        }
+      }
+      return .completed
+    } catch OrphanedSessionCleanup.Failure.activeSession {
+      return .activeSession
+    } catch {
+      Log.error("Blocking state reset failed: \(redactedErrorForLog(error))", category: .strategy)
+      return .failed
     }
-
-    Log.info("Resetting blocking state...", category: .strategy)
-
-    clearBlockingArtifacts(context: context)
-
-    Log.info("Blocking state reset complete", category: .strategy)
   }
 
   func forceClearEnforcementForSyncedDataWipe(context: ModelContext) {
