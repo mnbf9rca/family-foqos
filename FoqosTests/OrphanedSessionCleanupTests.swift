@@ -166,4 +166,47 @@ final class OrphanedSessionCleanupTests: XCTestCase {
     XCTAssertEqual(manager.activeSession?.id, session.id)
   }
 
+  func testShortcutRefreshFollowsChangedCacheButNotNoOpOrRefusal() throws {
+    let now = Date()
+    let container = try TestModelContainer.create()
+    let context = container.mainContext
+    let owner = BlockedProfiles(name: "Keep", createdAt: now, updatedAt: now)
+    context.insert(owner)
+    try context.save()
+    let orphan = BlockedProfiles(name: "Gone", createdAt: now, updatedAt: now)
+    BlockedProfiles.updateSnapshot(for: orphan)
+    var refreshes = 0
+    let refresh = {
+      refreshes += 1
+      XCTAssertNil(SharedData.snapshot(for: orphan.id.uuidString), "Refresh is outside the lock, after the cache commit")
+    }
+    try OrphanedSessionCleanup.run(context: context, removeActivities: { _ in }, refreshShortcuts: refresh)
+    XCTAssertEqual(refreshes, 1)
+    try OrphanedSessionCleanup.run(context: context, refreshShortcuts: refresh)
+    XCTAssertEqual(refreshes, 1)
+    SharedData.createActiveSharedSession(for: .init(id: UUID().uuidString, tag: "manual", blockedProfileId: owner.id, startTime: now, forceStarted: true))
+    XCTAssertThrowsError(try OrphanedSessionCleanup.run(context: context, requireInactive: true, refreshShortcuts: refresh))
+    XCTAssertEqual(refreshes, 1)
+  }
+
+  func testRebuiltCacheRefreshesShortcutsEvenIfLocalSaveFails() throws {
+    struct SaveFailure: Error {}
+    let now = Date()
+    let container = try TestModelContainer.create()
+    let context = container.mainContext
+    let owner = BlockedProfiles(name: "Keep", createdAt: now, updatedAt: now)
+    context.insert(owner)
+    try context.save()
+    UserDefaults(suiteName: suiteName)!.set(Data("corrupt".utf8), forKey: "family_foqos_profile_snapshots")
+    var refreshes = 0
+    XCTAssertThrowsError(
+      try OrphanedSessionCleanup.run(
+        context: context, requireInactive: true, save: { _ in throw SaveFailure() },
+        refreshShortcuts: {
+          refreshes += 1
+          XCTAssertEqual(SharedData.snapshot(for: owner.id.uuidString), BlockedProfiles.getSnapshot(for: owner))
+        }))
+    XCTAssertEqual(refreshes, 1)
+  }
+
 }

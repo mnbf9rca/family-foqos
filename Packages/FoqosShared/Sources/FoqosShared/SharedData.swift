@@ -701,11 +701,12 @@ public enum SharedData {
       }
       let ids = Set(profiles.values.map(\.id) + completed.map(\.blockedProfileId) + [active?.blockedProfileId].compactMap { $0 })
         .filter(shouldRemove)
-      guard !ids.isEmpty || checkedActive == nil || checkedCompleted == nil || !malformedCompleted.isEmpty || rebuiltProfiles else {
+      guard !ids.isEmpty || checkedActive == nil || checkedCompleted == nil || !malformedCompleted.isEmpty || rebuiltProfiles || (discardUnreadableSessions && active != nil) else {
         onCommit()
         return []
       }
-      let removesActive = active.map { ids.contains($0.blockedProfileId) } ?? false
+      // Reset clears any stale active slot that passed its locked guard.
+      let removesActive = active.map { discardUnreadableSessions || ids.contains($0.blockedProfileId) } ?? false
       guard
         commitSessionTransition(
           removesActive ? nil : active,

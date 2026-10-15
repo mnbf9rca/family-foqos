@@ -379,4 +379,202 @@ final class ResetBlockingStateTests: XCTestCase {
     XCTAssertEqual(defaults.data(forKey: "family_foqos_profile_snapshots"), corrupt)
   }
 
+  func testResetClearsExpiredTimersButPreservesFutureDeadlineAndHistory() async throws {
+    let now = Date()
+    for offset: TimeInterval in [-1, 0, 1] {
+      SharedData.activeSharedSession = nil
+      let container = try TestModelContainer.create()
+      let context = container.mainContext
+      let profile = BlockedProfiles(name: "Timer", createdAt: now, updatedAt: now)
+      profile.stopConditions = .init(timer: true, timerDurationMinutes: 1)
+      context.insert(profile)
+      let session = BlockedProfileSession(tag: "manual", blockedProfile: profile, startTime: now.addingTimeInterval(-60))
+      session.timerEndTime = now.addingTimeInterval(offset)
+      context.insert(session)
+      try context.save()
+      BlockedProfiles.updateSnapshot(for: profile)
+      SharedData.createActiveSharedSession(for: session.toSnapshot())
+      let applier = RecordingRestrictionApplier()
+      let manager = StrategyManager(appBlocker: applier, removeAllStrategyTimers: {})
+      manager.activeSession = session
+
+      let result = await manager.resetBlockingState(context: context, now: now)
+
+      XCTAssertEqual(result, offset > 0 ? .activeSession : .completed)
+      XCTAssertEqual(applier.calls, offset > 0 ? [] : [.deactivate])
+      XCTAssertNotNil(SharedData.snapshot(for: profile.id.uuidString))
+      XCTAssertEqual(session.endTime, offset > 0 ? nil : now)
+      XCTAssertEqual(try context.fetchCount(FetchDescriptor<BlockedProfileSession>()), 1)
+      if offset <= 0 { XCTAssertNil(SharedData.getActiveSharedSession()) }
+    }
+  }
+
+  func testResetOnlyHonorsEnabledStopOccurrencesSinceSessionStart() async throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let now = calendar.date(from: .init(year: 2026, month: 10, day: 12, hour: 10, minute: 30))!
+    for (enabled, startOffset, expected) in [(true, -5400.0, StrategyManager.ResetBlockingStateResult.completed), (true, -60.0, .activeSession), (false, -5400.0, .activeSession)] {
+      SharedData.activeSharedSession = nil
+      let container = try TestModelContainer.create()
+      let context = container.mainContext
+      let profile = BlockedProfiles(name: "Schedule", createdAt: now, updatedAt: now)
+      profile.stopConditions = .init(manual: true, schedule: enabled)
+      profile.stopSchedule = .init(days: [.monday], hour: 10, minute: 0, updatedAt: now.addingTimeInterval(-7200))
+      profile.startTriggers = .init(schedule: true)
+      profile.startSchedule = profile.stopSchedule
+      context.insert(profile)
+      try context.save()
+      SharedData.createActiveSharedSession(for: .init(id: UUID().uuidString, tag: "manual", blockedProfileId: profile.id, startTime: now.addingTimeInterval(startOffset), forceStarted: true))
+      let manager = StrategyManager(appBlocker: RecordingRestrictionApplier(), removeAllStrategyTimers: {})
+
+      let result = await manager.resetBlockingState(context: context, now: now, calendar: calendar)
+
+      XCTAssertEqual(result, expected)
+      if expected == .completed { XCTAssertNil(SharedData.getActiveSharedSession()) }
+    }
+  }
+
+  func testResetUsesPinnedConfigurationInsteadOfRemoteTimerEdit() async throws {
+    let now = Date()
+    let container = try TestModelContainer.create()
+    let context = container.mainContext
+    let profile = BlockedProfiles(name: "Pinned", createdAt: now, updatedAt: now)
+    profile.stopConditions = .init(manual: true)
+    let pinned = BlockedProfiles.getSnapshot(for: profile)
+    profile.stopConditions = .init(timer: true, timerDurationMinutes: 1)
+    context.insert(profile)
+    try context.save()
+    let session = BlockedProfileSession(tag: "manual", blockedProfile: profile, startTime: now.addingTimeInterval(-120))
+    session.pinnedProfileConfigData = try JSONEncoder().encode(pinned)
+    context.insert(session)
+    try context.save()
+    SharedData.createActiveSharedSession(for: session.toSnapshot())
+    let applier = RecordingRestrictionApplier()
+    let manager = StrategyManager(appBlocker: applier, removeAllStrategyTimers: {})
+
+    let result = await manager.resetBlockingState(context: context, now: now)
+
+    XCTAssertEqual(result, .activeSession)
+    XCTAssertTrue(applier.calls.isEmpty)
+  }
+
+  func testResetClearsInconsistentTiming() async throws {
+    let now = Date()
+    for kind in ["missingTimer", "futureStart", "invalidStop"] {
+      SharedData.activeSharedSession = nil
+      let container = try TestModelContainer.create()
+      let context = container.mainContext
+      let profile = BlockedProfiles(name: "Invalid", createdAt: now, updatedAt: now)
+      profile.stopConditions = .init(manual: true, timer: kind == "missingTimer", schedule: kind == "invalidStop")
+      if kind == "invalidStop" { profile.stopSchedule = .init(days: [.monday], hour: 25, minute: 0, updatedAt: now) }
+      context.insert(profile)
+      try context.save()
+      SharedData.createActiveSharedSession(for: .init(id: UUID().uuidString, tag: "manual", blockedProfileId: profile.id, startTime: now.addingTimeInterval(kind == "futureStart" ? 600 : -60), forceStarted: true))
+      let applier = RecordingRestrictionApplier()
+      let manager = StrategyManager(appBlocker: applier, removeAllStrategyTimers: {})
+
+      let result = await manager.resetBlockingState(context: context, now: now)
+
+      XCTAssertEqual(result, .completed, kind)
+      XCTAssertNil(SharedData.getActiveSharedSession(), kind)
+      XCTAssertEqual(applier.calls, [.deactivate], kind)
+    }
+  }
+
+  func testResetDerivesLegacyTimerDeadlineForSessionsRunningAtUpgrade() async throws {
+    let now = Date()
+    for elapsed: TimeInterval in [60, 900] {
+      SharedData.activeSharedSession = nil
+      let container = try TestModelContainer.create()
+      let context = container.mainContext
+      let profile = BlockedProfiles(name: "Legacy", createdAt: now, updatedAt: now)
+      profile.profileSchemaVersion = 1
+      profile.blockingStrategyId = NFCTimerBlockingStrategy.id
+      profile.strategyData = try JSONEncoder().encode(StrategyTimerData(durationInMinutes: 15))
+      context.insert(profile)
+      try context.save()
+      SharedData.createActiveSharedSession(for: .init(id: UUID().uuidString, tag: NFCTimerBlockingStrategy.id, blockedProfileId: profile.id, startTime: now.addingTimeInterval(-elapsed), forceStarted: true))
+      let applier = RecordingRestrictionApplier()
+      let manager = StrategyManager(appBlocker: applier, removeAllStrategyTimers: {})
+
+      let result = await manager.resetBlockingState(context: context, now: now)
+
+      XCTAssertEqual(result, elapsed < 900 ? .activeSession : .completed)
+      XCTAssertEqual(applier.calls, elapsed < 900 ? [] : [.deactivate])
+    }
+  }
+
+  func testResetUsesSharedTimingForSameIdentityAndGuardsDifferentLocalSession() async throws {
+    let now = Date()
+    for (sharedOffset, sameIdentity, expected) in [(60.0, true, StrategyManager.ResetBlockingStateResult.activeSession), (-1.0, true, .completed), (-1.0, false, .activeSession)] {
+      SharedData.activeSharedSession = nil
+      let container = try TestModelContainer.create()
+      let context = container.mainContext
+      let profile = BlockedProfiles(name: "Timing", createdAt: now, updatedAt: now)
+      profile.stopConditions = .init(timer: true, timerDurationMinutes: 5)
+      context.insert(profile)
+      let local = BlockedProfileSession(tag: "manual", blockedProfile: profile, startTime: now.addingTimeInterval(-120))
+      local.timerEndTime = now.addingTimeInterval(sharedOffset > 0 ? -1 : 60)
+      context.insert(local)
+      try context.save()
+      var shared = local.toSnapshot()
+      shared.timerEndTime = now.addingTimeInterval(sharedOffset)
+      if !sameIdentity { shared.id = UUID().uuidString }
+      SharedData.createActiveSharedSession(for: shared)
+      let applier = RecordingRestrictionApplier()
+      let manager = StrategyManager(appBlocker: applier, removeAllStrategyTimers: {})
+      manager.activeSession = local
+
+      let result = await manager.resetBlockingState(context: context, now: now)
+
+      XCTAssertEqual(result, expected)
+      XCTAssertEqual(applier.calls, expected == .completed ? [.deactivate] : [])
+      if expected == .activeSession { XCTAssertEqual(SharedData.getActiveSharedSession(), shared) }
+    }
+  }
+
+  func testResetEndsExpiredDetachedPublishedSession() async throws {
+    let now = Date()
+    let container = try TestModelContainer.create()
+    let context = container.mainContext
+    let profile = BlockedProfiles(name: "Detached", createdAt: now, updatedAt: now)
+    profile.stopConditions = .init(timer: true, timerDurationMinutes: 1)
+    context.insert(profile)
+    try context.save()
+    let other = ModelContext(container)
+    let owner = try XCTUnwrap(BlockedProfiles.findProfile(byID: profile.id, in: other))
+    let expired = BlockedProfileSession(tag: "manual", blockedProfile: owner, startTime: now.addingTimeInterval(-120))
+    expired.timerEndTime = now.addingTimeInterval(-60)
+    other.insert(expired)
+    XCTAssertTrue(try context.fetch(FetchDescriptor<BlockedProfileSession>()).isEmpty)
+    let manager = StrategyManager(appBlocker: RecordingRestrictionApplier(), removeAllStrategyTimers: {})
+    manager.activeSession = expired
+
+    let result = await manager.resetBlockingState(context: context, now: now)
+
+    XCTAssertEqual(result, .completed)
+    XCTAssertNil(manager.activeSession)
+    XCTAssertEqual(expired.endTime, now)
+  }
+
+  func testResetAllowsSmallOriginatingDeviceClockSkew() async throws {
+    let now = Date()
+    let container = try TestModelContainer.create()
+    let context = container.mainContext
+    let profile = BlockedProfiles(name: "Clock skew", createdAt: now, updatedAt: now)
+    profile.stopConditions = .init(manual: true)
+    context.insert(profile)
+    try context.save()
+    let live = SharedData.SessionSnapshot(id: UUID().uuidString, tag: "manual", blockedProfileId: profile.id, startTime: now.addingTimeInterval(30), forceStarted: true)
+    SharedData.createActiveSharedSession(for: live)
+    let applier = RecordingRestrictionApplier()
+    let manager = StrategyManager(appBlocker: applier, removeAllStrategyTimers: {})
+
+    let result = await manager.resetBlockingState(context: context, now: now)
+
+    XCTAssertEqual(result, .activeSession)
+    XCTAssertEqual(SharedData.getActiveSharedSession(), live)
+    XCTAssertTrue(applier.calls.isEmpty)
+  }
+
 }
