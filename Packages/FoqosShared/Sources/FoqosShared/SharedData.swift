@@ -674,6 +674,7 @@ public enum SharedData {
     discardUnreadableSessions: Bool = false,
     rebuildUnreadableProfiles: (() -> [String: ProfileSnapshot])? = nil,
     allowRemoval: (SessionSnapshot?) -> Bool = { _ in true },
+    scheduledStops: () -> [UUID: Date] = { [:] },
     onRemoveActive: () -> Void = {}, onCommit: () -> Void = {}
   ) -> Set<UUID>? {
     withLockStatus(blocking: false, retryNonblocking: retryLock) { outcome in
@@ -686,7 +687,7 @@ public enum SharedData {
       let malformedCompleted = discardUnreadableSessions ? readableCompleted.filter { $0.endTime == nil } : []
       let completed = discardUnreadableSessions ? readableCompleted.filter { $0.endTime != nil } : readableCompleted
       guard allowRemoval(active) else { return nil }
-      let profiles: [String: ProfileSnapshot]
+      var profiles: [String: ProfileSnapshot]
       var rebuiltProfiles = false
       if let raw = data(forKey: .profileSnapshots, legacyKey: .profileSnapshots) {
         if let decoded = try? JSONDecoder().decode([String: ProfileSnapshot].self, from: raw) {
@@ -699,9 +700,18 @@ public enum SharedData {
       } else {
         profiles = [:]
       }
+      var stampedSchedule = false
+      if discardUnreadableSessions {
+        for (id, stoppedAt) in scheduledStops() {
+          guard var profile = profiles[id.uuidString], !shouldRemove(id) else { continue }
+          profile.scheduleLastStoppedAt = max(profile.scheduleLastStoppedAt ?? .distantPast, stoppedAt)
+          profiles[id.uuidString] = profile
+          stampedSchedule = true
+        }
+      }
       let ids = Set(profiles.values.map(\.id) + completed.map(\.blockedProfileId) + [active?.blockedProfileId].compactMap { $0 })
         .filter(shouldRemove)
-      guard !ids.isEmpty || checkedActive == nil || checkedCompleted == nil || !malformedCompleted.isEmpty || rebuiltProfiles || (discardUnreadableSessions && active != nil) else {
+      guard !ids.isEmpty || checkedActive == nil || checkedCompleted == nil || !malformedCompleted.isEmpty || rebuiltProfiles || stampedSchedule || (discardUnreadableSessions && active != nil) else {
         onCommit()
         return []
       }

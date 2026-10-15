@@ -577,4 +577,131 @@ final class ResetBlockingStateTests: XCTestCase {
     XCTAssertTrue(applier.calls.isEmpty)
   }
 
+  func testResetSuppressesRepeatedScheduleStartForExpiredSharedAndLocalSessions() async throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let start = calendar.date(from: .init(year: 2026, month: 10, day: 12, hour: 9))!
+    let now = start.addingTimeInterval(16 * 60)
+    for variant in ["shared", "local", "corrupt"] {
+      SharedData.activeSharedSession = nil
+      let container = try TestModelContainer.create()
+      let context = container.mainContext
+      let profile = BlockedProfiles(name: "Scheduled timer", createdAt: start, updatedAt: start)
+      profile.startTriggers = .init(schedule: true)
+      profile.startSchedule = .init(days: [.monday, .tuesday], hour: 9, minute: 0, updatedAt: start.addingTimeInterval(-3600))
+      profile.stopConditions = .init(timer: true, timerDurationMinutes: 15)
+      context.insert(profile)
+      try context.save()
+      BlockedProfiles.updateSnapshot(for: profile)
+      let original = BlockedProfiles.getSnapshot(for: profile)
+      let scheduler = ScheduleTimerActivity(
+        applier: RecordingRestrictionApplier(), registerTimer: { _, _, _, date in date.addingTimeInterval(15 * 60) },
+        cancelTimer: { _, _ in }, cancelReminders: { _ in })
+      scheduler.start(for: original, now: start, calendar: calendar)
+      let scheduled = try XCTUnwrap(SharedData.getActiveSharedSession())
+      if variant == "local" {
+        let local = BlockedProfileSession(tag: scheduled.tag, blockedProfile: profile, startTime: start, id: scheduled.id, origin: scheduled.origin)
+        local.timerEndTime = scheduled.timerEndTime
+        context.insert(local)
+        try context.save()
+        SharedData.activeSharedSession = nil
+      }
+      if variant == "corrupt" {
+        UserDefaults(suiteName: suiteName)!.set(Data("corrupt".utf8), forKey: "family_foqos_profile_snapshots")
+      }
+      let manager = StrategyManager(appBlocker: RecordingRestrictionApplier(), removeAllStrategyTimers: {})
+
+      let result = await manager.resetBlockingState(context: context, now: now, calendar: calendar)
+
+      XCTAssertEqual(result, .completed, variant)
+      XCTAssertEqual(profile.scheduleLastStoppedAt, now, variant)
+      XCTAssertEqual(SharedData.snapshot(for: profile.id.uuidString)?.scheduleLastStoppedAt, now, variant)
+      scheduler.start(for: original, now: now, calendar: calendar)
+      XCTAssertNil(SharedData.getActiveSharedSession(), "The reset occurrence cannot restart: " + variant)
+      scheduler.start(for: BlockedProfiles.getSnapshot(for: profile), now: start.addingTimeInterval(86400), calendar: calendar)
+      XCTAssertNotNil(SharedData.getActiveSharedSession(), "Tomorrow remains scheduled: " + variant)
+    }
+  }
+
+  func testResetCancelsOnlyEndedOwnersRemindersAndRefusalPreservesThem() throws {
+    let now = Date()
+    for expired in [false, true] {
+      SharedData.activeSharedSession = nil
+      let container = try TestModelContainer.create()
+      let context = container.mainContext
+      let profile = BlockedProfiles(name: "Break", createdAt: now, updatedAt: now)
+      let other = BlockedProfiles(name: "Other", createdAt: now, updatedAt: now)
+      context.insert(profile)
+      context.insert(other)
+      let local = BlockedProfileSession(tag: "manual", blockedProfile: profile, startTime: now.addingTimeInterval(-120))
+      local.timerEndTime = now.addingTimeInterval(expired ? -1 : 60)
+      local.breakStartTime = now.addingTimeInterval(-30)
+      local.breakEndDeadline = now.addingTimeInterval(300)
+      context.insert(local)
+      try context.save()
+      SharedData.createActiveSharedSession(for: local.toSnapshot())
+      var cancelled: [UUID] = []
+      let cleanup = {
+        try OrphanedSessionCleanup.run(
+          context: context, requireInactive: true, now: now, deactivateRestrictions: {},
+          cancelOwnedReminders: { id in
+            XCTAssertNil(SharedData.getActiveSharedSession(), "Cancellation is after the shared commit and outside its lock")
+            cancelled.append(id)
+          })
+      }
+
+      if expired { _ = try cleanup() } else { XCTAssertThrowsError(try cleanup()) }
+
+      XCTAssertEqual(cancelled, expired ? [profile.id] : [])
+      XCTAssertFalse(cancelled.contains(other.id))
+    }
+  }
+
+  func testResetScheduleSuppressionUsesAuthoritativeOriginAndPreservesLaterStamp() throws {
+    let now = Date()
+    for variant in ["v2", "legacy", "manual", "already-ended", "shared-manual", "later-stamp", "save-fails", "live"] {
+      SharedData.activeSharedSession = nil
+      let container = try TestModelContainer.create()
+      let context = container.mainContext
+      let profile = BlockedProfiles(name: "Schedule", createdAt: now, updatedAt: now)
+      context.insert(profile)
+      let local = BlockedProfileSession(tag: profile.id.uuidString, blockedProfile: profile, startTime: now.addingTimeInterval(-120), origin: .init(kind: .schedule))
+      local.timerEndTime = now.addingTimeInterval(variant == "live" ? 60 : -1)
+      context.insert(local)
+      if variant == "manual" { local.origin = nil }
+      if variant == "later-stamp" { profile.scheduleLastStoppedAt = now.addingTimeInterval(60) }
+      try context.save()
+      BlockedProfiles.updateSnapshot(for: profile)
+      let version = profile.syncVersion
+      var shared = local.toSnapshot()
+      if ["legacy", "manual", "shared-manual"].contains(variant) { shared.origin = nil }
+      if variant == "legacy" {
+        var pinned = BlockedProfiles.getSnapshot(for: profile)
+        pinned.profileSchemaVersion = 1
+        shared.pinnedProfileConfig = pinned
+      }
+      if variant == "already-ended" { shared.endTime = now.addingTimeInterval(-1) }
+      SharedData.createActiveSharedSession(for: shared)
+      struct SaveFailure: Error {}
+      let cleanup = {
+        try OrphanedSessionCleanup.run(
+          context: context, requireInactive: true, now: now,
+          save: { context in
+            if variant == "save-fails" { throw SaveFailure() }
+            try context.save()
+          },
+          deactivateRestrictions: {}, cancelOwnedReminders: { _ in })
+      }
+      if variant == "save-fails" || variant == "live" { XCTAssertThrowsError(try cleanup()) } else { _ = try cleanup() }
+      let expected: Date? =
+        variant == "later-stamp"
+        ? now.addingTimeInterval(60)
+        : ["v2", "legacy", "save-fails"].contains(variant) ? now : nil
+      XCTAssertEqual(SharedData.snapshot(for: profile.id.uuidString)?.scheduleLastStoppedAt, expected, variant)
+      XCTAssertEqual(profile.scheduleLastStoppedAt, expected, variant)
+      XCTAssertEqual(profile.syncVersion, version, "Reset never creates a synced mutation")
+      if variant == "live" { XCTAssertEqual(SharedData.getActiveSharedSession(), shared) }
+    }
+  }
+
 }

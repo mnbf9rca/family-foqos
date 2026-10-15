@@ -17,6 +17,7 @@ enum OrphanedSessionCleanup {
     removeActivities: (UUID) -> Void = { DeviceActivityCenterUtil.removeActivities(for: $0) },
     deactivateRestrictions: () -> Void = { AppBlockerUtil().deactivateRestrictions() },
     refreshShortcuts: () -> Void = { FamilyFoqosShortcuts.updateAppShortcutParameters() },
+    cancelOwnedReminders: (UUID) -> Void = { TimersUtil.cancelOwnedReminders(for: $0) },
     onCommit: () -> Void = {}
   ) throws -> Set<UUID> {
     let profiles = try context.fetch(FetchDescriptor<BlockedProfiles>())
@@ -29,6 +30,8 @@ enum OrphanedSessionCleanup {
     let owners = Dictionary(uniqueKeysWithValues: profiles.map { ($0.id, $0) })
     var rebuiltProfiles = false
     var refusedActiveSession = false
+    var resetEndedOwners: Set<UUID> = []
+    var scheduleStops: [UUID: Date] = [:]
     guard
       let removed = SharedData.removeProfileSessions(
         where: { !profileIds.contains($0) }, retryLock: retryLock, discardUnreadableSessions: requireInactive,
@@ -43,18 +46,31 @@ enum OrphanedSessionCleanup {
             guard let owner = owners[session.blockedProfileId] else { return false }
             return genuinelyActive(session, currentProfile: BlockedProfiles.getSnapshot(for: owner), now: now, calendar: calendar)
           }
-          refusedActiveSession =
-            shared.map(isLive) == true
-            || localSessions.contains { local in
-              let snapshot = local.toSnapshot()
-              // Shared timing wins over an older app copy of the same session.
-              if let shared, shared.id == snapshot.id, shared.blockedProfileId == snapshot.blockedProfileId { return false }
-              return isLive(snapshot)
+          // Shared timing and origin win over an older app copy of the same session.
+          let authoritative =
+            [shared].compactMap { $0 }
+            + localSessions.map { $0.toSnapshot() }.filter { local in
+              shared?.id != local.id || shared?.blockedProfileId != local.blockedProfileId
             }
-          return !refusedActiveSession
-        }, onRemoveActive: deactivateRestrictions,
+          refusedActiveSession = authoritative.contains(where: isLive)
+          guard !refusedActiveSession else { return false }
+          for session in authoritative where session.endTime == nil {
+            resetEndedOwners.insert(session.blockedProfileId)
+            guard let owner = owners[session.blockedProfileId] else { continue }
+            let configuration = session.pinnedProfileConfig ?? BlockedProfiles.getSnapshot(for: owner)
+            if session.origin?.kind == .schedule || ((configuration.profileSchemaVersion ?? 1) < 2 && session.tag == owner.id.uuidString) {
+              scheduleStops[owner.id] = now
+            }
+          }
+          return true
+        }, scheduledStops: { scheduleStops }, onRemoveActive: deactivateRestrictions,
         onCommit: {
           if requireInactive {
+            // Local suppression is not a synced mutation; the shared stamp is already committed.
+            for (id, stoppedAt) in scheduleStops {
+              guard let owner = owners[id] else { continue }
+              owner.scheduleLastStoppedAt = max(owner.scheduleLastStoppedAt ?? .distantPast, stoppedAt)
+            }
             for session in localSessions where session.isActive {
               session.endTime = now
               session.timerEndTime = nil
@@ -74,8 +90,8 @@ enum OrphanedSessionCleanup {
     for id in removed {
       removeActivities(id)
       TimersUtil.cancelAllPreActivationReminders(for: id)
-      TimersUtil.cancelOwnedReminders(for: id)
     }
+    for id in removed.union(resetEndedOwners) { cancelOwnedReminders(id) }
     for session in sessions where !ownedSessionIds.contains(session.id) {
       context.delete(session)
     }
