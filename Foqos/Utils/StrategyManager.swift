@@ -26,6 +26,7 @@ class StrategyManager: ObservableObject {
   @Published var timerTask: Task<Void, Never>?
   @Published var activeSession: BlockedProfileSession?
   private var remoteSessionGeneration = 0
+  private var remoteStopsInFlight: Set<UUID> = []
   @Published private var remoteSessionRecords: [UUID: ProfileSessionRecord]
 
   var remotelyActiveProfileIds: Set<UUID> {
@@ -157,7 +158,7 @@ class StrategyManager: ObservableObject {
   ) throws -> BlockedProfileSession {
     guard let profile = try BlockedProfiles.findProfile(byID: prepared.profileId, in: context) else {
       discardOriginatingCandidate(prepared)
-      throw EmergencyUnblockError.sessionChanged
+      throw NSError(domain: "ProfileStart", code: 1, userInfo: [NSLocalizedDescriptionKey: "This session changed. Please try again."])
     }
     let origin = prepared.origin
     let candidate = BlockedProfileSession(
@@ -172,7 +173,7 @@ class StrategyManager: ObservableObject {
         SharedData.commitOriginatingSession(
           candidate.toSnapshot(), expectedVictimId: expectedVictimId, now: now, allowLinkForTag: allowLinkForTag,
           onCommit: { self.appBlocker.activateRestrictions(for: BlockedProfiles.getSnapshot(for: profile)) })
-      else { throw EmergencyUnblockError.sessionChanged }
+      else { throw NSError(domain: "ProfileStart", code: 1, userInfo: [NSLocalizedDescriptionKey: "This session changed. Please try again."]) }
     } catch {
       profile.sessions.removeAll { $0.id == candidate.id }
       context.delete(candidate)
@@ -181,7 +182,7 @@ class StrategyManager: ObservableObject {
         Log.error("Failed to persist originating-session compensation", category: .session)
         throw error
       }
-      if error is EmergencyUnblockError { throw error }
+      if (error as NSError).domain == "ProfileStart" { throw error }
       throw NSError(domain: "ProfileStart", code: 1, userInfo: [NSLocalizedDescriptionKey: "Couldn’t start this profile. Please try again."])
     }
     activateSession(candidate, context: context)
@@ -228,6 +229,8 @@ class StrategyManager: ObservableObject {
     guard let captured = remoteSessionRecords[profileId], captured.isActive,
       let profile = try BlockedProfiles.findProfile(byID: profileId, in: context)
     else { throw EmergencyUnblockError.noActiveSession }
+    guard remoteStopsInFlight.insert(profileId).inserted else { throw EmergencyUnblockError.sessionChanged }
+    defer { remoteStopsInFlight.remove(profileId) }
     let generation = remoteSessionGeneration
     if emergency {
       try await emergencyUnblockManager.authorizeEmergencyUnblock(profile: profile, context: context)
@@ -250,7 +253,6 @@ class StrategyManager: ObservableObject {
     let result = await sessionSyncService.stopSession(
       profileId: profileId, expectedSessionId: captured.sessionId, expectedStart: captured.startTime,
       reportIdentityMismatch: true, allowRemoteLegacy: true)
-    guard generation == remoteSessionGeneration else { throw EmergencyUnblockError.sessionChanged }
     switch result {
     case .stopped:
       break
@@ -266,9 +268,7 @@ class StrategyManager: ObservableObject {
         sessionStopOutbox.enqueue(profileId: profileId, expectedStart: captured.startTime, expectedSessionId: captured.sessionId, allowRemoteLegacy: captured.sessionId == nil)
       else { throw error }
     }
-    guard let current = remoteSessionRecords[profileId], current.isActive, current.matchesIdentity(of: captured) else {
-      throw EmergencyUnblockError.sessionChanged
-    }
+    // A successful CAS or durable intent remains accepted if its own stop echo arrives first.
     recordLocalCompletion(profileId: profileId, sessionId: captured.sessionId, startTime: captured.startTime, endTime: Date())
     if emergency { emergencyUnblockManager.recordAndEnqueueUnblock() }
     return true
@@ -695,7 +695,7 @@ class StrategyManager: ObservableObject {
   func remoteOnlySessionRecord(profileIds: Set<UUID>) -> ProfileSessionRecord? {
     remoteSessionRecords.values.filter {
       $0.isActive && profileIds.contains($0.profileId) && remotelyActiveProfileIds.contains($0.profileId)
-        && activeSession?.blockedProfile.id != $0.profileId
+        && !(activeSession?.isActive == true && activeSession?.blockedProfile.id == $0.profileId)
     }.max {
       ProfileStartArbiter.decide(
         incomingStartTime: $1.startTime ?? .distantPast, incomingProfileId: $1.profileId,
@@ -707,15 +707,13 @@ class StrategyManager: ObservableObject {
     if let local = try getActiveSession(context: context) {
       return ControlSession(id: local.id, blockedProfile: local.blockedProfile, origin: local.origin, tag: local.tag, local: local, remote: nil)
     }
-    let records = remoteSessionRecords.values.filter { remotelyActiveProfileIds.contains($0.profileId) }
-      .sorted { ($0.startTime ?? .distantPast, $0.profileId.uuidString) > ($1.startTime ?? .distantPast, $1.profileId.uuidString) }
-    for remote in records {
-      guard let profile = try BlockedProfiles.findProfile(byID: remote.profileId, in: context), let start = remote.startTime else { continue }
-      return ControlSession(
-        id: remote.sessionId ?? "legacy:\(remote.profileId):\(start.timeIntervalSince1970)",
-        blockedProfile: profile, origin: remote.origin, tag: nil, local: nil, remote: remote)
-    }
-    return nil
+    let profiles = try BlockedProfiles.fetchProfiles(in: context).valid
+    guard let remote = remoteOnlySessionRecord(profileIds: Set(profiles.map(\.id))),
+      let profile = profiles.first(where: { $0.id == remote.profileId }), let start = remote.startTime
+    else { return nil }
+    return ControlSession(
+      id: remote.sessionId ?? "legacy:\(remote.profileId):\(start.timeIntervalSince1970)",
+      blockedProfile: profile, origin: remote.origin, tag: nil, local: nil, remote: remote)
   }
 
   private func controlSessionIsCurrent(_ session: ControlSession, context: ModelContext) -> Bool {

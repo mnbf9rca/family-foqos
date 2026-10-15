@@ -933,7 +933,7 @@ struct BlockedProfileView: View {
 
   private func confirmRemoteSession() async {
     guard let id = profile?.id,
-      profileSyncManager.isEnabled || strategyManager.remotelyActiveProfileIds.contains(id)
+      strategyManager.remotelyActiveProfileIds.contains(id)
     else { return }
     confirmingRemoteSession = true
     let confirmed = await strategyManager.confirmSessionState(profileId: id)
@@ -947,7 +947,6 @@ struct BlockedProfileView: View {
       profileToDelete.isPersistentModelValid,
       !lockCodeManager.isEditLocked(profileToDelete)
     else { return }
-    dismiss()
     do {
       let profileId = profileToDelete.id
       do {
@@ -995,6 +994,7 @@ struct BlockedProfileView: View {
             }
           }
         }
+        dismiss()
       } catch {
         showError(message: error.localizedDescription)
       }

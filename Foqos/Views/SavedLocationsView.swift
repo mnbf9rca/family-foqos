@@ -256,7 +256,7 @@ struct SavedLocationsView: View {
       let profileIds = profiles.valid.filter {
         $0.geofenceRule?.locationReferences.contains(where: { $0.savedLocationId == locationId }) == true
       }.map(\.id)
-      for id in profileIds where profileSyncManager.isEnabled || strategyManager.remotelyActiveProfileIds.contains(id) {
+      for id in profileIds where strategyManager.remotelyActiveProfileIds.contains(id) {
         let confirmed = await strategyManager.confirmSessionState(profileId: id)
         if !confirmed && strategyManager.remotelyActiveProfileIds.contains(id) {
           errorMessage = StrategyManager.sessionConfirmationFailureMessage
