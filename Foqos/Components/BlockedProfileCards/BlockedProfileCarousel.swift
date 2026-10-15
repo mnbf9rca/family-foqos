@@ -29,6 +29,7 @@ struct BlockedProfileCarousel: View {
   var onOneMoreMinuteTapped: (BlockedProfiles) -> Void
 
   @State private var currentProfileId: UUID?
+  @State private var remoteContentHeight: CGFloat = 0
   @State private var scheduleOutOfSyncCards = ScheduleOutOfSyncCardState()
   @ScaledMetric(relativeTo: .body) private var heightScale: CGFloat = 1
 
@@ -194,6 +195,7 @@ struct BlockedProfileCarousel: View {
                   onStopTapped: { onStopTapped(profile) },
                   onEditTapped: { onEditTapped(profile) },
                   onStatsTapped: { onStatsTapped(profile) },
+                  onRemoteContentHeightChanged: { remoteContentHeight = $0 },
                   onBreakTapped: { onBreakTapped(profile) },
                   onAppSelectionTapped: { onAppSelectionTapped(profile) },
                   isOneMoreMinuteActive: isOneMoreMinuteActive,
@@ -214,7 +216,7 @@ struct BlockedProfileCarousel: View {
         .scrollDisabled(isBlocking)
         .scrollIndicators(.hidden)
         .contentMargins(.horizontal, 16)
-        .frame(height: cardHeight * max(1, heightScale))
+        .frame(height: max(cardHeight * max(1, heightScale), remoteOnlyProfileId == nil ? 0 : remoteContentHeight))
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: cardHeight)
         .padding(.bottom, 10)
 

@@ -656,7 +656,12 @@ struct BlockedProfileView: View {
           refreshScheduleOutOfSyncBanner()
         }
         .onChange(of: profile.map { strategyManager.remotelyActiveProfileIds.contains($0.id) }) { _, active in
-          if active == true { Task { await confirmRemoteSession() } }
+          if active == true {
+            Task { await confirmRemoteSession() }
+          } else {
+            remoteConfirmationFailed = false
+            confirmingRemoteSession = false
+          }
         }
         .onChange(of: isBlocking) { wasBlocking, blocking in
           if wasBlocking && !blocking { loadTriggerConfiguration() }
@@ -934,7 +939,10 @@ struct BlockedProfileView: View {
   private func confirmRemoteSession() async {
     guard let id = profile?.id,
       strategyManager.remotelyActiveProfileIds.contains(id)
-    else { return }
+    else {
+      remoteConfirmationFailed = false
+      return
+    }
     confirmingRemoteSession = true
     let confirmed = await strategyManager.confirmSessionState(profileId: id)
     remoteConfirmationFailed = !confirmed && strategyManager.remotelyActiveProfileIds.contains(id)

@@ -189,7 +189,7 @@ final class RemotelyActiveProfilesTests: XCTestCase {
 
   func testRemoteSwitchPostCASFailuresDiscardCandidateAndPreservePublicationWinner() async throws {
     let now = Date()
-    for failure in ["save", "lock", "race"] {
+    for failure in ["save", "lock", "race", "expired"] {
       let container = try TestModelContainer.create()
       let context = container.mainContext
       let victim = BlockedProfiles(name: "Remote victim")
@@ -220,7 +220,8 @@ final class RemotelyActiveProfilesTests: XCTestCase {
             if failure == "race" { SharedData.createActiveSharedSession(for: winner) }
           }
           try context.save()
-        }, scheduleReconciler: { _ in })
+        }, scheduleReconciler: { _ in }, currentDate: { failure == "expired" ? now.addingTimeInterval(901) : now })
+      defer { manager.stopTimer() }
       manager.receiveSessionRecord(active)
       await manager.handleTagEvent(
         TagEvent(type: .nfc, namespace: .opaque, key: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", targetProfileId: target.id),
