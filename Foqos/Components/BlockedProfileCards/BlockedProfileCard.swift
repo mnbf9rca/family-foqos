@@ -19,6 +19,7 @@ struct BlockedProfileCard: View {
   var onStopTapped: () -> Void
   var onEditTapped: () -> Void
   var onStatsTapped: () -> Void = {}
+  var onRemoteContentHeightChanged: (CGFloat) -> Void = { _ in }
   var onBreakTapped: () -> Void
   var onAppSelectionTapped: () -> Void = {}
 
@@ -258,6 +259,17 @@ struct BlockedProfileCard: View {
         }
       }
       .padding(16)
+      .fixedSize(horizontal: false, vertical: isRemoteOnlyActive)
+      .background {
+        if isRemoteOnlyActive {
+          GeometryReader { geometry in
+            Color.clear
+              .onChange(of: geometry.size.height, initial: true) { _, height in
+                onRemoteContentHeightChanged(height)
+              }
+          }
+        }
+      }
     }
   }
 }

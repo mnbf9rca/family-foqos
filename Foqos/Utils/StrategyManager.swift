@@ -17,6 +17,7 @@ class StrategyManager: ObservableObject {
   private let locationManager: LocationManager
   private let remoteActiveDefaults: UserDefaults
   private let ratingManager: RatingManager
+  private let currentDate: () -> Date
 
   /// #201: persisted intents for session-stops dropped by a failed/exhausted CAS write.
   /// Internal (not private) so Phase-E tests can assert routing without a live CloudKit call.
@@ -72,9 +73,11 @@ class StrategyManager: ObservableObject {
     scheduleReconciler: @escaping @MainActor (ModelContext) -> Void = {
       PreActivationReminderScheduler.reconcileScheduleRegistrations(context: $0)
     },
-    ratingManager: RatingManager = .shared
+    ratingManager: RatingManager = .shared,
+    currentDate: @escaping () -> Date = Date.init
   ) {
     self.ratingManager = ratingManager
+    self.currentDate = currentDate
     self.geofenceEvaluator = geofenceEvaluator
     self.emergencyUnblockManager = emergencyUnblockManager
     self.liveActivityManager = liveActivityManager
@@ -156,8 +159,12 @@ class StrategyManager: ObservableObject {
   private func publishOriginatingCandidate(
     _ prepared: PreparedOriginatingSession, context: ModelContext, expectedVictimId: String?, now: Date, allowLinkForTag: Bool
   ) throws -> BlockedProfileSession {
+    var published = false
+    defer { if !published { discardOriginatingCandidate(prepared) } }
+    if let deadline = prepared.timerEndTime, deadline <= now {
+      throw NSError(domain: "ProfileStart", code: 1, userInfo: [NSLocalizedDescriptionKey: "This session changed. Please try again."])
+    }
     guard let profile = try BlockedProfiles.findProfile(byID: prepared.profileId, in: context) else {
-      discardOriginatingCandidate(prepared)
       throw NSError(domain: "ProfileStart", code: 1, userInfo: [NSLocalizedDescriptionKey: "This session changed. Please try again."])
     }
     let origin = prepared.origin
@@ -177,7 +184,6 @@ class StrategyManager: ObservableObject {
     } catch {
       profile.sessions.removeAll { $0.id == candidate.id }
       context.delete(candidate)
-      discardOriginatingCandidate(prepared)
       do { try saveSession(context) } catch {
         Log.error("Failed to persist originating-session compensation", category: .session)
         throw error
@@ -185,6 +191,7 @@ class StrategyManager: ObservableObject {
       if (error as NSError).domain == "ProfileStart" { throw error }
       throw NSError(domain: "ProfileStart", code: 1, userInfo: [NSLocalizedDescriptionKey: "Couldn’t start this profile. Please try again."])
     }
+    published = true
     activateSession(candidate, context: context)
     return candidate
   }
@@ -210,6 +217,12 @@ class StrategyManager: ObservableObject {
   func receiveSessionRecord(_ record: ProfileSessionRecord) -> Bool {
     if let previous = remoteSessionRecords[record.profileId] {
       let sameSession = previous.matchesIdentity(of: record)
+      // Cache receipt is not proof that local application succeeded.
+      if sameSession, previous.sequenceNumber == record.sequenceNumber,
+        previous.serverModificationDate == record.serverModificationDate, previous.isActive == record.isActive
+      {
+        return true
+      }
       if let oldDate = previous.serverModificationDate, let newDate = record.serverModificationDate {
         if newDate < oldDate { return false }
         if newDate == oldDate, !sameSession || record.sequenceNumber <= previous.sequenceNumber { return false }
@@ -955,7 +968,7 @@ class StrategyManager: ObservableObject {
       if let prepared = candidate {
         // publishOriginatingCandidate owns compensation if its final save/publication fails.
         candidate = nil
-        _ = try publishOriginatingCandidate(prepared, context: context, expectedVictimId: nil, now: now, allowLinkForTag: true)
+        _ = try publishOriginatingCandidate(prepared, context: context, expectedVictimId: nil, now: currentDate(), allowLinkForTag: true)
       }
       cancelTagOperation()
     } catch {
