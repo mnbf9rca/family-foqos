@@ -167,7 +167,7 @@ final class SyncApplyService {
     do {
       guard let profile = try BlockedProfiles.findProfile(byID: id, in: modelContext) else {
         clearDeletionBookkeeping(recordName: recordName)  // intent already satisfied
-        sessionController.setRemoteSessionActive(false, profileId: id)
+        sessionController.clearRemoteSession(profileId: id)
         SyncDiagnostics.profileDeletionApplied(
           profileId: id, existed: false, stoppedActiveSession: false, outcome: .notPresent)
         return .notPresent
@@ -208,7 +208,7 @@ final class SyncApplyService {
           store.setSystemFields(nil, for: recordName)
           store.clearTombstone(recordName: recordName)
           store.removeFailedApply(recordName: recordName)
-          sessionController.setRemoteSessionActive(false, profileId: id)
+          sessionController.clearRemoteSession(profileId: id)
           profileDeleteCommitObserver?(recordName)
         } catch {
           modelContext.rollback()
@@ -291,7 +291,7 @@ final class SyncApplyService {
     else {
       return .ignored
     }
-    sessionController.setRemoteSessionActive(false, profileId: id)
+    sessionController.clearRemoteSession(profileId: id)
     // §5.2: an explicit deletion stops the matching remote-started session (#203).
     if sessionController.activeSession?.blockedProfile.id == id {
       sessionController.stopRemoteSession(context: modelContext, profileId: id)
@@ -809,6 +809,7 @@ final class SyncApplyService {
       Log.info("Ignoring undecodable ProfileSession record", category: .sync)
       return .ignored
     }
+    guard sessionController.receiveSessionRecord(session) else { return .ignored }
     if let profile = try? BlockedProfiles.findProfile(byID: session.profileId, in: modelContext),
       let active = profile.sessions.valid.first(where: { $0.isActive }),
       session.sessionId == nil || session.sessionId == active.id,
@@ -828,7 +829,6 @@ final class SyncApplyService {
       SyncDiagnostics.sessionApply(profileId: profileId, branch: "own_origin_noop")
       return
     }
-    sessionController.setRemoteSessionActive(session.isActive, profileId: profileId)
     let localActive = sessionController.activeSession?.blockedProfile.id == profileId
     if session.isActive {
       if let startTime = session.startTime {

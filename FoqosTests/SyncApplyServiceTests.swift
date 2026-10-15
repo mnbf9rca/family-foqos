@@ -85,6 +85,34 @@ final class SyncApplyServiceTests: XCTestCase {
 
   private let noPendingDelete: (String) -> Bool = { _ in false }
 
+  func testRemoteScheduledSessionStoppedHereDoesNotLeaveEditBlockAfterOwnEchoAndRelaunch() throws {
+    let now = Date()
+    let profile = BlockedProfiles(name: "Scheduled", createdAt: now, updatedAt: now)
+    context.insert(profile)
+    try context.save()
+    let manager = StrategyManager(appBlocker: RecordingRestrictionApplier(), remoteActiveDefaults: storeDefaults)
+    defer { manager.stopTimer() }
+    let service = SyncApplyService(
+      modelContext: context, store: store, sessionController: manager,
+      emergencyManager: emergencyManager, deviceId: deviceId)
+    var record = ProfileSessionRecord(profileId: profile.id)
+    let sessionId = UUID().uuidString
+    record.applyUpdate(
+      isActive: true, sequenceNumber: 1, deviceId: "device-B", startTime: now,
+      sessionId: sessionId, origin: .init(kind: .schedule))
+    _ = service.applyFetchedModification(record.toCKRecord(in: zoneID), isPendingDeleteOrTombstoned: noPendingDelete)
+    XCTAssertTrue(manager.remotelyActiveProfileIds.contains(profile.id))
+    XCTAssertEqual(manager.activeSession?.id, sessionId)
+
+    manager.stopRemoteSession(context: context, profileId: profile.id, expectedSessionId: sessionId)
+    record.applyUpdate(isActive: false, sequenceNumber: 2, deviceId: deviceId, endTime: now.addingTimeInterval(60))
+    _ = service.applyFetchedModification(record.toCKRecord(in: zoneID), isPendingDeleteOrTombstoned: noPendingDelete)
+
+    XCTAssertNil(manager.activeSession)
+    XCTAssertFalse(manager.remotelyActiveProfileIds.contains(profile.id), "The local stop must release the remote edit block")
+    XCTAssertFalse(StrategyManager(remoteActiveDefaults: storeDefaults).remotelyActiveProfileIds.contains(profile.id))
+  }
+
   // MARK: - S-27 (normal apply) / E-1
 
   func testGivenDeadWorldProfileAfterWipe_WhenApplied_ThenSkippedDeadWorld() throws {
@@ -1703,6 +1731,7 @@ final class SyncApplyServiceTests: XCTestCase {
         try context.save()
         var registrations = 0
         let manager = StrategyManager(
+          remoteActiveDefaults: storeDefaults,
           registerTimer: { _, _, _, _ in
             registrations += 1
             return now
@@ -1751,6 +1780,7 @@ final class SyncApplyServiceTests: XCTestCase {
     try context.save()
     var registrations = 0
     let manager = StrategyManager(
+      remoteActiveDefaults: storeDefaults,
       registerTimer: { _, _, _, _ in
         registrations += 1
         return now
@@ -1803,6 +1833,7 @@ final class SyncApplyServiceTests: XCTestCase {
     try context.save()
     var registrations = 0
     let manager = StrategyManager(
+      remoteActiveDefaults: storeDefaults,
       registerTimer: { _, _, _, _ in
         registrations += 1
         return now
@@ -1927,6 +1958,7 @@ final class SyncApplyServiceTests: XCTestCase {
     wire["startTime"] = now
     wire["sequenceNumber"] = 3
     let manager = StrategyManager(
+      remoteActiveDefaults: storeDefaults,
       registerTimer: { _, _, _, _ in
         XCTFail("Mirror never registers")
         return now
