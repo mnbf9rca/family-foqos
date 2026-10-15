@@ -168,7 +168,7 @@ struct BlockedProfileListView: View {
   }
 
   private func deleteProfiles(ids: [UUID]) async {
-    for id in ids where profileSyncManager.isEnabled || strategyManager.remotelyActiveProfileIds.contains(id) {
+    for id in ids where strategyManager.remotelyActiveProfileIds.contains(id) {
       let confirmed = await strategyManager.confirmSessionState(profileId: id)
       if !confirmed && strategyManager.remotelyActiveProfileIds.contains(id) {
         deleteError = .syncFailed(StrategyManager.sessionConfirmationFailureMessage)

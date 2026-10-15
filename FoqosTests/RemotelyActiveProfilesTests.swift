@@ -75,6 +75,48 @@ final class RemotelyActiveProfilesTests: XCTestCase {
     XCTAssertTrue(profile.sessions.isEmpty)
   }
 
+  func testOwnStopEchoBeforeCASResultStillConsumesEmergency() async throws {
+    try await assertAcceptedEmergencyStop(ownEcho: true)
+  }
+
+  func testClearingAnotherProfileDuringCASStillConsumesEmergency() async throws {
+    try await assertAcceptedEmergencyStop(ownEcho: false)
+  }
+
+  private func assertAcceptedEmergencyStop(ownEcho: Bool) async throws {
+    let now = Date()
+    let container = try TestModelContainer.create()
+    let context = container.mainContext
+    let profile = BlockedProfiles(name: "Remote emergency")
+    context.insert(profile)
+    try context.save()
+    let active = record(profileId: profile.id, sessionId: UUID().uuidString, sequence: 1, now: now)
+    let other = record(profileId: UUID(), sessionId: UUID().uuidString, sequence: 1, now: now)
+    let callback = RemoteStopCallback()
+    let service = SessionSyncService(
+      fetchRecord: { _ in active.toCKRecord(in: CKRecordZone.ID(zoneName: "test")) },
+      saveRecord: { saved in
+        await callback.run(saved)
+        return saved
+      })
+    let emergency = EmergencyUnblockManager(defaults: defaults)
+    let before = emergency.getRemainingEmergencyUnblocks()
+    let manager = StrategyManager(emergencyUnblockManager: emergency, sessionSyncService: service, remoteActiveDefaults: defaults)
+    manager.receiveSessionRecord(active)
+    manager.receiveSessionRecord(other)
+    callback.action = { saved in
+      if ownEcho {
+        manager.receiveSessionRecord(ProfileSessionRecord(from: saved)!)
+      } else {
+        manager.clearRemoteSession(profileId: other.profileId)
+      }
+    }
+    let stopped = try await manager.stopRemoteOnlySession(profileId: profile.id, context: context, emergency: true)
+    XCTAssertTrue(stopped)
+    XCTAssertFalse(manager.remotelyActiveProfileIds.contains(profile.id))
+    XCTAssertEqual(emergency.getRemainingEmergencyUnblocks(), before - 1)
+  }
+
   func testRemoteOnlyStopCannotBypassNormalStopCondition() async throws {
     let now = Date()
     let container = try TestModelContainer.create()
@@ -143,6 +185,88 @@ final class RemotelyActiveProfilesTests: XCTestCase {
       manager.clearAllRemoteSessionActive()
       SharedData.endActiveSharedSession()
     }
+  }
+
+  func testRemoteSwitchPostCASFailuresDiscardCandidateAndPreservePublicationWinner() async throws {
+    let now = Date()
+    for failure in ["save", "lock", "race"] {
+      let container = try TestModelContainer.create()
+      let context = container.mainContext
+      let victim = BlockedProfiles(name: "Remote victim")
+      victim.stopConditions = .init(nfc: .any)
+      let target = BlockedProfiles(name: "Target")
+      target.startTriggers = .init(anyNFC: true)
+      target.stopConditions = .init(timer: true, timerDurationMinutes: 15)
+      context.insert(victim)
+      context.insert(target)
+      try context.save()
+      let active = record(profileId: victim.id, sessionId: UUID().uuidString, sequence: 1, now: now)
+      let server = RemoteSessionTestServer(record: active)
+      let service = SessionSyncService(fetchRecord: { try await server.fetch($0) }, saveRecord: { try await server.save($0) })
+      let winner = SharedData.SessionSnapshot(id: UUID().uuidString, tag: "manual", blockedProfileId: UUID(), startTime: now, forceStarted: false)
+      var saves = 0
+      var cancellations = 0
+      let blocker = RecordingRestrictionApplier()
+      let manager = StrategyManager(
+        sessionSyncService: service, appBlocker: blocker, remoteActiveDefaults: defaults,
+        registerTimer: { _, _, _, start in start.addingTimeInterval(900) },
+        cancelTimer: { _, _ in cancellations += 1 }, startSessionActivity: { _ in },
+        cancelPreActivationReminders: { _ in },
+        saveSession: { context in
+          saves += 1
+          if saves == 1 {
+            if failure == "save" { throw NSError(domain: "TestSave", code: 1) }
+            if failure == "lock" { SharedData.configureLockPath(nil) }
+            if failure == "race" { SharedData.createActiveSharedSession(for: winner) }
+          }
+          try context.save()
+        }, scheduleReconciler: { _ in })
+      manager.receiveSessionRecord(active)
+      await manager.handleTagEvent(
+        TagEvent(type: .nfc, namespace: .opaque, key: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", targetProfileId: target.id),
+        operation: .scan, context: context, now: now)
+      SharedData.resetLockPath()
+      let saved = await server.current()
+      XCTAssertFalse(saved.isActive, failure)
+      XCTAssertEqual(cancellations, 1, failure)
+      XCTAssertNil(manager.activeSession, failure)
+      XCTAssertTrue(target.sessions.isEmpty, failure)
+      XCTAssertTrue(try context.fetch(FetchDescriptor<BlockedProfileSession>()).isEmpty, failure)
+      XCTAssertEqual(SharedData.getActiveSharedSession(), failure == "race" ? winner : nil, failure)
+      XCTAssertEqual(manager.errorMessage, failure == "save" ? "Couldn’t start this profile. Please try again." : "This session changed. Please try again.", failure)
+      manager.clearAllRemoteSessionActive()
+      SharedData.endActiveSharedSession()
+    }
+  }
+
+  func testOverlappingOfflineEmergencyStopsConsumeOnlyOnce() async throws {
+    let now = Date()
+    let container = try TestModelContainer.create()
+    let context = container.mainContext
+    let profile = BlockedProfiles(name: "Offline overlap")
+    context.insert(profile)
+    try context.save()
+    let active = record(profileId: profile.id, sessionId: UUID().uuidString, sequence: 1, now: now)
+    let callback = RemoteStopCallback()
+    let service = SessionSyncService(fetchRecord: { _ in
+      await callback.run(active.toCKRecord(in: CKRecordZone.ID(zoneName: "test")))
+      throw CKError(.networkUnavailable)
+    })
+    let emergency = EmergencyUnblockManager(defaults: defaults)
+    let before = emergency.getRemainingEmergencyUnblocks()
+    let manager = StrategyManager(emergencyUnblockManager: emergency, sessionSyncService: service, remoteActiveDefaults: defaults)
+    manager.receiveSessionRecord(active)
+    callback.action = { _ in
+      callback.action = nil
+      do {
+        try await manager.stopRemoteOnlySession(profileId: profile.id, context: context, emergency: true)
+        XCTFail("An overlapping attempt must not accept the same unblock twice")
+      } catch {}
+    }
+    let stopped = try await manager.stopRemoteOnlySession(profileId: profile.id, context: context, emergency: true)
+    XCTAssertTrue(stopped)
+    XCTAssertEqual(emergency.getRemainingEmergencyUnblocks(), before - 1)
+    XCTAssertEqual(manager.sessionStopOutbox.pending.count, 1)
   }
 
   func testOfflineEmergencyStopSurvivesRelaunchAndReplaysWithoutDoubleConsumption() async throws {
@@ -418,4 +542,10 @@ private actor RemoteSessionTestServer {
     record = ProfileSessionRecord(from: value)!
     return value
   }
+}
+
+@MainActor
+private final class RemoteStopCallback {
+  var action: ((CKRecord) async -> Void)?
+  func run(_ record: CKRecord) async { await action?(record) }
 }
