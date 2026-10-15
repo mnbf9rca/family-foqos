@@ -2031,10 +2031,14 @@ class StrategyManager: ObservableObject {
     }
   }
 
+  enum ResetBlockingStateResult: Equatable {
+    case completed, activeSession, syncInProgress, failed
+  }
+
   @discardableResult
-  func resetBlockingState(context: ModelContext) async -> Set<UUID>? {
+  func resetBlockingState(context: ModelContext) async -> ResetBlockingStateResult {
     do {
-      guard !profileSyncManager.isReplacingLocalProfiles else { return nil }
+      guard !profileSyncManager.isReplacingLocalProfiles else { return .syncInProgress }
       // Check metadata before reading a published reference that a prior delete may have invalidated.
       let publishedActiveOwner: UUID?
       if let activeSession, activeSession.isPersistentModelValid, activeSession.isActive {
@@ -2065,10 +2069,12 @@ class StrategyManager: ObservableObject {
           }
         }
       }
-      return ids
+      return .completed
+    } catch OrphanedSessionCleanup.Failure.activeSession {
+      return .activeSession
     } catch {
-      Log.error("Blocking state reset refused or failed: \(redactedErrorForLog(error))", category: .strategy)
-      return nil
+      Log.error("Blocking state reset failed: \(redactedErrorForLog(error))", category: .strategy)
+      return .failed
     }
   }
 

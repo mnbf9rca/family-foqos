@@ -672,6 +672,7 @@ public enum SharedData {
   public static func removeProfileSessions(
     where shouldRemove: (UUID) -> Bool, retryLock: Bool = true,
     discardUnreadableSessions: Bool = false,
+    rebuildUnreadableProfiles: (() -> [String: ProfileSnapshot])? = nil,
     allowRemoval: (SessionSnapshot?) -> Bool = { _ in true },
     onRemoveActive: () -> Void = {}, onCommit: () -> Void = {}
   ) -> Set<UUID>? {
@@ -686,15 +687,21 @@ public enum SharedData {
       let completed = discardUnreadableSessions ? readableCompleted.filter { $0.endTime != nil } : readableCompleted
       guard allowRemoval(active) else { return nil }
       let profiles: [String: ProfileSnapshot]
+      var rebuiltProfiles = false
       if let raw = data(forKey: .profileSnapshots, legacyKey: .profileSnapshots) {
-        guard let decoded = try? JSONDecoder().decode([String: ProfileSnapshot].self, from: raw) else { return nil }
-        profiles = decoded
+        if let decoded = try? JSONDecoder().decode([String: ProfileSnapshot].self, from: raw) {
+          profiles = decoded
+        } else {
+          guard discardUnreadableSessions, let rebuildUnreadableProfiles else { return nil }
+          profiles = rebuildUnreadableProfiles()
+          rebuiltProfiles = true
+        }
       } else {
         profiles = [:]
       }
       let ids = Set(profiles.values.map(\.id) + completed.map(\.blockedProfileId) + [active?.blockedProfileId].compactMap { $0 })
         .filter(shouldRemove)
-      guard !ids.isEmpty || checkedActive == nil || checkedCompleted == nil || !malformedCompleted.isEmpty else {
+      guard !ids.isEmpty || checkedActive == nil || checkedCompleted == nil || !malformedCompleted.isEmpty || rebuiltProfiles else {
         onCommit()
         return []
       }
@@ -705,6 +712,7 @@ public enum SharedData {
           completed: completed.filter { !ids.contains($0.blockedProfileId) },
           profiles: profiles.filter { !ids.contains($0.value.id) })
       else { return nil }
+      if rebuiltProfiles { Log.error("Reset rebuilt unreadable shared profile snapshots", category: .session) }
       if checkedActive == nil { Log.error("Reset discarded unreadable shared active session data", category: .session) }
       if checkedCompleted == nil { Log.error("Reset discarded unreadable shared completed session data", category: .session) }
       for _ in malformedCompleted { Log.error("Reset discarded malformed shared completed session", category: .session) }

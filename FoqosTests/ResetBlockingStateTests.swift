@@ -78,7 +78,7 @@ final class ResetBlockingStateTests: XCTestCase {
     let manager = StrategyManager(appBlocker: applier, removeAllStrategyTimers: { timerRemovals += 1 })
 
     let resetResult = await manager.resetBlockingState(context: context)
-    XCTAssertNil(resetResult)
+    XCTAssertEqual(resetResult, .activeSession)
 
     XCTAssertEqual(SharedData.getActiveSharedSession(), winner)
     XCTAssertTrue(applier.calls.isEmpty)
@@ -99,7 +99,7 @@ final class ResetBlockingStateTests: XCTestCase {
     manager.activeSession = local
 
     let resetResult = await manager.resetBlockingState(context: context)
-    XCTAssertNil(resetResult)
+    XCTAssertEqual(resetResult, .activeSession)
 
     XCTAssertEqual(manager.activeSession?.id, local.id)
     XCTAssertNil(local.endTime)
@@ -125,7 +125,7 @@ final class ResetBlockingStateTests: XCTestCase {
 
     let resetResult = await manager.resetBlockingState(context: context)
 
-    XCTAssertNotNil(resetResult)
+    XCTAssertEqual(resetResult, .completed)
     XCTAssertEqual(applier.calls, [.deactivate])
     try BlockedProfiles.deleteProfile(profile, in: context)
     try context.save()
@@ -147,7 +147,7 @@ final class ResetBlockingStateTests: XCTestCase {
 
     let resetResult = await manager.resetBlockingState(context: context)
 
-    XCTAssertNil(resetResult)
+    XCTAssertEqual(resetResult, .activeSession)
     XCTAssertEqual(SharedData.getActiveSharedSession(), live)
     XCTAssertTrue(applier.calls.isEmpty)
   }
@@ -180,7 +180,7 @@ final class ResetBlockingStateTests: XCTestCase {
 
       let resetResult = await manager.resetBlockingState(context: context)
 
-      XCTAssertNotNil(resetResult)
+      XCTAssertEqual(resetResult, .completed)
       XCTAssertEqual(manager.remotelyActiveProfileIds.contains(profile.id), !online)
       XCTAssertNil(manager.activeSession)
     }
@@ -213,7 +213,7 @@ final class ResetBlockingStateTests: XCTestCase {
 
     let result = await manager.resetBlockingState(context: context)
 
-    XCTAssertNotNil(result)
+    XCTAssertEqual(result, .completed)
     XCTAssertEqual(SharedData.getActiveSharedSession(), winner)
     XCTAssertEqual(applier.calls, [.deactivate], "All clearing happens before the cloud fetch")
     XCTAssertEqual(timerRemovals, 1)
@@ -237,7 +237,7 @@ final class ResetBlockingStateTests: XCTestCase {
 
     let result = await manager.resetBlockingState(context: context)
 
-    XCTAssertNil(result)
+    XCTAssertEqual(result, .activeSession)
     XCTAssertEqual(manager.activeSession?.id, detached.id)
     XCTAssertTrue(applier.calls.isEmpty)
   }
@@ -256,7 +256,7 @@ final class ResetBlockingStateTests: XCTestCase {
 
     let result = await manager.resetBlockingState(context: container.mainContext)
 
-    XCTAssertNotNil(result)
+    XCTAssertEqual(result, .completed)
     XCTAssertEqual(SharedData.completedSessionsInScheduler, [])
     XCTAssertEqual(applier.calls, [.deactivate])
   }
@@ -278,9 +278,105 @@ final class ResetBlockingStateTests: XCTestCase {
 
     let result = await manager.resetBlockingState(context: context)
 
-    XCTAssertNotNil(result)
+    XCTAssertEqual(result, .completed)
     XCTAssertNil(manager.activeSession)
     XCTAssertEqual(applier.calls, [.deactivate])
+  }
+
+  func testResetRebuildsUnreadableSnapshotsBeforeRetryingDeletion() async throws {
+    let now = Date()
+    let container = try TestModelContainer.create()
+    let context = container.mainContext
+    let deleted = BlockedProfiles(name: "Delete", createdAt: now, updatedAt: now)
+    let survivor = BlockedProfiles(name: "Keep", createdAt: now, updatedAt: now)
+    context.insert(deleted)
+    context.insert(survivor)
+    try context.save()
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defaults.set(Data("corrupt snapshots".utf8), forKey: "family_foqos_profile_snapshots")
+    XCTAssertThrowsError(try BlockedProfiles.deleteProfile(deleted, in: context))
+    XCTAssertThrowsError(try OrphanedSessionCleanup.run(context: context))
+    let manager = StrategyManager(appBlocker: RecordingRestrictionApplier(), removeAllStrategyTimers: {})
+
+    let result = await manager.resetBlockingState(context: context)
+
+    XCTAssertEqual(result, .completed)
+    XCTAssertEqual(SharedData.snapshot(for: survivor.id.uuidString), BlockedProfiles.getSnapshot(for: survivor))
+    try BlockedProfiles.deleteProfile(deleted, in: context)
+    try context.save()
+    XCTAssertEqual(try context.fetchCount(FetchDescriptor<BlockedProfiles>()), 1)
+    XCTAssertNotNil(SharedData.snapshot(for: survivor.id.uuidString))
+  }
+
+  func testCorruptSnapshotsAreUntouchedWhenReadableSessionIsActive() async throws {
+    let now = Date()
+    let container = try TestModelContainer.create()
+    let context = container.mainContext
+    let profile = BlockedProfiles(name: "Keep", createdAt: now, updatedAt: now)
+    context.insert(profile)
+    try context.save()
+    let live = SharedData.SessionSnapshot(id: UUID().uuidString, tag: "schedule", blockedProfileId: profile.id, startTime: now, forceStarted: true)
+    SharedData.createActiveSharedSession(for: live)
+    let corrupt = Data("corrupt snapshots".utf8)
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defaults.set(corrupt, forKey: "family_foqos_profile_snapshots")
+    let applier = RecordingRestrictionApplier()
+    let manager = StrategyManager(appBlocker: applier, removeAllStrategyTimers: { XCTFail("Refused reset must not remove timers") })
+
+    let result = await manager.resetBlockingState(context: context)
+
+    XCTAssertEqual(result, .activeSession)
+    XCTAssertEqual(defaults.data(forKey: "family_foqos_profile_snapshots"), corrupt)
+    XCTAssertEqual(SharedData.getActiveSharedSession(), live)
+    XCTAssertTrue(applier.calls.isEmpty)
+  }
+
+  func testResetReportsStorageFailureWithoutClearingEffects() async throws {
+    let container = try TestModelContainer.create()
+    SharedData.configureLockPath(nil)
+    let applier = RecordingRestrictionApplier()
+    let manager = StrategyManager(appBlocker: applier, removeAllStrategyTimers: { XCTFail("Failed reset must not clear timers") })
+
+    let result = await manager.resetBlockingState(context: container.mainContext)
+
+    XCTAssertEqual(result, .failed)
+    XCTAssertTrue(applier.calls.isEmpty)
+  }
+
+  func testResetDefersWhileSyncIsReplacingProfiles() async throws {
+    let container = try TestModelContainer.create()
+    let sync = ProfileSyncManager.shared
+    let restoreAttachment = sync.makeAttachedEngineStateRestorerForTest()
+    let savedController = sync.engineController
+    let savedEnabled = sync.isEnabled
+    let savedReady = sync.isSyncReady
+    let savedDefaults = sync.bufferDefaults
+    sync.isEnabled = false
+    sync.engineController = nil
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer {
+      sync.engineController = savedController
+      sync.isSyncReady = savedReady
+      sync.isEnabled = savedEnabled
+      sync.bufferDefaults = savedDefaults
+      restoreAttachment()
+    }
+    await sync.attachEngine(
+      modelContext: container.mainContext, emergencyManager: EmergencyUnblockManager(defaults: defaults),
+      userRecordNameProvider: { "reset-test-user" }, driverFactory: { _ in MockSyncEngineDriver() }, storeDefaults: defaults)
+    let store = SyncEngineStore(userRecordName: "reset-test-user", defaults: defaults)
+    store.resetIntent = ResetIntent(id: UUID(), clear: false, wipe: true, stage: .wiping, priorCommandId: nil)
+    XCTAssertTrue(sync.isReplacingLocalProfiles)
+    let corrupt = Data("corrupt snapshots".utf8)
+    defaults.set(corrupt, forKey: "family_foqos_profile_snapshots")
+    let applier = RecordingRestrictionApplier()
+    let manager = StrategyManager(profileSyncManager: sync, appBlocker: applier, removeAllStrategyTimers: { XCTFail("Deferred reset must not clear timers") })
+
+    let result = await manager.resetBlockingState(context: container.mainContext)
+
+    XCTAssertEqual(result, .syncInProgress)
+    XCTAssertTrue(applier.calls.isEmpty)
+    XCTAssertEqual(defaults.data(forKey: "family_foqos_profile_snapshots"), corrupt)
   }
 
 }

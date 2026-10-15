@@ -593,6 +593,7 @@ class BlockedProfiles {
     var removeProfileActivities: (UUID) -> Void = { DeviceActivityCenterUtil.removeActivities(for: $0) }
     var deactivateRestrictions: () -> Void = { AppBlockerUtil().deactivateRestrictions() }
     var discardLocalSession: @MainActor (UUID) -> Void = { StrategyManager.shared.discardDeletedProfileSession(profileId: $0) }
+    var refreshShortcuts: () -> Void = { FamilyFoqosShortcuts.updateAppShortcutParameters() }
   }
 
   private static func defaultDeleteCleanup() -> DeleteCleanup {
@@ -652,6 +653,7 @@ class BlockedProfiles {
 
     // Then delete the profile
     context.delete(profile)
+    cleanup.refreshShortcuts()
     // Defer context saving as the reference to the profile might be used
   }
 

@@ -284,4 +284,33 @@ final class DeleteProfileCleanupTests: XCTestCase {
     XCTAssertEqual(cancellations, [activeId])
   }
 
+  func testShortcutRefreshRunsOnlyAfterSuccessfulRemoval() throws {
+    let now = Date()
+    let container = try TestModelContainer.create()
+    let context = container.mainContext
+    let profile = BlockedProfiles(name: "Shortcut", createdAt: now, updatedAt: now)
+    context.insert(profile)
+    try context.save()
+    BlockedProfiles.updateSnapshot(for: profile)
+    var refreshes = 0
+    let cleanup = BlockedProfiles.DeleteCleanup(
+      removeStartSchedule: { _ in }, removeStopSchedule: { _ in },
+      cancelPreActivationReminders: { _ in }, cancelSessionAndBreakReminders: { _ in },
+      removeBreakBackstop: { _ in }, removeOneMoreMinuteBackstop: { _ in },
+      removeProfileActivities: { _ in }, discardLocalSession: { _ in },
+      refreshShortcuts: {
+        refreshes += 1
+        XCTAssertNil(SharedData.snapshot(for: profile.id.uuidString))
+        XCTAssertTrue(profile.isDeleted)
+      })
+    SharedData.configureLockPath(nil)
+    XCTAssertThrowsError(try BlockedProfiles.deleteProfile(profile, in: context, cleanup: cleanup))
+    XCTAssertEqual(refreshes, 0)
+    SharedData.resetLockPath()
+
+    try BlockedProfiles.deleteProfile(profile, in: context, cleanup: cleanup)
+
+    XCTAssertEqual(refreshes, 1)
+  }
+
 }
