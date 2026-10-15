@@ -201,6 +201,7 @@ class StrategyManager: ObservableObject {
 
   func loadActiveSession(context: ModelContext) throws {
     do {
+      try OrphanedSessionCleanup.runIfNeeded(context: context)
       activeSession = try getActiveSession(context: context)
     } catch {
       activeSession = nil
@@ -229,6 +230,14 @@ class StrategyManager: ObservableObject {
         scheduleReconciler(context)
       }
     }
+  }
+
+  func discardDeletedProfileSession(profileId: UUID) {
+    guard activeSession?.blockedProfile.id == profileId else { return }
+    stopTimer()
+    activeSession = nil
+    elapsedTime = 0
+    liveActivityManager.endSessionActivity()
   }
 
   #if DEBUG

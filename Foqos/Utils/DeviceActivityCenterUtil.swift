@@ -332,6 +332,19 @@ class DeviceActivityCenterUtil {
     StrategyTimerActivity.cancel(profileId: profileId, sessionId: sessionId)
   }
 
+  static func removeActivities(
+    for profileId: UUID,
+    activities: [DeviceActivityName] = DeviceActivityCenter().activities,
+    stopMonitoring: ([DeviceActivityName]) -> Void = { DeviceActivityCenter().stopMonitoring($0) }
+  ) {
+    let names = activities.filter { activity in
+      let parts = activity.rawValue.split(separator: ":", omittingEmptySubsequences: false)
+      let owner = parts.count == 1 ? parts.first : parts.dropFirst().first
+      return owner.flatMap { UUID(uuidString: String($0)) } == profileId
+    }
+    if !names.isEmpty { stopMonitoring(names) }
+  }
+
   static func registerStrategyTimer(profileId: UUID, minutes: Int, now: Date) throws -> Date {
     let center = DeviceActivityCenter()
     let name = StrategyTimerActivity().getDeviceActivityName(from: profileId.uuidString)

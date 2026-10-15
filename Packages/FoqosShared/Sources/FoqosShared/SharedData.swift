@@ -668,6 +668,37 @@ public enum SharedData {
     return try? JSONDecoder().decode([SessionSnapshot].self, from: raw)
   }
 
+  /// Removes ownership under the same lock as extension starts. Effects must not reenter SharedData.
+  public static func removeProfileSessions(
+    where shouldRemove: (UUID) -> Bool, onRemoveActive: () -> Void = {}
+  ) -> Set<UUID>? {
+    withLockStatus(blocking: true) { outcome in
+      guard outcome == .acquired, let active = checkedActiveSession(),
+        let completed = checkedCompletedSessions()
+      else { return nil }
+      let profiles: [String: ProfileSnapshot]
+      if let raw = data(forKey: .profileSnapshots, legacyKey: .profileSnapshots) {
+        guard let decoded = try? JSONDecoder().decode([String: ProfileSnapshot].self, from: raw) else { return nil }
+        profiles = decoded
+      } else {
+        profiles = [:]
+      }
+      let ids = Set(profiles.values.map(\.id) + completed.map(\.blockedProfileId) + [active?.blockedProfileId].compactMap { $0 })
+        .filter(shouldRemove)
+      guard !ids.isEmpty else { return [] }
+      let removesActive = active.map { ids.contains($0.blockedProfileId) } ?? false
+      guard
+        commitSessionTransition(
+          removesActive ? nil : active,
+          completed: completed.filter { !ids.contains($0.blockedProfileId) },
+          profiles: profiles.filter { !ids.contains($0.value.id) })
+      else { return nil }
+      for id in ids { suite.removeObject(forKey: startRegistrationKey(for: id)) }
+      if removesActive { onRemoveActive() }
+      return ids
+    }
+  }
+
   /// Stage all encodings before writes, then verify exact bytes before ownership effects.
   private static func commitSessionTransition(
     _ active: SessionSnapshot?, completed: [SessionSnapshot],

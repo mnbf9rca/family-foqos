@@ -590,6 +590,9 @@ class BlockedProfiles {
     let removeBreakBackstop: (UUID) -> Void
     let removeOneMoreMinuteBackstop: (UUID) -> Void
     var cancelStrategyTimer: (UUID, String) -> Void = DeviceActivityCenterUtil.removeStrategyTimerActivity
+    var removeProfileActivities: (UUID) -> Void = { DeviceActivityCenterUtil.removeActivities(for: $0) }
+    var deactivateRestrictions: () -> Void = { AppBlockerUtil().deactivateRestrictions() }
+    var discardLocalSession: @MainActor (UUID) -> Void = { StrategyManager.shared.discardDeletedProfileSession(profileId: $0) }
   }
 
   private static func defaultDeleteCleanup() -> DeleteCleanup {
@@ -605,6 +608,7 @@ class BlockedProfiles {
     )
   }
 
+  @MainActor
   static func deleteProfile(
     _ profile: BlockedProfiles,
     in context: ModelContext,
@@ -612,12 +616,20 @@ class BlockedProfiles {
   ) throws {
     let cleanup = cleanup ?? defaultDeleteCleanup()
 
+    guard SharedData.removeProfileSessions(where: { $0 == profile.id }, onRemoveActive: cleanup.deactivateRestrictions) != nil else {
+      throw CocoaError(.fileWriteUnknown)
+    }
+    cleanup.discardLocalSession(profile.id)
+    cleanup.removeProfileActivities(profile.id)
+
+    let now = Date()
     // First end any active sessions
     for session in profile.sessions {
       if session.endTime == nil {
         cleanup.cancelStrategyTimer(profile.id, session.id)
         if profile.profileSchemaVersion < 2 { DeviceActivityCenterUtil.removeStrategyTimerActivity(profileId: profile.id) }
-        session.endSession()
+        // Do not republish the deleted profile snapshot through endSession().
+        session.endTime = now
       }
     }
 
@@ -625,9 +637,6 @@ class BlockedProfiles {
     for session in profile.sessions {
       context.delete(session)
     }
-
-    // Delete the snapshot
-    deleteSnapshot(for: profile)
 
     // Remove all scheduled lifecycle work owned by this profile.
     cleanup.removeStartSchedule(profile)

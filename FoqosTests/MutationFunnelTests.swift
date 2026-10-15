@@ -551,12 +551,17 @@ final class MutationFunnelTests: XCTestCase {
   func testGivenDeleteCommitFailure_WhenRollbackRestoresProfile_ThenSnapshotRestored() throws {
     struct BoomError: Error {}
 
+    let now = Date()
     let profileId = UUID()
     let container = try TestModelContainer.create()
     let context = ModelContext(container)
     let profile = try insertProfile(
       in: context, id: profileId, name: "Snapshot", syncVersion: 1)
     BlockedProfiles.updateSnapshot(for: profile)
+    SharedData.createActiveSharedSession(
+      for: .init(
+        id: UUID().uuidString, tag: "schedule", blockedProfileId: profileId,
+        startTime: now, forceStarted: true, origin: .init(kind: .schedule)))
     let scheduler = ManualProfileDeleteCommitScheduler()
     let funnel = MutationFunnel(
       modelContext: context,
@@ -572,6 +577,7 @@ final class MutationFunnelTests: XCTestCase {
 
     XCTAssertNotNil(try BlockedProfiles.findProfile(byID: profileId, in: context))
     XCTAssertNotNil(SharedData.snapshot(for: profileId.uuidString))
+    XCTAssertNil(SharedData.getActiveSharedSession(), "Rollback restores the profile, not its removed session")
   }
 
   // MARK: - S-15: failed entity delete removes the tombstone before returning and enqueues nothing
