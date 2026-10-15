@@ -1293,7 +1293,7 @@ class StrategyManager: ObservableObject {
   /// live CloudKit round trip.
   func handleStopResult(
     _ result: SessionSyncService.StopResult, profileId: UUID,
-    endTime: Date = Date(), expectedSessionId: String? = nil, expectedStart: Date? = nil
+    endTime: Date = Date(), expectedSessionId: String? = nil, expectedStart: Date? = nil, allowRemoteLegacy: Bool = false
   ) async {
     switch result {
     case .stopped:
@@ -1307,7 +1307,7 @@ class StrategyManager: ObservableObject {
       Log.info("Stop conflict, current seq=\(current.sequenceNumber)", category: .strategy)
       // Retry stop once
       let retryResult = await sessionSyncService.stopSession(
-        profileId: profileId, endTime: endTime, expectedSessionId: expectedSessionId, expectedStart: expectedStart)
+        profileId: profileId, endTime: endTime, expectedSessionId: expectedSessionId, expectedStart: expectedStart, allowRemoteLegacy: allowRemoteLegacy)
       switch retryResult {
       case .stopped:
         recordLocalCompletion(profileId: profileId, sessionId: expectedSessionId, startTime: expectedStart, endTime: endTime)
@@ -1319,12 +1319,12 @@ class StrategyManager: ObservableObject {
       case .conflict, .error:
         Log.info("Stop retry failed", category: .strategy)
         // #201: persist the dropped stop intent for foreground re-drive instead of losing it.
-        sessionStopOutbox.enqueue(profileId: profileId, expectedStart: expectedStart, expectedSessionId: expectedSessionId)
+        sessionStopOutbox.enqueue(profileId: profileId, expectedStart: expectedStart, expectedSessionId: expectedSessionId, allowRemoteLegacy: allowRemoteLegacy)
       }
     case .error(let error):
       Log.info("Failed to sync session stop - \(redactedErrorForLog(error))", category: .strategy)
       // #201: persist the dropped stop intent for foreground re-drive instead of losing it.
-      sessionStopOutbox.enqueue(profileId: profileId, expectedStart: expectedStart, expectedSessionId: expectedSessionId)
+      sessionStopOutbox.enqueue(profileId: profileId, expectedStart: expectedStart, expectedSessionId: expectedSessionId, allowRemoteLegacy: allowRemoteLegacy)
     }
   }
 
@@ -1414,15 +1414,22 @@ class StrategyManager: ObservableObject {
       switch session {
       case .started(let session):
         self.activateSession(session)
-      case .ended(let endedProfile):
-        if endedProfile.profileSchemaVersion < 2 {
+      case .ended(let endedSession):
+        let endedProfile = endedSession.blockedProfile
+        self.recordDepartingSessionCompletion(endedSession, now: endedSession.endTime ?? self.currentDate())
+        let sharedSession = SharedData.getActiveSharedSession()
+        let sharedReplacement = sharedSession.map { $0.id != endedSession.id } ?? false
+        let sameProfileReplacement =
+          (self.activeSession.map { $0.id != endedSession.id && $0.blockedProfile.id == endedProfile.id } ?? false)
+          || (sharedSession.map { $0.id != endedSession.id && $0.blockedProfileId == endedProfile.id } ?? false)
+        if !sameProfileReplacement && endedProfile.profileSchemaVersion < 2 {
           DeviceActivityCenterUtil.removeStrategyTimerActivity(profileId: endedProfile.id)
         }
+        if self.activeSession?.id == endedSession.id { self.activeSession = nil }
         // Delayed outgoing callbacks must not clear the replacement's activity or grants.
-        if self.activeSession == nil || self.activeSession?.blockedProfile.id == endedProfile.id {
+        if !sharedReplacement && self.activeSession == nil {
           self.timersUtil.cancelAll()
 
-          self.activeSession = nil
           self.liveActivityManager.endSessionActivity()
           self.scheduleReminder(profile: endedProfile)
 
@@ -1435,21 +1442,9 @@ class StrategyManager: ObservableObject {
           DeviceActivityCenterUtil.removeAllBreakTimerActivities()
         }
 
-        // Remove one more minute activity for the ended profile
-        DeviceActivityCenterUtil.removeOneMoreMinuteActivity(for: endedProfile)
-
-        self.migrateDepartingProfile(endedProfile)
-
-        // Sync session stop using CAS (if global sync is enabled)
-        if self.shouldSyncSessionChange {
-          let previousTask = self.sessionSyncTask
-          self.sessionSyncTask = Task {
-            await previousTask?.value
-            let result = await self.sessionSyncService.stopSession(
-              profileId: endedProfile.id
-            )
-            await self.handleStopResult(result, profileId: endedProfile.id)
-          }
+        if !sameProfileReplacement {
+          DeviceActivityCenterUtil.removeOneMoreMinuteActivity(for: endedProfile)
+          self.migrateDepartingProfile(endedProfile)
         }
       }
     }
@@ -1856,9 +1851,6 @@ class StrategyManager: ObservableObject {
     } else {
       cancelTimer(session.blockedProfile.id, session.id)
     }
-    recordLocalCompletion(
-      profileId: session.blockedProfile.id, sessionId: session.usesCanonicalIdentity == true ? session.id : nil,
-      startTime: session.startTime, endTime: now)
     session.endSession(now: now)
     var saved = false
     do {
@@ -1878,20 +1870,27 @@ class StrategyManager: ObservableObject {
     scheduleReminder(profile: session.blockedProfile)
     DeviceActivityCenterUtil.removeStopScheduleActivity(for: session.blockedProfile)
     DeviceActivityCenterUtil.removeOneMoreMinuteActivity(for: session.blockedProfile)
+    recordDepartingSessionCompletion(session, now: now, syncDisplacedSession: syncDisplacedSession)
+    WidgetCenter.shared.reloadTimelines(ofKind: "ProfileControlWidget")
+    return saved
+  }
+
+  private func recordDepartingSessionCompletion(_ session: BlockedProfileSession, now: Date, syncDisplacedSession: Bool = false) {
+    recordLocalCompletion(
+      profileId: session.blockedProfile.id, sessionId: session.usesCanonicalIdentity == true ? session.id : nil,
+      startTime: session.startTime, endTime: now)
     if shouldSyncSessionChange || (syncDisplacedSession && profileSyncManager.isEnabled) {
       let profileId = session.blockedProfile.id
       let expectedSessionId = session.usesCanonicalIdentity == true ? session.id : nil
       let expectedStart = session.startTime
-      sessionStopOutbox.enqueue(profileId: profileId, expectedStart: expectedStart, expectedSessionId: expectedSessionId)
+      sessionStopOutbox.enqueue(profileId: profileId, expectedStart: expectedStart, expectedSessionId: expectedSessionId, allowRemoteLegacy: true)
       let previousTask = sessionSyncTask
       sessionSyncTask = Task {
         await previousTask?.value
-        let result = await sessionSyncService.stopSession(profileId: profileId, endTime: now, expectedSessionId: expectedSessionId, expectedStart: expectedStart)
-        await handleStopResult(result, profileId: profileId, endTime: now, expectedSessionId: expectedSessionId, expectedStart: expectedStart)
+        let result = await sessionSyncService.stopSession(profileId: profileId, endTime: now, expectedSessionId: expectedSessionId, expectedStart: expectedStart, allowRemoteLegacy: true)
+        await handleStopResult(result, profileId: profileId, endTime: now, expectedSessionId: expectedSessionId, expectedStart: expectedStart, allowRemoteLegacy: true)
       }
     }
-    WidgetCenter.shared.reloadTimelines(ofKind: "ProfileControlWidget")
-    return saved
   }
 
   @discardableResult

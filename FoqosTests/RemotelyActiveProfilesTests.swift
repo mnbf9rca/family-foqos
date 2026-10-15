@@ -30,6 +30,39 @@ final class RemotelyActiveProfilesTests: XCTestCase {
     return record
   }
 
+  func testDelayedLegacyEndCannotClearSameProfileReplacement() throws {
+    let now = Date()
+    let syncWasEnabled = ProfileSyncManager.shared.isEnabled
+    ProfileSyncManager.shared.isEnabled = false
+    defer { ProfileSyncManager.shared.isEnabled = syncWasEnabled }
+    for extensionOnly in [false, true] {
+      let container = try TestModelContainer.create()
+      let context = container.mainContext
+      let profile = BlockedProfiles(name: "Restarted", createdAt: now, updatedAt: now)
+      profile.profileSchemaVersion = 1
+      profile.blockingStrategyId = ManualBlockingStrategy.id
+      let old = BlockedProfileSession(tag: "manual", blockedProfile: profile, startTime: now)
+      old.endTime = now.addingTimeInterval(30)
+      let replacement = BlockedProfileSession(tag: "manual", blockedProfile: profile, startTime: now.addingTimeInterval(60), origin: .init(kind: .manual))
+      context.insert(profile)
+      context.insert(old)
+      context.insert(replacement)
+      try context.save()
+      let manager = StrategyManager(remoteActiveDefaults: defaults)
+      manager.activeSession = extensionOnly ? old : replacement
+      SharedData.createActiveSharedSession(for: replacement.toSnapshot())
+      let current = record(profileId: profile.id, sessionId: replacement.id, sequence: 2, now: replacement.startTime)
+      manager.receiveSessionRecord(current)
+      manager.getStrategy(id: ManualBlockingStrategy.id).onSessionCreation?(.ended(old))
+      XCTAssertEqual(manager.activeSession?.id, extensionOnly ? nil : replacement.id)
+      XCTAssertEqual(SharedData.getActiveSharedSession()?.id, replacement.id)
+      XCTAssertEqual(profile.profileSchemaVersion, 1, "Do not migrate a profile while its replacement is active")
+      XCTAssertTrue(manager.remotelyActiveProfileIds.contains(profile.id))
+      XCTAssertTrue(manager.receiveSessionRecord(current))
+      XCTAssertTrue(replacement.isActive)
+    }
+  }
+
   func testConfirmationReleasesStoppedAndMissingRecordsButKeepsActiveAndOfflineBlocks() async {
     let now = Date()
     for outcome in ["active", "stopped", "missing", "offline"] {
@@ -48,6 +81,59 @@ final class RemotelyActiveProfilesTests: XCTestCase {
       let confirmed = await manager.confirmSessionState(profileId: profileId)
       XCTAssertEqual(confirmed, outcome != "offline", outcome)
       XCTAssertEqual(manager.remotelyActiveProfileIds.contains(profileId), outcome == "active" || outcome == "offline", outcome)
+      manager.clearAllRemoteSessionActive()
+    }
+  }
+
+  func testOfflineAdoptedLegacyTimerStopReplaysAfterRelaunchWithoutEndingReplacement() async throws {
+    let now = Date()
+    let syncWasEnabled = ProfileSyncManager.shared.isEnabled
+    ProfileSyncManager.shared.isEnabled = true
+    defer { ProfileSyncManager.shared.isEnabled = syncWasEnabled }
+    for replaced in [false, true] {
+      let container = try TestModelContainer.create()
+      let context = container.mainContext
+      let profile = BlockedProfiles(name: "Legacy timer", createdAt: now, updatedAt: now)
+      profile.profileSchemaVersion = 1
+      profile.blockingStrategyId = ManualBlockingStrategy.id
+      let ended = BlockedProfileSession(tag: "remote-sync", blockedProfile: profile, startTime: now)
+      ended.endTime = now.addingTimeInterval(30)
+      context.insert(profile)
+      context.insert(ended)
+      try context.save()
+      var active = ProfileSessionRecord(profileId: profile.id)
+      active.applyUpdate(isActive: true, sequenceNumber: 1, deviceId: "remote", startTime: now, timerEndTime: now.addingTimeInterval(900))
+      let attempted = expectation(description: "Offline legacy stop attempted")
+      let offline = SessionSyncService(fetchRecord: { _ in
+        attempted.fulfill()
+        throw CKError(.networkUnavailable)
+      })
+      let manager = StrategyManager(sessionSyncService: offline, remoteActiveDefaults: defaults)
+      manager.activeSession = ended
+      manager.receiveSessionRecord(active)
+      manager.getStrategy(id: ManualBlockingStrategy.id).onSessionCreation?(.ended(ended))
+      let pending = try XCTUnwrap(manager.sessionStopOutbox.intents?.first)
+      XCTAssertNil(pending.expectedSessionId)
+      XCTAssertEqual(pending.expectedStart, now)
+      XCTAssertEqual(pending.allowRemoteLegacy, true)
+      XCTAssertFalse(manager.receiveSessionRecord(active))
+      await fulfillment(of: [attempted], timeout: 2)
+
+      var cloud = active
+      if replaced {
+        cloud.resetForNewSession()
+        cloud.applyUpdate(isActive: true, sequenceNumber: 2, deviceId: "remote", startTime: now.addingTimeInterval(60), timerEndTime: now.addingTimeInterval(960))
+      }
+      let server = RemoteSessionTestServer(record: cloud)
+      let online = SessionSyncService(fetchRecord: { try await server.fetch($0) }, saveRecord: { try await server.save($0) })
+      let relaunched = StrategyManager(sessionSyncService: online, remoteActiveDefaults: defaults)
+      XCTAssertFalse(relaunched.receiveSessionRecord(active))
+      await relaunched.drainSessionStopOutbox()
+      let saved = await server.current()
+      XCTAssertEqual(saved.isActive, replaced)
+      XCTAssertEqual(saved.startTime, cloud.startTime)
+      XCTAssertTrue(relaunched.sessionStopOutbox.pending.isEmpty)
+      XCTAssertEqual(relaunched.remotelyActiveProfileIds.contains(profile.id), replaced)
       manager.clearAllRemoteSessionActive()
     }
   }

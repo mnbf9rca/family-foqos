@@ -85,6 +85,41 @@ final class SyncApplyServiceTests: XCTestCase {
 
   private let noPendingDelete: (String) -> Bool = { _ in false }
 
+  func testLegacyManualStopRejectsIdenticalActiveReplayBeforeCloudConfirmationAndAfterRelaunch() throws {
+    let now = Date()
+    let syncWasEnabled = ProfileSyncManager.shared.isEnabled
+    ProfileSyncManager.shared.isEnabled = false
+    defer { ProfileSyncManager.shared.isEnabled = syncWasEnabled }
+    for canonical in [false, true] {
+      let profile = BlockedProfiles(name: "Legacy", createdAt: now, updatedAt: now)
+      profile.profileSchemaVersion = 1
+      profile.blockingStrategyId = ManualBlockingStrategy.id
+      context.insert(profile)
+      try context.save()
+      let manager = StrategyManager(appBlocker: RecordingRestrictionApplier(), remoteActiveDefaults: storeDefaults)
+      defer { manager.stopTimer() }
+      let service = SyncApplyService(
+        modelContext: context, store: store, sessionController: manager,
+        emergencyManager: emergencyManager, deviceId: deviceId)
+      var active = ProfileSessionRecord(profileId: profile.id)
+      active.applyUpdate(isActive: true, sequenceNumber: 1, deviceId: "device-B", startTime: now, sessionId: canonical ? UUID().uuidString : nil)
+      let delivery = active.toCKRecord(in: zoneID)
+      _ = service.applyFetchedModification(delivery, isPendingDeleteOrTombstoned: noPendingDelete)
+      let session = try XCTUnwrap(manager.activeSession)
+      _ = manager.getStrategy(id: ManualBlockingStrategy.id).stopBlocking(context: context, session: session)
+      XCTAssertNil(manager.activeSession)
+      XCTAssertFalse(manager.remotelyActiveProfileIds.contains(profile.id))
+
+      _ = service.applyFetchedModification(delivery, isPendingDeleteOrTombstoned: noPendingDelete)
+      XCTAssertNil(manager.activeSession, "An ended legacy session must not reapply its shields")
+      XCTAssertFalse(manager.receiveSessionRecord(active))
+      let relaunched = StrategyManager(remoteActiveDefaults: storeDefaults)
+      XCTAssertFalse(relaunched.receiveSessionRecord(active), "The completed identity must survive relaunch")
+      XCTAssertFalse(relaunched.remotelyActiveProfileIds.contains(profile.id))
+      manager.stopRemoteSession(context: context, profileId: profile.id)
+    }
+  }
+
   func testRemoteScheduledSessionStoppedHereDoesNotLeaveEditBlockAfterOwnEchoAndRelaunch() throws {
     let now = Date()
     let profile = BlockedProfiles(name: "Scheduled", createdAt: now, updatedAt: now)

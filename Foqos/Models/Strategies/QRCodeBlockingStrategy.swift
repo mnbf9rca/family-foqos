@@ -86,7 +86,7 @@ class QRCodeBlockingStrategy: BlockingStrategy {
         }
         self.appBlocker.deactivateRestrictions()
 
-        self.onSessionCreation?(.ended(session.blockedProfile))
+        self.onSessionCreation?(.ended(session))
       case .failure(let error):
         self.onErrorMessage?(error.localizedDescription)
       }

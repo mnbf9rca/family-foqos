@@ -60,7 +60,7 @@ class ShortcutTimerBlockingStrategy: BlockingStrategy {
     }
     self.appBlocker.deactivateRestrictions()
 
-    self.onSessionCreation?(.ended(session.blockedProfile))
+    self.onSessionCreation?(.ended(session))
 
     return nil
   }
