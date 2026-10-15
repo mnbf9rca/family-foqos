@@ -7,20 +7,15 @@ import XCTest
 @MainActor
 final class OrphanedSessionCleanupTests: XCTestCase {
   private var suiteName: String!
-  private var previousMarker: Any?
-  private let marker = "family_foqos_orphaned_session_cleanup_v1"
 
   override func setUp() async throws {
     suiteName = "OrphanedSessionCleanupTests-\(UUID())"
     SharedData.configure(suite: UserDefaults(suiteName: suiteName)!)
-    previousMarker = UserDefaults.standard.object(forKey: marker)
-    UserDefaults.standard.removeObject(forKey: marker)
   }
 
   override func tearDown() async throws {
     SharedData.resetLockPath()
     UserDefaults().removePersistentDomain(forName: suiteName)
-    if let previousMarker { UserDefaults.standard.set(previousMarker, forKey: marker) } else { UserDefaults.standard.removeObject(forKey: marker) }
   }
 
   func testFirstLoadRemovesGhostAndLaterLoadsDoNotRepeatRepair() throws {
@@ -39,6 +34,10 @@ final class OrphanedSessionCleanupTests: XCTestCase {
     SharedData.createActiveSharedSession(for: ghost)
     try manager.loadActiveSession(context: container.mainContext)
     XCTAssertEqual(SharedData.getActiveSharedSession(), ghost, "Repair must not recur during a later transient empty generation")
+    let relaunched = StrategyManager()
+    defer { relaunched.stopTimer() }
+    try relaunched.loadActiveSession(context: container.mainContext)
+    XCTAssertNil(SharedData.getActiveSharedSession(), "A new app launch must repair new orphans too")
   }
 
   func testFailedRepairLeavesGhostAndRetriesOnNextLoad() throws {
@@ -52,11 +51,9 @@ final class OrphanedSessionCleanupTests: XCTestCase {
 
     XCTAssertThrowsError(try manager.loadActiveSession(context: container.mainContext))
     XCTAssertEqual(SharedData.getActiveSharedSession(), ghost)
-    XCTAssertFalse(UserDefaults.standard.bool(forKey: marker))
     SharedData.resetLockPath()
     try manager.loadActiveSession(context: container.mainContext)
     XCTAssertNil(SharedData.getActiveSharedSession())
-    XCTAssertTrue(UserDefaults.standard.bool(forKey: marker))
   }
 
   func testRepairPreservesLiveOwnerAndDeletesLocalAndCompletedOrphans() throws {
@@ -84,7 +81,7 @@ final class OrphanedSessionCleanupTests: XCTestCase {
     var canceled: [UUID] = []
     var deactivations = 0
 
-    try OrphanedSessionCleanup.runIfNeeded(
+    try OrphanedSessionCleanup.run(
       context: context, removeActivities: { canceled.append($0) },
       deactivateRestrictions: { deactivations += 1 })
 
@@ -97,12 +94,10 @@ final class OrphanedSessionCleanupTests: XCTestCase {
     XCTAssertEqual(deactivations, 0)
   }
 
-  func testSaveFailureDoesNotMarkRepairComplete() throws {
+  func testSaveFailureIsReportedAndRepairCanRetry() throws {
     struct SaveFailure: Error {}
     let container = try TestModelContainer.create()
-    XCTAssertThrowsError(try OrphanedSessionCleanup.runIfNeeded(context: container.mainContext, save: { _ in throw SaveFailure() }))
-    XCTAssertFalse(UserDefaults.standard.bool(forKey: marker))
-    try OrphanedSessionCleanup.runIfNeeded(context: container.mainContext)
-    XCTAssertTrue(UserDefaults.standard.bool(forKey: marker))
+    XCTAssertThrowsError(try OrphanedSessionCleanup.run(context: container.mainContext, save: { _ in throw SaveFailure() }))
+    try OrphanedSessionCleanup.run(context: container.mainContext)
   }
 }

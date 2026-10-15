@@ -106,7 +106,7 @@ public enum SharedData {
 
   /// Like `withLock`, but reports whether a real flock was acquired. Non-blocking mode uses a
   /// bounded retry so extension wakes do not wedge behind a suspended lock holder.
-  public static func withLockStatus<T>(blocking: Bool, _ body: (LockOutcome) -> T) -> T {
+  public static func withLockStatus<T>(blocking: Bool, retryNonblocking: Bool = true, _ body: (LockOutcome) -> T) -> T {
     guard let lockPath else {
       Log.warning("SharedData: no lockPath (test mode?) — proceeding unlocked", category: .app)
       return body(.degraded)
@@ -132,14 +132,14 @@ public enum SharedData {
       }
     } else {
       var acquired = false
-      for _ in 0..<nonblockingLockRetryCount {
+      for attempt in 0..<(retryNonblocking ? nonblockingLockRetryCount : 1) {
         let ret = flock(fd, LOCK_NB | LOCK_EX)
         if ret == 0 {
           acquired = true
           break
         }
         if errno != EWOULDBLOCK && errno != EINTR { break }
-        usleep(nonblockingLockRetrySleepMicroseconds)
+        if retryNonblocking && attempt < nonblockingLockRetryCount - 1 { usleep(nonblockingLockRetrySleepMicroseconds) }
       }
       guard acquired else {
         Log.warning("SharedData: LOCK_NB timed out — proceeding unlocked", category: .app)
@@ -670,11 +670,13 @@ public enum SharedData {
 
   /// Removes ownership under the same lock as extension starts. Effects must not reenter SharedData.
   public static func removeProfileSessions(
-    where shouldRemove: (UUID) -> Bool, onRemoveActive: () -> Void = {}
+    where shouldRemove: (UUID) -> Bool, retryLock: Bool = true,
+    allowRemoval: (SessionSnapshot?) -> Bool = { _ in true },
+    onRemoveActive: () -> Void = {}, onCommit: () -> Void = {}
   ) -> Set<UUID>? {
-    withLockStatus(blocking: true) { outcome in
+    withLockStatus(blocking: false, retryNonblocking: retryLock) { outcome in
       guard outcome == .acquired, let active = checkedActiveSession(),
-        let completed = checkedCompletedSessions()
+        let completed = checkedCompletedSessions(), allowRemoval(active)
       else { return nil }
       let profiles: [String: ProfileSnapshot]
       if let raw = data(forKey: .profileSnapshots, legacyKey: .profileSnapshots) {
@@ -685,7 +687,10 @@ public enum SharedData {
       }
       let ids = Set(profiles.values.map(\.id) + completed.map(\.blockedProfileId) + [active?.blockedProfileId].compactMap { $0 })
         .filter(shouldRemove)
-      guard !ids.isEmpty else { return [] }
+      guard !ids.isEmpty else {
+        onCommit()
+        return []
+      }
       let removesActive = active.map { ids.contains($0.blockedProfileId) } ?? false
       guard
         commitSessionTransition(
@@ -695,6 +700,7 @@ public enum SharedData {
       else { return nil }
       for id in ids { suite.removeObject(forKey: startRegistrationKey(for: id)) }
       if removesActive { onRemoveActive() }
+      onCommit()
       return ids
     }
   }

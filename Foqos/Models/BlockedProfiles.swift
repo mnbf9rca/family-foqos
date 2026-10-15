@@ -617,7 +617,11 @@ class BlockedProfiles {
     let cleanup = cleanup ?? defaultDeleteCleanup()
 
     guard SharedData.removeProfileSessions(where: { $0 == profile.id }, onRemoveActive: cleanup.deactivateRestrictions) != nil else {
-      throw CocoaError(.fileWriteUnknown)
+      throw NSError(
+        domain: "ProfileDeletion", code: 1,
+        userInfo: [
+          NSLocalizedDescriptionKey: "Couldn't remove this profile's stored sessions, so it wasn't deleted. Go to Settings and tap Reset Blocking State, then delete it again."
+        ])
     }
     cleanup.discardLocalSession(profile.id)
     cleanup.removeProfileActivities(profile.id)

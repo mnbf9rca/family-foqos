@@ -199,9 +199,14 @@ class StrategyManager: ObservableObject {
     return baseMessage + " by enabling \(profile.name)"
   }
 
+  private var didCleanOrphanedSessionsAtLaunch = false
+
   func loadActiveSession(context: ModelContext) throws {
     do {
-      try OrphanedSessionCleanup.runIfNeeded(context: context)
+      if !didCleanOrphanedSessionsAtLaunch && !profileSyncManager.isReplacingLocalProfiles {
+        try OrphanedSessionCleanup.run(context: context)
+        didCleanOrphanedSessionsAtLaunch = true
+      }
       activeSession = try getActiveSession(context: context)
     } catch {
       activeSession = nil
@@ -1745,17 +1750,30 @@ class StrategyManager: ObservableObject {
     }
   }
 
-  func resetBlockingState(context: ModelContext) {
-    guard !isBlocking else {
-      Log.info("Cannot reset blocking state while a profile is active", category: .strategy)
-      return
+  @discardableResult
+  func resetBlockingState(context: ModelContext) -> Set<UUID>? {
+    do {
+      guard !profileSyncManager.isReplacingLocalProfiles else { return nil }
+      let ids = try OrphanedSessionCleanup.run(
+        context: context, retryLock: true, requireInactive: true,
+        deactivateRestrictions: {},
+        onCommit: {
+          self.stopTimer()
+          self.activeSession = nil
+          self.elapsedTime = 0
+          self.liveActivityManager.endSessionActivity()
+          self.appBlocker.deactivateRestrictions()
+          DeviceActivityCenterUtil.removeAllBreakTimerActivities()
+          DeviceActivityCenterUtil.removeAllOneMoreMinuteActivities()
+          self.removeAllStrategyTimers()
+        })
+      cleanUpGhostSchedules(context: context)
+      Log.info("Blocking state reset complete", category: .strategy)
+      return ids
+    } catch {
+      Log.error("Blocking state reset refused or failed: \(redactedErrorForLog(error))", category: .strategy)
+      return nil
     }
-
-    Log.info("Resetting blocking state...", category: .strategy)
-
-    clearBlockingArtifacts(context: context)
-
-    Log.info("Blocking state reset complete", category: .strategy)
   }
 
   func forceClearEnforcementForSyncedDataWipe(context: ModelContext) {

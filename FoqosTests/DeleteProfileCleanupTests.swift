@@ -151,6 +151,37 @@ final class DeleteProfileCleanupTests: XCTestCase {
     XCTAssertNil(SharedData.getActiveSharedSession())
   }
 
+  func testDeletionExhaustsBriefLockRetryWithoutDeletingProfile() throws {
+    let now = Date()
+    let container = try TestModelContainer.create()
+    let context = container.mainContext
+    let profile = BlockedProfiles(name: "Keep", createdAt: now, updatedAt: now)
+    context.insert(profile)
+    try context.save()
+    BlockedProfiles.updateSnapshot(for: profile)
+    let path = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).path
+    let fd = open(path, O_CREAT | O_RDWR, 0o600)
+    XCTAssertGreaterThanOrEqual(fd, 0)
+    guard fd >= 0 else { return }
+    defer {
+      close(fd)
+      unlink(path)
+    }
+    XCTAssertEqual(flock(fd, LOCK_EX), 0)
+    SharedData.configureLockPath(path)
+    let released = DispatchSemaphore(value: 0)
+    DispatchQueue.global().asyncAfter(deadline: .now() + 1) {
+      flock(fd, LOCK_UN)
+      released.signal()
+    }
+    XCTAssertThrowsError(try BlockedProfiles.deleteProfile(profile, in: context)) { error in
+      XCTAssertEqual(error.localizedDescription, "Couldn't remove this profile's stored sessions, so it wasn't deleted. Go to Settings and tap Reset Blocking State, then delete it again.")
+    }
+    XCTAssertNotNil(try BlockedProfiles.findProfile(byID: profile.id, in: context))
+    XCTAssertEqual(released.wait(timeout: .now() + 3), .success)
+    XCTAssertNotNil(SharedData.snapshot(for: profile.id.uuidString))
+  }
+
   func testDeletionClearsOnlyOwnedShieldsAndPublishedSession() throws {
     let now = Date()
     for deletingActive in [true, false] {
