@@ -100,4 +100,25 @@ final class OrphanedSessionCleanupTests: XCTestCase {
     XCTAssertThrowsError(try OrphanedSessionCleanup.run(context: container.mainContext, save: { _ in throw SaveFailure() }))
     try OrphanedSessionCleanup.run(context: container.mainContext)
   }
+
+  func testLaunchCleanupDoesNotWaitForAnExtensionLock() throws {
+    let container = try TestModelContainer.create()
+    let path = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).path
+    let fd = open(path, O_CREAT | O_RDWR, 0o600)
+    XCTAssertGreaterThanOrEqual(fd, 0)
+    guard fd >= 0 else { return }
+    defer {
+      flock(fd, LOCK_UN)
+      close(fd)
+      unlink(path)
+    }
+    XCTAssertEqual(flock(fd, LOCK_EX), 0)
+    SharedData.configureLockPath(path)
+    let clock = ContinuousClock()
+    let start = clock.now
+
+    XCTAssertThrowsError(try OrphanedSessionCleanup.run(context: container.mainContext))
+
+    XCTAssertLessThan(start.duration(to: clock.now), .milliseconds(250))
+  }
 }

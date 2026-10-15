@@ -2018,11 +2018,12 @@ class StrategyManager: ObservableObject {
   }
 
   @discardableResult
-  func resetBlockingState(context: ModelContext) -> Set<UUID>? {
+  func resetBlockingState(context: ModelContext) async -> Set<UUID>? {
     do {
       guard !profileSyncManager.isReplacingLocalProfiles else { return nil }
       let ids = try OrphanedSessionCleanup.run(
         context: context, retryLock: true, requireInactive: true,
+        publishedActiveOwner: activeSession?.isActive == true ? activeSession?.blockedProfile.id : nil,
         deactivateRestrictions: {},
         onCommit: {
           self.stopTimer()
@@ -2036,6 +2037,13 @@ class StrategyManager: ObservableObject {
         })
       cleanUpGhostSchedules(context: context)
       Log.info("Blocking state reset complete", category: .strategy)
+      if profileSyncManager.isEnabled {
+        for id in ids {
+          if !(await confirmSessionState(profileId: id)) {
+            Log.warning("Blocking reset kept unconfirmed remote session cache", category: .sync)
+          }
+        }
+      }
       return ids
     } catch {
       Log.error("Blocking state reset refused or failed: \(redactedErrorForLog(error))", category: .strategy)

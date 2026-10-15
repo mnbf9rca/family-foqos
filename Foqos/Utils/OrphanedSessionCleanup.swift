@@ -9,6 +9,7 @@ enum OrphanedSessionCleanup {
     context: ModelContext,
     retryLock: Bool = false,
     requireInactive: Bool = false,
+    publishedActiveOwner: UUID? = nil,
     save: (ModelContext) throws -> Void = { try $0.save() },
     removeActivities: (UUID) -> Void = { DeviceActivityCenterUtil.removeActivities(for: $0) },
     deactivateRestrictions: () -> Void = { AppBlockerUtil().deactivateRestrictions() },
@@ -19,10 +20,11 @@ enum OrphanedSessionCleanup {
     let profileIds = Set(profiles.map(\.id))
     // Use the surviving owners, never fault a deleted session's nonoptional relationship.
     let ownedSessionIds = Set(profiles.flatMap { $0.sessions.valid.map(\.id) })
-    let hasLocalActiveSession = profiles.contains { $0.sessions.valid.contains { $0.isActive } }
+    let hasPublishedActiveSession = publishedActiveOwner.map { profileIds.contains($0) } ?? false
+    let hasLocalActiveSession = hasPublishedActiveSession || profiles.contains { $0.sessions.valid.contains { $0.isActive } }
     guard
       let removed = SharedData.removeProfileSessions(
-        where: { !profileIds.contains($0) }, retryLock: retryLock,
+        where: { !profileIds.contains($0) }, retryLock: retryLock, discardUnreadableSessions: requireInactive,
         allowRemoval: { shared in
           !requireInactive || (!hasLocalActiveSession && !(shared.map { $0.endTime == nil && profileIds.contains($0.blockedProfileId) } ?? false))
         }, onRemoveActive: deactivateRestrictions, onCommit: onCommit)

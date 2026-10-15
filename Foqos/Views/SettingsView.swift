@@ -495,7 +495,7 @@ struct SettingsView: View {
       .alert("Reset Blocking State", isPresented: $showResetBlockingStateAlert) {
         Button("Cancel", role: .cancel) {}
         Button("Reset", role: .destructive) {
-          strategyManager.resetBlockingState(context: context)
+          Task { await strategyManager.resetBlockingState(context: context) }
         }
       } message: {
         Text("This will clear all app restrictions and remove any ghost schedules. Only use this if you're locked out and no profile is active.")

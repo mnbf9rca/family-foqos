@@ -671,13 +671,20 @@ public enum SharedData {
   /// Removes ownership under the same lock as extension starts. Effects must not reenter SharedData.
   public static func removeProfileSessions(
     where shouldRemove: (UUID) -> Bool, retryLock: Bool = true,
+    discardUnreadableSessions: Bool = false,
     allowRemoval: (SessionSnapshot?) -> Bool = { _ in true },
     onRemoveActive: () -> Void = {}, onCommit: () -> Void = {}
   ) -> Set<UUID>? {
     withLockStatus(blocking: false, retryNonblocking: retryLock) { outcome in
-      guard outcome == .acquired, let active = checkedActiveSession(),
-        let completed = checkedCompletedSessions(), allowRemoval(active)
-      else { return nil }
+      guard outcome == .acquired else { return nil }
+      let checkedActive = checkedActiveSession()
+      let checkedCompleted = checkedCompletedSessions()
+      guard discardUnreadableSessions || (checkedActive != nil && checkedCompleted != nil) else { return nil }
+      let active = checkedActive.flatMap { $0 }
+      let readableCompleted = checkedCompleted ?? []
+      let malformedCompleted = discardUnreadableSessions ? readableCompleted.filter { $0.endTime == nil } : []
+      let completed = discardUnreadableSessions ? readableCompleted.filter { $0.endTime != nil } : readableCompleted
+      guard allowRemoval(active) else { return nil }
       let profiles: [String: ProfileSnapshot]
       if let raw = data(forKey: .profileSnapshots, legacyKey: .profileSnapshots) {
         guard let decoded = try? JSONDecoder().decode([String: ProfileSnapshot].self, from: raw) else { return nil }
@@ -687,7 +694,7 @@ public enum SharedData {
       }
       let ids = Set(profiles.values.map(\.id) + completed.map(\.blockedProfileId) + [active?.blockedProfileId].compactMap { $0 })
         .filter(shouldRemove)
-      guard !ids.isEmpty else {
+      guard !ids.isEmpty || checkedActive == nil || checkedCompleted == nil || !malformedCompleted.isEmpty else {
         onCommit()
         return []
       }
@@ -698,6 +705,9 @@ public enum SharedData {
           completed: completed.filter { !ids.contains($0.blockedProfileId) },
           profiles: profiles.filter { !ids.contains($0.value.id) })
       else { return nil }
+      if checkedActive == nil { Log.error("Reset discarded unreadable shared active session data", category: .session) }
+      if checkedCompleted == nil { Log.error("Reset discarded unreadable shared completed session data", category: .session) }
+      for _ in malformedCompleted { Log.error("Reset discarded malformed shared completed session", category: .session) }
       for id in ids { suite.removeObject(forKey: startRegistrationKey(for: id)) }
       if removesActive { onRemoveActive() }
       onCommit()
