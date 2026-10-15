@@ -225,9 +225,12 @@ final class ResetBlockingStateTests: XCTestCase {
     let profile = BlockedProfiles(name: "Surviving owner", createdAt: now, updatedAt: now)
     context.insert(profile)
     try context.save()
-    let detachedOwner = BlockedProfiles(name: "Detached", createdAt: now, updatedAt: now)
-    detachedOwner.id = profile.id
+    let otherContext = ModelContext(container)
+    let detachedOwner = try XCTUnwrap(BlockedProfiles.findProfile(byID: profile.id, in: otherContext))
     let detached = BlockedProfileSession(tag: "manual", blockedProfile: detachedOwner, startTime: now)
+    otherContext.insert(detached)
+    XCTAssertTrue(detached.isPersistentModelValid)
+    XCTAssertTrue(try context.fetch(FetchDescriptor<BlockedProfileSession>()).isEmpty)
     let applier = RecordingRestrictionApplier()
     let manager = StrategyManager(appBlocker: applier, removeAllStrategyTimers: {})
     manager.activeSession = detached
@@ -255,6 +258,28 @@ final class ResetBlockingStateTests: XCTestCase {
 
     XCTAssertNotNil(result)
     XCTAssertEqual(SharedData.completedSessionsInScheduler, [])
+    XCTAssertEqual(applier.calls, [.deactivate])
+  }
+
+  func testResetClearsDeletedPublishedReference() async throws {
+    let now = Date()
+    let container = try TestModelContainer.create()
+    let context = container.mainContext
+    let profile = BlockedProfiles(name: "Owner", createdAt: now, updatedAt: now)
+    context.insert(profile)
+    let session = BlockedProfileSession(tag: "manual", blockedProfile: profile, startTime: now)
+    context.insert(session)
+    try context.save()
+    let applier = RecordingRestrictionApplier()
+    let manager = StrategyManager(appBlocker: applier, removeAllStrategyTimers: {})
+    manager.activeSession = session
+    context.delete(session)
+    XCTAssertFalse(session.isPersistentModelValid)
+
+    let result = await manager.resetBlockingState(context: context)
+
+    XCTAssertNotNil(result)
+    XCTAssertNil(manager.activeSession)
     XCTAssertEqual(applier.calls, [.deactivate])
   }
 

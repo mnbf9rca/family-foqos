@@ -2019,9 +2019,16 @@ class StrategyManager: ObservableObject {
   func resetBlockingState(context: ModelContext) async -> Set<UUID>? {
     do {
       guard !profileSyncManager.isReplacingLocalProfiles else { return nil }
+      // Check metadata before reading a published reference that a prior delete may have invalidated.
+      let publishedActiveOwner: UUID?
+      if let activeSession, activeSession.isPersistentModelValid, activeSession.isActive {
+        publishedActiveOwner = activeSession.blockedProfile.id
+      } else {
+        publishedActiveOwner = nil
+      }
       let ids = try OrphanedSessionCleanup.run(
         context: context, retryLock: true, requireInactive: true,
-        publishedActiveOwner: activeSession?.isActive == true ? activeSession?.blockedProfile.id : nil,
+        publishedActiveOwner: publishedActiveOwner,
         deactivateRestrictions: {},
         onCommit: {
           self.stopTimer()
