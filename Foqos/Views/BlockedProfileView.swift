@@ -129,6 +129,9 @@ struct BlockedProfileView: View {
 
   private let physicalReader: PhysicalReader = .init()
 
+  @State private var confirmingRemoteSession = false
+  @State private var remoteConfirmationFailed = false
+
   private var isEditing: Bool {
     profile != nil
   }
@@ -157,7 +160,8 @@ struct BlockedProfileView: View {
 
   /// Whether editing should be disabled
   private var editingDisabled: Bool {
-    (profile != nil && !triggerConfig.hasLoadedProfile)
+    confirmingRemoteSession || remoteConfirmationFailed
+      || (profile != nil && !triggerConfig.hasLoadedProfile)
       || ProfileEditGate.editingDisabled(
         isBlocking: isBlocking,
         isManaged: isManagedProfile,
@@ -260,6 +264,14 @@ struct BlockedProfileView: View {
         }
       } else {
         Form {
+          if confirmingRemoteSession {
+            ProgressView()
+          } else if remoteConfirmationFailed {
+            Section {
+              Text(StrategyManager.sessionConfirmationFailureMessage)
+                .foregroundStyle(.red)
+            }
+          }
           // Show lock status when profile is active
           if isBlocking {
             Section {
@@ -637,8 +649,14 @@ struct BlockedProfileView: View {
               showingGeofencePicker = true
             }
           #endif
+        }
+        .task(id: profile?.id) {
+          await confirmRemoteSession()
           loadTriggerConfiguration()
           refreshScheduleOutOfSyncBanner()
+        }
+        .onChange(of: profile.map { strategyManager.remotelyActiveProfileIds.contains($0.id) }) { _, active in
+          if active == true { Task { await confirmRemoteSession() } }
         }
         .onChange(of: isBlocking) { wasBlocking, blocking in
           if wasBlocking && !blocking { loadTriggerConfiguration() }
@@ -662,7 +680,7 @@ struct BlockedProfileView: View {
 
           if isEditing, let validProfile = profile {
             ToolbarItemGroup(placement: .topBarTrailing) {
-              if !isBlocking {
+              if !editingDisabled {
                 Menu {
                   Button {
                     writeProfile()
@@ -895,58 +913,7 @@ struct BlockedProfileView: View {
               ),
               primaryButton: .cancel(),
               secondaryButton: .destructive(Text("Delete")) {
-                dismiss()
-                if let profileToDelete = profile {
-                  let profileId = profileToDelete.id
-                  do {
-                    if profileSyncManager.isEnabled {
-                      // Route the delete entirely through the funnel (I2): it re-reads the
-                      // profile itself, writes the delete-intent tombstone, performs the
-                      // persisted delete, and enqueues the `.deleteRecord` — all in one call.
-                      // `modelContext` here is the SAME `ModelContext` instance the funnel
-                      // uses (both are `container.mainContext`), so this view must NOT
-                      // pre-delete: a committed local delete would leave the funnel's
-                      // re-fetch-by-id finding nothing, producing `entityNotFound` and
-                      // swallowing the tombstone with no `.deleteRecord` enqueued — the
-                      // delete would never propagate to other devices.
-                      do {
-                        try profileSyncManager.enqueueProfileDelete(profileId) {
-                          strategyManager.setRemoteSessionActive(false, profileId: profileId)
-                        }
-                      } catch SyncEngineControllingError.notAttached {
-                        // Engine isn't attached yet — the funnel can't own this delete, so
-                        // delete locally now instead of silently leaving the profile behind
-                        // (review finding #5). It will propagate once the engine attaches.
-                        try BlockedProfiles.deleteProfile(profileToDelete, in: modelContext)
-                        BlockedProfiles.scheduleProfileDeleteCommit {
-                          do {
-                            try modelContext.save()
-                            strategyManager.setRemoteSessionActive(false, profileId: profileId)
-                          } catch {
-                            showError(message: error.localizedDescription)
-                          }
-                        }
-                      }
-                    } else {
-                      // Sync disabled — the funnel would no-op (I2 is only reachable once the
-                      // engine has started), so delete locally directly.
-                      let deletedRecordName = profileId.uuidString
-                      try BlockedProfiles.deleteProfile(profileToDelete, in: modelContext)
-                      BlockedProfiles.scheduleProfileDeleteCommit {
-                        do {
-                          try modelContext.save()
-                          profileSyncManager.recordDisabledDeleteTombstone(
-                            recordName: deletedRecordName)
-                          strategyManager.setRemoteSessionActive(false, profileId: profileId)
-                        } catch {
-                          showError(message: error.localizedDescription)
-                        }
-                      }
-                    }
-                  } catch {
-                    showError(message: error.localizedDescription)
-                  }
-                }
+                Task { await deleteConfirmedProfile() }
               }
             )
           }
@@ -961,6 +928,76 @@ struct BlockedProfileView: View {
     }
     .sheet(isPresented: $showingGeofencePicker) {
       GeofencePicker(geofenceRule: $geofenceRule)
+    }
+  }
+
+  private func confirmRemoteSession() async {
+    guard let id = profile?.id,
+      profileSyncManager.isEnabled || strategyManager.remotelyActiveProfileIds.contains(id)
+    else { return }
+    confirmingRemoteSession = true
+    let confirmed = await strategyManager.confirmSessionState(profileId: id)
+    remoteConfirmationFailed = !confirmed && strategyManager.remotelyActiveProfileIds.contains(id)
+    confirmingRemoteSession = false
+  }
+
+  private func deleteConfirmedProfile() async {
+    await confirmRemoteSession()
+    guard !editingDisabled, !isBlocking, let profileToDelete = profile,
+      profileToDelete.isPersistentModelValid,
+      !lockCodeManager.isEditLocked(profileToDelete)
+    else { return }
+    dismiss()
+    do {
+      let profileId = profileToDelete.id
+      do {
+        if profileSyncManager.isEnabled {
+          // Route the delete entirely through the funnel (I2): it re-reads the
+          // profile itself, writes the delete-intent tombstone, performs the
+          // persisted delete, and enqueues the `.deleteRecord` — all in one call.
+          // `modelContext` here is the SAME `ModelContext` instance the funnel
+          // uses (both are `container.mainContext`), so this view must NOT
+          // pre-delete: a committed local delete would leave the funnel's
+          // re-fetch-by-id finding nothing, producing `entityNotFound` and
+          // swallowing the tombstone with no `.deleteRecord` enqueued — the
+          // delete would never propagate to other devices.
+          do {
+            try profileSyncManager.enqueueProfileDelete(profileId) {
+              strategyManager.clearRemoteSession(profileId: profileId)
+            }
+          } catch SyncEngineControllingError.notAttached {
+            // Engine isn't attached yet — the funnel can't own this delete, so
+            // delete locally now instead of silently leaving the profile behind
+            // (review finding #5). It will propagate once the engine attaches.
+            try BlockedProfiles.deleteProfile(profileToDelete, in: modelContext)
+            BlockedProfiles.scheduleProfileDeleteCommit {
+              do {
+                try modelContext.save()
+                strategyManager.clearRemoteSession(profileId: profileId)
+              } catch {
+                showError(message: error.localizedDescription)
+              }
+            }
+          }
+        } else {
+          // Sync disabled — the funnel would no-op (I2 is only reachable once the
+          // engine has started), so delete locally directly.
+          let deletedRecordName = profileId.uuidString
+          try BlockedProfiles.deleteProfile(profileToDelete, in: modelContext)
+          BlockedProfiles.scheduleProfileDeleteCommit {
+            do {
+              try modelContext.save()
+              profileSyncManager.recordDisabledDeleteTombstone(
+                recordName: deletedRecordName)
+              strategyManager.clearRemoteSession(profileId: profileId)
+            } catch {
+              showError(message: error.localizedDescription)
+            }
+          }
+        }
+      } catch {
+        showError(message: error.localizedDescription)
+      }
     }
   }
 

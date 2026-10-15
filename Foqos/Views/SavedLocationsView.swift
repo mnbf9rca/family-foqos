@@ -252,6 +252,24 @@ struct SavedLocationsView: View {
 
   private func deleteLocation(_ location: SavedLocation) {
     let locationId = location.id
+    Task {
+      let profileIds = profiles.valid.filter {
+        $0.geofenceRule?.locationReferences.contains(where: { $0.savedLocationId == locationId }) == true
+      }.map(\.id)
+      for id in profileIds where profileSyncManager.isEnabled || strategyManager.remotelyActiveProfileIds.contains(id) {
+        let confirmed = await strategyManager.confirmSessionState(profileId: id)
+        if !confirmed && strategyManager.remotelyActiveProfileIds.contains(id) {
+          errorMessage = StrategyManager.sessionConfirmationFailureMessage
+          return
+        }
+      }
+      guard let current = try? Self.validSavedLocation(locationId: locationId, in: context) else { return }
+      deleteConfirmedLocation(current)
+    }
+  }
+
+  private func deleteConfirmedLocation(_ location: SavedLocation) {
+    let locationId = location.id
 
     if let profileName = locationsInUseByActiveProfiles[locationId] {
       errorMessage =

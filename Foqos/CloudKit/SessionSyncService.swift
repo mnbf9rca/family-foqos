@@ -83,6 +83,7 @@ actor SessionSyncService {
       return .found(session)
     } catch let error as CKError {
       if error.code == .unknownItem {
+        cachedRecords.removeValue(forKey: profileId)
         return .notFound
       }
       return .error(error)
@@ -231,20 +232,23 @@ actor SessionSyncService {
   // MARK: - Stop Session (with CAS)
 
   /// Attempt to stop a session. Uses CAS to handle concurrent stops.
-  func stopSession(profileId: UUID, endTime: Date = Date(), expectedSessionId: String? = nil, expectedStart: Date? = nil) async -> StopResult {
+  func stopSession(profileId: UUID, endTime: Date = Date(), expectedSessionId: String? = nil, expectedStart: Date? = nil, reportIdentityMismatch: Bool = false, allowRemoteLegacy: Bool = false) async -> StopResult {
     // Fetch current state
     let fetchResult = await fetchSession(profileId: profileId)
 
     switch fetchResult {
     case .found(let existing):
+      if reportIdentityMismatch, !existing.matchesCompletion(expectedSessionId: expectedSessionId, expectedStart: expectedStart, deviceId: deviceId, allowRemoteLegacy: allowRemoteLegacy) {
+        return .conflict(currentSession: existing)
+      }
       if !existing.isActive {
         Log.info("Session already stopped for \(profileId)", category: .sync)
         return .alreadyStopped
       }
-      if !existing.matchesCompletion(expectedSessionId: expectedSessionId, expectedStart: expectedStart, deviceId: deviceId) {
+      if !existing.matchesCompletion(expectedSessionId: expectedSessionId, expectedStart: expectedStart, deviceId: deviceId, allowRemoteLegacy: allowRemoteLegacy) {
         return .alreadyStopped
       }
-      return await deactivateSession(profileId: profileId, endTime: endTime, expectedSessionId: expectedSessionId, expectedStart: expectedStart)
+      return await deactivateSession(profileId: profileId, endTime: endTime, expectedSessionId: expectedSessionId, expectedStart: expectedStart, reportIdentityMismatch: reportIdentityMismatch, allowRemoteLegacy: allowRemoteLegacy)
 
     case .notFound:
       if expectedSessionId != nil || expectedStart != nil { return .alreadyStopped }
@@ -258,7 +262,7 @@ actor SessionSyncService {
     }
   }
 
-  private func deactivateSession(profileId: UUID, endTime: Date, expectedSessionId: String?, expectedStart: Date?) async -> StopResult {
+  private func deactivateSession(profileId: UUID, endTime: Date, expectedSessionId: String?, expectedStart: Date?, reportIdentityMismatch: Bool, allowRemoteLegacy: Bool) async -> StopResult {
     guard let cached = cachedRecords[profileId] else {
       return .error(SessionSyncError.noCachedRecord)
     }
@@ -296,10 +300,13 @@ actor SessionSyncService {
 
         switch refetchResult {
         case .found(let current):
+          if reportIdentityMismatch, !current.matchesCompletion(expectedSessionId: expectedSessionId, expectedStart: expectedStart, deviceId: deviceId, allowRemoteLegacy: allowRemoteLegacy) {
+            return .conflict(currentSession: current)
+          }
           if !current.isActive {
             return .alreadyStopped
           }
-          guard current.matchesCompletion(expectedSessionId: expectedSessionId, expectedStart: expectedStart, deviceId: deviceId) else { return .alreadyStopped }
+          guard current.matchesCompletion(expectedSessionId: expectedSessionId, expectedStart: expectedStart, deviceId: deviceId, allowRemoteLegacy: allowRemoteLegacy) else { return .alreadyStopped }
           return .conflict(currentSession: current)
         case .notFound:
           return .alreadyStopped
@@ -398,6 +405,8 @@ actor SessionSyncService {
   }
 
   // MARK: - Cache Management
+
+  func cachedSession(profileId: UUID) -> ProfileSessionRecord? { cachedRecords[profileId]?.session }
 
   func clearCache() {
     cachedRecords.removeAll()

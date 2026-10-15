@@ -9,7 +9,8 @@ protocol SessionController: AnyObject {
   var activeSession: BlockedProfileSession? { get }
   func startRemoteSession(context: ModelContext, profileId: UUID, sessionId: UUID?, startTime: Date, timerEndTime: Date?, originDevice: String?, origin: SessionOrigin?, sequenceNumber: Int?, serverModificationDate: Date?)
   func stopRemoteSession(context: ModelContext, profileId: UUID, expectedSessionId: String?, sequenceNumber: Int?)
-  func setRemoteSessionActive(_ isActive: Bool, profileId: UUID)
+  @discardableResult func receiveSessionRecord(_ record: ProfileSessionRecord) -> Bool
+  func clearRemoteSession(profileId: UUID)
 }
 
 extension SessionController {

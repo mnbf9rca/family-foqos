@@ -1,3 +1,4 @@
+import CloudKit
 import DeviceActivity
 import FoqosShared
 import SwiftData
@@ -19,12 +20,20 @@ class StrategyManager: ObservableObject {
 
   /// #201: persisted intents for session-stops dropped by a failed/exhausted CAS write.
   /// Internal (not private) so Phase-E tests can assert routing without a live CloudKit call.
-  let sessionStopOutbox = SessionStopOutbox()
+  let sessionStopOutbox: SessionStopOutbox
 
   @Published var elapsedTime: TimeInterval = 0
   @Published var timerTask: Task<Void, Never>?
   @Published var activeSession: BlockedProfileSession?
-  @Published private(set) var remotelyActiveProfileIds: Set<UUID>
+  private var remoteSessionGeneration = 0
+  @Published private var remoteSessionRecords: [UUID: ProfileSessionRecord]
+
+  var remotelyActiveProfileIds: Set<UUID> {
+    Set(
+      remoteSessionRecords.values.filter {
+        $0.isActive && ($0.sessionOriginDevice ?? $0.lastModifiedBy) != SharedData.deviceSyncId.uuidString
+      }.map(\.profileId))
+  }
 
   @Published var showCustomStrategyView: Bool = false
   @Published var customStrategyView: (any View)? = nil
@@ -72,6 +81,7 @@ class StrategyManager: ObservableObject {
     self.sessionSyncService = sessionSyncService
     self.locationManager = locationManager
     self.remoteActiveDefaults = remoteActiveDefaults
+    self.sessionStopOutbox = SessionStopOutbox(defaults: remoteActiveDefaults)
     self.appBlocker = appBlocker
     self.backstopRegistrar = backstopRegistrar
     self.timersUtil = timersUtil
@@ -82,7 +92,7 @@ class StrategyManager: ObservableObject {
     self.removeAllStrategyTimers = removeAllStrategyTimers
     self.saveSession = saveSession
     self.scheduleReconciler = scheduleReconciler
-    self.remotelyActiveProfileIds = RemotelyActiveStore.load(defaults: remoteActiveDefaults)
+    self.remoteSessionRecords = RemotelyActiveStore.load(defaults: remoteActiveDefaults)
   }
 
   /// A V2 originating start registers its countdown before constructing any session.
@@ -90,6 +100,27 @@ class StrategyManager: ObservableObject {
     context: ModelContext, profile: BlockedProfiles, origin: SessionOrigin,
     durationOverrideMinutes: Int? = nil, now: Date = Date(), expectedVictimId: String? = nil, allowLinkForTag: Bool = false
   ) throws -> BlockedProfileSession {
+    if let current = try controlSession(context: context), current.remote != nil {
+      throw NSError(domain: "ProfileStart", code: 1, userInfo: [NSLocalizedDescriptionKey: "A session is already active. Stop it before starting another."])
+    }
+    let candidate = try prepareOriginatingCandidate(
+      context: context, profile: profile, origin: origin, durationOverrideMinutes: durationOverrideMinutes,
+      now: now, allowLinkForTag: allowLinkForTag)
+    return try publishOriginatingCandidate(candidate, context: context, expectedVictimId: expectedVictimId, now: now, allowLinkForTag: allowLinkForTag)
+  }
+
+  private struct PreparedOriginatingSession {
+    let profileId: UUID
+    let id: String
+    let origin: SessionOrigin
+    let startTime: Date
+    let timerEndTime: Date?
+  }
+
+  private func prepareOriginatingCandidate(
+    context: ModelContext, profile: BlockedProfiles, origin: SessionOrigin,
+    durationOverrideMinutes: Int? = nil, now: Date, allowLinkForTag: Bool
+  ) throws -> PreparedOriginatingSession {
     try prepareProfileForStart(profile, context: context)
     let snapshot = BlockedProfiles.getSnapshot(for: profile)
     func refusal(_ message: String) -> NSError {
@@ -114,10 +145,25 @@ class StrategyManager: ObservableObject {
         throw refusal("This profile couldn’t start because its timer couldn’t be set. Please try again.")
       }
     }
+    return PreparedOriginatingSession(profileId: profile.id, id: candidateId, origin: origin, startTime: now, timerEndTime: deadline)
+  }
+
+  private func discardOriginatingCandidate(_ candidate: PreparedOriginatingSession) {
+    if candidate.timerEndTime != nil { cancelTimer(candidate.profileId, candidate.id) }
+  }
+
+  private func publishOriginatingCandidate(
+    _ prepared: PreparedOriginatingSession, context: ModelContext, expectedVictimId: String?, now: Date, allowLinkForTag: Bool
+  ) throws -> BlockedProfileSession {
+    guard let profile = try BlockedProfiles.findProfile(byID: prepared.profileId, in: context) else {
+      discardOriginatingCandidate(prepared)
+      throw EmergencyUnblockError.sessionChanged
+    }
+    let origin = prepared.origin
     let candidate = BlockedProfileSession(
       tag: origin.key.map { origin.kind.rawValue + ":" + $0 } ?? origin.kind.rawValue,
-      blockedProfile: profile, startTime: now, id: candidateId, origin: origin)
-    candidate.timerEndTime = deadline
+      blockedProfile: profile, startTime: prepared.startTime, id: prepared.id, origin: origin)
+    candidate.timerEndTime = prepared.timerEndTime
     context.insert(candidate)
     do {
       try saveSession(context)
@@ -125,19 +171,18 @@ class StrategyManager: ObservableObject {
       guard
         SharedData.commitOriginatingSession(
           candidate.toSnapshot(), expectedVictimId: expectedVictimId, now: now, allowLinkForTag: allowLinkForTag,
-          onCommit: {
-            self.appBlocker.activateRestrictions(for: snapshot)
-          })
-      else { throw refusal("Couldn’t start this profile. Please try again.") }
+          onCommit: { self.appBlocker.activateRestrictions(for: BlockedProfiles.getSnapshot(for: profile)) })
+      else { throw EmergencyUnblockError.sessionChanged }
     } catch {
-      profile.sessions.removeAll { $0.id == candidateId }
+      profile.sessions.removeAll { $0.id == candidate.id }
       context.delete(candidate)
-      if minutes != nil { cancelTimer(profile.id, candidateId) }
+      discardOriginatingCandidate(prepared)
       do { try saveSession(context) } catch {
-        Log.error("Failed to persist originating-session compensation: \(error.localizedDescription)", category: .session)
-        throw refusal("Couldn’t start this profile. Please try again.")
+        Log.error("Failed to persist originating-session compensation", category: .session)
+        throw error
       }
-      throw refusal("Couldn’t start this profile. Please try again.")
+      if error is EmergencyUnblockError { throw error }
+      throw NSError(domain: "ProfileStart", code: 1, userInfo: [NSLocalizedDescriptionKey: "Couldn’t start this profile. Please try again."])
     }
     activateSession(candidate, context: context)
     return candidate
@@ -159,20 +204,119 @@ class StrategyManager: ObservableObject {
     return activeSession?.isActive == true
   }
 
-  func setRemoteSessionActive(_ isActive: Bool, profileId: UUID) {
-    if isActive {
-      remotelyActiveProfileIds.insert(profileId)
-    } else {
-      remotelyActiveProfileIds.remove(profileId)
+  /// Preserve stopped identities too: a delayed start must not resurrect an ended session.
+  @discardableResult
+  func receiveSessionRecord(_ record: ProfileSessionRecord) -> Bool {
+    if let previous = remoteSessionRecords[record.profileId] {
+      let sameSession = previous.matchesIdentity(of: record)
+      if let oldDate = previous.serverModificationDate, let newDate = record.serverModificationDate {
+        if newDate < oldDate { return false }
+        if newDate == oldDate, !sameSession || record.sequenceNumber <= previous.sequenceNumber { return false }
+      } else if previous.serverModificationDate != nil && record.serverModificationDate == nil && !sameSession {
+        return false
+      } else if record.sequenceNumber <= previous.sequenceNumber {
+        return false
+      }
     }
-    RemotelyActiveStore.save(remotelyActiveProfileIds, defaults: remoteActiveDefaults)
+    remoteSessionRecords[record.profileId] = record
+    RemotelyActiveStore.save(remoteSessionRecords, defaults: remoteActiveDefaults)
+    return true
+  }
+
+  @discardableResult
+  func stopRemoteOnlySession(profileId: UUID, method: StopMethod = .manual, context: ModelContext, emergency: Bool = false) async throws -> Bool {
+    guard let captured = remoteSessionRecords[profileId], captured.isActive,
+      let profile = try BlockedProfiles.findProfile(byID: profileId, in: context)
+    else { throw EmergencyUnblockError.noActiveSession }
+    let generation = remoteSessionGeneration
+    if emergency {
+      try await emergencyUnblockManager.authorizeEmergencyUnblock(profile: profile, context: context)
+    } else {
+      let validation = StartStopActionResolver.canStop(
+        with: method, conditions: profile.stopConditions, sessionTag: nil,
+        stopNFCTagIds: profile.stopNFCTagIds, stopQRCodeIds: profile.stopQRCodeIds,
+        sessionOrigin: captured.origin, legacySession: profile.profileSchemaVersion < 2)
+      guard validation.allowed else {
+        throw NSError(domain: "RemoteStop", code: 1, userInfo: [NSLocalizedDescriptionKey: validation.errorMessage ?? "This session changed. Please try again."])
+      }
+      if let result = await geofenceEvaluator.evaluateGeofenceForStop(profile: profile, context: context), !result.isSatisfied {
+        throw NSError(domain: "RemoteStop", code: 2, userInfo: [NSLocalizedDescriptionKey: result.failureMessage ?? "Location restriction not met."])
+      }
+    }
+    guard generation == remoteSessionGeneration,
+      let current = remoteSessionRecords[profileId], current.isActive, current.matchesIdentity(of: captured),
+      captured.sessionId != nil || captured.startTime != nil
+    else { throw EmergencyUnblockError.sessionChanged }
+    let result = await sessionSyncService.stopSession(
+      profileId: profileId, expectedSessionId: captured.sessionId, expectedStart: captured.startTime,
+      reportIdentityMismatch: true, allowRemoteLegacy: true)
+    guard generation == remoteSessionGeneration else { throw EmergencyUnblockError.sessionChanged }
+    switch result {
+    case .stopped:
+      break
+    case .alreadyStopped:
+      _ = await confirmSessionState(profileId: profileId)
+      return false
+    case .conflict(let record):
+      receiveSessionRecord(record)
+      throw EmergencyUnblockError.sessionChanged
+    case .error(let error):
+      guard let cloudError = error as? CKError,
+        [.networkUnavailable, .networkFailure, .serviceUnavailable, .zoneBusy, .requestRateLimited].contains(cloudError.code),
+        sessionStopOutbox.enqueue(profileId: profileId, expectedStart: captured.startTime, expectedSessionId: captured.sessionId, allowRemoteLegacy: captured.sessionId == nil)
+      else { throw error }
+    }
+    guard let current = remoteSessionRecords[profileId], current.isActive, current.matchesIdentity(of: captured) else {
+      throw EmergencyUnblockError.sessionChanged
+    }
+    recordLocalCompletion(profileId: profileId, sessionId: captured.sessionId, startTime: captured.startTime, endTime: Date())
+    if emergency { emergencyUnblockManager.recordAndEnqueueUnblock() }
+    return true
+  }
+
+  static let sessionConfirmationFailureMessage = "iCloud can't be reached, and this profile was last seen active on another device. Stop it from here first (an Emergency Unblock also works), or try again when you're online."
+  static let nfcUnavailableStopMessage = "This profile stops with an NFC tag, but this device can't read NFC. Hint: you can use an Emergency Unblock instead if you have any left."
+
+  func confirmSessionState(profileId: UUID) async -> Bool {
+    let generation = remoteSessionGeneration
+    let previous = remoteSessionRecords[profileId]
+    let result = await sessionSyncService.fetchSession(profileId: profileId)
+    guard generation == remoteSessionGeneration else { return false }
+    switch result {
+    case .found(let record):
+      guard record.profileId == profileId else { return false }
+      receiveSessionRecord(record)
+      return true
+    case .notFound:
+      guard remoteSessionRecords[profileId] == previous else { return false }
+      clearRemoteSession(profileId: profileId)
+      return true
+    case .error(let error):
+      Log.error("Could not confirm remote session: \(redactedErrorForLog(error))", category: .sync)
+      return false
+    }
+  }
+
+  func clearRemoteSession(profileId: UUID) {
+    remoteSessionGeneration += 1
+    remoteSessionRecords.removeValue(forKey: profileId)
+    RemotelyActiveStore.save(remoteSessionRecords, defaults: remoteActiveDefaults)
   }
 
   func clearAllRemoteSessionActive() {
-    // Event-scoped to account transitions and synced-data wipes. Do not clear on relaunch:
-    // remote-active locks must survive until sync provides a newer session state.
-    remotelyActiveProfileIds = []
-    RemotelyActiveStore.clear(defaults: remoteActiveDefaults)
+    remoteSessionGeneration += 1
+    remoteSessionRecords = [:]
+    RemotelyActiveStore.save(remoteSessionRecords, defaults: remoteActiveDefaults)
+  }
+
+  private func recordLocalCompletion(profileId: UUID, sessionId: String?, startTime: Date?, endTime: Date) {
+    guard sessionId != nil || startTime != nil,
+      var record = remoteSessionRecords[profileId],
+      record.matchesCompletion(expectedSessionId: sessionId, expectedStart: startTime, deviceId: SharedData.deviceSyncId.uuidString, allowRemoteLegacy: true)
+    else { return }
+    record.completeLocally(at: endTime)
+    remoteSessionRecords[profileId] = record
+    RemotelyActiveStore.save(remoteSessionRecords, defaults: remoteActiveDefaults)
   }
 
   var isBreakActive: Bool {
@@ -256,6 +400,16 @@ class StrategyManager: ObservableObject {
 
   func toggleBlocking(context: ModelContext, activeProfile: BlockedProfiles?) {
     guard !ScreenshotDemoMode.isActive else { return }
+    if !isBlocking, let remote = try? controlSession(context: context)?.remote {
+      guard activeProfile?.id == remote.profileId else {
+        errorMessage = "A session is already active. Stop it before starting another."
+        return
+      }
+      Task {
+        do { try await stopRemoteOnlySession(profileId: remote.profileId, context: context) } catch { errorMessage = error.localizedDescription }
+      }
+      return
+    }
     if isBlocking {
       guard activeProfile?.id == activeSession?.blockedProfile.id else {
         errorMessage = "A session is already active. Stop it before starting another."
@@ -280,6 +434,7 @@ class StrategyManager: ObservableObject {
         geofenceRule.hasLocations
       {
         geofenceEvaluator.checkGeofenceAndStop(context: context, profile: session.blockedProfile) {
+          guard self.activeSession?.id == session.id else { return }
           self.stopBlocking(context: context)
         }
         return
@@ -542,6 +697,46 @@ class StrategyManager: ObservableObject {
     errorMessage = "One more minute ended early — it couldn't be scheduled in the background."
   }
 
+  struct ControlSession {
+    let id: String
+    let blockedProfile: BlockedProfiles
+    let origin: SessionOrigin?
+    let tag: String?
+    let local: BlockedProfileSession?
+    let remote: ProfileSessionRecord?
+  }
+
+  func remoteOnlySessionRecord(profileIds: Set<UUID>) -> ProfileSessionRecord? {
+    remoteSessionRecords.values.filter {
+      $0.isActive && profileIds.contains($0.profileId) && remotelyActiveProfileIds.contains($0.profileId)
+        && activeSession?.blockedProfile.id != $0.profileId
+    }.max {
+      ProfileStartArbiter.decide(
+        incomingStartTime: $1.startTime ?? .distantPast, incomingProfileId: $1.profileId,
+        existingStartTime: $0.startTime ?? .distantPast, existingProfileId: $0.profileId) == .adopt
+    }
+  }
+
+  func controlSession(context: ModelContext) throws -> ControlSession? {
+    if let local = try getActiveSession(context: context) {
+      return ControlSession(id: local.id, blockedProfile: local.blockedProfile, origin: local.origin, tag: local.tag, local: local, remote: nil)
+    }
+    let records = remoteSessionRecords.values.filter { remotelyActiveProfileIds.contains($0.profileId) }
+      .sorted { ($0.startTime ?? .distantPast, $0.profileId.uuidString) > ($1.startTime ?? .distantPast, $1.profileId.uuidString) }
+    for remote in records {
+      guard let profile = try BlockedProfiles.findProfile(byID: remote.profileId, in: context), let start = remote.startTime else { continue }
+      return ControlSession(
+        id: remote.sessionId ?? "legacy:\(remote.profileId):\(start.timeIntervalSince1970)",
+        blockedProfile: profile, origin: remote.origin, tag: nil, local: nil, remote: remote)
+    }
+    return nil
+  }
+
+  private func controlSessionIsCurrent(_ session: ControlSession, context: ModelContext) -> Bool {
+    guard let current = try? controlSession(context: context) else { return false }
+    return current.id == session.id && current.blockedProfile.id == session.blockedProfile.id
+  }
+
   enum TagOperation {
     case scan
     case explicitStart(UUID)
@@ -601,8 +796,8 @@ class StrategyManager: ObservableObject {
         errorMessage = "No matching profile found on this device. The profile may have been deleted or this tag belongs to a different device."
         return
       }
-      if let session = try getActiveSession(context: context) {
-        if session.blockedProfile.profileSchemaVersion < 2 {
+      if let session = try controlSession(context: context) {
+        if session.blockedProfile.profileSchemaVersion < 2, session.local != nil {
           await handleLegacyLink(profileId: profile.id, sessionId: session.id, context: context)
         } else if session.blockedProfile.id != profile.id {
           errorMessage = "Stop \(session.blockedProfile.name) before starting \(profile.name) from this link."
@@ -641,9 +836,7 @@ class StrategyManager: ObservableObject {
     do {
       if case .confirmSwitch = operation {
         guard let pending = pendingTagSwitch else { return }
-        guard activeSession?.id == pending.victimId,
-          let victim = try BlockedProfileSession.findSession(byID: pending.victimId, in: context), victim.isActive,
-          SharedData.getActiveSharedSession()?.id == victim.id
+        guard let victim = try controlSession(context: context), victim.id == pending.victimId
         else {
           cancelTagOperation()
           return
@@ -654,7 +847,7 @@ class StrategyManager: ObservableObject {
           tagScanError = event.type == .nfc ? "That NFC tag doesn’t match. Scan the required tag." : "That QR code doesn’t match. Scan the required code."
           return
         }
-        await commitTagTransition(pending, context: context, now: now)
+        await commitTagTransition(pending, context: context, now: now, stopMethod: .tag(event))
         return
       }
       cancelTagOperation()
@@ -673,7 +866,7 @@ class StrategyManager: ObservableObject {
         tagOperationId = nil
         return
       }
-      if let victim = try getActiveSession(context: context) {
+      if let victim = try controlSession(context: context) {
         let target = event.targetProfileId == victim.blockedProfile.id ? nil : event.targetProfileId
         let kind = event.type == .nfc ? victim.blockedProfile.stopConditions.nfc : victim.blockedProfile.stopConditions.qr
         guard kind != .none else {
@@ -731,7 +924,7 @@ class StrategyManager: ObservableObject {
     return event.origin
   }
 
-  private func tagStopResult(_ event: TagEvent, session: BlockedProfileSession) -> StopValidationResult {
+  private func tagStopResult(_ event: TagEvent, session: ControlSession) -> StopValidationResult {
     StartStopActionResolver.canStop(
       with: .tag(event), conditions: session.blockedProfile.stopConditions,
       sessionTag: session.tag, stopNFCTagIds: session.blockedProfile.stopNFCTagIds,
@@ -739,7 +932,43 @@ class StrategyManager: ObservableObject {
       legacySession: session.blockedProfile.profileSchemaVersion < 2)
   }
 
-  private func commitTagTransition(_ pending: PendingTagSwitch, context: ModelContext, now: Date) async {
+  private func commitRemoteTagTransition(
+    _ pending: PendingTagSwitch, victim: ControlSession, method: StopMethod, context: ModelContext, now: Date
+  ) async {
+    var candidate: PreparedOriginatingSession?
+    do {
+      if let target = pending.targetProfileId {
+        guard let profile = try BlockedProfiles.findProfile(byID: target, in: context) else { throw ProfileTagLink.Failure.invalidTag }
+        candidate = try prepareOriginatingCandidate(
+          context: context, profile: profile, origin: admittedTagOrigin(pending.event, profile: profile),
+          now: now, allowLinkForTag: true)
+      }
+      guard tagOperationId == pending.operationId, controlSessionIsCurrent(victim, context: context) else {
+        throw EmergencyUnblockError.sessionChanged
+      }
+      _ = try await stopRemoteOnlySession(profileId: victim.blockedProfile.id, method: method, context: context)
+      guard tagOperationId == pending.operationId, try controlSession(context: context) == nil else {
+        throw EmergencyUnblockError.sessionChanged
+      }
+      if let prepared = candidate {
+        // publishOriginatingCandidate owns compensation if its final save/publication fails.
+        candidate = nil
+        _ = try publishOriginatingCandidate(prepared, context: context, expectedVictimId: nil, now: now, allowLinkForTag: true)
+      }
+      cancelTagOperation()
+    } catch {
+      if let candidate { discardOriginatingCandidate(candidate) }
+      Log.error("Remote session transition failed: \(redactedErrorForLog(error))", category: .sync)
+      cancelTagOperation()
+      errorMessage = error.localizedDescription
+    }
+  }
+
+  private func commitTagTransition(_ pending: PendingTagSwitch, context: ModelContext, now: Date, stopMethod: StopMethod? = nil) async {
+    if let victim = try? controlSession(context: context), victim.id == pending.victimId, victim.remote != nil {
+      await commitRemoteTagTransition(pending, victim: victim, method: stopMethod ?? .tag(pending.event), context: context, now: now)
+      return
+    }
     guard await tagStopGeofenceAllowed(sessionId: pending.victimId, context: context),
       tagOperationId == pending.operationId
     else {
@@ -845,6 +1074,13 @@ class StrategyManager: ObservableObject {
       let manualStrategy = getStrategy(id: ManualBlockingStrategy.id)
 
       guard let localActiveSession = try getActiveSession(context: context) else {
+        if (try? controlSession(context: context)?.remote?.profileId) == profileId {
+          guard requiredUnlockAtStart || !requireUnlock() else {
+            throw IntentError.unexpected("Device unlock is now required. Retry the action under the new setting.")
+          }
+          try await stopRemoteOnlySession(profileId: profileId, context: context)
+          return
+        }
         Log.info(
           "session is not active for profile: \(profile.name), not stopping it", category: .strategy
         )
@@ -944,8 +1180,12 @@ class StrategyManager: ObservableObject {
 
   /// Delegate emergency unblock to EmergencyUnblockManager, providing session stop logic.
   /// Throws EmergencyUnblockError if unblock is not allowed (no remaining, geofence blocked, etc.).
-  func emergencyUnblock(context: ModelContext) async throws(EmergencyUnblockError) {
-    let session = try? getActiveSession(context: context)
+  func emergencyUnblock(context: ModelContext) async throws {
+    let session = try getActiveSession(context: context)
+    if session == nil, let remote = try controlSession(context: context)?.remote {
+      try await stopRemoteOnlySession(profileId: remote.profileId, context: context, emergency: true)
+      return
+    }
     try await emergencyUnblockManager.emergencyUnblock(
       context: context,
       activeSession: session
@@ -994,6 +1234,11 @@ class StrategyManager: ObservableObject {
 
       switch result {
       case .started(let sequence, let confirmed):
+        var record = ProfileSessionRecord(profileId: profileId, serverModificationDate: confirmed)
+        record.applyUpdate(
+          isActive: true, sequenceNumber: sequence, deviceId: SharedData.deviceSyncId.uuidString,
+          startTime: candidateStart, timerEndTime: candidateDeadline, sessionId: candidateId, origin: candidateOrigin)
+        receiveSessionRecord(record)
         if self.activeSession?.id == candidateId {
           session.sessionSequence = sequence
           session.sessionServerModificationDate = confirmed ?? session.sessionServerModificationDate
@@ -1002,6 +1247,7 @@ class StrategyManager: ObservableObject {
         }
         Log.info("Session synced", category: .strategy)
       case .alreadyActive(let existing):
+        receiveSessionRecord(existing)
         if sessionStopOutbox.intents?.contains(where: { $0.profileId == profileId && $0.expectedSessionId != nil && $0.expectedSessionId == existing.sessionId }) == true {
           Log.info("Deferred joining a session with a pending exact stop", category: .sync)
           return
@@ -1036,6 +1282,7 @@ class StrategyManager: ObservableObject {
   ) async {
     switch result {
     case .stopped:
+      recordLocalCompletion(profileId: profileId, sessionId: expectedSessionId, startTime: expectedStart, endTime: endTime)
       sessionStopOutbox.resolve(profileId: profileId, expectedSessionId: expectedSessionId, expectedStart: expectedStart)
       Log.info("Session stop synced", category: .strategy)
     case .alreadyStopped:
@@ -1048,6 +1295,7 @@ class StrategyManager: ObservableObject {
         profileId: profileId, endTime: endTime, expectedSessionId: expectedSessionId, expectedStart: expectedStart)
       switch retryResult {
       case .stopped:
+        recordLocalCompletion(profileId: profileId, sessionId: expectedSessionId, startTime: expectedStart, endTime: endTime)
         sessionStopOutbox.resolve(profileId: profileId, expectedSessionId: expectedSessionId, expectedStart: expectedStart)
         Log.info("Stop retry succeeded", category: .strategy)
       case .alreadyStopped:
@@ -1069,9 +1317,20 @@ class StrategyManager: ObservableObject {
   func drainSessionStopOutbox() async {
     await sessionStopOutbox.drain { [weak self] profileId, expectedSessionId, expectedStart in
       guard let self else { return true }
-      let result = await self.sessionSyncService.stopSession(profileId: profileId, expectedSessionId: expectedSessionId, expectedStart: expectedStart)
+      let allowRemoteLegacy =
+        self.sessionStopOutbox.intents?.first {
+          $0.profileId == profileId && $0.expectedSessionId == expectedSessionId && $0.expectedStart == expectedStart
+        }?.allowRemoteLegacy == true
+      let result = await self.sessionSyncService.stopSession(profileId: profileId, expectedSessionId: expectedSessionId, expectedStart: expectedStart, allowRemoteLegacy: allowRemoteLegacy)
       switch result {
       case .stopped, .alreadyStopped:
+        if let record = await self.sessionSyncService.cachedSession(profileId: profileId) {
+          self.receiveSessionRecord(record)
+        } else if let previous = self.remoteSessionRecords[profileId],
+          previous.matchesCompletion(expectedSessionId: expectedSessionId, expectedStart: expectedStart, deviceId: SharedData.deviceSyncId.uuidString, allowRemoteLegacy: allowRemoteLegacy)
+        {
+          self.clearRemoteSession(profileId: profileId)
+        }
         return true
       case .conflict, .error:
         return false
@@ -1458,6 +1717,7 @@ class StrategyManager: ObservableObject {
         geofenceRule.hasLocations
       {
         geofenceEvaluator.checkGeofenceAndStop(context: context, profile: session.blockedProfile) {
+          guard self.activeSession?.id == session.id else { return }
           self.stopBlocking(context: context, bypassStrategy: true)
         }
       } else {
@@ -1489,6 +1749,7 @@ class StrategyManager: ObservableObject {
         geofenceRule.hasLocations
       {
         geofenceEvaluator.checkGeofenceAndStop(context: context, profile: session.blockedProfile) {
+          guard self.activeSession?.id == session.id else { return }
           self.stopBlocking(context: context, bypassStrategy: true)
         }
       } else {
@@ -1511,7 +1772,10 @@ class StrategyManager: ObservableObject {
   }
 
   func rejectionForStart(_ profile: BlockedProfiles, context: ModelContext) -> String? {
-    rejectionForStart(profile) {
+    if let current = try? controlSession(context: context), current.remote != nil {
+      return "A session is already active. Stop it before starting another."
+    }
+    return rejectionForStart(profile) {
       try getActiveSession(context: context)
     }
   }
@@ -1577,6 +1841,9 @@ class StrategyManager: ObservableObject {
     } else {
       cancelTimer(session.blockedProfile.id, session.id)
     }
+    recordLocalCompletion(
+      profileId: session.blockedProfile.id, sessionId: session.usesCanonicalIdentity == true ? session.id : nil,
+      startTime: session.startTime, endTime: now)
     session.endSession(now: now)
     var saved = false
     do {

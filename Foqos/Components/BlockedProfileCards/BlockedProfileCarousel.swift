@@ -9,6 +9,7 @@ struct BlockedProfileCarousel: View {
   let isBreakActive: Bool
   let isBreakOpenRawFields: Bool
   let activeSessionProfileId: UUID?
+  let remoteOnlyProfileId: UUID?
   let elapsedTime: TimeInterval
   let startingProfileId: UUID?
   let onStartingProfileConsumed: () -> Void
@@ -95,6 +96,7 @@ struct BlockedProfileCarousel: View {
     isBreakActive: Bool,
     isBreakOpenRawFields: Bool = false,
     activeSessionProfileId: UUID?,
+    remoteOnlyProfileId: UUID? = nil,
     elapsedTime: TimeInterval,
     startingProfileId: UUID? = nil,
     onStartingProfileConsumed: @escaping () -> Void = {},
@@ -117,6 +119,7 @@ struct BlockedProfileCarousel: View {
     self.isBreakActive = isBreakActive
     self.isBreakOpenRawFields = isBreakOpenRawFields
     self.activeSessionProfileId = activeSessionProfileId
+    self.remoteOnlyProfileId = remoteOnlyProfileId
     self.elapsedTime = elapsedTime
     self.startingProfileId = startingProfileId
     self.onStartingProfileConsumed = onStartingProfileConsumed
@@ -182,6 +185,7 @@ struct BlockedProfileCarousel: View {
                   data: profile.cardData(
                     scheduleIsOutOfSync: scheduleOutOfSyncCards.isOutOfSync(for: profile)),
                   isActive: profile.id == activeSessionProfileId,
+                  isRemoteOnlyActive: profile.id == remoteOnlyProfileId,
                   isBreakAvailable: isBreakAvailable,
                   isBreakActive: isBreakActive,
                   isBreakOpenRawFields: isBreakOpenRawFields,
