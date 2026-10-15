@@ -1,3 +1,4 @@
+import CoreNFC
 import FamilyControls
 @preconcurrency import SwiftData  // ReferenceWritableKeyPath in @Query lacks Sendable conformance
 import SwiftUI
@@ -105,12 +106,16 @@ struct HomeView: View {
   @State private var showStopPicker = false
   @State private var stopOptions: [StopAction] = []
 
+  private var remoteOnlySession: ProfileSessionRecord? {
+    strategyManager.remoteOnlySessionRecord(profileIds: Set(profiles.valid.map(\.id)))
+  }
+
   var isBlocking: Bool {
-    return strategyManager.isBlocking
+    return strategyManager.isBlocking || remoteOnlySession != nil
   }
 
   var activeSessionProfileId: UUID? {
-    return strategyManager.activeSession?.blockedProfile.id
+    return strategyManager.activeSession?.blockedProfile.id ?? remoteOnlySession?.profileId
   }
 
   var isBreakAvailable: Bool {
@@ -217,6 +222,7 @@ struct HomeView: View {
             isBreakActive: isBreakActive,
             isBreakOpenRawFields: strategyManager.activeSession?.isBreakOpenRawFields == true,
             activeSessionProfileId: activeSessionProfileId,
+            remoteOnlyProfileId: strategyManager.activeSession == nil ? remoteOnlySession?.profileId : nil,
             elapsedTime: strategyManager.elapsedTime,
             startingProfileId: navigateToProfileId,
             onStartingProfileConsumed: {
@@ -678,6 +684,10 @@ struct HomeView: View {
   }
 
   private func stopNFCScan(for profile: BlockedProfiles) {
+    guard NFCReaderSession.readingAvailable else {
+      strategyManager.errorMessage = StrategyManager.nfcUnavailableStopMessage
+      return
+    }
     nfcScanner.onTagScanned = { result in
       if let event = result.event {
         Task { await strategyManager.handleTagEvent(event, operation: .scan, context: context) }
@@ -691,7 +701,7 @@ struct HomeView: View {
 
   private var tagConfirmationMessage: String {
     guard let pending = strategyManager.pendingTagSwitch,
-      let session = try? BlockedProfileSession.findSession(byID: pending.victimId, in: context)
+      let session = try? strategyManager.controlSession(context: context), session.id == pending.victimId
     else { return "" }
     let item = pending.requiredType == .nfc ? "NFC tag" : "QR code"
     if let id = pending.targetProfileId, let target = try? BlockedProfiles.findProfile(byID: id, in: context) {
@@ -708,6 +718,10 @@ struct HomeView: View {
   }
 
   private func scanConfirmationNFC() {
+    guard NFCReaderSession.readingAvailable else {
+      strategyManager.errorMessage = StrategyManager.nfcUnavailableStopMessage
+      return
+    }
     nfcScanner.onTagScanned = { result in
       if let event = result.event { confirmTag(event) }
     }

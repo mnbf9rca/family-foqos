@@ -370,8 +370,15 @@ class EmergencyUnblockManager: ObservableObject {
       throw .noActiveSession
     }
 
+    try await authorizeEmergencyUnblock(profile: activeSession.blockedProfile, context: context)
+
+    try performEmergencyUnblock(context: context, session: activeSession, onUnblock: onUnblock, now: now)
+  }
+
+  func authorizeEmergencyUnblock(profile: BlockedProfiles, context: ModelContext) async throws(EmergencyUnblockError) {
+    guard getRemainingEmergencyUnblocks() > 0 else { throw .noUnblocksRemaining }
     // Check geofence rule if one exists and emergency override is not allowed
-    if let geofenceRule = activeSession.blockedProfile.geofenceRule,
+    if let geofenceRule = profile.geofenceRule,
       geofenceRule.hasLocations,
       !geofenceRule.allowEmergencyOverride
     {
@@ -380,7 +387,6 @@ class EmergencyUnblockManager: ObservableObject {
       )
     }
 
-    try performEmergencyUnblock(context: context, session: activeSession, onUnblock: onUnblock, now: now)
   }
 
   /// Actually perform the emergency unblock (called after all checks pass)

@@ -163,6 +163,25 @@ struct BlockedProfileListView: View {
   }
 
   private func deleteProfiles(at offsets: IndexSet) {
+    let ids = offsets.compactMap { profiles.indices.contains($0) ? profiles[$0].id : nil }
+    Task { await deleteProfiles(ids: ids) }
+  }
+
+  private func deleteProfiles(ids: [UUID]) async {
+    for id in ids where strategyManager.remotelyActiveProfileIds.contains(id) {
+      let confirmed = await strategyManager.confirmSessionState(profileId: id)
+      if !confirmed && strategyManager.remotelyActiveProfileIds.contains(id) {
+        deleteError = .syncFailed(StrategyManager.sessionConfirmationFailureMessage)
+        return
+      }
+    }
+    let profilesToDelete: [BlockedProfiles]
+    do {
+      profilesToDelete = try ids.compactMap { try BlockedProfiles.findProfile(byID: $0, in: context) }.valid
+    } catch {
+      deleteError = .fetchFailed
+      return
+    }
     var activeSession: BlockedProfileSession?
     do {
       activeSession = try BlockedProfileSession.mostRecentActiveSession(in: context)
@@ -171,11 +190,9 @@ struct BlockedProfileListView: View {
       deleteError = .fetchFailed
       return
     }
-    let profilesToDelete = profiles
 
     // Check if any of the profiles to delete are active or locked.
-    for index in offsets {
-      let profile = profilesToDelete[index]
+    for profile in profilesToDelete {
       let reason = ProfileDeleteGate.blockedReason(
         hasLocalActiveSession: profile.id == activeSession?.blockedProfile.id,
         isRemotelyActive: strategyManager.remotelyActiveProfileIds.contains(profile.id),
@@ -200,8 +217,7 @@ struct BlockedProfileListView: View {
     do {
       var disabledDeletedRecordNames: [String] = []
       var locallyCommittedProfileIds: [UUID] = []
-      for index in offsets {
-        let profile = profilesToDelete[index]
+      for profile in profilesToDelete {
         let profileId = profile.id
         if profileSyncManager.isEnabled {
           // Route the delete entirely through the funnel (I2): it re-reads the profile
@@ -215,7 +231,7 @@ struct BlockedProfileListView: View {
           // ahead of the funnel.
           do {
             try profileSyncManager.enqueueProfileDelete(profileId) {
-              strategyManager.setRemoteSessionActive(false, profileId: profileId)
+              strategyManager.clearRemoteSession(profileId: profileId)
             }
           } catch SyncEngineControllingError.notAttached {
             // Engine isn't attached yet — the funnel can't own this delete, so delete
@@ -245,7 +261,7 @@ struct BlockedProfileListView: View {
             profileSyncManager.recordDisabledDeleteTombstone(recordName: recordName)
           }
           for profileId in locallyCommittedProfileIds {
-            strategyManager.setRemoteSessionActive(false, profileId: profileId)
+            strategyManager.clearRemoteSession(profileId: profileId)
           }
           // The `order` field is synced state — bump syncVersion + enqueue a save for each
           // surviving profile so the gap-fix reaches other devices (I2).

@@ -7,6 +7,7 @@ final class SessionStopOutbox {
     let profileId: UUID
     let expectedSessionId: String?
     let expectedStart: Date?
+    var allowRemoteLegacy: Bool? = nil
   }
 
   private let defaults: UserDefaults
@@ -52,30 +53,36 @@ final class SessionStopOutbox {
     intents?.first { $0.profileId == profileId }?.expectedSessionId
   }
 
-  private func save(_ intents: [Intent]) {
-    do { defaults.set(try JSONEncoder().encode(intents), forKey: intentsKey) } catch {
+  @discardableResult
+  private func save(_ intents: [Intent]) -> Bool {
+    do {
+      let data = try JSONEncoder().encode(intents)
+      defaults.set(data, forKey: intentsKey)
+      return defaults.data(forKey: intentsKey) == data
+    } catch {
       Log.error("Cannot encode pending session stops", category: .sync)
+      return false
     }
   }
 
-  func enqueue(profileId: UUID, expectedStart: Date? = nil, expectedSessionId: String? = nil) {
-    guard var queued = intents else { return }
-    if expectedSessionId == nil, queued.contains(where: { $0.profileId == profileId && $0.expectedSessionId != nil }) { return }
-    let intent = Intent(profileId: profileId, expectedSessionId: expectedSessionId, expectedStart: expectedStart)
-    if queued.contains(intent) { return }
+  @discardableResult
+  func enqueue(profileId: UUID, expectedStart: Date? = nil, expectedSessionId: String? = nil, allowRemoteLegacy: Bool = false) -> Bool {
+    guard var queued = intents else { return false }
+    if expectedSessionId == nil, queued.contains(where: { $0.profileId == profileId && $0.expectedSessionId != nil }) { return false }
+    let intent = Intent(profileId: profileId, expectedSessionId: expectedSessionId, expectedStart: expectedStart, allowRemoteLegacy: allowRemoteLegacy ? true : nil)
+    if queued.contains(intent) { return true }
     // Exact identities supersede profile-only legacy stops, never another exact identity.
     if expectedSessionId != nil {
       queued.removeAll { $0.profileId == profileId && $0.expectedSessionId == nil }
-      if queued.contains(where: { $0.profileId == profileId && $0.expectedSessionId == expectedSessionId }) { return }
+      if queued.contains(where: { $0.profileId == profileId && $0.expectedSessionId == expectedSessionId }) { return true }
     }
     queued.append(intent)
-    save(queued)
+    return save(queued)
   }
 
   func resolve(profileId: UUID, expectedSessionId: String?, expectedStart: Date?) {
     guard var queued = intents else { return }
-    let attempted = Intent(profileId: profileId, expectedSessionId: expectedSessionId, expectedStart: expectedStart)
-    queued.removeAll { $0 == attempted }
+    queued.removeAll { $0.profileId == profileId && $0.expectedSessionId == expectedSessionId && $0.expectedStart == expectedStart }
     save(queued)
   }
 

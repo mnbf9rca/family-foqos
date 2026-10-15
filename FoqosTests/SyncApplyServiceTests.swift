@@ -85,6 +85,120 @@ final class SyncApplyServiceTests: XCTestCase {
 
   private let noPendingDelete: (String) -> Bool = { _ in false }
 
+  func testLegacyManualStopRejectsIdenticalActiveReplayBeforeCloudConfirmationAndAfterRelaunch() throws {
+    let now = Date()
+    let syncWasEnabled = ProfileSyncManager.shared.isEnabled
+    ProfileSyncManager.shared.isEnabled = false
+    defer { ProfileSyncManager.shared.isEnabled = syncWasEnabled }
+    for canonical in [false, true] {
+      let profile = BlockedProfiles(name: "Legacy", createdAt: now, updatedAt: now)
+      profile.profileSchemaVersion = 1
+      profile.blockingStrategyId = ManualBlockingStrategy.id
+      context.insert(profile)
+      try context.save()
+      let manager = StrategyManager(appBlocker: RecordingRestrictionApplier(), remoteActiveDefaults: storeDefaults)
+      defer { manager.stopTimer() }
+      let service = SyncApplyService(
+        modelContext: context, store: store, sessionController: manager,
+        emergencyManager: emergencyManager, deviceId: deviceId)
+      var active = ProfileSessionRecord(profileId: profile.id)
+      active.applyUpdate(isActive: true, sequenceNumber: 1, deviceId: "device-B", startTime: now, sessionId: canonical ? UUID().uuidString : nil)
+      let delivery = active.toCKRecord(in: zoneID)
+      _ = service.applyFetchedModification(delivery, isPendingDeleteOrTombstoned: noPendingDelete)
+      let session = try XCTUnwrap(manager.activeSession)
+      _ = manager.getStrategy(id: ManualBlockingStrategy.id).stopBlocking(context: context, session: session)
+      XCTAssertNil(manager.activeSession)
+      XCTAssertFalse(manager.remotelyActiveProfileIds.contains(profile.id))
+
+      _ = service.applyFetchedModification(delivery, isPendingDeleteOrTombstoned: noPendingDelete)
+      XCTAssertNil(manager.activeSession, "An ended legacy session must not reapply its shields")
+      XCTAssertFalse(manager.receiveSessionRecord(active))
+      let relaunched = StrategyManager(remoteActiveDefaults: storeDefaults)
+      XCTAssertFalse(relaunched.receiveSessionRecord(active), "The completed identity must survive relaunch")
+      XCTAssertFalse(relaunched.remotelyActiveProfileIds.contains(profile.id))
+      manager.stopRemoteSession(context: context, profileId: profile.id)
+    }
+  }
+
+  func testRemoteScheduledSessionStoppedHereDoesNotLeaveEditBlockAfterOwnEchoAndRelaunch() throws {
+    let now = Date()
+    let profile = BlockedProfiles(name: "Scheduled", createdAt: now, updatedAt: now)
+    context.insert(profile)
+    try context.save()
+    let manager = StrategyManager(appBlocker: RecordingRestrictionApplier(), remoteActiveDefaults: storeDefaults)
+    defer { manager.stopTimer() }
+    let service = SyncApplyService(
+      modelContext: context, store: store, sessionController: manager,
+      emergencyManager: emergencyManager, deviceId: deviceId)
+    var record = ProfileSessionRecord(profileId: profile.id)
+    let sessionId = UUID().uuidString
+    record.applyUpdate(
+      isActive: true, sequenceNumber: 1, deviceId: "device-B", startTime: now,
+      sessionId: sessionId, origin: .init(kind: .schedule))
+    _ = service.applyFetchedModification(record.toCKRecord(in: zoneID), isPendingDeleteOrTombstoned: noPendingDelete)
+    XCTAssertTrue(manager.remotelyActiveProfileIds.contains(profile.id))
+    XCTAssertEqual(manager.activeSession?.id, sessionId)
+
+    manager.stopRemoteSession(context: context, profileId: profile.id, expectedSessionId: sessionId)
+    record.applyUpdate(isActive: false, sequenceNumber: 2, deviceId: deviceId, endTime: now.addingTimeInterval(60))
+    _ = service.applyFetchedModification(record.toCKRecord(in: zoneID), isPendingDeleteOrTombstoned: noPendingDelete)
+
+    XCTAssertNil(manager.activeSession)
+    XCTAssertFalse(manager.remotelyActiveProfileIds.contains(profile.id), "The local stop must release the remote edit block")
+    XCTAssertFalse(StrategyManager(remoteActiveDefaults: storeDefaults).remotelyActiveProfileIds.contains(profile.id))
+  }
+
+  func testIdenticalSessionDeliveryRetriesAfterProfileBecomesReady() throws {
+    let now = Date()
+    for missing in [false, true] {
+      let profile = BlockedProfiles(name: "Not ready", createdAt: now, updatedAt: now)
+      profile.needsAppSelection = true
+      if !missing {
+        context.insert(profile)
+        try context.save()
+      }
+      let manager = StrategyManager(appBlocker: RecordingRestrictionApplier(), remoteActiveDefaults: storeDefaults)
+      defer { manager.stopTimer() }
+      let service = SyncApplyService(modelContext: context, store: store, sessionController: manager, emergencyManager: emergencyManager, deviceId: deviceId)
+      var active = ProfileSessionRecord(profileId: profile.id)
+      active.applyUpdate(isActive: true, sequenceNumber: 1, deviceId: "device-B", startTime: now, sessionId: UUID().uuidString)
+      let record = active.toCKRecord(in: zoneID)
+      _ = service.applyFetchedModification(record, isPendingDeleteOrTombstoned: noPendingDelete)
+      XCTAssertNil(manager.activeSession)
+      profile.needsAppSelection = false
+      if missing { context.insert(profile) }
+      try context.save()
+      _ = service.applyFetchedModification(record, isPendingDeleteOrTombstoned: noPendingDelete)
+      XCTAssertEqual(manager.activeSession?.id, active.sessionId, "Unchanged records must retry unfinished local application")
+      manager.stopRemoteSession(context: context, profileId: profile.id, expectedSessionId: active.sessionId)
+      manager.clearAllRemoteSessionActive()
+    }
+  }
+
+  func testConfirmationCachingStopDoesNotSuppressItsLocalSyncApplication() async throws {
+    let now = Date()
+    let profile = BlockedProfiles(name: "Confirmed", createdAt: now, updatedAt: now)
+    context.insert(profile)
+    try context.save()
+    var active = ProfileSessionRecord(profileId: profile.id)
+    active.applyUpdate(isActive: true, sequenceNumber: 1, deviceId: "device-B", startTime: now, sessionId: UUID().uuidString)
+    var stopped = active
+    stopped.applyUpdate(isActive: false, sequenceNumber: 2, deviceId: "device-B", endTime: now.addingTimeInterval(60))
+    let fetchedStop = stopped.toCKRecord(in: zoneID)
+    fetchedStop["lastModified"] = nil  // Separate decodes have different fallback timestamps.
+    let cloud = SessionSyncService(fetchRecord: { _ in fetchedStop })
+    let manager = StrategyManager(sessionSyncService: cloud, appBlocker: RecordingRestrictionApplier(), remoteActiveDefaults: storeDefaults)
+    defer { manager.stopTimer() }
+    let service = SyncApplyService(modelContext: context, store: store, sessionController: manager, emergencyManager: emergencyManager, deviceId: deviceId)
+    _ = service.applyFetchedModification(active.toCKRecord(in: zoneID), isPendingDeleteOrTombstoned: noPendingDelete)
+    XCTAssertEqual(manager.activeSession?.id, active.sessionId)
+    let confirmed = await manager.confirmSessionState(profileId: profile.id)
+    XCTAssertTrue(confirmed)
+    XCTAssertNotNil(manager.activeSession, "Confirmation is read-only")
+    _ = service.applyFetchedModification(fetchedStop, isPendingDeleteOrTombstoned: noPendingDelete)
+    XCTAssertNil(manager.activeSession, "Sync must still apply the already-cached stop locally")
+  }
+
   // MARK: - S-27 (normal apply) / E-1
 
   func testGivenDeadWorldProfileAfterWipe_WhenApplied_ThenSkippedDeadWorld() throws {
@@ -1703,6 +1817,7 @@ final class SyncApplyServiceTests: XCTestCase {
         try context.save()
         var registrations = 0
         let manager = StrategyManager(
+          remoteActiveDefaults: storeDefaults,
           registerTimer: { _, _, _, _ in
             registrations += 1
             return now
@@ -1751,6 +1866,7 @@ final class SyncApplyServiceTests: XCTestCase {
     try context.save()
     var registrations = 0
     let manager = StrategyManager(
+      remoteActiveDefaults: storeDefaults,
       registerTimer: { _, _, _, _ in
         registrations += 1
         return now
@@ -1803,6 +1919,7 @@ final class SyncApplyServiceTests: XCTestCase {
     try context.save()
     var registrations = 0
     let manager = StrategyManager(
+      remoteActiveDefaults: storeDefaults,
       registerTimer: { _, _, _, _ in
         registrations += 1
         return now
@@ -1927,6 +2044,7 @@ final class SyncApplyServiceTests: XCTestCase {
     wire["startTime"] = now
     wire["sequenceNumber"] = 3
     let manager = StrategyManager(
+      remoteActiveDefaults: storeDefaults,
       registerTimer: { _, _, _, _ in
         XCTFail("Mirror never registers")
         return now

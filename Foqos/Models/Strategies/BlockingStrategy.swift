@@ -3,7 +3,7 @@ import SwiftUI
 
 enum SessionStatus {
   case started(BlockedProfileSession)
-  case ended(BlockedProfiles)
+  case ended(BlockedProfileSession)
 }
 
 @MainActor

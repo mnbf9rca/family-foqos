@@ -35,8 +35,13 @@ class MockSessionController: SessionController {
     stopRemoteSessionProfileId = profileId
   }
 
-  func setRemoteSessionActive(_ isActive: Bool, profileId: UUID) {
-    setRemoteSessionActiveCalls.append((isActive, profileId))
+  func receiveSessionRecord(_ record: ProfileSessionRecord) -> Bool {
+    setRemoteSessionActiveCalls.append((record.isActive, record.profileId))
+    return true
+  }
+
+  func clearRemoteSession(profileId: UUID) {
+    setRemoteSessionActiveCalls.append((false, profileId))
   }
 }
 

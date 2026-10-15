@@ -9,6 +9,7 @@ struct BlockedProfileCarousel: View {
   let isBreakActive: Bool
   let isBreakOpenRawFields: Bool
   let activeSessionProfileId: UUID?
+  let remoteOnlyProfileId: UUID?
   let elapsedTime: TimeInterval
   let startingProfileId: UUID?
   let onStartingProfileConsumed: () -> Void
@@ -28,6 +29,7 @@ struct BlockedProfileCarousel: View {
   var onOneMoreMinuteTapped: (BlockedProfiles) -> Void
 
   @State private var currentProfileId: UUID?
+  @State private var remoteContentHeight: CGFloat = 0
   @State private var scheduleOutOfSyncCards = ScheduleOutOfSyncCardState()
   @ScaledMetric(relativeTo: .body) private var heightScale: CGFloat = 1
 
@@ -95,6 +97,7 @@ struct BlockedProfileCarousel: View {
     isBreakActive: Bool,
     isBreakOpenRawFields: Bool = false,
     activeSessionProfileId: UUID?,
+    remoteOnlyProfileId: UUID? = nil,
     elapsedTime: TimeInterval,
     startingProfileId: UUID? = nil,
     onStartingProfileConsumed: @escaping () -> Void = {},
@@ -117,6 +120,7 @@ struct BlockedProfileCarousel: View {
     self.isBreakActive = isBreakActive
     self.isBreakOpenRawFields = isBreakOpenRawFields
     self.activeSessionProfileId = activeSessionProfileId
+    self.remoteOnlyProfileId = remoteOnlyProfileId
     self.elapsedTime = elapsedTime
     self.startingProfileId = startingProfileId
     self.onStartingProfileConsumed = onStartingProfileConsumed
@@ -182,6 +186,7 @@ struct BlockedProfileCarousel: View {
                   data: profile.cardData(
                     scheduleIsOutOfSync: scheduleOutOfSyncCards.isOutOfSync(for: profile)),
                   isActive: profile.id == activeSessionProfileId,
+                  isRemoteOnlyActive: profile.id == remoteOnlyProfileId,
                   isBreakAvailable: isBreakAvailable,
                   isBreakActive: isBreakActive,
                   isBreakOpenRawFields: isBreakOpenRawFields,
@@ -190,6 +195,7 @@ struct BlockedProfileCarousel: View {
                   onStopTapped: { onStopTapped(profile) },
                   onEditTapped: { onEditTapped(profile) },
                   onStatsTapped: { onStatsTapped(profile) },
+                  onRemoteContentHeightChanged: { remoteContentHeight = $0 },
                   onBreakTapped: { onBreakTapped(profile) },
                   onAppSelectionTapped: { onAppSelectionTapped(profile) },
                   isOneMoreMinuteActive: isOneMoreMinuteActive,
@@ -210,7 +216,7 @@ struct BlockedProfileCarousel: View {
         .scrollDisabled(isBlocking)
         .scrollIndicators(.hidden)
         .contentMargins(.horizontal, 16)
-        .frame(height: cardHeight * max(1, heightScale))
+        .frame(height: max(cardHeight * max(1, heightScale), remoteOnlyProfileId == nil ? 0 : remoteContentHeight))
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: cardHeight)
         .padding(.bottom, 10)
 

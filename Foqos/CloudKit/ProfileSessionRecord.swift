@@ -82,8 +82,9 @@ struct ProfileSessionRecord: Codable, Equatable, Sendable {
 
   // MARK: - Initialization
 
-  init(profileId: UUID) {
+  init(profileId: UUID, serverModificationDate: Date? = nil) {
     self.profileId = profileId
+    self.serverModificationDate = serverModificationDate
   }
 
   init?(from record: CKRecord) {
@@ -183,14 +184,29 @@ struct ProfileSessionRecord: Codable, Equatable, Sendable {
     self.sessionOriginDevice = nil
   }
 
+  func matchesIdentity(of other: ProfileSessionRecord) -> Bool {
+    if let sessionId { return sessionId == other.sessionId }
+    guard other.sessionId == nil, let startTime, let otherStart = other.startTime else { return false }
+    return abs(startTime.timeIntervalSince(otherStart)) < 0.001
+  }
+
+  mutating func completeLocally(at endTime: Date) {
+    isActive = false
+    self.endTime = endTime
+    timerEndTime = nil
+  }
+
   var validTimerEndTime: Date? {
     guard isActive, let startTime, let timerEndTime, timerEndTime > startTime else { return nil }
     return timerEndTime
   }
 
-  func matchesCompletion(expectedSessionId: String?, expectedStart: Date?, deviceId: String) -> Bool {
+  func matchesCompletion(expectedSessionId: String?, expectedStart: Date?, deviceId: String, allowRemoteLegacy: Bool = false) -> Bool {
     if let expectedSessionId { return sessionId == expectedSessionId }
-    if let expectedStart { return matchesCompletion(expectedStart: expectedStart, deviceId: deviceId) }
+    if let expectedStart {
+      if allowRemoteLegacy { return startTime.map { abs($0.timeIntervalSince(expectedStart)) < 0.001 } == true }
+      return matchesCompletion(expectedStart: expectedStart, deviceId: deviceId)
+    }
     return true
   }
 

@@ -8,6 +8,7 @@ struct BlockedProfileCard: View {
   let data: BlockedProfileCardData
 
   var isActive: Bool = false
+  var isRemoteOnlyActive: Bool = false
   var isBreakAvailable: Bool = false
   var isBreakActive: Bool = false
   var isBreakOpenRawFields: Bool = false
@@ -18,6 +19,7 @@ struct BlockedProfileCard: View {
   var onStopTapped: () -> Void
   var onEditTapped: () -> Void
   var onStatsTapped: () -> Void = {}
+  var onRemoteContentHeightChanged: (CGFloat) -> Void = { _ in }
   var onBreakTapped: () -> Void
   var onAppSelectionTapped: () -> Void = {}
 
@@ -81,6 +83,11 @@ struct BlockedProfileCard: View {
     ZStack {
       // Use the CardBackground component
       cardBackground
+        .overlay {
+          if isRemoteOnlyActive {
+            RoundedRectangle(cornerRadius: 24).stroke(.red, lineWidth: 2)
+          }
+        }
 
       // Content
       VStack(alignment: .leading, spacing: 12) {
@@ -156,6 +163,14 @@ struct BlockedProfileCard: View {
                   )
               )
           }
+        }
+
+        if isRemoteOnlyActive {
+          Label("Active on another device. Needs configuration on this device before blocking works.", systemImage: "exclamationmark.triangle.fill")
+            .font(.caption)
+            .foregroundStyle(.red)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityIdentifier("remote-session-error")
         }
 
         if data.isNewerSchemaVersion {
@@ -244,6 +259,17 @@ struct BlockedProfileCard: View {
         }
       }
       .padding(16)
+      .fixedSize(horizontal: false, vertical: isRemoteOnlyActive)
+      .background {
+        if isRemoteOnlyActive {
+          GeometryReader { geometry in
+            Color.clear
+              .onChange(of: geometry.size.height, initial: true) { _, height in
+                onRemoteContentHeightChanged(height)
+              }
+          }
+        }
+      }
     }
   }
 }
