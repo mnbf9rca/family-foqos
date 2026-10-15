@@ -773,7 +773,10 @@ final class StrategyManagerStartTests: XCTestCase {
     let started = try sut.startOriginatingSession(
       context: context, profile: replacement,
       origin: .init(kind: .manual), now: now)
-    strategy.onSessionCreation?(.ended(legacy))
+    let ended = BlockedProfileSession(tag: "manual", blockedProfile: legacy, startTime: now.addingTimeInterval(-60))
+    ended.endTime = now
+    context.insert(ended)
+    strategy.onSessionCreation?(.ended(ended))
     XCTAssertEqual(sut.activeSession?.id, started.id)
     XCTAssertEqual(SharedData.getActiveSharedSession()?.id, started.id)
     XCTAssertEqual(bulkRemovals, 0)
