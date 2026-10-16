@@ -85,7 +85,7 @@ If export fails with `Cloud signing permission error` followed by `No profiles f
    scripts/fastlane.sh check_asc_key
 
    # Choose exactly one:
-   scripts/fastlane.sh beta     # TestFlight external group distribution and Beta App Review
+   scripts/fastlane.sh beta     # TestFlight only
    scripts/fastlane.sh release  # App Store submission only
    ```
 

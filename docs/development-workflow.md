@@ -113,7 +113,7 @@ Before every beta, compare live Production and Development schemas. Development 
 
 Only matching, nonempty exports pass. An export failure or any difference blocks the beta. If the schemas differ, the human reviews and deploys the change in CloudKit Console using the linked runbook, then reruns the comparison and Production postflight before uploading.
 
-`verify_export`, `beta`, and `release` preflight the standalone xcbeautify binary. Before archiving, `beta` requires non-blank `fastlane/metadata/en-GB/release_notes.txt` and exactly one external TestFlight group named `external test group`. It uses those notes as What to Test, uploads, waits for Apple processing, submits for Beta App Review, assigns the build to that group and notifies its testers, then publishes dSYMs. Apple review may delay availability; an earlier build waiting for review can block submission. The lane does not expire earlier builds. If it fails after upload, distribute that existing build in App Store Connect and create or update its `build/<build number>` GitHub prerelease with the prepared local dSYM zip; rerunning the same commit would reuse the uploaded build number.
+`verify_export`, `beta`, and `release` preflight the standalone xcbeautify binary. The beta lane uploads to TestFlight without assigning groups or waiting for processing, publishes dSYMs, then prints the uploaded version/build and a reminder that the human must assign it to `external test group` in App Store Connect. The agent running `beta` must relay that reminder to the orchestrator in its report so the human is reminded.
 
 The `release` lane uploads metadata, screenshots, and the binary, confirms submission for review, and then publishes dSYMs.
 
