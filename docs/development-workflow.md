@@ -113,7 +113,9 @@ Before every beta, compare live Production and Development schemas. Development 
 
 Only matching, nonempty exports pass. An export failure or any difference blocks the beta. If the schemas differ, the human reviews and deploys the change in CloudKit Console using the linked runbook, then reruns the comparison and Production postflight before uploading.
 
-`verify_export`, `beta`, and `release` preflight the standalone xcbeautify binary. The beta lane uploads to TestFlight and then publishes dSYMs; the release lane uploads metadata, screenshots, and the binary, confirms submission for review, and then publishes dSYMs.
+`verify_export`, `beta`, and `release` preflight the standalone xcbeautify binary. The beta lane uploads to TestFlight without assigning groups or waiting for processing, publishes dSYMs, then prints the uploaded version/build and a reminder that the human must assign it to `external test group` in App Store Connect. The agent running `beta` must relay that reminder to the orchestrator in its report so the human is reminded.
+
+The `release` lane uploads metadata, screenshots, and the binary, confirms submission for review, and then publishes dSYMs.
 
 The Require Device Unlock setting for Siri and Shortcuts was accepted without a physical-device test because Siri was unusable on the maintainer's device; enforcement by iOS remains unverified.
 

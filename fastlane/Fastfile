@@ -226,6 +226,10 @@ platform :ios do
     archive_artifacts = prepare_archive_dsyms
     pilot(api_key: api_key, skip_waiting_for_build_processing: true)
     publish_archive_dsyms(artifacts: archive_artifacts, prerelease: true)
+    UI.important(
+      "ACTION REQUIRED: Uploaded #{archive_artifacts[:version]} (#{build}). " \
+      "The human must assign this build to TestFlight group 'external test group' in App Store Connect."
+    )
   end
 
   desc 'Pull current App Store metadata into fastlane/metadata'
