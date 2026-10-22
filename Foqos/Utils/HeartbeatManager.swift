@@ -63,6 +63,11 @@ class HeartbeatManager: ObservableObject {
 
   private let defaults: UserDefaults
   private let notificationScheduler: HeartbeatNotificationScheduling
+  private let userRecordName: () -> String?
+  private let authorizationStatus: () -> AuthorizationStatus
+  private let saveHeartbeat: (DeviceHeartbeat) async throws -> Void
+  private var lastSuccessfulHeartbeat: DeviceHeartbeat?
+  private var heartbeatWriteTask: Task<Void, Never>?
   private var authRevokedNotificationDeviceIdsInFlight = Set<String>()
 
   @Published var monitoredDevices: [MonitoredDevice] = []
@@ -81,10 +86,22 @@ class HeartbeatManager: ObservableObject {
 
   init(
     defaults: UserDefaults = .standard,
-    notificationScheduler: HeartbeatNotificationScheduling = UserNotificationCenterScheduler()
+    notificationScheduler: HeartbeatNotificationScheduling = UserNotificationCenterScheduler(),
+    userRecordName: @escaping () -> String? = {
+      CloudKitManager.shared.currentUserRecordID?.recordName
+    },
+    authorizationStatus: @escaping () -> AuthorizationStatus = {
+      AuthorizationCenter.shared.authorizationStatus
+    },
+    saveHeartbeat: @escaping (DeviceHeartbeat) async throws -> Void = {
+      try await CloudKitManager.shared.writeHeartbeat($0)
+    }
   ) {
     self.defaults = defaults
     self.notificationScheduler = notificationScheduler
+    self.userRecordName = userRecordName
+    self.authorizationStatus = authorizationStatus
+    self.saveHeartbeat = saveHeartbeat
     self.heartbeatNotificationsEnabled = defaults.bool(forKey: Self.notificationEnabledKey)
     self.monitoredDevices = Self.loadDevices(defaults: defaults)
   }
@@ -92,9 +109,50 @@ class HeartbeatManager: ObservableObject {
   // MARK: - Child Side
 
   /// Write heartbeat to CloudKit. Fire-and-forget — must not block profile activation.
-  func writeHeartbeat() {
-    guard !ScreenshotDemoMode.isActive else { return }
-    let authStatus = AuthorizationCenter.shared.authorizationStatus
+  @discardableResult
+  func writeHeartbeat(now: @escaping () -> Date = Date.init) -> Task<Void, Never> {
+    Task { await writeHeartbeat(throttled: false, now: now, isReady: { true }) }
+  }
+
+  func writeHeartbeatOnForeground(
+    now: () -> Date = Date.init, isReady: () -> Bool
+  ) async {
+    await writeHeartbeat(throttled: true, now: now, isReady: isReady)
+  }
+
+  private func writeHeartbeat(
+    throttled: Bool, now: () -> Date, isReady: () -> Bool
+  ) async {
+    guard isReady() else { return }
+    while let pending = heartbeatWriteTask {
+      await pending.value
+    }
+    guard isReady() else { return }
+    let now = now()
+    guard let heartbeat = makeHeartbeat(now: now) else { return }
+
+    if throttled, let previous = lastSuccessfulHeartbeat,
+      previous.childUserRecordName == heartbeat.childUserRecordName,
+      previous.authorizationStatus == heartbeat.authorizationStatus,
+      now.timeIntervalSince(previous.lastHeartbeatAt) >= 0,
+      now.timeIntervalSince(previous.lastHeartbeatAt) < 15 * 60
+    {
+      return
+    }
+
+    let task = Task {
+      defer { heartbeatWriteTask = nil }
+      if await sendHeartbeat(heartbeat) {
+        lastSuccessfulHeartbeat = heartbeat
+      }
+    }
+    heartbeatWriteTask = task
+    await task.value
+  }
+
+  private func makeHeartbeat(now: Date) -> DeviceHeartbeat? {
+    guard !ScreenshotDemoMode.isActive else { return nil }
+    let authStatus = authorizationStatus()
     let statusString: String
     switch authStatus {
     case .approved, .approvedWithDataAccess: statusString = "approved"
@@ -103,25 +161,27 @@ class HeartbeatManager: ObservableObject {
     @unknown default: statusString = "unknown"
     }
 
-    guard let userRecordName = CloudKitManager.shared.currentUserRecordID?.recordName else {
+    guard let userRecordName = userRecordName() else {
       Log.warning("No user record ID available for heartbeat", category: .cloudKit)
-      return
+      return nil
     }
 
-    let heartbeat = DeviceHeartbeat(
+    return DeviceHeartbeat(
       childUserRecordName: userRecordName,
       deviceIdentifier: UIDevice.current.identifierForVendor?.uuidString ?? "unknown",
       deviceName: UIDevice.current.name,
-      lastHeartbeatAt: Date(),
+      lastHeartbeatAt: now,
       authorizationStatus: statusString
     )
+  }
 
-    Task {
-      do {
-        try await CloudKitManager.shared.writeHeartbeat(heartbeat)
-      } catch {
-        Log.warning("Heartbeat write failed (non-blocking): \(redactedErrorForLog(error))", category: .cloudKit)
-      }
+  private func sendHeartbeat(_ heartbeat: DeviceHeartbeat) async -> Bool {
+    do {
+      try await saveHeartbeat(heartbeat)
+      return true
+    } catch {
+      Log.warning("Heartbeat write failed (non-blocking): \(redactedErrorForLog(error))", category: .cloudKit)
+      return false
     }
   }
 
