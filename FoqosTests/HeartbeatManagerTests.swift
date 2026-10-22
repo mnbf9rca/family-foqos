@@ -142,23 +142,16 @@ final class HeartbeatManagerTests: XCTestCase {
     XCTAssertEqual(writes.first?.lastHeartbeatAt, now.addingTimeInterval(1))
   }
 
-  func testGivenIneligibleForeground_WhenCheckingIn_ThenDoesNotWriteOrArmThrottle() async {
+  func testGivenForegroundNotReady_WhenCheckingIn_ThenDoesNotWriteOrArmThrottle() async {
     let now = Date()
     var writes: [DeviceHeartbeat] = []
     let manager = foregroundManager { writes.append($0) }
-    let states: [(AppMode, Bool, Bool, Bool)] = [
-      (.individual, false, true, true), (.parent, false, true, true),
-      (.child, true, true, true), (.child, false, false, true),
-      (.child, false, true, false),
-    ]
-    for (mode, isHeld, isSignedIn, isConnected) in states {
-      await manager.writeHeartbeatOnForeground(
-        mode: mode, isRecoveryHeld: isHeld, isSignedIn: isSignedIn,
-        isConnectedToFamily: isConnected, now: now)
-      XCTAssertTrue(writes.isEmpty)
-    }
+    var isReady = false
+    await manager.writeHeartbeatOnForeground(now: { now }, isReady: { isReady })
+    XCTAssertTrue(writes.isEmpty)
 
-    await foreground(manager, now: now)
+    isReady = true
+    await manager.writeHeartbeatOnForeground(now: { now }, isReady: { isReady })
 
     XCTAssertEqual(writes.count, 1)
   }
@@ -177,9 +170,11 @@ final class HeartbeatManagerTests: XCTestCase {
     XCTAssertEqual(writes.count, 1)
   }
 
-  func testGivenStatusChangesDuringWrite_WhenForegroundingAgain_ThenCoalescesAndSendsChangedStatus() async {
+  func testGivenStatusChangesDuringWrite_WhenForegroundingAgain_ThenSendsChangedStatusAfterPendingWrite() async {
     let now = Date()
+    var clock = now
     let started = expectation(description: "Heartbeat write started")
+    let secondStarted = expectation(description: "Second foreground started")
     var finishWrite: CheckedContinuation<Void, Never>?
     var status = AuthorizationStatus.approved
     var writes: [DeviceHeartbeat] = []
@@ -194,23 +189,69 @@ final class HeartbeatManagerTests: XCTestCase {
           }
         }
       })
-    let first = Task { await self.foreground(manager, now: now) }
+    let first = Task {
+      await manager.writeHeartbeatOnForeground(now: { clock }, isReady: { true })
+    }
     await fulfillment(of: [started], timeout: 2)
     status = .denied
+    clock = now.addingTimeInterval(1)
 
-    await foreground(manager, now: now.addingTimeInterval(1))
+    let second = Task {
+      secondStarted.fulfill()
+      await manager.writeHeartbeatOnForeground(now: { clock }, isReady: { true })
+    }
+    await fulfillment(of: [secondStarted], timeout: 2)
     XCTAssertEqual(writes.count, 1)
+    clock = now.addingTimeInterval(30)
     finishWrite?.resume()
     await first.value
-    await foreground(manager, now: now.addingTimeInterval(2))
+    await second.value
 
     XCTAssertEqual(writes.map(\.authorizationStatus), ["approved", "denied"])
+    XCTAssertEqual(writes.last?.lastHeartbeatAt, now.addingTimeInterval(30))
+  }
+
+  func testGivenReadinessChangesWhileWaiting_WhenPendingWriteFinishes_ThenDoesNotWriteAgain() async {
+    let now = Date()
+    let started = expectation(description: "Heartbeat write started")
+    let secondReadyCheck = expectation(description: "Second foreground checked readiness")
+    var isReady = true
+    var checkedSecondReadiness = false
+    var finishWrite: CheckedContinuation<Void, Never>?
+    var writes: [DeviceHeartbeat] = []
+    let manager = foregroundManager { heartbeat in
+      writes.append(heartbeat)
+      if writes.count == 1 {
+        await withCheckedContinuation { continuation in
+          finishWrite = continuation
+          started.fulfill()
+        }
+      }
+    }
+    let first = Task { await self.foreground(manager, now: now) }
+    await fulfillment(of: [started], timeout: 2)
+    let second = Task {
+      await manager.writeHeartbeatOnForeground(
+        now: { now.addingTimeInterval(1) },
+        isReady: {
+          if !checkedSecondReadiness {
+            checkedSecondReadiness = true
+            secondReadyCheck.fulfill()
+          }
+          return isReady
+        })
+    }
+    await fulfillment(of: [secondReadyCheck], timeout: 2)
+    isReady = false
+    finishWrite?.resume()
+    await first.value
+    await second.value
+
+    XCTAssertEqual(writes.count, 1)
   }
 
   private func foreground(_ manager: HeartbeatManager, now: Date) async {
-    await manager.writeHeartbeatOnForeground(
-      mode: .child, isRecoveryHeld: false, isSignedIn: true,
-      isConnectedToFamily: true, now: now)
+    await manager.writeHeartbeatOnForeground(now: { now }, isReady: { true })
   }
 
   private func foregroundManager(

@@ -67,7 +67,7 @@ class HeartbeatManager: ObservableObject {
   private let authorizationStatus: () -> AuthorizationStatus
   private let saveHeartbeat: (DeviceHeartbeat) async throws -> Void
   private var lastSuccessfulForegroundHeartbeat: DeviceHeartbeat?
-  private var isForegroundHeartbeatInFlight = false
+  private var foregroundHeartbeatTask: Task<Void, Never>?
   private var authRevokedNotificationDeviceIdsInFlight = Set<String>()
 
   @Published var monitoredDevices: [MonitoredDevice] = []
@@ -115,13 +115,15 @@ class HeartbeatManager: ObservableObject {
   }
 
   func writeHeartbeatOnForeground(
-    mode: AppMode, isRecoveryHeld: Bool, isSignedIn: Bool, isConnectedToFamily: Bool,
-    now: Date = Date()
+    now: () -> Date = Date.init, isReady: () -> Bool
   ) async {
-    guard mode == .child, !isRecoveryHeld, isSignedIn, isConnectedToFamily,
-      !isForegroundHeartbeatInFlight,
-      let heartbeat = makeHeartbeat(now: now)
-    else { return }
+    guard isReady() else { return }
+    while let pending = foregroundHeartbeatTask {
+      await pending.value
+    }
+    guard isReady() else { return }
+    let now = now()
+    guard let heartbeat = makeHeartbeat(now: now) else { return }
 
     if let previous = lastSuccessfulForegroundHeartbeat,
       previous.childUserRecordName == heartbeat.childUserRecordName,
@@ -132,11 +134,14 @@ class HeartbeatManager: ObservableObject {
       return
     }
 
-    isForegroundHeartbeatInFlight = true
-    defer { isForegroundHeartbeatInFlight = false }
-    if await sendHeartbeat(heartbeat) {
-      lastSuccessfulForegroundHeartbeat = heartbeat
+    let task = Task {
+      defer { foregroundHeartbeatTask = nil }
+      if await sendHeartbeat(heartbeat) {
+        lastSuccessfulForegroundHeartbeat = heartbeat
+      }
     }
+    foregroundHeartbeatTask = task
+    await task.value
   }
 
   private func makeHeartbeat(now: Date) -> DeviceHeartbeat? {
