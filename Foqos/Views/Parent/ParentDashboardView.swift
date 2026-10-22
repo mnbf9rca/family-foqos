@@ -895,11 +895,21 @@ struct FamilyMemberCard: View {
   let onRemove: () -> Void
 
   @State private var showRemoveConfirmation = false
-  @State private var isResettingEmergency = false
-  @State private var isResettingThrottle = false
-  @State private var resetStatus: ParentResetCommandStatus = .idle
+  @State private var sendingResetTypes: Set<FamilyCommandType> = []
+  @State private var resetStatuses: [FamilyCommandType: ParentResetCommandStatus] = [:]
   @State private var showResetError = false
   @State private var resetErrorMessage = ""
+
+  private let resetTypes: [FamilyCommandType] = [.resetEmergencyCount, .resetLockCodeThrottle]
+
+  private var pendingCommands: [FamilyCommand] {
+    resetTypes.compactMap { resetStatuses[$0]?.pendingCommand }
+  }
+
+  private var resetStatusLabel: String {
+    let messages = resetTypes.compactMap { resetStatuses[$0]?.displayText }
+    return messages.isEmpty ? "More" : messages.joined(separator: " ")
+  }
 
   var body: some View {
     HStack(spacing: 12) {
@@ -927,10 +937,12 @@ struct FamilyMemberCard: View {
           .font(.caption)
           .foregroundColor(.secondary)
 
-        if let statusText = resetStatus.displayText {
-          Text(statusText)
-            .font(.caption2)
-            .foregroundColor(.secondary)
+        ForEach(resetTypes, id: \.self) { type in
+          if let statusText = resetStatuses[type]?.displayText {
+            Text(statusText)
+              .font(.caption2)
+              .foregroundColor(.secondary)
+          }
         }
       }
 
@@ -943,18 +955,18 @@ struct FamilyMemberCard: View {
       Menu {
         if member.role == .child {
           Button {
-            resetEmergencyCount()
+            sendReset(.resetEmergencyCount)
           } label: {
             Label("Reset Emergency Count", systemImage: "arrow.counterclockwise")
           }
-          .disabled(isResettingEmergency)
+          .disabled(sendingResetTypes.contains(.resetEmergencyCount))
 
           Button {
-            resetLockCodeThrottle()
+            sendReset(.resetLockCodeThrottle)
           } label: {
             Label("Reset PIN Attempts", systemImage: "lock.rotation")
           }
-          .disabled(isResettingThrottle)
+          .disabled(sendingResetTypes.contains(.resetLockCodeThrottle))
         }
 
         Button(role: .destructive) {
@@ -963,21 +975,18 @@ struct FamilyMemberCard: View {
           Label("Remove", systemImage: "trash")
         }
       } label: {
-        if isResettingEmergency || isResettingThrottle {
+        if !sendingResetTypes.isEmpty {
           ProgressView()
             .scaleEffect(0.8)
+        } else if !pendingCommands.isEmpty {
+          Image(systemName: "paperplane.circle")
+            .foregroundColor(.secondary)
         } else {
-          switch resetStatus {
-          case .awaitingChild:
-            Image(systemName: "paperplane.circle")
-              .foregroundColor(.secondary)
-          case .idle, .noLongerPending:
-            Image(systemName: "ellipsis.circle")
-              .foregroundColor(.secondary)
-          }
+          Image(systemName: "ellipsis.circle")
+            .foregroundColor(.secondary)
         }
       }
-      .accessibilityLabel(resetStatus.displayText ?? "More")
+      .accessibilityLabel(resetStatusLabel)
       .alert("Error", isPresented: $showResetError) {
         Button("OK", role: .cancel) {}
       } message: {
@@ -989,6 +998,9 @@ struct FamilyMemberCard: View {
       RoundedRectangle(cornerRadius: 12)
         .fill(Color(.tertiarySystemBackground))
     )
+    .task(id: pendingCommands.map(\.id)) {
+      await pollForConfirmation()
+    }
     .confirmationDialog(
       "Remove \(displayName)",
       isPresented: $showRemoveConfirmation,
@@ -1003,7 +1015,7 @@ struct FamilyMemberCard: View {
     }
   }
 
-  private func resetEmergencyCount() {
+  private func sendReset(_ type: FamilyCommandType) {
     guard member.role == .child else { return }
 
     guard let currentUserRecordName = CloudKitManager.shared.currentUserRecordID?.recordName else {
@@ -1012,84 +1024,46 @@ struct FamilyMemberCard: View {
       return
     }
 
-    resetStatus = .idle
-    isResettingEmergency = true
-
+    sendingResetTypes.insert(type)
     Task {
+      defer { sendingResetTypes.remove(type) }
       do {
         let command = FamilyCommand(
-          commandType: .resetEmergencyCount,
+          commandType: type,
           targetChildId: member.userRecordName,
           createdBy: currentUserRecordName
         )
         try await CloudKitManager.shared.sendCommand(command)
-
-        await MainActor.run {
-          isResettingEmergency = false
-          resetStatus = .afterSuccessfulSave
-        }
-        await pollForConfirmation(command)
+        resetStatuses[type] = .awaitingChild(command)
       } catch {
-        await MainActor.run {
-          isResettingEmergency = false
-          resetErrorMessage = error.localizedDescription
-          showResetError = true
-        }
+        Log.error("Failed to send reset command: \(redactedErrorForLog(error))", category: .cloudKit)
+        resetErrorMessage = ParentResetCommandStatus.sendFailureMessage(for: type)
+        showResetError = true
       }
     }
   }
 
-  private func resetLockCodeThrottle() {
-    guard member.role == .child else { return }
-
-    guard let currentUserRecordName = CloudKitManager.shared.currentUserRecordID?.recordName else {
-      resetErrorMessage = "Not signed in to iCloud"
-      showResetError = true
-      return
-    }
-
-    resetStatus = .idle
-    isResettingThrottle = true
-
-    Task {
-      do {
-        let command = FamilyCommand(
-          commandType: .resetLockCodeThrottle,
-          targetChildId: member.userRecordName,
-          createdBy: currentUserRecordName
-        )
-        try await CloudKitManager.shared.sendCommand(command)
-
-        await MainActor.run {
-          isResettingThrottle = false
-          resetStatus = .afterSuccessfulSave
+  private func pollForConfirmation() async {
+    var attempt = 0
+    while !Task.isCancelled && !pendingCommands.isEmpty {
+      for command in pendingCommands {
+        guard let status = resetStatuses[command.commandType] else { continue }
+        let next = await status.refreshed { command in
+          try await CloudKitManager.shared.commandIsPending(command)
         }
-        await pollForConfirmation(command)
-      } catch {
-        await MainActor.run {
-          isResettingThrottle = false
-          resetErrorMessage = error.localizedDescription
-          showResetError = true
+        guard !Task.isCancelled else { return }
+        // A resend can replace this operation while its earlier probe is in flight.
+        if resetStatuses[command.commandType]?.pendingCommand?.id == command.id {
+          resetStatuses[command.commandType] = next
         }
       }
-    }
-  }
-
-  private func pollForConfirmation(_ command: FamilyCommand) async {
-    for _ in 0..<5 {
-      try? await Task.sleep(nanoseconds: 3_000_000_000)
-
-      let stillPending: Bool
+      guard !pendingCommands.isEmpty else { return }
       do {
-        stillPending = try await CloudKitManager.shared.commandIsPending(command)
+        try await Task.sleep(for: .seconds(attempt < 5 ? 3 : 30))
       } catch {
         return
       }
-
-      let next = ParentResetCommandStatus.afterConfirmationProbe(
-        commandStillPending: stillPending)
-      await MainActor.run { resetStatus = next }
-      if next == .noLongerPending { return }
+      attempt += 1
     }
   }
 }
