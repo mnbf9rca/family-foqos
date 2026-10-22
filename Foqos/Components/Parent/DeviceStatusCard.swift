@@ -5,6 +5,8 @@ struct DeviceStatusCard: View {
   let onSuppress: () -> Void
   let onRemove: () -> Void
 
+  @State private var showRemoveConfirmation = false
+
   private var statusColor: Color {
     if device.isSuppressed { return .secondary }
     if device.isAuthRevoked { return .red }
@@ -55,7 +57,7 @@ struct DeviceStatusCard: View {
         .font(.caption)
 
         Button("Remove", role: .destructive) {
-          onRemove()
+          showRemoveConfirmation = true
         }
         .font(.caption)
       }
@@ -63,5 +65,18 @@ struct DeviceStatusCard: View {
     .padding()
     .background(Color(.secondarySystemGroupedBackground))
     .cornerRadius(12)
+    .alert(
+      "Remove \(device.deviceName)?",
+      isPresented: $showRemoveConfirmation
+    ) {
+      Button("Remove", role: .destructive) {
+        onRemove()
+      }
+      Button("Cancel", role: .cancel) {}
+    } message: {
+      Text(
+        "This removes the device from Device Status and cancels its status notifications. "
+          + "It will appear again if it reports status.")
+    }
   }
 }
