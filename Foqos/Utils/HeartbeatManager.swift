@@ -66,8 +66,8 @@ class HeartbeatManager: ObservableObject {
   private let userRecordName: () -> String?
   private let authorizationStatus: () -> AuthorizationStatus
   private let saveHeartbeat: (DeviceHeartbeat) async throws -> Void
-  private var lastSuccessfulForegroundHeartbeat: DeviceHeartbeat?
-  private var foregroundHeartbeatTask: Task<Void, Never>?
+  private var lastSuccessfulHeartbeat: DeviceHeartbeat?
+  private var heartbeatWriteTask: Task<Void, Never>?
   private var authRevokedNotificationDeviceIdsInFlight = Set<String>()
 
   @Published var monitoredDevices: [MonitoredDevice] = []
@@ -109,23 +109,29 @@ class HeartbeatManager: ObservableObject {
   // MARK: - Child Side
 
   /// Write heartbeat to CloudKit. Fire-and-forget — must not block profile activation.
-  func writeHeartbeat() {
-    guard let heartbeat = makeHeartbeat(now: Date()) else { return }
-    Task { await sendHeartbeat(heartbeat) }
+  @discardableResult
+  func writeHeartbeat(now: @escaping () -> Date = Date.init) -> Task<Void, Never> {
+    Task { await writeHeartbeat(throttled: false, now: now, isReady: { true }) }
   }
 
   func writeHeartbeatOnForeground(
     now: () -> Date = Date.init, isReady: () -> Bool
   ) async {
+    await writeHeartbeat(throttled: true, now: now, isReady: isReady)
+  }
+
+  private func writeHeartbeat(
+    throttled: Bool, now: () -> Date, isReady: () -> Bool
+  ) async {
     guard isReady() else { return }
-    while let pending = foregroundHeartbeatTask {
+    while let pending = heartbeatWriteTask {
       await pending.value
     }
     guard isReady() else { return }
     let now = now()
     guard let heartbeat = makeHeartbeat(now: now) else { return }
 
-    if let previous = lastSuccessfulForegroundHeartbeat,
+    if throttled, let previous = lastSuccessfulHeartbeat,
       previous.childUserRecordName == heartbeat.childUserRecordName,
       previous.authorizationStatus == heartbeat.authorizationStatus,
       now.timeIntervalSince(previous.lastHeartbeatAt) >= 0,
@@ -135,12 +141,12 @@ class HeartbeatManager: ObservableObject {
     }
 
     let task = Task {
-      defer { foregroundHeartbeatTask = nil }
+      defer { heartbeatWriteTask = nil }
       if await sendHeartbeat(heartbeat) {
-        lastSuccessfulForegroundHeartbeat = heartbeat
+        lastSuccessfulHeartbeat = heartbeat
       }
     }
-    foregroundHeartbeatTask = task
+    heartbeatWriteTask = task
     await task.value
   }
 

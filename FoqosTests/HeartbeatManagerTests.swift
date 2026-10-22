@@ -250,6 +250,88 @@ final class HeartbeatManagerTests: XCTestCase {
     XCTAssertEqual(writes.count, 1)
   }
 
+  func testGivenSessionSavePending_WhenForegroundStatusChanges_ThenSavesAreOrdered() async {
+    let now = Date()
+    await assertOrderedSessionAndForeground(sessionFirst: true, now: now)
+  }
+
+  func testGivenForegroundSavePending_WhenSessionStatusChanges_ThenSavesAreOrdered() async {
+    let now = Date()
+    await assertOrderedSessionAndForeground(sessionFirst: false, now: now)
+  }
+
+  func testGivenRecentHeartbeat_WhenSessionStartsRepeat_ThenUnthrottledSavesUpdateForegroundBaseline() async {
+    let now = Date()
+    var status = AuthorizationStatus.approved
+    var writes: [DeviceHeartbeat] = []
+    let manager = foregroundManager(authorizationStatus: { status }, saveHeartbeat: { writes.append($0) })
+    await foreground(manager, now: now)
+    await manager.writeHeartbeat(now: { now.addingTimeInterval(1) }).value
+    status = .denied
+    await manager.writeHeartbeat(now: { now.addingTimeInterval(2) }).value
+    await manager.writeHeartbeat(now: { now.addingTimeInterval(3) }).value
+    status = .approved
+
+    await foreground(manager, now: now.addingTimeInterval(4))
+
+    XCTAssertEqual(writes.map(\.authorizationStatus), ["approved", "approved", "denied", "denied", "approved"])
+    XCTAssertEqual(writes.last?.lastHeartbeatAt, now.addingTimeInterval(4))
+  }
+
+  private func assertOrderedSessionAndForeground(sessionFirst: Bool, now: Date) async {
+    let started = expectation(description: "First heartbeat save started")
+    let secondEntered = expectation(description: "Second heartbeat requested")
+    let overlappingSave = expectation(description: "No overlapping save")
+    overlappingSave.isInverted = true
+    var firstIsPending = true
+    var clock = now
+    var finishWrite: CheckedContinuation<Void, Never>?
+    var status = AuthorizationStatus.approved
+    var completed: [DeviceHeartbeat] = []
+    let manager = foregroundManager(
+      authorizationStatus: { status },
+      saveHeartbeat: { heartbeat in
+        if heartbeat.authorizationStatus == "approved" {
+          await withCheckedContinuation { continuation in
+            finishWrite = continuation
+            started.fulfill()
+          }
+          completed.append(heartbeat)
+          firstIsPending = false
+        } else {
+          if firstIsPending { overlappingSave.fulfill() }
+          completed.append(heartbeat)
+        }
+      })
+    let first = Task {
+      if sessionFirst {
+        await manager.writeHeartbeat(now: { clock }).value
+      } else {
+        await manager.writeHeartbeatOnForeground(now: { clock }, isReady: { true })
+      }
+    }
+    await fulfillment(of: [started], timeout: 2)
+    status = .denied
+    clock = now.addingTimeInterval(1)
+    let second = Task {
+      secondEntered.fulfill()
+      if sessionFirst {
+        await manager.writeHeartbeatOnForeground(now: { clock }, isReady: { true })
+      } else {
+        await manager.writeHeartbeat(now: { clock }).value
+      }
+    }
+    await fulfillment(of: [secondEntered], timeout: 2)
+    await fulfillment(of: [overlappingSave], timeout: 0.1)
+    clock = now.addingTimeInterval(30)
+    finishWrite?.resume()
+    await first.value
+    await second.value
+
+    XCTAssertEqual(completed.map(\.authorizationStatus), ["approved", "denied"])
+    XCTAssertEqual(completed.last?.lastHeartbeatAt, now.addingTimeInterval(30))
+  }
+
   private func foreground(_ manager: HeartbeatManager, now: Date) async {
     await manager.writeHeartbeatOnForeground(now: { now }, isReady: { true })
   }
