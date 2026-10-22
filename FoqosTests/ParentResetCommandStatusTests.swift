@@ -100,4 +100,83 @@ final class ParentResetCommandStatusTests: XCTestCase {
       ParentResetCommandStatus.sendFailureMessage(for: .resetLockCodeThrottle),
       "Couldn't send the PIN attempts reset. Check your connection and try again.")
   }
+
+  func testAutomaticPollingSurvivesErrorAndFiveProbesThenUsesBackoffUntilDelivery() async {
+    let now = Date()
+    let command = FamilyCommand(
+      commandType: .resetEmergencyCount, targetChildId: "child", createdBy: "parent", createdAt: now)
+    var status = ParentResetCommandStatus.awaitingChild(command)
+    var clock = now
+    var probeCount = 0
+    var delays: [Duration] = []
+    await ParentResetCommandStatus.poll(
+      pendingCommands: { status.pendingCommand.map { [$0] } ?? [] },
+      probe: { probed in
+        XCTAssertEqual(probed.id, command.id)
+        probeCount += 1
+        if probeCount == 2 { throw CKError(.networkUnavailable) }
+        return clock < now.addingTimeInterval(60)
+      },
+      apply: { _, next in status = next },
+      sleep: { delay in
+        delays.append(delay)
+        guard delays.count < 10 else {
+          XCTFail("Polling did not stop after delivery")
+          throw CancellationError()
+        }
+        clock = clock.addingTimeInterval(delay == .seconds(3) ? 3 : 30)
+      })
+    XCTAssertEqual(status.displayText, "Emergency unblock reset delivered.")
+    XCTAssertNil(status.pendingCommand)
+    XCTAssertEqual(probeCount, 8)
+    XCTAssertEqual(delays, [.seconds(3), .seconds(3), .seconds(3), .seconds(3), .seconds(3), .seconds(30), .seconds(30)])
+  }
+
+  func testAutomaticPollingDiscardsProbeForReplacedCommand() async {
+    let now = Date()
+    let old = FamilyCommand(
+      commandType: .resetEmergencyCount, targetChildId: "child", createdBy: "parent", createdAt: now)
+    let replacement = FamilyCommand(
+      commandType: .resetEmergencyCount, targetChildId: "child", createdBy: "parent",
+      createdAt: now.addingTimeInterval(1))
+    var status = ParentResetCommandStatus.awaitingChild(old)
+    var probeCount = 0
+    await ParentResetCommandStatus.poll(
+      pendingCommands: { status.pendingCommand.map { [$0] } ?? [] },
+      probe: { _ in
+        probeCount += 1
+        status = .awaitingChild(replacement)
+        return false
+      },
+      apply: { _, _ in XCTFail("An old probe must not mark the replacement delivered") },
+      sleep: { _ in throw CancellationError() })
+    XCTAssertEqual(status.pendingCommand, replacement)
+    XCTAssertEqual(probeCount, 1)
+  }
+
+  func testAutomaticPollingDiscardsCancelledProbeAndDoesNotSleepOrProbeAgain() async {
+    let now = Date()
+    let command = FamilyCommand(
+      commandType: .resetEmergencyCount, targetChildId: "child", createdBy: "parent", createdAt: now)
+    var status = ParentResetCommandStatus.awaitingChild(command)
+    var probeCount = 0
+    let task = Task { @MainActor in
+      await ParentResetCommandStatus.poll(
+        pendingCommands: { status.pendingCommand.map { [$0] } ?? [] },
+        probe: { _ in
+          probeCount += 1
+          withUnsafeCurrentTask { $0?.cancel() }
+          return false
+        },
+        apply: { _, next in status = next },
+        sleep: { _ in
+          XCTFail("A cancelled task must not sleep")
+          throw CancellationError()
+        })
+    }
+    await task.value
+    XCTAssertEqual(status.pendingCommand, command)
+    XCTAssertEqual(probeCount, 1)
+  }
+
 }

@@ -24,6 +24,33 @@ enum ParentResetCommandStatus: Equatable {
     }
   }
 
+  @MainActor
+  static func poll(
+    pendingCommands: () -> [FamilyCommand],
+    probe: @MainActor (FamilyCommand) async throws -> Bool,
+    apply: (FamilyCommand, Self) -> Void,
+    sleep: @MainActor (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
+  ) async {
+    var attempt = 0
+    while !Task.isCancelled && !pendingCommands().isEmpty {
+      for command in pendingCommands() {
+        let next = await Self.awaitingChild(command).refreshed(using: probe)
+        guard !Task.isCancelled else { return }
+        // A resend can replace this operation while its earlier probe is in flight.
+        if pendingCommands().contains(where: { $0.commandType == command.commandType && $0.id == command.id }) {
+          apply(command, next)
+        }
+      }
+      guard !pendingCommands().isEmpty else { return }
+      do {
+        try await sleep(.seconds(attempt < 5 ? 3 : 30))
+      } catch {
+        return
+      }
+      attempt += 1
+    }
+  }
+
   var displayText: String? {
     switch self {
     case .idle:

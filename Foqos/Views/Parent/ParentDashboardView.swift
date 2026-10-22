@@ -1044,28 +1044,12 @@ struct FamilyMemberCard: View {
   }
 
   private func pollForConfirmation() async {
-    var attempt = 0
-    while !Task.isCancelled && !pendingCommands.isEmpty {
-      for command in pendingCommands {
-        guard let status = resetStatuses[command.commandType] else { continue }
-        let next = await status.refreshed { command in
-          try await CloudKitManager.shared.commandIsPending(command)
-        }
-        guard !Task.isCancelled else { return }
-        // A resend can replace this operation while its earlier probe is in flight.
-        if resetStatuses[command.commandType]?.pendingCommand?.id == command.id {
-          resetStatuses[command.commandType] = next
-        }
-      }
-      guard !pendingCommands.isEmpty else { return }
-      do {
-        try await Task.sleep(for: .seconds(attempt < 5 ? 3 : 30))
-      } catch {
-        return
-      }
-      attempt += 1
-    }
+    await ParentResetCommandStatus.poll(
+      pendingCommands: { pendingCommands },
+      probe: { command in try await CloudKitManager.shared.commandIsPending(command) },
+      apply: { command, next in resetStatuses[command.commandType] = next })
   }
+
 }
 
 // MARK: - Pending Invitation Card
