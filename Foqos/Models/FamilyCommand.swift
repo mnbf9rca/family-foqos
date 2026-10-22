@@ -8,7 +8,7 @@ enum FamilyCommandType: String, Codable {
 }
 
 /// Represents a command from parent to child device via CloudKit
-struct FamilyCommand: Codable, Identifiable {
+struct FamilyCommand: Codable, Identifiable, Equatable {
   var id: UUID
   var commandType: FamilyCommandType
   var targetChildId: String  // userRecordName of the target child
