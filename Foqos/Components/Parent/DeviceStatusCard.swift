@@ -65,10 +65,9 @@ struct DeviceStatusCard: View {
     .padding()
     .background(Color(.secondarySystemGroupedBackground))
     .cornerRadius(12)
-    .confirmationDialog(
+    .alert(
       "Remove \(device.deviceName)?",
-      isPresented: $showRemoveConfirmation,
-      titleVisibility: .visible
+      isPresented: $showRemoveConfirmation
     ) {
       Button("Remove", role: .destructive) {
         onRemove()
