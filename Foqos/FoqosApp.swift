@@ -393,11 +393,13 @@ struct FoqosApp: App {
       await CloudKitManager.shared.verifySelfFamilyMemberRecord()
       await verifyChildAuthorizationIfNeeded()
       if AppModeManager.shared.currentMode == .child {
-        await HeartbeatManager.shared.writeHeartbeatOnForeground(
-          mode: AppModeManager.shared.currentMode,
-          isRecoveryHeld: startupRecoveryRuntime.isHeld,
-          isSignedIn: CloudKitManager.shared.isSignedIn,
-          isConnectedToFamily: CloudKitManager.shared.isConnectedToFamily)
+        Task {
+          await HeartbeatManager.shared.writeHeartbeatOnForeground(
+            mode: AppModeManager.shared.currentMode,
+            isRecoveryHeld: startupRecoveryRuntime.isHeld,
+            isSignedIn: CloudKitManager.shared.isSignedIn,
+            isConnectedToFamily: CloudKitManager.shared.isConnectedToFamily)
+        }
         do {
           try await CloudKitManager.shared.ensureSharedDatabaseSubscription()
         } catch {
