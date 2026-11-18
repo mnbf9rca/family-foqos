@@ -147,7 +147,9 @@ final class ProtectedStoreLaunchTests: XCTestCase {
     var preparations = 0
     var recoveryReads = 0
     var backgroundRuns = 0
-    var reschedules = 0
+    var retryDates: [Date] = []
+    let now = Date()
+    let expectedRetry = now.addingTimeInterval(15 * 60)
     let launch = ProtectedStoreLaunch(
       isProtectedDataAvailable: { isUnlocked },
       probeStore: { .readFailed },
@@ -181,23 +183,24 @@ final class ProtectedStoreLaunchTests: XCTestCase {
       onReleased: { pushCompletions.append(.newData) })
     let processed = TimersUtil.processBackgroundTaskIfReady(
       launch: launch,
+      now: now,
       process: {
         backgroundRuns += 1
         return true
       },
-      reschedule: { reschedules += 1 })
+      reschedule: { retryDates.append($0) })
     XCTAssertEqual(pushCompletions, [.noData])
     XCTAssertFalse(processed)
     XCTAssertEqual(recoveryReads, 0)
     XCTAssertEqual(backgroundRuns, 0)
-    XCTAssertEqual(reschedules, 0)
+    XCTAssertEqual(retryDates, [expectedRetry])
     XCTAssertEqual(preparations, 0)
 
     isUnlocked = true
     launch.refresh()
 
     XCTAssertEqual(preparations, 1)
-    XCTAssertEqual(reschedules, 1)
+    XCTAssertEqual(retryDates, [expectedRetry])
     XCTAssertEqual(navigation.deliveries, [.link(profileId: profileID), .link(profileId: warmID)])
     let laterID = UUID()
     delegate.receiveURL(try XCTUnwrap(URL(string: "https://family-foqos.app/profile/\(laterID)")))
@@ -314,7 +317,7 @@ final class ProtectedStoreLaunchTests: XCTestCase {
     let processingLaunch = makeLaunch()
     let processed = TimersUtil.processBackgroundTaskIfReady(
       launch: processingLaunch, process: { true },
-      reschedule: { XCTFail("Ready task should be processed immediately") })
+      reschedule: { _ in XCTFail("Ready task should be processed immediately") })
     XCTAssertTrue(processed)
     XCTAssertEqual(opens, 3)
   }
