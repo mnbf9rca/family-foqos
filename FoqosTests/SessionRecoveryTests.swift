@@ -269,6 +269,33 @@ final class SessionRecoveryTests: XCTestCase {
     XCTAssertEqual(rows.first { $0.id == old.id }?.sessionStartSyncPending, false)
   }
 
+  func testEarlierRecordedCompletionBoundsOrphanBeforeDifferentProfileTakesOver() throws {
+    let now = time(21, 52)
+    configureManager(delivery: now)
+    let context = container.mainContext
+    let previous = BlockedProfiles(name: "Previous")
+    let current = BlockedProfiles(name: "Current")
+    context.insert(previous)
+    context.insert(current)
+    let orphan = BlockedProfileSession(tag: "schedule", blockedProfile: previous, startTime: time(6), origin: .init(kind: .schedule))
+    let completed = BlockedProfileSession(tag: "schedule", blockedProfile: previous, startTime: time(6, 1))
+    completed.endTime = time(8)
+    context.insert(orphan)
+    context.insert(completed)
+    try context.save()
+    let owner = SharedData.SessionSnapshot(
+      id: UUID().uuidString, tag: "remote-sync", blockedProfileId: current.id,
+      startTime: time(12), forceStarted: true, origin: .init(kind: .manual))
+    SharedData.createActiveSharedSession(for: owner)
+
+    try manager.loadActiveSession(context: ModelContext(container))
+
+    XCTAssertEqual(manager.activeSession?.id, owner.id)
+    XCTAssertEqual(
+      try BlockedProfileSession.findSession(byID: orphan.id, in: ModelContext(container))?.endTime,
+      time(8))
+  }
+
   func testNextDayScheduledDeliveryIsAdoptedAfterStoppedOccurrence() throws {
     let delivery = time(16, day: 1)
     configureManager(delivery: delivery)

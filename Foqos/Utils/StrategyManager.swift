@@ -1799,7 +1799,8 @@ class StrategyManager: ObservableObject {
         // Bound inferred history by the owner's start or a recorded completion for this profile.
         let latestEnd = row.blockedProfile.sessions.valid.compactMap(\.endTime)
           .filter { $0 >= row.startTime && $0 <= now }.max()
-        row.endTime = max(row.startTime, min(live?.startTime ?? latestEnd ?? row.startTime, now))
+        let firstBound = [live?.startTime, latestEnd].compactMap { $0 }.filter { $0 >= row.startTime }.min()
+        row.endTime = min(firstBound ?? row.startTime, max(row.startTime, now))
         row.origin = nil
         row.timerEndTime = nil
         row.sessionStartSyncPending = false
