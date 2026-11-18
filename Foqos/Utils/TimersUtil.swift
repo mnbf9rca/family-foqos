@@ -266,34 +266,32 @@ final class TimersUtil: TimersUtilScheduling, @unchecked Sendable {  // SAFETY: 
       forTaskWithIdentifier: backgroundProcessingTaskIdentifier,
       using: .main
     ) { task in
-      MainActor.assumeIsolated {
-        guard task is BGProcessingTask else {
-          task.setTaskCompleted(success: false)
-          return
-        }
-        Self.completeBackgroundProcessing(
+      guard task is BGProcessingTask else {
+        task.setTaskCompleted(success: false)
+        return
+      }
+      let succeeded = MainActor.assumeIsolated {
+        Self.processBackgroundTaskIfReady(
           launch: .shared,
           process: Self.processBackgroundTasks,
-          reschedule: { TimersUtil().scheduleBackgroundProcessing() },
-          complete: { task.setTaskCompleted(success: $0) })
+          reschedule: { TimersUtil().scheduleBackgroundProcessing() })
       }
+      task.setTaskCompleted(success: succeeded)
     }
   }
 
   @MainActor
-  static func completeBackgroundProcessing(
+  static func processBackgroundTaskIfReady(
     launch: ProtectedStoreLaunch,
     process: () -> Bool,
-    reschedule: @escaping () -> Void,
-    complete: (Bool) -> Void
-  ) {
+    reschedule: @escaping () -> Void
+  ) -> Bool {
     launch.refresh()
     guard launch.isReady else {
       launch.afterOpen(reschedule)
-      complete(false)
-      return
+      return false
     }
-    complete(process())
+    return process()
   }
 
   private static func processBackgroundTasks() -> Bool {

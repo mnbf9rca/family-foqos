@@ -125,7 +125,7 @@ final class ProtectedStoreLaunchTests: XCTestCase {
     launch.refresh()
     launch.afterOpen {
       XCTAssertTrue(prepared)
-      XCTAssertTrue(try launch.readyContainer() === container)
+      XCTAssertTrue((try? launch.readyContainer()) === container)
       deliveries += 1
       ready.fulfill()
     }
@@ -179,17 +179,15 @@ final class ProtectedStoreLaunchTests: XCTestCase {
       launch: launch, isRecoveryHeld: isRecoveryHeld(),
       onHeld: { pushCompletions.append(.noData) },
       onReleased: { pushCompletions.append(.newData) })
-    var taskCompletions: [Bool] = []
-    TimersUtil.completeBackgroundProcessing(
+    let processed = TimersUtil.processBackgroundTaskIfReady(
       launch: launch,
       process: {
         backgroundRuns += 1
         return true
       },
-      reschedule: { reschedules += 1 },
-      complete: { taskCompletions.append($0) })
+      reschedule: { reschedules += 1 })
     XCTAssertEqual(pushCompletions, [.noData])
-    XCTAssertEqual(taskCompletions, [false])
+    XCTAssertFalse(processed)
     XCTAssertEqual(recoveryReads, 0)
     XCTAssertEqual(backgroundRuns, 0)
     XCTAssertEqual(reschedules, 0)
@@ -200,7 +198,6 @@ final class ProtectedStoreLaunchTests: XCTestCase {
 
     XCTAssertEqual(preparations, 1)
     XCTAssertEqual(reschedules, 1)
-    XCTAssertEqual(taskCompletions, [false])
     XCTAssertEqual(navigation.deliveries, [.link(profileId: profileID), .link(profileId: warmID)])
     let laterID = UUID()
     delegate.receiveURL(try XCTUnwrap(URL(string: "https://family-foqos.app/profile/\(laterID)")))
@@ -226,11 +223,11 @@ final class ProtectedStoreLaunchTests: XCTestCase {
 
     let query = BlockedProfilesQuery(launch: launch)
     let sessionStatus = CheckSessionActiveIntent(launch: launch)
-    var profileStatus = CheckProfileStatusIntent(launch: launch)
+    let profileStatus = CheckProfileStatusIntent(launch: launch)
     profileStatus.profile = entity
-    var start = StartProfileIntent(launch: launch)
+    let start = StartProfileIntent(launch: launch)
     start.profile = entity
-    var stop = StopProfileIntent(launch: launch)
+    let stop = StopProfileIntent(launch: launch)
     stop.profile = entity
     launch.refresh()
 
@@ -315,12 +312,10 @@ final class ProtectedStoreLaunchTests: XCTestCase {
     XCTAssertEqual(opens, 2)
 
     let processingLaunch = makeLaunch()
-    var processingCompletions: [Bool] = []
-    TimersUtil.completeBackgroundProcessing(
+    let processed = TimersUtil.processBackgroundTaskIfReady(
       launch: processingLaunch, process: { true },
-      reschedule: { XCTFail("Ready task should be processed immediately") },
-      complete: { processingCompletions.append($0) })
-    XCTAssertEqual(processingCompletions, [true])
+      reschedule: { XCTFail("Ready task should be processed immediately") })
+    XCTAssertTrue(processed)
     XCTAssertEqual(opens, 3)
   }
 
