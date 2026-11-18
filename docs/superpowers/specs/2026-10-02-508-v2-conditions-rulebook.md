@@ -141,6 +141,8 @@ Expiry checks exact session identity and accepted deadline, using expected-sessi
 
 ## Independent schedule recurrences (#515–#517)
 
+See [Session lifecycle](../../session-lifecycle.md) for current app, monitor and DeviceSync transitions and known defects.
+
 Start and stop each own recurrence and OS registration. Reuse the stop-only activity; its registration/removal cannot depend on successful start registration. A V2 start activity's artificial end does nothing. OS minimum intervals constrain internal windows, not the gap between product events.
 
 Monday 09:00 start / Friday 17:00 stop never stops on Monday at 17:00. Equal clocks on disjoint weekdays and distinct events less than 15 minutes apart are valid if each OS registration is valid. Refuse Save only for enabled recurrences sharing a weekday and equal hour/minute. Runtime stop wins regardless of callback order; a start cannot resurrect an already-stopped occurrence. Keep existing stopped-occurrence suppression, without catch-up.
