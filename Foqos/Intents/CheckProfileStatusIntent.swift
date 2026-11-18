@@ -1,15 +1,15 @@
 import AppIntents
-import SwiftData
 
 struct CheckProfileStatusIntent: AppIntent {
   static let authenticationPolicy: IntentAuthenticationPolicy = .alwaysAllowed
 
-  @Dependency(key: "ModelContainer")
-  private var modelContainer: ModelContainer
+  @Dependency(key: "ProtectedStoreLaunch")
+  private var launch: ProtectedStoreLaunch
 
-  @MainActor
-  private var modelContext: ModelContext {
-    return modelContainer.mainContext
+  init() {}
+
+  init(launch: ProtectedStoreLaunch) {
+    self.launch = launch
   }
 
   @Parameter(title: "Profile") var profile: BlockedProfileEntity
@@ -20,6 +20,7 @@ struct CheckProfileStatusIntent: AppIntent {
 
   @MainActor
   func perform() async throws -> some IntentResult & ReturnsValue<Bool> & ProvidesDialog {
+    let modelContext = try launch.readyContainer().mainContext
     let status = try ShortcutStatus.read(
       manager: .shared, context: modelContext, askedProfileId: profile.id)
 

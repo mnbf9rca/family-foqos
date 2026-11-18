@@ -264,17 +264,39 @@ final class TimersUtil: TimersUtilScheduling, @unchecked Sendable {  // SAFETY: 
   static func registerBackgroundTasks() {
     BGTaskScheduler.shared.register(
       forTaskWithIdentifier: backgroundProcessingTaskIdentifier,
-      using: nil
+      using: .main
     ) { task in
-      guard let processingTask = task as? BGProcessingTask else {
+      guard task is BGProcessingTask else {
         task.setTaskCompleted(success: false)
         return
       }
-      Self.handleBackgroundProcessingTask(processingTask)
+      let succeeded = MainActor.assumeIsolated {
+        Self.processBackgroundTaskIfReady(
+          launch: .shared,
+          process: Self.processBackgroundTasks,
+          reschedule: Self.submitBackgroundProcessing(earliestBeginDate:))
+      }
+      task.setTaskCompleted(success: succeeded)
     }
   }
 
-  private static func handleBackgroundProcessingTask(_ task: BGProcessingTask) {
+  @MainActor
+  static func processBackgroundTaskIfReady(
+    launch: ProtectedStoreLaunch,
+    now: Date = Date(),
+    process: () -> Bool,
+    reschedule: (Date) -> Void
+  ) -> Bool {
+    launch.refresh()
+    guard launch.isReady else {
+      // The system keeps the replacement request if the process exits before unlock.
+      reschedule(now.addingTimeInterval(15 * 60))
+      return false
+    }
+    return process()
+  }
+
+  private static func processBackgroundTasks() -> Bool {
     let timerUtil = TimersUtil()
 
     // Get all pending tasks from UserDefaults
@@ -316,17 +338,11 @@ final class TimersUtil: TimersUtilScheduling, @unchecked Sendable {  // SAFETY: 
       timerUtil.scheduleBackgroundProcessing()
     }
 
-    task.setTaskCompleted(success: hasExecutedTasks)
+    return hasExecutedTasks
   }
 
   /// Schedule a background processing task
   func scheduleBackgroundProcessing() {
-    let request = BGProcessingTaskRequest(
-      identifier: Self.backgroundProcessingTaskIdentifier
-    )
-    request.requiresNetworkConnectivity = false
-    request.requiresExternalPower = false
-
     // Find the earliest task execution time
     var earliestDate: Date?
     for (_, taskInfo) in backgroundTasks {
@@ -337,15 +353,21 @@ final class TimersUtil: TimersUtilScheduling, @unchecked Sendable {  // SAFETY: 
       }
     }
 
-    // Set the earliest start date if there's a pending task
-    if let earliestDate = earliestDate {
-      request.earliestBeginDate = earliestDate
+    if let earliestDate {
+      Self.submitBackgroundProcessing(earliestBeginDate: earliestDate)
+    }
+  }
 
-      do {
-        try BGTaskScheduler.shared.submit(request)
-      } catch {
-        Log.info("Could not schedule background task: \(redactedErrorForLog(error))", category: .timer)
-      }
+  private static func submitBackgroundProcessing(earliestBeginDate: Date) {
+    let request = BGProcessingTaskRequest(identifier: backgroundProcessingTaskIdentifier)
+    request.requiresNetworkConnectivity = false
+    request.requiresExternalPower = false
+    request.earliestBeginDate = earliestBeginDate
+
+    do {
+      try BGTaskScheduler.shared.submit(request)
+    } catch {
+      Log.info("Could not schedule background task: \(redactedErrorForLog(error))", category: .timer)
     }
   }
 

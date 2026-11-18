@@ -120,6 +120,15 @@ final class StartupRecoveryLocalStateTests: XCTestCase {
     XCTAssertEqual(StartupRecoveryLocalState.readStore(at: storeURL), .tableMissing)
   }
 
+  func testGivenInvalidSQLiteSchema_WhenReading_ThenTheStoreIsUnreadable() throws {
+    let storeURL = try makeSQLiteStore(sql: "CREATE TABLE OTHER (VALUE INTEGER)")
+    defer { try? FileManager.default.removeItem(at: storeURL) }
+
+    try Data(repeating: 0xff, count: 4096).write(to: storeURL)
+
+    XCTAssertEqual(StartupRecoveryLocalState.readStore(at: storeURL), .readFailed)
+  }
+
   func testGivenSQLiteProfileRows_WhenReading_ThenLiteralCountIsReturned() throws {
     let storeURL = try makeSQLiteStore(
       sql: "CREATE TABLE ZBLOCKEDPROFILES (Z_PK INTEGER); INSERT INTO ZBLOCKEDPROFILES VALUES (1); INSERT INTO ZBLOCKEDPROFILES VALUES (2)")

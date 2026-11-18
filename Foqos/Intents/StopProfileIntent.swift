@@ -1,15 +1,15 @@
 import AppIntents
-import SwiftData
 
 struct StopProfileIntent: AppIntent {
   static var authenticationPolicy: IntentAuthenticationPolicy { ShortcutsSettings.authenticationPolicy }
 
-  @Dependency(key: "ModelContainer")
-  private var modelContainer: ModelContainer
+  @Dependency(key: "ProtectedStoreLaunch")
+  private var launch: ProtectedStoreLaunch
 
-  @MainActor
-  private var modelContext: ModelContext {
-    return modelContainer.mainContext
+  init() {}
+
+  init(launch: ProtectedStoreLaunch) {
+    self.launch = launch
   }
 
   @Parameter(title: "Profile") var profile: BlockedProfileEntity
@@ -18,6 +18,7 @@ struct StopProfileIntent: AppIntent {
 
   @MainActor
   func perform() async throws -> some IntentResult & ProvidesDialog {
+    let modelContext = try launch.readyContainer().mainContext
     try await StrategyManager.shared
       .stopSessionFromBackground(
         profile.id,

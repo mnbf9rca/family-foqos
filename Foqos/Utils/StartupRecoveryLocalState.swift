@@ -105,8 +105,9 @@ enum StartupRecoveryLocalState {
     guard sqlite3_exec(database, "PRAGMA query_only=ON", nil, nil, nil) == SQLITE_OK else {
       return .readFailed
     }
-    guard profileTableExists(in: database) else {
-      return .tableMissing
+    let tableStatus = profileTableStatus(in: database)
+    guard tableStatus == SQLITE_ROW else {
+      return tableStatus == SQLITE_DONE ? .tableMissing : .readFailed
     }
 
     var statement: OpaquePointer?
@@ -131,7 +132,7 @@ enum StartupRecoveryLocalState {
     return .profileCount(count)
   }
 
-  private static func profileTableExists(in database: OpaquePointer) -> Bool {
+  private static func profileTableStatus(in database: OpaquePointer) -> Int32 {
     var statement: OpaquePointer?
     let prepareCode = sqlite3_prepare_v2(
       database,
@@ -143,9 +144,9 @@ enum StartupRecoveryLocalState {
       if let statement {
         sqlite3_finalize(statement)
       }
-      return false
+      return prepareCode == SQLITE_OK ? SQLITE_ERROR : prepareCode
     }
     defer { sqlite3_finalize(statement) }
-    return sqlite3_step(statement) == SQLITE_ROW
+    return sqlite3_step(statement)
   }
 }

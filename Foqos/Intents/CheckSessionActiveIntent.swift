@@ -1,15 +1,15 @@
 import AppIntents
-import SwiftData
 
 struct CheckSessionActiveIntent: AppIntent {
   static let authenticationPolicy: IntentAuthenticationPolicy = .alwaysAllowed
 
-  @Dependency(key: "ModelContainer")
-  private var modelContainer: ModelContainer
+  @Dependency(key: "ProtectedStoreLaunch")
+  private var launch: ProtectedStoreLaunch
 
-  @MainActor
-  private var modelContext: ModelContext {
-    return modelContainer.mainContext
+  init() {}
+
+  init(launch: ProtectedStoreLaunch) {
+    self.launch = launch
   }
 
   nonisolated(unsafe) static var title: LocalizedStringResource = "Check if Family Foqos Session is Active"  // SAFETY: AppIntents requires static var; immutable after init
@@ -21,6 +21,7 @@ struct CheckSessionActiveIntent: AppIntent {
 
   @MainActor
   func perform() async throws -> some IntentResult & ReturnsValue<Bool> & ProvidesDialog {
+    let modelContext = try launch.readyContainer().mainContext
     let status = try ShortcutStatus.read(
       manager: .shared, context: modelContext)
 

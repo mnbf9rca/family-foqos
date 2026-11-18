@@ -36,14 +36,6 @@ func redactedURLString(_ url: URL) -> String {
   return components?.string ?? url.host ?? "unknown"
 }
 
-private let container: ModelContainer = {
-  do {
-    return try AppModelStore.makeContainer()
-  } catch {
-    fatalError("Couldn't create ModelContainer: \(error)")
-  }
-}()
-
 // MARK: - Pending Share Acceptance State
 
 /// Holds state between role detection and user confirmation during share acceptance
@@ -64,9 +56,67 @@ class PendingShareAcceptance: ObservableObject {
 
 @main
 struct FoqosApp: App {
-  private let startupRecoverySnapshot = StartupRecoveryLocalState.capture()
+  @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+  @StateObject private var launch = ProtectedStoreLaunch.shared
+
+  init() {
+    let launch = ProtectedStoreLaunch.shared
+    launch.startObserving()
+    AppDependencyManager.shared.add(key: "ProtectedStoreLaunch", dependency: launch)
+    launch.afterOpen { FamilyFoqosShortcuts.updateAppShortcutParameters() }
+  }
+
+  var body: some Scene {
+    WindowGroup {
+      Group {
+        switch launch.state {
+        case .waitingForUnlock:
+          VStack {
+            ContentUnavailableView(
+              "Unlock Your Device", systemImage: "lock",
+              description: Text("Unlock your device to open Family Foqos."))
+            #if DEBUG && targetEnvironment(simulator)
+              if let fixture = ProtectedStoreLaunch.uiTestFixture {
+                Button("Simulate Unlock") { fixture.unlock() }
+              }
+            #endif
+          }
+        case .failed:
+          ContentUnavailableView {
+            Label("Couldn't Open Family Foqos", systemImage: "exclamationmark.triangle")
+          } description: {
+            Text("Your data couldn't be opened. Try again.")
+          } actions: {
+            Button("Try Again") {
+              #if DEBUG && targetEnvironment(simulator)
+                ProtectedStoreLaunch.uiTestFixture?.allowRetry()
+              #endif
+              launch.refresh()
+            }
+          }
+        case .ready(let container, let snapshot):
+          ReadyAppContent(container: container, startupRecoverySnapshot: snapshot)
+            .modelContainer(container)
+        }
+      }
+      .onOpenURL { url in
+        Log.info("onOpenURL triggered with: \(redactedURLString(url))", category: .app)
+        launch.afterOpen { NavigationManager.shared.receiveSwiftUI(url) }
+      }
+      .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
+        launch.afterOpen { NavigationManager.shared.receiveSwiftUI(activity) }
+      }
+    }
+    .handlesExternalEvents(matching: ["*"])  // Handle all external events including CloudKit shares
+  }
+}
+
+@MainActor
+private struct ReadyAppContent: View {
+  let container: ModelContainer
+  let startupRecoverySnapshot: StartupRecoveryLocalSnapshot
   @StateObject private var startupRecoveryRuntime = StartupRecoveryRuntime.shared
-  @StateObject private var startupRecoveryCoordinator: StartupRecoveryCoordinator
+  @ObservedObject private var startupRecoveryCoordinator = appStartupRecoveryCoordinator
   @StateObject private var requestAuthorizer = RequestAuthorizer()
   @StateObject private var navigationManager = NavigationManager.shared
   @StateObject private var nfcWriter = NFCWriter()
@@ -93,250 +143,175 @@ struct FoqosApp: App {
   /// Coalesces cold-launch and warm-foreground schedule refreshes.
   @State private var scheduleRefreshState = AppScheduleRefreshState()
 
-  /// CloudKit share acceptance
-  @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-
   @Environment(\.scenePhase) private var scenePhase
 
-  init() {
-    let cloudService = StartupRecoveryCloudService()
-    let recoveryDefaults =
-      isRunningUnitTests || ScreenshotDemoMode.isActive
-      ? UserDefaults(suiteName: "StartupRecoveryBypass-\(UUID().uuidString)")!
-      : UserDefaults.standard
-    let recoveryCoordinator = StartupRecoveryCoordinator(
-      store: StartupRecoveryStore(defaults: recoveryDefaults),
-      captureLocalClassification: {
-        StartupRecoveryLocalState.classify(StartupRecoveryLocalState.capture())
-      },
-      captureOrigin: captureStartupRecoveryOrigin,
-      restoreOrigin: restoreStartupRecoveryOrigin,
-      lookupMembership: { await cloudService.lookupMembership() },
-      lookupSyncedProfileCount: { ownerUserRecordName in
-        await cloudService.fetchSyncedProfileCount(
-          expectedOwnerUserRecordName: ownerUserRecordName)
-      },
-      restoreFamilyRole: restoreRecoveredFamilyRole,
-      refreshChildLockCodes: {
-        _ = await LockCodeManager.shared.refreshSharedLockCodesForVerification()
-      },
-      setSyncEnabled: { ProfileSyncManager.shared.isEnabled = $0 },
-      releaseStartup: { StartupRecoveryRuntime.shared.release() })
-    _startupRecoveryCoordinator = StateObject(wrappedValue: recoveryCoordinator)
-    StartupRecoveryRuntime.shared.register(coordinator: recoveryCoordinator)
-
-    // Migrate UserDefaults keys BEFORE any @AppStorage reads.
-    // Must run here (not in .onAppear) because SwiftUI reads @AppStorage
-    // when building the view hierarchy, which happens before .onAppear fires.
-    UserDefaultsMigration.migrateIfNeeded()
-    UserDefaultsMigration.migrateAppGroupIfNeeded()
-
-    SharedData.configure(
-      suite: UserDefaults(suiteName: "group.com.cynexia.family-foqos")!
-    )
-    #if DEBUG
-      if ScreenshotDemoMode.isActive {
-        do {
-          try ScreenshotDemoSeeder.seed(container: container)
-        } catch {
-          Log.error("Demo seed failed: \(error.localizedDescription)", category: .app)
+  var body: some View {
+    // Route to appropriate view based on app mode
+    rootView
+      .onAppear {
+        Log.debug("rootView onAppear", category: .app)
+      }
+      .onChange(of: scenePhase) { oldPhase, newPhase in
+        Log.debug("scenePhase changed", category: .app)
+        guard !startupRecoveryRuntime.isHeld else {
+          return
+        }
+        let shouldRefreshSchedules = scheduleRefreshState.shouldRefresh(for: newPhase)
+        guard newPhase == .active else { return }
+        Task {
+          await handleActiveScene(shouldRefreshSchedules: shouldRefreshSchedules)
         }
       }
-    #endif
-    Log.info("init() called", category: .app)
-    TimersUtil.registerBackgroundTasks()
-    UNUserNotificationCenter.current().delegate = NotificationDelegate.shared
-
-    let asyncDependency: @Sendable () async -> (ModelContainer) = {
-      @MainActor in
-      return container
-    }
-    AppDependencyManager.shared.add(
-      key: "ModelContainer",
-      dependency: asyncDependency
-    )
-    FamilyFoqosShortcuts.updateAppShortcutParameters()
-  }
-
-  var body: some Scene {
-    WindowGroup {
-      // Route to appropriate view based on app mode
-      rootView
-        .onAppear {
-          Log.debug("rootView onAppear", category: .app)
+      .alert(
+        CloudKitManager.familyRevocationAlertTitle,
+        isPresented: Binding(
+          get: { cloudKitManager.familyRevocationMessage != nil },
+          set: {
+            if !$0 {
+              cloudKitManager.dismissFamilyRevocationMessage()
+            }
+          }
+        )
+      ) {
+        Button("OK") {
+          cloudKitManager.dismissFamilyRevocationMessage()
         }
-        .onChange(of: scenePhase) { oldPhase, newPhase in
-          Log.debug("scenePhase changed", category: .app)
-          guard !startupRecoveryRuntime.isHeld else {
+      } message: {
+        Text(cloudKitManager.familyRevocationMessage ?? "")
+      }
+      .alert(
+        StartupRecoveryCopy.roleRestoredTitle,
+        isPresented: Binding(
+          get: {
+            if case .roleRestored = startupRecoveryCoordinator.state { return true }
+            return false
+          },
+          set: { isPresented in
+            if !isPresented {
+              startupRecoveryCoordinator.dismissRoleRestoredNotice()
+            }
+          }
+        )
+      ) {
+        Button("OK") {
+          startupRecoveryCoordinator.dismissRoleRestoredNotice()
+        }
+      } message: {
+        Text(StartupRecoveryCopy.roleRestoredMessage)
+      }
+      // Share acceptance result alert (success or error)
+      .alert(
+        cloudKitManager.shareAcceptanceIsError ? "Unable to Join Family" : shareAcceptanceTitle,
+        isPresented: Binding(
+          get: { cloudKitManager.shareAcceptedMessage != nil },
+          set: {
+            if !$0 {
+              cloudKitManager.shareAcceptedMessage = nil
+              cloudKitManager.shareAcceptanceIsError = false
+            }
+          }
+        )
+      ) {
+        Button("OK") {
+          cloudKitManager.shareAcceptedMessage = nil
+          cloudKitManager.shareAcceptanceIsError = false
+        }
+      } message: {
+        Text(cloudKitManager.shareAcceptedMessage ?? "")
+      }
+      // Role confirmation alert before accepting share
+      .alert(
+        confirmationAlertTitle,
+        isPresented: $pendingAcceptance.showConfirmation
+      ) {
+        Button("Continue") {
+          guard let metadata = pendingAcceptance.pendingMetadata,
+            let role = pendingAcceptance.detectedRole
+          else {
             return
           }
-          let shouldRefreshSchedules = scheduleRefreshState.shouldRefresh(for: newPhase)
-          guard newPhase == .active else { return }
-          Task {
-            await handleActiveScene(shouldRefreshSchedules: shouldRefreshSchedules)
-          }
+          pendingAcceptance.reset()
+          completeShareAcceptance(metadata: metadata, role: role)
         }
-        .onOpenURL { url in
-          Log.info("onOpenURL triggered with: \(redactedURLString(url))", category: .app)
-          navigationManager.receiveSwiftUI(url)
+        Button("Cancel", role: .cancel) {
+          pendingAcceptance.reset()
         }
-        .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { userActivity in
-          Log.debug("NSUserActivityTypeBrowsingWeb received", category: .app)
-          navigationManager.receiveSwiftUI(userActivity)
+      } message: {
+        Text(confirmationAlertMessage)
+      }
+      .onReceive(profileSyncManager.$shouldShowSyncUpgradeNotice) { shouldShow in
+        if shouldShow {
+          showSyncUpgradeAlert = true
+          profileSyncManager.shouldShowSyncUpgradeNotice = false
         }
-        .alert(
-          CloudKitManager.familyRevocationAlertTitle,
-          isPresented: Binding(
-            get: { cloudKitManager.familyRevocationMessage != nil },
-            set: {
-              if !$0 {
-                cloudKitManager.dismissFamilyRevocationMessage()
-              }
+      }
+      .alert(
+        "Multi-Device Sync Upgraded",
+        isPresented: $showSyncUpgradeAlert
+      ) {
+        Button("OK", role: .cancel) {}
+      } message: {
+        Text(
+          "Session sync has been improved. Please update Family Foqos on all your devices to ensure sessions sync correctly."
+        )
+      }
+      .confirmationDialog(
+        "iCloud account changed",
+        isPresented: Binding(
+          get: { profileSyncManager.accountChangeConflict != nil },
+          set: { isPresented in
+            if !isPresented, profileSyncManager.accountChangeConflict != nil {
+              profileSyncManager.resolveConflictNotNow()
             }
-          )
-        ) {
-          Button("OK") {
-            cloudKitManager.dismissFamilyRevocationMessage()
           }
-        } message: {
-          Text(cloudKitManager.familyRevocationMessage ?? "")
+        ),
+        titleVisibility: .visible
+      ) {
+        Button("Use this account's data") {
+          Task { await profileSyncManager.resolveConflictSwitchToCloud() }
         }
-        .alert(
-          StartupRecoveryCopy.roleRestoredTitle,
-          isPresented: Binding(
-            get: {
-              if case .roleRestored = startupRecoveryCoordinator.state { return true }
-              return false
-            },
-            set: { isPresented in
-              if !isPresented {
-                startupRecoveryCoordinator.dismissRoleRestoredNotice()
-              }
-            }
-          )
-        ) {
-          Button("OK") {
-            startupRecoveryCoordinator.dismissRoleRestoredNotice()
-          }
-        } message: {
-          Text(StartupRecoveryCopy.roleRestoredMessage)
+        Button("Combine my data") {
+          Task { await profileSyncManager.resolveConflictCombine() }
         }
-        // Share acceptance result alert (success or error)
-        .alert(
-          cloudKitManager.shareAcceptanceIsError ? "Unable to Join Family" : shareAcceptanceTitle,
-          isPresented: Binding(
-            get: { cloudKitManager.shareAcceptedMessage != nil },
-            set: {
-              if !$0 {
-                cloudKitManager.shareAcceptedMessage = nil
-                cloudKitManager.shareAcceptanceIsError = false
-              }
-            }
-          )
-        ) {
-          Button("OK") {
-            cloudKitManager.shareAcceptedMessage = nil
-            cloudKitManager.shareAcceptanceIsError = false
-          }
-        } message: {
-          Text(cloudKitManager.shareAcceptedMessage ?? "")
+        Button("Not now", role: .cancel) {
+          profileSyncManager.resolveConflictNotNow()
         }
-        // Role confirmation alert before accepting share
-        .alert(
-          confirmationAlertTitle,
-          isPresented: $pendingAcceptance.showConfirmation
-        ) {
-          Button("Continue") {
-            guard let metadata = pendingAcceptance.pendingMetadata,
-              let role = pendingAcceptance.detectedRole
-            else {
-              return
-            }
-            pendingAcceptance.reset()
-            completeShareAcceptance(metadata: metadata, role: role)
-          }
-          Button("Cancel", role: .cancel) {
-            pendingAcceptance.reset()
-          }
-        } message: {
-          Text(confirmationAlertMessage)
+      } message: {
+        Text(
+          "Sync was turned off because this device signed into a different iCloud account. Use this account's data replaces this device's profiles with the ones already in the new account. Combine my data adds this device's profiles to the new account and they will appear on all devices signed into that account."
+        )
+      }
+      .environmentObject(requestAuthorizer)
+      .environmentObject(strategyManager)
+      .environmentObject(geofenceEvaluator)
+      .environmentObject(emergencyManager)
+      .environmentObject(navigationManager)
+      .environmentObject(nfcWriter)
+      .environmentObject(liveActivityManager)
+      .environmentObject(themeManager)
+      .environmentObject(appModeManager)
+      .environmentObject(cloudKitManager)
+      .environmentObject(profileSyncManager)
+      .task {
+        let classification =
+          isRunningUnitTests || ScreenshotDemoMode.isActive
+          ? StartupRecoveryLocalClassification.localStatePresent
+          : StartupRecoveryLocalState.classify(startupRecoverySnapshot)
+        await startupRecoveryCoordinator.start(classification: classification)
+        handleRecoveryState(startupRecoveryCoordinator.state)
+      }
+      .onChange(of: startupRecoveryCoordinator.state) { _, state in
+        handleRecoveryState(state)
+      }
+      .onChange(of: startupRecoveryReachability.isOnline) { wasOnline, isOnline in
+        guard !wasOnline, isOnline else { return }
+        Task {
+          await startupRecoveryCoordinator.recheckIfNeeded()
         }
-        .onReceive(profileSyncManager.$shouldShowSyncUpgradeNotice) { shouldShow in
-          if shouldShow {
-            showSyncUpgradeAlert = true
-            profileSyncManager.shouldShowSyncUpgradeNotice = false
-          }
-        }
-        .alert(
-          "Multi-Device Sync Upgraded",
-          isPresented: $showSyncUpgradeAlert
-        ) {
-          Button("OK", role: .cancel) {}
-        } message: {
-          Text(
-            "Session sync has been improved. Please update Family Foqos on all your devices to ensure sessions sync correctly."
-          )
-        }
-        .confirmationDialog(
-          "iCloud account changed",
-          isPresented: Binding(
-            get: { profileSyncManager.accountChangeConflict != nil },
-            set: { isPresented in
-              if !isPresented, profileSyncManager.accountChangeConflict != nil {
-                profileSyncManager.resolveConflictNotNow()
-              }
-            }
-          ),
-          titleVisibility: .visible
-        ) {
-          Button("Use this account's data") {
-            Task { await profileSyncManager.resolveConflictSwitchToCloud() }
-          }
-          Button("Combine my data") {
-            Task { await profileSyncManager.resolveConflictCombine() }
-          }
-          Button("Not now", role: .cancel) {
-            profileSyncManager.resolveConflictNotNow()
-          }
-        } message: {
-          Text(
-            "Sync was turned off because this device signed into a different iCloud account. Use this account's data replaces this device's profiles with the ones already in the new account. Combine my data adds this device's profiles to the new account and they will appear on all devices signed into that account."
-          )
-        }
-        .environmentObject(requestAuthorizer)
-        .environmentObject(strategyManager)
-        .environmentObject(geofenceEvaluator)
-        .environmentObject(emergencyManager)
-        .environmentObject(navigationManager)
-        .environmentObject(nfcWriter)
-        .environmentObject(liveActivityManager)
-        .environmentObject(themeManager)
-        .environmentObject(appModeManager)
-        .environmentObject(cloudKitManager)
-        .environmentObject(profileSyncManager)
-        .task {
-          let classification =
-            isRunningUnitTests || ScreenshotDemoMode.isActive
-            ? StartupRecoveryLocalClassification.localStatePresent
-            : StartupRecoveryLocalState.classify(startupRecoverySnapshot)
-          await startupRecoveryCoordinator.start(classification: classification)
-          handleRecoveryState(startupRecoveryCoordinator.state)
-        }
-        .onChange(of: startupRecoveryCoordinator.state) { _, state in
-          handleRecoveryState(state)
-        }
-        .onChange(of: startupRecoveryReachability.isOnline) { wasOnline, isOnline in
-          guard !wasOnline, isOnline else { return }
-          Task {
-            await startupRecoveryCoordinator.recheckIfNeeded()
-          }
-        }
-        .onAppear {
-          handleRecoveryState(startupRecoveryCoordinator.state)
-        }
-    }
-    .handlesExternalEvents(matching: ["*"])  // Handle all external events including CloudKit shares
-    .modelContainer(container)
+      }
+      .onAppear {
+        handleRecoveryState(startupRecoveryCoordinator.state)
+      }
   }
 
   /// Root view that routes based on app mode
@@ -463,6 +438,62 @@ struct FoqosApp: App {
 
 }
 
+@MainActor private let appStartupRecoveryCoordinator = makeStartupRecoveryCoordinator()
+
+@MainActor
+private func makeStartupRecoveryCoordinator() -> StartupRecoveryCoordinator {
+  let cloudService = StartupRecoveryCloudService()
+  let recoveryDefaults =
+    isRunningUnitTests || ScreenshotDemoMode.isActive
+    ? UserDefaults(suiteName: "StartupRecoveryBypass-\(UUID().uuidString)")!
+    : UserDefaults.standard
+  return StartupRecoveryCoordinator(
+    store: StartupRecoveryStore(defaults: recoveryDefaults),
+    captureLocalClassification: {
+      StartupRecoveryLocalState.classify(StartupRecoveryLocalState.capture())
+    },
+    captureOrigin: { captureStartupRecoveryOrigin() },
+    restoreOrigin: { restoreStartupRecoveryOrigin($0) },
+    lookupMembership: { await cloudService.lookupMembership() },
+    lookupSyncedProfileCount: { ownerUserRecordName in
+      await cloudService.fetchSyncedProfileCount(
+        expectedOwnerUserRecordName: ownerUserRecordName)
+    },
+    restoreFamilyRole: { restoreRecoveredFamilyRole($0) },
+    refreshChildLockCodes: {
+      _ = await LockCodeManager.shared.refreshSharedLockCodesForVerification()
+    },
+    setSyncEnabled: { ProfileSyncManager.shared.isEnabled = $0 },
+    releaseStartup: { StartupRecoveryRuntime.shared.release() })
+}
+
+@MainActor
+func prepareAppForOpenedStore(_ container: ModelContainer) {
+  StartupRecoveryRuntime.shared.register(coordinator: appStartupRecoveryCoordinator)
+
+  // Migrate UserDefaults keys BEFORE any @AppStorage reads.
+  // Must run here (not in .onAppear) because SwiftUI reads @AppStorage
+  // when building the view hierarchy, which happens before .onAppear fires.
+  UserDefaultsMigration.migrateIfNeeded()
+  UserDefaultsMigration.migrateAppGroupIfNeeded()
+
+  SharedData.configure(
+    suite: UserDefaults(suiteName: "group.com.cynexia.family-foqos")!
+  )
+  #if DEBUG
+    #if targetEnvironment(simulator)
+      if ProtectedStoreLaunch.uiTestFixture != nil { return }
+    #endif
+    if ScreenshotDemoMode.isActive {
+      do {
+        try ScreenshotDemoSeeder.seed(container: container)
+      } catch {
+        Log.error("Demo seed failed: \(error.localizedDescription)", category: .app)
+      }
+    }
+  #endif
+}
+
 @MainActor
 private func captureStartupRecoveryOrigin() -> StartupRecoveryOriginState {
   let defaults = UserDefaults.standard
@@ -549,11 +580,17 @@ class AppDelegate: NSObject, UIApplicationDelegate {
   ) -> Bool {
     Log.info("didFinishLaunchingWithOptions", category: .app)
 
+    TimersUtil.registerBackgroundTasks()
+    UNUserNotificationCenter.current().delegate = NotificationDelegate.shared
+
     // Register for remote notifications to receive CloudKit push notifications
     if !ScreenshotDemoMode.isActive {
       application.registerForRemoteNotifications()
     }
 
+    let launch = ProtectedStoreLaunch.shared
+    launch.startObserving()
+    launch.refresh()
     return true
   }
 
@@ -610,8 +647,9 @@ class AppDelegate: NSObject, UIApplicationDelegate {
   ) {
     Log.info("Received remote notification", category: .cloudKit)
     Task { @MainActor in
-      await StartupRecoveryPushRouter.route(
-        isHeld: StartupRecoveryRuntime.shared.isHeld,
+      await Self.routeProtectedPush(
+        launch: .shared,
+        isRecoveryHeld: StartupRecoveryRuntime.shared.isHeld,
         onHeld: { completionHandler(.noData) },
         onReleased: {
           // Check if this is a CloudKit notification only after recovery releases startup.
@@ -663,6 +701,18 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         })
     }
   }
+
+  static func routeProtectedPush(
+    launch: ProtectedStoreLaunch,
+    isRecoveryHeld: @autoclosure () -> Bool,
+    onHeld: () -> Void,
+    onReleased: () async -> Void
+  ) async {
+    launch.refresh()
+    await StartupRecoveryPushRouter.route(
+      isHeld: !launch.isReady || isRecoveryHeld(),
+      onHeld: onHeld, onReleased: onReleased)
+  }
 }
 
 extension ChildSharedDataRefreshResult {
@@ -682,13 +732,16 @@ extension ChildSharedDataRefreshResult {
 
 class SceneDelegate: NSObject, UIWindowSceneDelegate {
   private let navigation: NavigationManager
+  private let launch: ProtectedStoreLaunch?
 
   override init() {
     navigation = .shared
+    launch = .shared
     super.init()
   }
-  init(navigation: NavigationManager) {
+  init(navigation: NavigationManager, launch: ProtectedStoreLaunch? = nil) {
     self.navigation = navigation
+    self.launch = launch
     super.init()
   }
 
@@ -698,8 +751,21 @@ class SceneDelegate: NSObject, UIWindowSceneDelegate {
     for url in urls { receiveURL(url) }
   }
 
-  func receiveActivity(_ activity: NSUserActivity) { handleUserActivity(activity) }
-  func receiveURL(_ url: URL) { navigation.handleLink(url) }
+  func receiveActivity(_ activity: NSUserActivity) {
+    afterOpen { self.handleUserActivity(activity) }
+  }
+
+  func receiveURL(_ url: URL) {
+    afterOpen { [navigation] in navigation.handleLink(url) }
+  }
+
+  private func afterOpen(_ action: @escaping () -> Void) {
+    if let launch {
+      launch.afterOpen(action)
+    } else {
+      action()
+    }
+  }
 
   /// Called when app launches fresh with the share
   func scene(_: UIScene, willConnectTo _: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
@@ -708,7 +774,7 @@ class SceneDelegate: NSObject, UIWindowSceneDelegate {
     // Check if launched with a CloudKit share
     if let metadata = connectionOptions.cloudKitShareMetadata {
       Log.info("Found CloudKit share in connectionOptions", category: .cloudKit)
-      acceptCloudKitShare(metadata)
+      afterOpen { acceptCloudKitShare(metadata) }
     }
 
     receiveConnection(activities: Array(connectionOptions.userActivities), urls: connectionOptions.urlContexts.map { $0.url })
@@ -733,7 +799,7 @@ class SceneDelegate: NSObject, UIWindowSceneDelegate {
     userDidAcceptCloudKitShareWith cloudKitShareMetadata: CKShare.Metadata
   ) {
     Log.info("userDidAcceptCloudKitShareWith", category: .cloudKit)
-    acceptCloudKitShare(cloudKitShareMetadata)
+    afterOpen { acceptCloudKitShare(cloudKitShareMetadata) }
   }
 
   private func handleUserActivity(_ activity: NSUserActivity) {

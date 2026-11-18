@@ -21,19 +21,6 @@ final class StartupRecoveryOrderingTests: XCTestCase {
     XCTAssertTrue(StartupRecoveryStartupPolicy.isReleased(.roleRestored(role: .parent)))
   }
 
-  func testAppSourceKeepsSnapshotBeforeStateObjectsAndCoordinatorBeforeMigration() throws {
-    let source = try appSource()
-
-    assertOrder(
-      [
-        "private let startupRecoverySnapshot",
-        "@StateObject private var requestAuthorizer",
-        "_startupRecoveryCoordinator = StateObject",
-        "UserDefaultsMigration.migrateIfNeeded()",
-      ],
-      in: source)
-  }
-
   func testForegroundSourceRechecksRecoveryBeforeAuthorizationVerification() throws {
     let source = try appSource()
     let foreground = try functionBody(named: "handleActiveScene", in: source)

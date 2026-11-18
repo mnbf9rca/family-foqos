@@ -4,12 +4,13 @@ import SwiftData
 struct StartProfileIntent: AppIntent {
   static var authenticationPolicy: IntentAuthenticationPolicy { ShortcutsSettings.authenticationPolicy }
 
-  @Dependency(key: "ModelContainer")
-  private var modelContainer: ModelContainer
+  @Dependency(key: "ProtectedStoreLaunch")
+  private var launch: ProtectedStoreLaunch
 
-  @MainActor
-  private var modelContext: ModelContext {
-    return modelContainer.mainContext
+  init() {}
+
+  init(launch: ProtectedStoreLaunch) {
+    self.launch = launch
   }
 
   @Parameter(title: "Profile") var profile: BlockedProfileEntity
@@ -24,11 +25,18 @@ struct StartProfileIntent: AppIntent {
 
   @MainActor
   func perform() async throws -> some IntentResult & ProvidesDialog {
-    let currentName = try StrategyManager.shared.startSessionFromBackground(
-      profile.id,
-      context: modelContext,
-      durationInMinutes: durationInMinutes
-    )
+    try perform { profileID, context, duration in
+      try StrategyManager.shared.startSessionFromBackground(
+        profileID, context: context, durationInMinutes: duration)
+    }
+  }
+
+  @MainActor
+  func perform(
+    start: (UUID, ModelContext, Int?) throws -> String
+  ) throws -> some IntentResult & ProvidesDialog {
+    let modelContext = try launch.readyContainer().mainContext
+    let currentName = try start(profile.id, modelContext, durationInMinutes)
 
     let message = "\(currentName) started."
     return .result(dialog: .init(stringLiteral: message))
