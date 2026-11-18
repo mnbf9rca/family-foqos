@@ -1788,6 +1788,13 @@ class StrategyManager: ObservableObject {
       let live = ready.active
       let rows = try context.fetch(FetchDescriptor<BlockedProfileSession>())
       let liveRow = live.flatMap { slot in rows.first { $0.id == slot.id && $0.blockedProfile.id == slot.blockedProfileId } }
+      if let live, let liveRow, liveRow.endTime != nil {
+        guard
+          SharedData.recoverEndedSession(liveRow.toSnapshot(), replacing: live)
+            || SharedData.readSessionState()?.active != live
+        else { throw CocoaError(.fileWriteUnknown) }
+        continue
+      }
       var owner = liveRow
       var needsSave = false
       if let live, liveRow?.toSnapshot() != live {

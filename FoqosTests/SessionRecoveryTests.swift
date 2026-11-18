@@ -336,6 +336,28 @@ final class SessionRecoveryTests: XCTestCase {
     XCTAssertEqual(manager.remoteOnlySessionRecord(profileIds: [profile.id])?.sessionId, remote.sessionId)
   }
 
+  func testEndedHistoryPreventsReenforcingTheSameIdentityLeftInTheSlot() throws {
+    configureManager(delivery: time(20, 18))
+    let context = container.mainContext
+    let profile = BlockedProfiles(name: "Ended owner")
+    context.insert(profile)
+    let row = BlockedProfileSession(tag: "manual", blockedProfile: profile, startTime: time(15), origin: .init(kind: .manual))
+    context.insert(row)
+    let staleOwner = row.toSnapshot()
+    row.endTime = time(18)
+    row.origin = nil
+    try context.save()
+    SharedData.setSnapshot(BlockedProfiles.getSnapshot(for: profile), for: profile.id.uuidString, now: time(20, 18))
+    SharedData.createActiveSharedSession(for: staleOwner)
+
+    try manager.loadActiveSession(context: ModelContext(container))
+
+    XCTAssertNil(manager.activeSession)
+    XCTAssertNil(SharedData.getActiveSharedSession())
+    XCTAssertEqual(try BlockedProfileSession.findSession(byID: row.id, in: ModelContext(container))?.endTime, time(18))
+    XCTAssertFalse(applier.calls.contains(.activate(profileId: profile.id)))
+  }
+
   func testRemoteInactiveDeliveryRefreshesSessionBeforeSelectingStopTarget() throws {
     configureManager(delivery: time(20, 18))
     let context = container.mainContext

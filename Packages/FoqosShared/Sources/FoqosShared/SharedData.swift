@@ -721,15 +721,17 @@ public enum SharedData {
     return try? JSONDecoder().decode([SessionSnapshot].self, from: data)
   }
 
-  /// Older writers can leave an ended snapshot in the active slot.
+  /// Transfer proven completion out of the active slot without touching a replacement.
   @discardableResult
-  public static func recoverEndedSession(_ expected: SessionSnapshot) -> Bool {
-    withLockStatus(blocking: true) { outcome in
-      guard outcome == .acquired, expected.endTime != nil,
+  public static func recoverEndedSession(_ completion: SessionSnapshot, replacing expectedOwner: SessionSnapshot? = nil) -> Bool {
+    let expected = expectedOwner ?? completion
+    return withLockStatus(blocking: true) { outcome in
+      guard outcome == .acquired, completion.endTime != nil, completion.id == expected.id,
+        completion.blockedProfileId == expected.blockedProfileId,
         let active = checkedActiveSession(), active == expected,
         var completed = checkedCompletedSessions()
       else { return false }
-      if !completed.contains(expected) { completed.append(expected) }
+      if !completed.contains(completion) { completed.append(completion) }
       return commitSessionTransition(nil, completed: completed)
     }
   }
