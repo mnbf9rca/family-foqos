@@ -324,7 +324,11 @@ extension SharedData {
   ) -> RestrictionDecision {
     func readBasis() -> RestrictionBasis? {
       withLockStatus(blocking: process == .mainApp) { outcome in
-        guard outcome == .acquired, let session = checkedActiveSession() else { return nil }
+        // The monitor can still derive an effect from readable state if another process
+        // kept the lock after the transition committed. Only the app can repair storage here.
+        guard outcome == .acquired || process == .monitorExtension,
+          let session = checkedActiveSession()
+        else { return nil }
         let profile = session.flatMap { owner in
           profileSnapshots[owner.blockedProfileId.uuidString] ?? (liveSnapshot?.id == owner.blockedProfileId ? liveSnapshot : nil)
         }

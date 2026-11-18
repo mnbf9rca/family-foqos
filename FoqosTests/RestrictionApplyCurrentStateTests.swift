@@ -84,6 +84,55 @@ final class RestrictionApplyCurrentStateTests: XCTestCase {
     }
   }
 
+  func testCommittedMonitorStartAppliesShieldsWhileAnotherWriterHoldsTheLock() {
+    let now = Date()
+    let id = UUID()
+    var profile = snap(id)
+    profile.profileSchemaVersion = 2
+    profile.startTriggers = .init(manual: true)
+    profile.stopConditions = .init(manual: true)
+    profile.settingsReadable = true
+    let start = SharedData.SessionSnapshot(
+      id: UUID().uuidString, tag: "manual", blockedProfileId: id, startTime: now, forceStarted: true,
+      origin: .init(kind: .manual))
+    let spy = RecordingRestrictionApplier()
+
+    withSeparateLockDescriptor { descriptor in
+      SharedData.setSnapshot(profile, for: id.uuidString, now: now)
+      XCTAssertTrue(
+        SharedData.commitOriginatingSession(start, expectedVictimId: nil, now: now) {
+          XCTAssertEqual(flock(descriptor, LOCK_EX | LOCK_NB), 0)
+          defer { XCTAssertEqual(flock(descriptor, LOCK_UN), 0) }
+          SharedData.applyRestrictionsForCurrentState(
+            process: .monitorExtension, liveSnapshot: profile, applier: spy, deactivateWhenIdle: true)
+        })
+      XCTAssertEqual(spy.calls, [.activate(profileId: id)])
+      XCTAssertEqual(SharedData.getActiveSharedSession()?.id, start.id)
+    }
+  }
+
+  func testCommittedMonitorStopClearsShieldsWhileAnotherWriterHoldsTheLock() {
+    let now = Date()
+    let profile = snap(UUID())
+    let session = SharedData.SessionSnapshot(
+      id: UUID().uuidString, tag: "manual", blockedProfileId: profile.id, startTime: now.addingTimeInterval(-60),
+      forceStarted: true, origin: .init(kind: .manual))
+    let spy = RecordingRestrictionApplier()
+
+    withSeparateLockDescriptor { descriptor in
+      SharedData.createActiveSharedSession(for: session)
+      XCTAssertTrue(
+        SharedData.completeSession(expectedSessionId: session.id, now: now) {
+          XCTAssertEqual(flock(descriptor, LOCK_EX | LOCK_NB), 0)
+          defer { XCTAssertEqual(flock(descriptor, LOCK_UN), 0) }
+          SharedData.applyRestrictionsForCurrentState(
+            process: .monitorExtension, liveSnapshot: nil, applier: spy, deactivateWhenIdle: true)
+        })
+      XCTAssertEqual(spy.calls, [.deactivate])
+      XCTAssertNil(SharedData.getActiveSharedSession())
+    }
+  }
+
   private func withSeparateLockDescriptor(_ verify: (Int32) -> Void) {
     let path = FileManager.default.temporaryDirectory.appendingPathComponent("SessionEffect-\(UUID())")
     let descriptor = open(path.path, O_CREAT | O_RDWR, 0o600)

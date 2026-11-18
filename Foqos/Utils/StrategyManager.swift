@@ -280,7 +280,7 @@ class StrategyManager: ObservableObject {
   @discardableResult
   func stopRemoteOnlySession(profileId: UUID, method: StopMethod = .manual, context: ModelContext, emergency: Bool = false) async throws -> Bool {
     _ = try getActiveSession(context: context)
-    guard let captured = remoteSessionRecords[profileId], captured.isActive, remoteRecordMayAppear(captured),
+    guard let captured = remoteSessionRecords[profileId], captured.isActive, remoteRecordMayAppear(captured, waitForLock: true),
       let profile = try BlockedProfiles.findProfile(byID: profileId, in: context)
     else { throw EmergencyUnblockError.noActiveSession }
     guard remoteStopsInFlight.insert(profileId).inserted else { throw EmergencyUnblockError.sessionChanged }
@@ -302,7 +302,7 @@ class StrategyManager: ObservableObject {
     }
     _ = try getActiveSession(context: context)
     guard generation == remoteSessionGeneration,
-      let current = remoteSessionRecords[profileId], current.isActive, current.matchesIdentity(of: captured), remoteRecordMayAppear(current),
+      let current = remoteSessionRecords[profileId], current.isActive, current.matchesIdentity(of: captured), remoteRecordMayAppear(current, waitForLock: true),
       captured.sessionId != nil || captured.startTime != nil
     else { throw EmergencyUnblockError.sessionChanged }
     let result = await sessionSyncService.stopSession(
@@ -418,7 +418,11 @@ class StrategyManager: ObservableObject {
 
     if activeSession?.isActive == true {
       startTimer()
-      reconcileGrants(context: context)
+      if let session = activeSession,
+        session.blockedProfile.profileSchemaVersion >= 2 || SharedData.getActiveSharedSession()?.id == session.id
+      {
+        reconcileGrants(context: context)
+      }
 
       // Start live activity for existing session if one exists
       // live activities can only be started when the app is in the foreground
@@ -786,6 +790,7 @@ class StrategyManager: ObservableObject {
     guard sessionStopOutbox.intents != nil else { throw CocoaError(.fileReadCorruptFile) }
     let profiles = try BlockedProfiles.fetchProfiles(in: context).valid
     guard let remote = remoteOnlySessionRecord(profileIds: Set(profiles.map(\.id))),
+      remoteRecordMayAppear(remote, waitForLock: true),
       let profile = profiles.first(where: { $0.id == remote.profileId }), let start = remote.startTime
     else { return nil }
     return ControlSession(
@@ -1465,9 +1470,12 @@ class StrategyManager: ObservableObject {
     }
 
     // Retain active receipts on transient apply failure so foreground can retry the same delivery.
+    guard profileSyncManager.isEnabled else { return }
     for record in Array(remoteSessionRecords.values) where record.isActive && record.lastModifiedBy != SharedData.deviceSyncId.uuidString {
       guard (try? receiveSessionRecord(record, context: context)) == true,
         let startedAt = record.startTime,
+        let profile = try? BlockedProfiles.findProfile(byID: record.profileId, in: context),
+        !profile.needsAppSelection,
         activeSession?.id != record.sessionId || activeSession?.blockedProfile.id != record.profileId
           || (activeSession?.sessionSequence ?? Int.min) < record.sequenceNumber
       else { continue }
@@ -1678,9 +1686,9 @@ class StrategyManager: ObservableObject {
 
   private func sessionAdmission(
     profile: BlockedProfiles, sessionId: String?, startedAt: Date, deadline: Date?,
-    origin: SessionOrigin?, context: ModelContext, now: Date
+    origin: SessionOrigin?, context: ModelContext, now: Date, waitForLock: Bool = true
   ) -> SessionAdmission {
-    guard let state = SharedData.readSessionState(for: profile.id), let pending = sessionStopOutbox.intents else {
+    guard let state = SharedData.readSessionState(for: profile.id, waitForLock: waitForLock), let pending = sessionStopOutbox.intents else {
       return .unavailable
     }
     let matches: (String?, Date?) -> Bool = { expectedId, expectedStart in
@@ -1727,7 +1735,7 @@ class StrategyManager: ObservableObject {
       && remoteRecordMayAppear(record)
   }
 
-  private func remoteRecordMayAppear(_ record: ProfileSessionRecord) -> Bool {
+  private func remoteRecordMayAppear(_ record: ProfileSessionRecord, waitForLock: Bool = false) -> Bool {
     guard let startedAt = record.startTime else { return true }
     let now = currentDate()
     if let context = recoveryContext {
@@ -1735,11 +1743,11 @@ class StrategyManager: ObservableObject {
         if let profile = try BlockedProfiles.findProfile(byID: record.profileId, in: context) {
           return sessionAdmission(
             profile: profile, sessionId: record.sessionId, startedAt: startedAt, deadline: record.validTimerEndTime,
-            origin: record.origin, context: context, now: now) == .eligible
+            origin: record.origin, context: context, now: now, waitForLock: waitForLock) == .eligible
         }
       } catch { return false }
     }
-    guard let state = SharedData.readSessionState(for: record.profileId) else { return false }
+    guard let state = SharedData.readSessionState(for: record.profileId, waitForLock: waitForLock) else { return false }
     guard let profile = state.profile else { return true }
     return SharedData.sessionTimingAllowsAdmission(
       startedAt: startedAt, deadline: record.validTimerEndTime, origin: record.origin,
@@ -1788,8 +1796,10 @@ class StrategyManager: ObservableObject {
       }
       let displaced = rows.filter { $0.isActive && $0.blockedProfile.profileSchemaVersion >= 2 && $0.id != owner?.id }
       for row in displaced {
-        // The replacement start bounds the obsolete row where it follows the old start.
-        row.endTime = max(row.startTime, min(live?.startTime ?? now, now))
+        // Bound inferred history by the owner's start or a recorded completion for this profile.
+        let latestEnd = row.blockedProfile.sessions.valid.compactMap(\.endTime)
+          .filter { $0 >= row.startTime && $0 <= now }.max()
+        row.endTime = max(row.startTime, min(live?.startTime ?? latestEnd ?? row.startTime, now))
         row.origin = nil
         row.timerEndTime = nil
         row.sessionStartSyncPending = false

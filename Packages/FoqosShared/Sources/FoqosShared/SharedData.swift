@@ -672,10 +672,10 @@ public enum SharedData {
     public let profile: ProfileSnapshot?
   }
 
-  /// Nil means the lock or stored session data was unreadable, rather than an idle slot.
-  public static func readSessionState(for profileId: UUID? = nil) -> SessionState? {
-    withLockStatus(blocking: true) { outcome in
-      guard outcome == .acquired, let active = checkedActiveSession(),
+  /// A nil result leaves the slot unknown. Presentation can opt out of waiting for the lock.
+  public static func readSessionState(for profileId: UUID? = nil, waitForLock: Bool = true) -> SessionState? {
+    withLockStatus(blocking: waitForLock, retryNonblocking: waitForLock) { outcome in
+      guard outcome == .acquired || !waitForLock, let active = checkedActiveSession(),
         let completed = checkedCompletedSessions()
       else { return nil }
       let id = profileId ?? active?.blockedProfileId
