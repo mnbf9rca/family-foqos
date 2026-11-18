@@ -231,29 +231,32 @@ execute_internal() {
       OBJROOT=*|SYMROOT=*|BUILD_DIR=*|-xcconfig|-xcconfig=*)
         die "callers must not supply $argument; xcode-stream injects simulator isolation flags"
         ;;
+      -IDEPackageSupportDisableManifestSandbox|-IDEPackageSupportDisableManifestSandbox=*)
+        die "callers must not supply $argument; xcode-stream manages SwiftPM manifest sandboxing"
+        ;;
     esac
   done
+
+  set -- "$@" \
+    -destination "$IOS_SIM_GATE_DESTINATION" \
+    -derivedDataPath "$IOS_SIM_GATE_DERIVED_DATA_PATH" \
+    -parallel-testing-enabled NO \
+    -disable-concurrent-destination-testing
+  if [[ "${APP_SANDBOX_CONTAINER_ID:-}" == agent-safehouse ]]; then
+    set -- "$@" -IDEPackageSupportDisableManifestSandbox=1
+  fi
 
   if [[ "$use_xcbeautify" == true ]]; then
     local -a pipeline_statuses
     set +e
-    "$@" \
-      -destination "$IOS_SIM_GATE_DESTINATION" \
-      -derivedDataPath "$IOS_SIM_GATE_DERIVED_DATA_PATH" \
-      -parallel-testing-enabled NO \
-      -disable-concurrent-destination-testing \
-      2>&1 | xcbeautify
+    "$@" 2>&1 | xcbeautify
     pipeline_statuses=("${PIPESTATUS[@]}")
     set -e
     ((pipeline_statuses[0] == 0)) || exit "${pipeline_statuses[0]}"
     exit "${pipeline_statuses[1]}"
   fi
 
-  exec "$@" \
-    -destination "$IOS_SIM_GATE_DESTINATION" \
-    -derivedDataPath "$IOS_SIM_GATE_DERIVED_DATA_PATH" \
-    -parallel-testing-enabled NO \
-    -disable-concurrent-destination-testing
+  exec "$@"
 }
 
 delete_internal() {

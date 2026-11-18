@@ -10,6 +10,7 @@ This always-loaded file is the invariant sheet for agentic work in Family Foqos.
 - Obtain independent adversarial design review (correctness, over-engineering, missing cases that matter in practice) before implementation and independent code review before every merge. The orchestrator merges per the [merge policy](docs/multi-agent-coordination.md#report-merge-readiness-literally), with operator/process-doc and batch exceptions.
 - Warm each implementation stream’s Git credentials at startup while the human is present; follow [Development Workflow](docs/development-workflow.md#warm-git-credentials) for dispatch, expiry, and AFK rules.
 - The gate supports up to three Xcode/simulator streams when all simulator work uses `scripts/xcode-stream.sh --agent <agent> --session <session>` with stable ownership and UUID destinations only, never device-name destinations; it injects `-parallel-testing-enabled NO` and `-disable-concurrent-destination-testing`.
+- Follow the [Agent Safehouse boundaries](docs/development-workflow.md#agent-safehouse-boundaries) for shell escalation and the wrapper’s Safehouse-only SwiftPM flag.
 - Keep concurrent implementation streams on separate feature branches/worktrees with disjoint files; sequential slices may stack within one stream. Read-only work needs no gate slot.
 
 - Agents own simulator UI verification; follow [Development Workflow](docs/development-workflow.md#agent-acceptance-runbooks) for coverage and the single RC device pass.

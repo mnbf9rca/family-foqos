@@ -70,6 +70,10 @@ vendor/bundle/
 # Claude Code local settings
 .claude/settings.local.json
 
+# Agent Safehouse local policy files
+*.sb
+.safehouse
+
 # Git worktrees
 .worktrees/
 docs/plans/

@@ -27,25 +27,30 @@ struct BlockedProfileEntity: AppEntity, Identifiable {
 }
 
 struct BlockedProfilesQuery: EntityStringQuery {
-  @Dependency(key: "ModelContainer")
-  private var modelContainer: ModelContainer
+  @Dependency(key: "ProtectedStoreLaunch")
+  private var launch: ProtectedStoreLaunch
+  private var injectedContainer: ModelContainer?
 
   init() {}
 
   init(modelContainer: ModelContainer) {
-    self.modelContainer = modelContainer
+    injectedContainer = modelContainer
+  }
+
+  init(launch: ProtectedStoreLaunch) {
+    self.launch = launch
   }
 
   @MainActor
-  private var modelContext: ModelContext {
-    return modelContainer.mainContext
+  private func modelContext() throws -> ModelContext {
+    try (injectedContainer ?? launch.readyContainer()).mainContext
   }
 
   @MainActor
   func entities(for identifiers: [UUID]) async throws
     -> [BlockedProfileEntity]
   {
-    let results = try modelContext.fetch(
+    let results = try modelContext().fetch(
       FetchDescriptor<BlockedProfiles>(
         predicate: #Predicate { identifiers.contains($0.id) }
       )
@@ -56,7 +61,7 @@ struct BlockedProfilesQuery: EntityStringQuery {
 
   @MainActor
   func suggestedEntities() async throws -> [BlockedProfileEntity] {
-    let results = try modelContext.fetch(
+    let results = try modelContext().fetch(
       FetchDescriptor<BlockedProfiles>(sortBy: [.init(\.name)])
     )
     return results.map { BlockedProfileEntity(profile: $0) }

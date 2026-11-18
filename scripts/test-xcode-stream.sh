@@ -428,7 +428,8 @@ add_device "$OTHER_UUID" "Other owner" com.apple.CoreSimulator.SimRuntime.iOS-26
 add_device "$REUSE_UUID" "Family Foqos build2" com.apple.CoreSimulator.SimRuntime.iOS-26-0
 set_owner "$OTHER_UUID" build1 collab
 set_owner "$REUSE_UUID" build2 collab
-run_wrapper --agent build2 --session collab -- xcodebuild test -project FamilyFoqos.xcodeproj
+APP_SANDBOX_CONTAINER_ID='' \
+  run_wrapper --agent build2 --session collab -- xcodebuild test -project FamilyFoqos.xcodeproj
 assert_contains "$GATE_LOG" $'run\tfamily-foqos\tbuild2\tcollab\t11111111-1111-1111-1111-111111111111'
 assert_not_contains "$SIMCTL_LOG" "create "
 assert_contains "$XCODEBUILD_LOG" "platform=iOS Simulator,id=$REUSE_UUID"
@@ -436,8 +437,16 @@ assert_contains "$XCODEBUILD_LOG" "$CASE_ROOT/cache/DerivedData/family-foqos/bui
 assert_contains "$XCODEBUILD_LOG" "-parallel-testing-enabled"
 assert_contains "$XCODEBUILD_LOG" "NO"
 assert_contains "$XCODEBUILD_LOG" "-disable-concurrent-destination-testing"
+assert_not_contains "$XCODEBUILD_LOG" "-IDEPackageSupportDisableManifestSandbox"
 [[ $(<"$XCTEST_CENSUS_CALLS_FILE") -eq 2 ]] ||
   fail "successful gated run must census XCTestDevices exactly twice"
+
+reset_case safehouse-manifest-sandbox
+add_device "$REUSE_UUID" "Family Foqos build2" com.apple.CoreSimulator.SimRuntime.iOS-26-0
+set_owner "$REUSE_UUID" build2 collab
+APP_SANDBOX_CONTAINER_ID=agent-safehouse \
+  run_wrapper --agent build2 --session collab --xcbeautify -- xcodebuild test
+assert_contains "$XCODEBUILD_LOG" "-IDEPackageSupportDisableManifestSandbox=1"
 
 reset_case session-isolation
 add_device "$REUSE_UUID" "No session" com.apple.CoreSimulator.SimRuntime.iOS-26-0
@@ -523,7 +532,8 @@ add_device "$REUSE_UUID" "Family Foqos build2" com.apple.CoreSimulator.SimRuntim
 set_owner "$REUSE_UUID" build2 collab
 for forbidden in -destination -derivedDataPath -parallel-testing-enabled \
   -disable-concurrent-destination-testing OBJROOT=/tmp/objects SYMROOT=/tmp/symbols \
-  BUILD_DIR=/tmp/build -xcconfig; do
+  BUILD_DIR=/tmp/build -xcconfig -IDEPackageSupportDisableManifestSandbox \
+  -IDEPackageSupportDisableManifestSandbox=1; do
   set +e
   output=$(run_wrapper --agent build2 --session collab -- xcodebuild test "$forbidden" bad 2>&1)
   status=$?
@@ -882,7 +892,7 @@ policy_requirements=(
   "-disable-concurrent-destination-testing"
   "scripts/fastlane.sh screenshots"
   "scripts/clean-build.sh"
-  "Read-only work does not consume a gate slot"
+  "Read-only work needs no gate slot"
   "Archive and upload lanes do not boot simulators"
 )
 for requirement in "${policy_requirements[@]}"; do
