@@ -449,7 +449,8 @@ final class SessionTimerCASTests: XCTestCase {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = TimeZone(secondsFromGMT: 0)!
     let now = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 11, day: 18, hour: 20)))
-    let context = try TestModelContainer.create().mainContext
+    let container = try TestModelContainer.create()
+    let context = container.mainContext
     let profile = BlockedProfiles(name: "New run", createdAt: now, updatedAt: now)
     profile.startTriggers = .init(manual: true, schedule: true)
     profile.stopConditions = .init(manual: true, schedule: true)

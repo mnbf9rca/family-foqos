@@ -551,18 +551,17 @@ public enum SharedData {
     withLock { profileSnapshots[profileID] }
   }
 
-  public static func latestScheduleStop(now: Date, _ stamps: Date?...) -> Date? {
+  public static func latestScheduleStop(now: Date = .distantFuture, _ stamps: Date?...) -> Date? {
     stamps.compactMap { $0 }.filter { $0 <= now }.max()
   }
 
   @discardableResult
-  public static func setSnapshot(_ snapshot: ProfileSnapshot, for profileID: String, now: Date = Date()) -> Date? {
+  public static func setSnapshot(_ snapshot: ProfileSnapshot, for profileID: String) -> Date? {
     withLockStatus(blocking: true) { outcome in
       guard outcome == .acquired else { return nil }
       var all = profileSnapshots
       var merged = snapshot
-      merged.scheduleLastStoppedAt = latestScheduleStop(
-        now: now, all[profileID]?.scheduleLastStoppedAt, snapshot.scheduleLastStoppedAt)
+      merged.scheduleLastStoppedAt = latestScheduleStop(all[profileID]?.scheduleLastStoppedAt, snapshot.scheduleLastStoppedAt)
       all[profileID] = merged
       profileSnapshots = all
       return merged.scheduleLastStoppedAt
@@ -921,6 +920,7 @@ public enum SharedData {
                   && abs($0.startTime.timeIntervalSince(candidate.startTime)) < 0.001))
           })
         else { return false }
+        profile.scheduleLastStoppedAt = latestScheduleStop(profile.scheduleLastStoppedAt, admissionProfile.scheduleLastStoppedAt)
         if profiles[profile.id.uuidString] != profile {
           profiles[profile.id.uuidString] = profile
           changedProfiles = true

@@ -91,7 +91,7 @@ final class SyncApplyServiceTests: XCTestCase {
     local.scheduleLastStoppedAt = now.addingTimeInterval(-300)
     context.insert(local)
     try context.save()
-    BlockedProfiles.updateSnapshot(for: local, now: now)
+    BlockedProfiles.updateSnapshot(for: local)
     let service = SyncApplyService(
       modelContext: context, store: store, sessionController: sessionController,
       emergencyManager: emergencyManager, deviceId: deviceId, currentDate: { now })

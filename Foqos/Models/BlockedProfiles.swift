@@ -732,10 +732,10 @@ class BlockedProfiles {
 
   /// Create a codable/equatable snapshot suitable for UserDefaults
   @discardableResult
-  static func updateSnapshot(for profile: BlockedProfiles, now: Date = Date()) -> Date? {
+  static func updateSnapshot(for profile: BlockedProfiles) -> Date? {
     let snapshot = getSnapshot(for: profile)
     let nameChanged = SharedData.snapshot(for: profile.id.uuidString)?.name != snapshot.name
-    let stoppedAt = SharedData.setSnapshot(snapshot, for: profile.id.uuidString, now: now)
+    let stoppedAt = SharedData.setSnapshot(snapshot, for: profile.id.uuidString)
     // Local and synced creates, renames, and duplicates all land here; Siri phrases
     // with a profile parameter only see new names after this notification.
     if nameChanged { FamilyFoqosShortcuts.updateAppShortcutParameters() }

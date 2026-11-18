@@ -37,8 +37,8 @@ final class RestrictionApplyCurrentStateTests: XCTestCase {
     let now = Date()
     let first = snap(UUID())
     let replacement = snap(UUID())
-    SharedData.setSnapshot(first, for: first.id.uuidString, now: now)
-    SharedData.setSnapshot(replacement, for: replacement.id.uuidString, now: now)
+    SharedData.setSnapshot(first, for: first.id.uuidString)
+    SharedData.setSnapshot(replacement, for: replacement.id.uuidString)
     SharedData.createActiveSharedSession(
       for: .init(
         id: UUID().uuidString, tag: "start", blockedProfileId: first.id, startTime: now, forceStarted: false))
@@ -62,7 +62,7 @@ final class RestrictionApplyCurrentStateTests: XCTestCase {
   func testMonitorEffectRepairsSameIdentityGrantChange() {
     let now = Date()
     let profile = snap(UUID())
-    SharedData.setSnapshot(profile, for: profile.id.uuidString, now: now)
+    SharedData.setSnapshot(profile, for: profile.id.uuidString)
     let session = SharedData.SessionSnapshot(
       id: UUID().uuidString, tag: "start", blockedProfileId: profile.id, startTime: now, forceStarted: false)
     SharedData.createActiveSharedSession(for: session)
@@ -98,14 +98,16 @@ final class RestrictionApplyCurrentStateTests: XCTestCase {
     let spy = RecordingRestrictionApplier()
 
     withSeparateLockDescriptor { descriptor in
-      SharedData.setSnapshot(profile, for: id.uuidString, now: now)
+      SharedData.setSnapshot(profile, for: id.uuidString)
       XCTAssertTrue(
-        SharedData.commitOriginatingSession(start, expectedVictimId: nil, now: now) {
-          XCTAssertEqual(flock(descriptor, LOCK_EX | LOCK_NB), 0)
-          defer { XCTAssertEqual(flock(descriptor, LOCK_UN), 0) }
-          SharedData.applyRestrictionsForCurrentState(
-            process: .monitorExtension, liveSnapshot: profile, applier: spy, deactivateWhenIdle: true)
-        })
+        SharedData.commitOriginatingSession(
+          start, expectedVictimId: nil, now: now,
+          onCommit: {
+            XCTAssertEqual(flock(descriptor, LOCK_EX | LOCK_NB), 0)
+            defer { XCTAssertEqual(flock(descriptor, LOCK_UN), 0) }
+            SharedData.applyRestrictionsForCurrentState(
+              process: .monitorExtension, liveSnapshot: profile, applier: spy, deactivateWhenIdle: true)
+          }))
       XCTAssertEqual(spy.calls, [.activate(profileId: id)])
       XCTAssertEqual(SharedData.getActiveSharedSession()?.id, start.id)
     }

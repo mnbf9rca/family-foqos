@@ -1247,7 +1247,16 @@ class StrategyManager: ObservableObject {
   /// Delegate emergency unblock to EmergencyUnblockManager, providing session stop logic.
   /// Throws EmergencyUnblockError if unblock is not allowed (no remaining, geofence blocked, etc.).
   func emergencyUnblock(context: ModelContext) async throws {
-    let session = try getActiveSession(context: context)
+    let session: BlockedProfileSession?
+    if let displayed = activeSession, displayed.modelContext === context, displayed.isPersistentModelValid,
+      displayed.isActive, displayed.blockedProfile.profileSchemaVersion >= 2
+    {
+      // An emergency stop can use the displayed identity when the shared store is idle or damaged.
+      // The locked stop still checks the target and cannot stop a replacement.
+      session = displayed
+    } else {
+      session = try getActiveSession(context: context)
+    }
     if session == nil, let remote = try controlSession(context: context)?.remote {
       try await stopRemoteOnlySession(profileId: remote.profileId, context: context, emergency: true)
       return
@@ -1854,8 +1863,7 @@ class StrategyManager: ObservableObject {
       if let row = try BlockedProfileSession.stageSessionSnapshot(completion, in: context) {
         let profile = row.blockedProfile
         let sharedStamp = SharedData.snapshot(for: profile.id.uuidString)?.scheduleLastStoppedAt
-        profile.scheduleLastStoppedAt = SharedData.latestScheduleStop(
-          now: currentDate(), profile.scheduleLastStoppedAt, sharedStamp)
+        profile.scheduleLastStoppedAt = SharedData.latestScheduleStop(profile.scheduleLastStoppedAt, sharedStamp)
         try saveSession(context)
       }
       if profileSyncManager.isEnabled {

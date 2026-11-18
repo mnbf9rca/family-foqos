@@ -191,7 +191,7 @@ final class SessionRecoveryTests: XCTestCase {
     session.sessionStartSyncPending = true
     context.insert(session)
     try context.save()
-    SharedData.setSnapshot(BlockedProfiles.getSnapshot(for: profile), for: profile.id.uuidString, now: delivery)
+    SharedData.setSnapshot(BlockedProfiles.getSnapshot(for: profile), for: profile.id.uuidString)
     SharedData.createActiveSharedSession(for: session.toSnapshot())
     ProfileSyncManager.shared.isEnabled = true
     let network = SessionSyncService(
@@ -347,7 +347,7 @@ final class SessionRecoveryTests: XCTestCase {
     row.endTime = time(18)
     row.origin = nil
     try context.save()
-    SharedData.setSnapshot(BlockedProfiles.getSnapshot(for: profile), for: profile.id.uuidString, now: time(20, 18))
+    SharedData.setSnapshot(BlockedProfiles.getSnapshot(for: profile), for: profile.id.uuidString)
     SharedData.createActiveSharedSession(for: staleOwner)
 
     try manager.loadActiveSession(context: ModelContext(container))

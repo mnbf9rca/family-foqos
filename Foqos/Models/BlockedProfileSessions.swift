@@ -122,7 +122,7 @@ class BlockedProfileSession: BreakDurationCalculable {
     let isScheduleStarted = wasScheduleOrigin || (blockedProfile.profileSchemaVersion < 2 && tag == blockedProfile.id.uuidString)
     if isScheduleStarted, modelContext != nil {
       blockedProfile.scheduleLastStoppedAt = max(blockedProfile.scheduleLastStoppedAt ?? .distantPast, now)
-      BlockedProfiles.updateSnapshot(for: blockedProfile, now: now)
+      BlockedProfiles.updateSnapshot(for: blockedProfile)
     }
 
     SharedData.flushActiveSession(expectedSessionId: id)
