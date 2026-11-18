@@ -77,7 +77,10 @@ public class StopScheduleTimerActivity: TimerActivity {
     if SharedData.completeSession(
       expectedSessionId: activeSession.id, now: now,
       scheduledStopAt: stopOccurrence, expectedProfileId: profile.id, calendar: calendar,
-      onComplete: { self.appBlocker.deactivateRestrictions() })
+      onComplete: {
+        SharedData.applyRestrictionsForCurrentState(
+          process: .monitorExtension, liveSnapshot: nil, applier: self.appBlocker, deactivateWhenIdle: true)
+      })
     {
       if isV2 { cancelTimer(profile.id, activeSession.id) }
     }

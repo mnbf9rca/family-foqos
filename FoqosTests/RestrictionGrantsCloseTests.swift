@@ -297,7 +297,7 @@ final class RestrictionGrantsCloseTests: XCTestCase {
     XCTAssertTrue(spy.calls.isEmpty)
   }
 
-  func testGivenDegradedLockInExtension_WhenExpiredBreak_ThenStillClosesBestEffort() {
+  func testGivenDegradedLockInExtension_WhenExpiredBreak_ThenReblocksWithoutOverwritingGrant() {
     let now = Date()
     let (sid, pid) = seed(
       breakStart: now.addingTimeInterval(-600),
@@ -313,6 +313,8 @@ final class RestrictionGrantsCloseTests: XCTestCase {
       durationMinutes: nil,
       liveSnapshot: snap(pid),
       applier: spy)
-    XCTAssertTrue(ok)
+    XCTAssertFalse(ok)
+    XCTAssertNil(SharedData.getActiveSharedSession()?.breakEndTime)
+    XCTAssertEqual(spy.calls, [.activate(profileId: pid)])
   }
 }

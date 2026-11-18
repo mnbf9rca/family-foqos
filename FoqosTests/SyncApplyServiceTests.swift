@@ -85,6 +85,44 @@ final class SyncApplyServiceTests: XCTestCase {
 
   private let noPendingDelete: (String) -> Bool = { _ in false }
 
+  func testIncomingStopStampConvergesWithAnInterveningMonitorStop() throws {
+    let now = Date()
+    let local = BlockedProfiles(name: "Local", syncVersion: 2)
+    local.scheduleLastStoppedAt = now.addingTimeInterval(-300)
+    context.insert(local)
+    try context.save()
+    BlockedProfiles.updateSnapshot(for: local, now: now)
+    let service = SyncApplyService(
+      modelContext: context, store: store, sessionController: sessionController,
+      emergencyManager: emergencyManager, deviceId: deviceId, currentDate: { now })
+    let monitorStop = now.addingTimeInterval(-60)
+    var injectMonitorStop = true
+    service.saveOverride = {
+      if injectMonitorStop {
+        injectMonitorStop = false
+        SharedData.setLastStoppedAt(for: local.id.uuidString, at: monitorStop)
+      }
+      try self.context.save()
+    }
+    func apply(version: Int, stamp: Date?) -> SyncApplyService.ApplyOutcome {
+      let record = makeProfileRecord(
+        id: local.id, name: "Remote", version: version, originDeviceId: "device-B",
+        schemaVersion: local.profileSchemaVersion, now: now)
+      record[SyncedProfile.FieldKey.scheduleLastStoppedAt.rawValue] = stamp
+      return service.applyFetchedModification(record, isPendingDeleteOrTombstoned: noPendingDelete)
+    }
+
+    XCTAssertEqual(apply(version: 3, stamp: now.addingTimeInterval(120)), .applied)
+    XCTAssertEqual(local.scheduleLastStoppedAt, monitorStop)
+    XCTAssertEqual(SharedData.snapshot(for: local.id.uuidString)?.scheduleLastStoppedAt, monitorStop)
+    XCTAssertEqual(apply(version: 4, stamp: nil), .applied)
+    XCTAssertEqual(local.scheduleLastStoppedAt, monitorStop)
+    let later = now.addingTimeInterval(-5)
+    XCTAssertEqual(apply(version: 2, stamp: later), .applied)
+    XCTAssertEqual(local.scheduleLastStoppedAt, later)
+    XCTAssertEqual(SharedData.snapshot(for: local.id.uuidString)?.scheduleLastStoppedAt, later)
+  }
+
   func testLegacyManualStopRejectsIdenticalActiveReplayBeforeCloudConfirmationAndAfterRelaunch() throws {
     let now = Date()
     let syncWasEnabled = ProfileSyncManager.shared.isEnabled
@@ -1972,7 +2010,7 @@ final class SyncApplyServiceTests: XCTestCase {
     apply(id: first, sequence: 20, start: now, modified: now)
     apply(id: UUID().uuidString, sequence: 21, start: now.addingTimeInterval(3600), modified: now.addingTimeInterval(-1))
     XCTAssertEqual(manager.activeSession?.id, first)
-    apply(id: reset, sequence: 1, start: now.addingTimeInterval(-3600), modified: now.addingTimeInterval(1))
+    apply(id: reset, sequence: 1, start: now.addingTimeInterval(-600), modified: now.addingTimeInterval(1))
     XCTAssertEqual(manager.activeSession?.id, reset)
     XCTAssertEqual(manager.activeSession?.sessionServerModificationDate, now.addingTimeInterval(1))
     XCTAssertEqual(manager.activeSession?.sessionSequence, 1)
@@ -2095,9 +2133,11 @@ final class SyncApplyServiceTests: XCTestCase {
     remote.applyUpdate(isActive: true, sequenceNumber: 2, deviceId: "device-B", startTime: now.addingTimeInterval(1), sessionId: replacementId.uuidString, origin: .init(kind: .nfc, key: "NEW", namespace: .nfcUID))
     let service = SyncApplyService(modelContext: context, store: store, sessionController: manager, emergencyManager: emergencyManager, deviceId: deviceId)
     _ = service.applyFetchedModification(SessionServerDatedRecord(copying: remote.toCKRecord(in: zoneID), modifiedAt: now.addingTimeInterval(1)), isPendingDeleteOrTombstoned: noPendingDelete)
-    XCTAssertEqual(active.id, replacementId.uuidString)
-    XCTAssertEqual(active.origin?.initiatingKey, "NEW")
-    XCTAssertEqual(active.sessionSequence, 2)
+    XCTAssertEqual(active.id, originalId.uuidString)
+    XCTAssertNotNil(active.endTime)
+    XCTAssertEqual(manager.activeSession?.id, replacementId.uuidString)
+    XCTAssertEqual(manager.activeSession?.origin?.initiatingKey, "NEW")
+    XCTAssertEqual(manager.activeSession?.sessionSequence, 2)
   }
 
 }

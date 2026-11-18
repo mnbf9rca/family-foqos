@@ -551,11 +551,21 @@ public enum SharedData {
     withLock { profileSnapshots[profileID] }
   }
 
-  public static func setSnapshot(_ snapshot: ProfileSnapshot, for profileID: String) {
-    withLock {
+  public static func latestScheduleStop(now: Date, _ stamps: Date?...) -> Date? {
+    stamps.compactMap { $0 }.filter { $0 <= now }.max()
+  }
+
+  @discardableResult
+  public static func setSnapshot(_ snapshot: ProfileSnapshot, for profileID: String, now: Date = Date()) -> Date? {
+    withLockStatus(blocking: true) { outcome in
+      guard outcome == .acquired else { return nil }
       var all = profileSnapshots
-      all[profileID] = snapshot
+      var merged = snapshot
+      merged.scheduleLastStoppedAt = latestScheduleStop(
+        now: now, all[profileID]?.scheduleLastStoppedAt, snapshot.scheduleLastStoppedAt)
+      all[profileID] = merged
       profileSnapshots = all
+      return merged.scheduleLastStoppedAt
     }
   }
 
@@ -609,7 +619,7 @@ public enum SharedData {
     encode: (SessionSnapshot) throws -> Data = { try JSONEncoder().encode($0) },
     allowLinkForTag: Bool = false, onCommit: () -> Void = {}
   ) -> Bool {
-    withLockStatus(blocking: true) { outcome in
+    let committed = withLockStatus(blocking: true) { outcome in
       guard outcome == .acquired, candidate.endTime == nil,
         UUID(uuidString: candidate.id) != nil, let origin = candidate.origin,
         let profile = profileSnapshots[candidate.blockedProfileId.uuidString],
@@ -646,29 +656,85 @@ public enum SharedData {
         }
       }
       guard commitSessionTransition(candidate, completed: completed, encode: encode, profiles: updatedProfiles) else { return false }
+      return true
+    }
+    if committed {
+      Log.sessionTransition(.started, id: candidate.id)
+      if let expectedVictimId { Log.sessionTransition(.stopped, id: expectedVictimId) }
       onCommit()
+    }
+    return committed
+  }
+
+  public struct SessionState: Equatable {
+    public let active: SessionSnapshot?
+    public let completed: [SessionSnapshot]
+    public let profile: ProfileSnapshot?
+  }
+
+  /// Nil means the lock or stored session data was unreadable, rather than an idle slot.
+  public static func readSessionState(for profileId: UUID? = nil) -> SessionState? {
+    withLockStatus(blocking: true) { outcome in
+      guard outcome == .acquired, let active = checkedActiveSession(),
+        let completed = checkedCompletedSessions()
+      else { return nil }
+      let id = profileId ?? active?.blockedProfileId
+      return SessionState(active: active, completed: completed, profile: id.flatMap { profileSnapshots[$0.uuidString] })
+    }
+  }
+
+  @discardableResult
+  public static func acknowledgeCompletedSession(_ snapshot: SessionSnapshot) -> Bool {
+    withLockStatus(blocking: true) { outcome in
+      guard outcome == .acquired, var completed = checkedCompletedSessions() else { return false }
+      guard let index = completed.firstIndex(of: snapshot) else { return true }
+      completed.remove(at: index)
+      guard let data = try? JSONEncoder().encode(completed) else { return false }
+      let key = Key.completedScheduleSessions.rawValue
+      let previous = suite.object(forKey: key)
+      suite.set(data, forKey: key)
+      guard suite.data(forKey: key) == data else {
+        if let previous { suite.set(previous, forKey: key) } else { suite.removeObject(forKey: key) }
+        return false
+      }
+      clearLegacy(.completedScheduleSessions)
       return true
     }
   }
 
   /// Optional-optional distinguishes an idle store from corrupt authoritative state.
-  private static func checkedActiveSession() -> SessionSnapshot?? {
-    guard let raw = data(forKey: .activeScheduleSession, legacyKey: .activeScheduleSession) else {
-      return .some(nil)
-    }
-    do {
-      return .some(try JSONDecoder().decode(SessionSnapshot?.self, from: raw))
-    } catch {
-      return nil
-    }
+  static func checkedActiveSession() -> SessionSnapshot?? {
+    let raw =
+      suite.object(forKey: Key.activeScheduleSession.rawValue)
+      ?? suite.object(forKey: LegacyKey.activeScheduleSession.rawValue)
+    guard let raw else { return .some(nil) }
+    guard let data = raw as? Data else { return nil }
+    do { return .some(try JSONDecoder().decode(SessionSnapshot?.self, from: data)) } catch { return nil }
   }
 
   private static func checkedCompletedSessions() -> [SessionSnapshot]? {
-    guard let raw = data(forKey: .completedScheduleSessions, legacyKey: .completedScheduleSessions) else { return [] }
-    return try? JSONDecoder().decode([SessionSnapshot].self, from: raw)
+    let raw =
+      suite.object(forKey: Key.completedScheduleSessions.rawValue)
+      ?? suite.object(forKey: LegacyKey.completedScheduleSessions.rawValue)
+    guard let raw else { return [] }
+    guard let data = raw as? Data else { return nil }
+    return try? JSONDecoder().decode([SessionSnapshot].self, from: data)
   }
 
-  /// Removes ownership under the same lock as extension starts. Effects must not reenter SharedData.
+  /// Older writers can leave an ended snapshot in the active slot.
+  @discardableResult
+  public static func recoverEndedSession(_ expected: SessionSnapshot) -> Bool {
+    withLockStatus(blocking: true) { outcome in
+      guard outcome == .acquired, expected.endTime != nil,
+        let active = checkedActiveSession(), active == expected,
+        var completed = checkedCompletedSessions()
+      else { return false }
+      if !completed.contains(expected) { completed.append(expected) }
+      return commitSessionTransition(nil, completed: completed)
+    }
+  }
+
+  /// Remove ownership under the extension lock, then run effects synchronously outside it.
   public static func removeProfileSessions(
     where shouldRemove: (UUID) -> Bool, retryLock: Bool = true,
     discardUnreadableSessions: Bool = false,
@@ -677,7 +743,7 @@ public enum SharedData {
     scheduledStops: () -> [UUID: Date] = { [:] },
     onRemoveActive: () -> Void = {}, onCommit: () -> Void = {}
   ) -> Set<UUID>? {
-    withLockStatus(blocking: false, retryNonblocking: retryLock) { outcome in
+    let committed: (ids: Set<UUID>, removedActive: Bool)? = withLockStatus(blocking: false, retryNonblocking: retryLock) { outcome in
       guard outcome == .acquired else { return nil }
       let checkedActive = checkedActiveSession()
       let checkedCompleted = checkedCompletedSessions()
@@ -712,8 +778,7 @@ public enum SharedData {
       let ids = Set(profiles.values.map(\.id) + completed.map(\.blockedProfileId) + [active?.blockedProfileId].compactMap { $0 })
         .filter(shouldRemove)
       guard !ids.isEmpty || checkedActive == nil || checkedCompleted == nil || !malformedCompleted.isEmpty || rebuiltProfiles || stampedSchedule || (discardUnreadableSessions && active != nil) else {
-        onCommit()
-        return []
+        return ([], false)
       }
       // Reset clears any stale active slot that passed its locked guard.
       let removesActive = active.map { discardUnreadableSessions || ids.contains($0.blockedProfileId) } ?? false
@@ -728,10 +793,12 @@ public enum SharedData {
       if checkedCompleted == nil { Log.error("Reset discarded unreadable shared completed session data", category: .session) }
       for _ in malformedCompleted { Log.error("Reset discarded malformed shared completed session", category: .session) }
       for id in ids { suite.removeObject(forKey: startRegistrationKey(for: id)) }
-      if removesActive { onRemoveActive() }
-      onCommit()
-      return ids
+      return (ids, removesActive)
     }
+    guard let committed else { return nil }
+    if committed.removedActive { onRemoveActive() }
+    onCommit()
+    return committed.ids
   }
 
   /// Stage all encodings before writes, then verify exact bytes before ownership effects.
@@ -781,7 +848,7 @@ public enum SharedData {
     scheduledStopAt: Date? = nil, expectedProfileId: UUID? = nil, calendar: Calendar = .current,
     onComplete: () -> Void = {}
   ) -> Bool {
-    withLockStatus(blocking: true) { outcome in
+    let committed = withLockStatus(blocking: true) { outcome in
       guard outcome == .acquired else { return false }
       let checked = checkedActiveSession()
       guard checked != nil || allowUndecodableStore else { return false }
@@ -814,30 +881,66 @@ public enum SharedData {
           updatedProfiles = profiles
         }
       }
-      guard commitSessionTransition(nil, completed: completed, profiles: updatedProfiles) else { return false }
-      onComplete()
-      return true
+      return commitSessionTransition(nil, completed: completed, profiles: updatedProfiles)
     }
+    if committed {
+      Log.sessionTransition(.stopped, id: expectedSessionId)
+      onComplete()
+    }
+    return committed
   }
 
   @discardableResult
   public static func adoptAuthoritativeSession(
     _ candidate: SessionSnapshot, expectedSessionId: String?, now: Date,
-    onAdopt: () -> Void = {}
+    expectedSession: SessionSnapshot? = nil, admissionProfile: ProfileSnapshot? = nil,
+    calendar: Calendar = .current, onAdopt: () -> Void = {}
   ) -> Bool {
-    withLockStatus(blocking: true) { outcome in
+    let committed = withLockStatus(blocking: true) { outcome in
       guard outcome == .acquired, candidate.endTime == nil,
         let checked = checkedActiveSession(), checked?.id == expectedSessionId,
+        expectedSession == nil || checked == expectedSession,
         var completed = checkedCompletedSessions()
       else { return false }
+      var profiles = profileSnapshots
+      var changedProfiles = false
+      if let admissionProfile {
+        var profile = profiles[candidate.blockedProfileId.uuidString] ?? admissionProfile
+        profile.scheduleLastStoppedAt = latestScheduleStop(
+          now: now, profile.scheduleLastStoppedAt, admissionProfile.scheduleLastStoppedAt)
+        guard
+          sessionTimingAllowsAdmission(
+            startedAt: candidate.startTime, deadline: candidate.timerEndTime, origin: candidate.origin,
+            profile: profile, now: now, calendar: calendar),
+          !completed.contains(where: {
+            $0.blockedProfileId == candidate.blockedProfileId && $0.endTime != nil
+              && ($0.id == candidate.id
+                || (candidate.usesCanonicalIdentity != true && $0.usesCanonicalIdentity != true
+                  && abs($0.startTime.timeIntervalSince(candidate.startTime)) < 0.001))
+          })
+        else { return false }
+        if profiles[profile.id.uuidString] != profile {
+          profiles[profile.id.uuidString] = profile
+          changedProfiles = true
+        }
+      }
       if var previous = checked, previous.blockedProfileId != candidate.blockedProfileId {
+        let scheduled = previous.origin?.kind == .schedule
         previous.endTime = now
         completed.append(normalizedForEnd(previous))
+        if scheduled, var profile = profiles[previous.blockedProfileId.uuidString] {
+          profile.scheduleLastStoppedAt = max(profile.scheduleLastStoppedAt ?? .distantPast, now)
+          profiles[profile.id.uuidString] = profile
+          changedProfiles = true
+        }
       }
-      guard commitSessionTransition(candidate, completed: completed) else { return false }
-      onAdopt()
-      return true
+      return commitSessionTransition(candidate, completed: completed, profiles: changedProfiles ? profiles : nil)
     }
+    if committed {
+      Log.sessionTransition(.adopted, id: candidate.id, replacing: expectedSessionId)
+      onAdopt()
+    }
+    return committed
   }
 
   public static func createSessionForScheduler(for profileID: UUID) {
@@ -942,7 +1045,7 @@ public enum SharedData {
     withLock {
       var all = profileSnapshots
       guard var snapshot = all[profileID] else { return }
-      snapshot.scheduleLastStoppedAt = date
+      snapshot.scheduleLastStoppedAt = max(snapshot.scheduleLastStoppedAt ?? .distantPast, date)
       all[profileID] = snapshot
       profileSnapshots = all
     }
@@ -970,9 +1073,7 @@ public enum SharedData {
     }
   }
 
-  /// Atomically reads and clears completed scheduled sessions.
-  /// Use this in production instead of separate get + flush calls
-  /// to prevent TOCTOU races with concurrent endActiveSharedSession() writes.
+  /// Atomically clears completed sessions. Production imports acknowledge each saved entry.
   public static func getAndFlushCompletedSessionsForScheduler() -> [SessionSnapshot] {
     withLock {
       let sessions = completedSessionsInScheduler

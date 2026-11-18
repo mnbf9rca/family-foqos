@@ -11,17 +11,15 @@ extension Notification.Name {
 /// Call this on app launch and when returning to foreground to ensure
 /// daily notifications are scheduled.
 enum PreActivationReminderScheduler {
-  static func mergeExtensionScheduleSuppression(context: ModelContext) {
+  static func mergeExtensionScheduleSuppression(context: ModelContext, now: Date = Date()) {
     do {
       let profiles = try BlockedProfiles.fetchProfiles(in: context)
       var changed = false
       for profile in profiles {
-        guard
-          let snapStopped = SharedData.snapshot(for: profile.id.uuidString)?.scheduleLastStoppedAt
-        else { continue }
-        let current = profile.scheduleLastStoppedAt
-        if current == nil || snapStopped > current! {
-          profile.scheduleLastStoppedAt = snapStopped
+        let snapStopped = SharedData.snapshot(for: profile.id.uuidString)?.scheduleLastStoppedAt
+        let merged = SharedData.latestScheduleStop(now: now, profile.scheduleLastStoppedAt, snapStopped)
+        if merged != profile.scheduleLastStoppedAt {
+          profile.scheduleLastStoppedAt = merged
           changed = true
         }
       }

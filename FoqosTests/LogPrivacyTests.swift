@@ -5,6 +5,16 @@ import XCTest
 @testable import FoqosShared
 
 final class LogPrivacyTests: XCTestCase {
+  func testSessionCorrelationUsesOnlyNormalizedUUIDPrefix() {
+    let id = "01234567-89AB-4DEF-8123-456789ABCDEF"
+    let token = sessionCorrelationToken(id)
+    XCTAssertEqual(token, "0123456789ab")
+    XCTAssertEqual(sessionCorrelationToken(id.lowercased()), token)
+    XCTAssertNotEqual(sessionCorrelationToken("11234567-89AB-4DEF-8123-456789ABCDEF"), token)
+    XCTAssertNil(sessionCorrelationToken("After school"))
+    XCTAssertNil(sessionCorrelationToken("device:01234567-89AB-4DEF-8123-456789ABCDEF"))
+  }
+
   func testGivenLocalizedError_WhenRedacted_ThenIncludesDomainCodeAndDescription() {
     let error = DescriptionProbe(message: "network unavailable")
 

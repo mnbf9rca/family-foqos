@@ -121,8 +121,8 @@ class BlockedProfileSession: BreakDurationCalculable {
     // Schedule-started sessions have tag == profile UUID (set by createSessionForScheduler).
     let isScheduleStarted = wasScheduleOrigin || (blockedProfile.profileSchemaVersion < 2 && tag == blockedProfile.id.uuidString)
     if isScheduleStarted, modelContext != nil {
-      blockedProfile.scheduleLastStoppedAt = now
-      BlockedProfiles.updateSnapshot(for: blockedProfile)
+      blockedProfile.scheduleLastStoppedAt = max(blockedProfile.scheduleLastStoppedAt ?? .distantPast, now)
+      BlockedProfiles.updateSnapshot(for: blockedProfile, now: now)
     }
 
     SharedData.flushActiveSession(expectedSessionId: id)
@@ -186,73 +186,51 @@ class BlockedProfileSession: BreakDurationCalculable {
 
   static func upsertSessionFromSnapshot(
     in context: ModelContext,
-    withSnapshot rawSnapshot: SharedData.SessionSnapshot
+    withSnapshot snapshot: SharedData.SessionSnapshot
   ) {
-    let snapshot =
-      rawSnapshot.endTime != nil ? SharedData.normalizedForEnd(rawSnapshot) : rawSnapshot
-    let profileID = snapshot.blockedProfileId
-
-    guard let existingProfile = try? BlockedProfiles.findProfile(byID: profileID, in: context)
-    else {
-      Log.warning("Profile not found when creating session from snapshot", category: .session)
-      return
+    do {
+      if try stageSessionSnapshot(snapshot, in: context) != nil { try context.save() }
+    } catch {
+      Log.error("Failed to save session snapshot: \(redactedErrorForLog(error))", category: .session)
     }
+  }
 
-    // Try to find an existing session by id
-    if let existingSession = try? findSession(byID: snapshot.id, in: context) {
-      existingSession.usesCanonicalIdentity = snapshot.usesCanonicalIdentity
-      existingSession.origin = snapshot.origin
-      existingSession.tag = snapshot.tag
-      existingSession.startTime = snapshot.startTime
-      existingSession.endTime = snapshot.endTime
-      existingSession.timerEndTime = snapshot.timerEndTime
-      existingSession.breakStartTime = snapshot.breakStartTime
-      existingSession.breakEndTime = snapshot.breakEndTime
-      existingSession.forceStarted = snapshot.forceStarted
-      existingSession.oneMoreMinuteUsed = snapshot.oneMoreMinuteUsed
-      existingSession.oneMoreMinuteStartTime = snapshot.oneMoreMinuteStartTime
-      existingSession.breakEndDeadline = snapshot.breakEndDeadline
-      existingSession.oneMoreMinuteDeadline = snapshot.oneMoreMinuteDeadline
-      existingSession.pinnedProfileConfigData = snapshot.pinnedProfileConfig.flatMap {
-        try? JSONEncoder().encode($0)
+  /// Stage changes so callers can save history and ownership repair together.
+  static func stageSessionSnapshot(
+    _ rawSnapshot: SharedData.SessionSnapshot, in context: ModelContext
+  ) throws -> BlockedProfileSession? {
+    let snapshot = rawSnapshot.endTime == nil ? rawSnapshot : SharedData.normalizedForEnd(rawSnapshot)
+    guard let profile = try BlockedProfiles.findProfile(byID: snapshot.blockedProfileId, in: context) else { return nil }
+
+    let session: BlockedProfileSession
+    if let existing = try findSession(byID: snapshot.id, in: context) {
+      guard existing.blockedProfile.id == snapshot.blockedProfileId else {
+        throw CocoaError(.validationMultipleErrors)
       }
-
-      // manually save to ensure changes are persisted
-      do {
-        try context.save()
-      } catch {
-        Log.error(
-          "Failed to save session snapshot update: \(error.localizedDescription)",
-          category: .session)
-      }
-      return
+      // Replay can update a completion but can never turn history back into an active row.
+      if existing.endTime != nil, snapshot.endTime == nil { return nil }
+      session = existing
+    } else {
+      session = BlockedProfileSession(tag: snapshot.tag, blockedProfile: profile, id: snapshot.id)
+      context.insert(session)
     }
 
-    // Create new session from snapshot
-    let newSession = BlockedProfileSession(
-      tag: snapshot.tag,
-      blockedProfile: existingProfile,
-      forceStarted: snapshot.forceStarted
-    )
-    // Override auto-generated values with snapshot-provided ones
-    newSession.usesCanonicalIdentity = snapshot.usesCanonicalIdentity
-    newSession.origin = snapshot.origin
-    newSession.id = snapshot.id
-    newSession.startTime = snapshot.startTime
-    newSession.endTime = snapshot.endTime
-    newSession.timerEndTime = snapshot.timerEndTime
-    newSession.breakStartTime = snapshot.breakStartTime
-    newSession.breakEndTime = snapshot.breakEndTime
-    newSession.oneMoreMinuteUsed = snapshot.oneMoreMinuteUsed
-    newSession.oneMoreMinuteStartTime = snapshot.oneMoreMinuteStartTime
-    newSession.breakEndDeadline = snapshot.breakEndDeadline
-    newSession.oneMoreMinuteDeadline = snapshot.oneMoreMinuteDeadline
-    newSession.pinnedProfileConfigData = snapshot.pinnedProfileConfig.flatMap {
-      try? JSONEncoder().encode($0)
-    }
-
-    // Let auto-save handle inserts
-    context.insert(newSession)
+    session.usesCanonicalIdentity = snapshot.usesCanonicalIdentity
+    session.origin = snapshot.origin
+    session.tag = snapshot.tag
+    session.startTime = snapshot.startTime
+    session.endTime = snapshot.endTime
+    session.timerEndTime = snapshot.timerEndTime
+    session.breakStartTime = snapshot.breakStartTime
+    session.breakEndTime = snapshot.breakEndTime
+    session.forceStarted = snapshot.forceStarted
+    session.oneMoreMinuteUsed = snapshot.oneMoreMinuteUsed
+    session.oneMoreMinuteStartTime = snapshot.oneMoreMinuteStartTime
+    session.breakEndDeadline = snapshot.breakEndDeadline
+    session.oneMoreMinuteDeadline = snapshot.oneMoreMinuteDeadline
+    session.pinnedProfileConfigData = try snapshot.pinnedProfileConfig.map { try JSONEncoder().encode($0) }
+    if snapshot.endTime != nil { session.sessionStartSyncPending = false }
+    return session
   }
 
   static func findSession(

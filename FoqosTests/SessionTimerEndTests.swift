@@ -240,17 +240,21 @@ final class SessionTimerEndTests: XCTestCase {
     sut.reconcileSessionTiming(
       sessionId: oldId, profileId: candidate.blockedProfile.id, startTime: now,
       timerEndTime: now.addingTimeInterval(2207), originDevice: "other-owner", context: context, canonicalSessionId: winnerId, origin: winnerOrigin)
-    XCTAssertEqual(candidate.id, winnerId)
-    XCTAssertEqual(candidate.origin, winnerOrigin)
+    XCTAssertEqual(candidate.id, oldId)
+    XCTAssertNotNil(candidate.endTime)
+    XCTAssertEqual(sut.activeSession?.id, winnerId)
+    XCTAssertEqual(sut.activeSession?.origin, winnerOrigin)
     XCTAssertEqual(SharedData.getActiveSharedSession()?.id, winnerId)
     XCTAssertEqual(SharedData.getActiveSharedSession()?.origin, winnerOrigin)
     XCTAssertEqual(canceled, [oldId])
-    XCTAssertEqual(candidate.timerEndTime, now.addingTimeInterval(2207))
+    XCTAssertEqual(sut.activeSession?.timerEndTime, now.addingTimeInterval(2207))
     sut.reconcileSessionTiming(
       sessionId: oldId, profileId: candidate.blockedProfile.id, startTime: now,
       timerEndTime: nil, originDevice: "stale-owner", context: context, canonicalSessionId: UUID().uuidString, origin: nil)
-    XCTAssertEqual(candidate.id, winnerId)
-    XCTAssertEqual(candidate.origin, winnerOrigin)
+    XCTAssertEqual(candidate.id, oldId)
+    XCTAssertNotNil(candidate.endTime)
+    XCTAssertEqual(sut.activeSession?.id, winnerId)
+    XCTAssertEqual(sut.activeSession?.origin, winnerOrigin)
     XCTAssertEqual(canceled, [oldId])
   }
 

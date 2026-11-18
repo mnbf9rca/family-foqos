@@ -15,7 +15,9 @@ enum OrphanedSessionCleanup {
     now: Date = Date(), calendar: Calendar = .current,
     save: (ModelContext) throws -> Void = { try $0.save() },
     removeActivities: (UUID) -> Void = { DeviceActivityCenterUtil.removeActivities(for: $0) },
-    deactivateRestrictions: () -> Void = { AppBlockerUtil().deactivateRestrictions() },
+    deactivateRestrictions: () -> Void = {
+      SharedData.applyRestrictionsForCurrentState(process: .mainApp, liveSnapshot: nil)
+    },
     refreshShortcuts: () -> Void = { FamilyFoqosShortcuts.updateAppShortcutParameters() },
     cancelOwnedReminders: (UUID) -> Void = { TimersUtil.cancelOwnedReminders(for: $0) },
     onCommit: () -> Void = {}
@@ -28,6 +30,12 @@ enum OrphanedSessionCleanup {
     var localSessions = profiles.flatMap { $0.sessions.valid }
     if let publishedSession, publishedSession.isPersistentModelValid { localSessions.append(publishedSession) }
     let owners = Dictionary(uniqueKeysWithValues: profiles.map { ($0.id, $0) })
+    let ownerSnapshots =
+      requireInactive
+      ? profiles.reduce(into: [String: SharedData.ProfileSnapshot]()) {
+        $0[$1.id.uuidString] = BlockedProfiles.getSnapshot(for: $1)
+      } : [:]
+    let localSnapshots = requireInactive ? localSessions.map { $0.toSnapshot() } : []
     var rebuiltProfiles = false
     var refusedActiveSession = false
     var resetEndedOwners: Set<UUID> = []
@@ -38,26 +46,26 @@ enum OrphanedSessionCleanup {
         rebuildUnreadableProfiles: requireInactive
           ? {
             rebuiltProfiles = true
-            return Dictionary(uniqueKeysWithValues: profiles.map { ($0.id.uuidString, BlockedProfiles.getSnapshot(for: $0)) })
+            return ownerSnapshots
           } : nil,
         allowRemoval: { shared in
           guard requireInactive else { return true }
           @MainActor func isLive(_ session: SharedData.SessionSnapshot) -> Bool {
-            guard let owner = owners[session.blockedProfileId] else { return false }
-            return genuinelyActive(session, currentProfile: BlockedProfiles.getSnapshot(for: owner), now: now, calendar: calendar)
+            guard let owner = ownerSnapshots[session.blockedProfileId.uuidString] else { return false }
+            return genuinelyActive(session, currentProfile: owner, now: now, calendar: calendar)
           }
           // Shared timing and origin win over an older app copy of the same session.
           let authoritative =
             [shared].compactMap { $0 }
-            + localSessions.map { $0.toSnapshot() }.filter { local in
+            + localSnapshots.filter { local in
               shared?.id != local.id || shared?.blockedProfileId != local.blockedProfileId
             }
           refusedActiveSession = authoritative.contains(where: isLive)
           guard !refusedActiveSession else { return false }
           for session in authoritative where session.endTime == nil {
             resetEndedOwners.insert(session.blockedProfileId)
-            guard let owner = owners[session.blockedProfileId] else { continue }
-            let configuration = session.pinnedProfileConfig ?? BlockedProfiles.getSnapshot(for: owner)
+            guard let owner = ownerSnapshots[session.blockedProfileId.uuidString] else { continue }
+            let configuration = session.pinnedProfileConfig ?? owner
             if session.origin?.kind == .schedule || ((configuration.profileSchemaVersion ?? 1) < 2 && session.tag == owner.id.uuidString) {
               scheduleStops[owner.id] = now
             }
@@ -74,6 +82,7 @@ enum OrphanedSessionCleanup {
             for session in localSessions where session.isActive {
               session.endTime = now
               session.timerEndTime = nil
+              session.sessionStartSyncPending = false
               session.origin = nil
               if session.breakStartTime != nil && session.breakEndTime == nil { session.breakEndTime = now }
               session.breakEndDeadline = nil

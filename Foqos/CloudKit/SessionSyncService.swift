@@ -67,6 +67,7 @@ actor SessionSyncService {
 
   /// Fetch the current session record for a profile
   func fetchSession(profileId: UUID) async -> FetchResult {
+    let previous = cachedRecords[profileId]?.session
     let recordName = ProfileSessionRecord.recordName(for: profileId)
     let recordID = CKRecord.ID(recordName: recordName, zoneID: syncZoneID)
 
@@ -77,12 +78,15 @@ actor SessionSyncService {
         return .error(SessionSyncError.invalidRecord)
       }
 
-      // Cache for CAS operations
+      if let current = cachedRecords[profileId]?.session, current != previous, session.isOlderThan(current) {
+        return .found(current)
+      }
       cachedRecords[profileId] = (record, session)
 
       return .found(session)
     } catch let error as CKError {
       if error.code == .unknownItem {
+        if let current = cachedRecords[profileId]?.session, current != previous { return .found(current) }
         cachedRecords.removeValue(forKey: profileId)
         return .notFound
       }
@@ -97,7 +101,10 @@ actor SessionSyncService {
   private static let maxCASRetries = 3
 
   /// Attempt to start a session. Uses CAS with iterative retry loop.
-  func startSession(profileId: UUID, startTime: Date = Date(), timerEndTime: Date? = nil, sessionId: String? = nil, origin: SessionOrigin? = nil) async -> StartResult {
+  func startSession(
+    profileId: UUID, startTime: Date = Date(), timerEndTime: Date? = nil, sessionId: String? = nil, origin: SessionOrigin? = nil,
+    validate: (@MainActor @Sendable () -> Bool)? = nil
+  ) async -> StartResult {
     for attempt in 0..<Self.maxCASRetries {
       // Backoff with jitter on retries (not on first attempt)
       if attempt > 0 {
@@ -112,6 +119,7 @@ actor SessionSyncService {
 
       // Fetch current state
       let fetchResult = await fetchSession(profileId: profileId)
+      if let validate, !(await validate()) { return .error(SessionSyncError.candidateChanged) }
 
       switch fetchResult {
       case .found(let existing):
@@ -123,7 +131,9 @@ actor SessionSyncService {
         guard let cached = cachedRecords[profileId] else {
           return .error(SessionSyncError.noCachedRecord)
         }
-        let (existingRecord, existingSession) = cached
+        guard cached.session == existing else { continue }
+        guard let existingRecord = cached.record.copy() as? CKRecord else { return .error(SessionSyncError.invalidRecord) }
+        let existingSession = cached.session
         let newSequence = existingSession.sequenceNumber + 1
 
         var updatedSession = existingSession
@@ -202,13 +212,10 @@ actor SessionSyncService {
     profileId: UUID,
     newSequence: Int
   ) async -> CASSaveResult {
+    let previous = cachedRecords[profileId]?.session
     do {
-      let savedRecord = try await saveRecordWithPolicy(
-        record, policy: .ifServerRecordUnchanged)
-
-      if let session = ProfileSessionRecord(from: savedRecord) {
-        cachedRecords[profileId] = (savedRecord, session)
-      }
+      let savedRecord = try await saveRecordWithPolicy(record, policy: .ifServerRecordUnchanged)
+      cacheSavedRecord(savedRecord, profileId: profileId, previous: previous)
 
       Log.info(
         "CAS save succeeded for \(profileId) with seq=\(newSequence)",
@@ -248,7 +255,7 @@ actor SessionSyncService {
       if !existing.matchesCompletion(expectedSessionId: expectedSessionId, expectedStart: expectedStart, deviceId: deviceId, allowRemoteLegacy: allowRemoteLegacy) {
         return .alreadyStopped
       }
-      return await deactivateSession(profileId: profileId, endTime: endTime, expectedSessionId: expectedSessionId, expectedStart: expectedStart, reportIdentityMismatch: reportIdentityMismatch, allowRemoteLegacy: allowRemoteLegacy)
+      return await deactivateSession(profileId: profileId, expectedRecord: existing, endTime: endTime, expectedSessionId: expectedSessionId, expectedStart: expectedStart, reportIdentityMismatch: reportIdentityMismatch, allowRemoteLegacy: allowRemoteLegacy)
 
     case .notFound:
       if expectedSessionId != nil || expectedStart != nil { return .alreadyStopped }
@@ -262,12 +269,14 @@ actor SessionSyncService {
     }
   }
 
-  private func deactivateSession(profileId: UUID, endTime: Date, expectedSessionId: String?, expectedStart: Date?, reportIdentityMismatch: Bool, allowRemoteLegacy: Bool) async -> StopResult {
+  private func deactivateSession(profileId: UUID, expectedRecord: ProfileSessionRecord, endTime: Date, expectedSessionId: String?, expectedStart: Date?, reportIdentityMismatch: Bool, allowRemoteLegacy: Bool) async -> StopResult {
     guard let cached = cachedRecords[profileId] else {
       return .error(SessionSyncError.noCachedRecord)
     }
 
-    let (existingRecord, existingSession) = cached
+    guard cached.session == expectedRecord else { return .conflict(currentSession: cached.session) }
+    guard let existingRecord = cached.record.copy() as? CKRecord else { return .error(SessionSyncError.invalidRecord) }
+    let existingSession = cached.session
     let newSequence = existingSession.sequenceNumber + 1
 
     // Prepare updated record
@@ -284,10 +293,7 @@ actor SessionSyncService {
       let savedRecord = try await saveRecordWithPolicy(
         existingRecord, policy: .ifServerRecordUnchanged)
 
-      // Update cache
-      if let session = ProfileSessionRecord(from: savedRecord) {
-        cachedRecords[profileId] = (savedRecord, session)
-      }
+      cacheSavedRecord(savedRecord, profileId: profileId, previous: existingSession)
 
       Log.info("Stopped session for \(profileId) with seq=\(newSequence)", category: .sync)
       return .stopped(sequenceNumber: newSequence)
@@ -329,11 +335,10 @@ actor SessionSyncService {
     _ = session.applyUpdate(
       isActive: false, sequenceNumber: 1, deviceId: deviceId, endTime: endTime)
     let record = session.toCKRecord(in: syncZoneID)
+    let previous = cachedRecords[profileId]?.session
     do {
       let savedRecord = try await saveRecordWithPolicy(record, policy: .ifServerRecordUnchanged)
-      if let saved = ProfileSessionRecord(from: savedRecord) {
-        cachedRecords[profileId] = (savedRecord, saved)
-      }
+      cacheSavedRecord(savedRecord, profileId: profileId, previous: previous)
       return .stopped(sequenceNumber: 1)
     } catch let error as CKError {
       if error.code == .serverRecordChanged {
@@ -406,6 +411,12 @@ actor SessionSyncService {
 
   // MARK: - Cache Management
 
+  private func cacheSavedRecord(_ record: CKRecord, profileId: UUID, previous: ProfileSessionRecord?) {
+    guard let session = ProfileSessionRecord(from: record) else { return }
+    if let current = cachedRecords[profileId]?.session, current != previous, session.isOlderThan(current) { return }
+    cachedRecords[profileId] = (record, session)
+  }
+
   func cachedSession(profileId: UUID) -> ProfileSessionRecord? { cachedRecords[profileId]?.session }
 
   func clearCache() {
@@ -421,12 +432,15 @@ actor SessionSyncService {
 
 enum SessionSyncError: LocalizedError {
   case noCachedRecord
+  case candidateChanged
   case invalidRecord
   case unexpectedState
   case maxRetriesExceeded
 
   var errorDescription: String? {
     switch self {
+    case .candidateChanged:
+      return "The local session changed before the start could be published"
     case .noCachedRecord:
       return "No cached record available for CAS operation"
     case .invalidRecord:

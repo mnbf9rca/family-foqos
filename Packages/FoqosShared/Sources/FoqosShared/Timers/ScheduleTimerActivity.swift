@@ -164,7 +164,8 @@ public class ScheduleTimerActivity: TimerActivity {
           candidate, expectedVictimId: existingSession?.id, now: now,
           scheduleOccurrence: scheduleOccurrence, calendar: calendar,
           onCommit: {
-            self.appBlocker.activateRestrictions(for: profile)
+            SharedData.applyRestrictionsForCurrentState(
+              process: .monitorExtension, liveSnapshot: profile, applier: self.appBlocker, deactivateWhenIdle: true)
           })
       else {
         if minutes != nil { cancelTimer(profile.id, sessionId) }
@@ -193,14 +194,13 @@ public class ScheduleTimerActivity: TimerActivity {
         category: .timer)
       return
     }
-    appBlocker.activateRestrictions(for: profile)
+    SharedData.applyRestrictionsForCurrentState(
+      process: .monitorExtension, liveSnapshot: profile, applier: appBlocker, deactivateWhenIdle: true)
   }
 
   public func stop(for profile: SharedData.ProfileSnapshot) {
     // V2 start monitoring ends at an artificial time; only its stop recurrence completes sessions.
     guard (profile.profileSchemaVersion ?? 1) < 2 else { return }
-    let profileId = profile.id.uuidString
-
     guard let activeSession = SharedData.getActiveSharedSession() else {
       Log.info("Stop schedule timer activity for \(profile.id.uuidString), no active session found", category: .timer)
       return
@@ -226,7 +226,8 @@ public class ScheduleTimerActivity: TimerActivity {
     if SharedData.completeSession(
       expectedSessionId: activeSession.id, now: Date(),
       onComplete: {
-        self.appBlocker.deactivateRestrictions()
+        SharedData.applyRestrictionsForCurrentState(
+          process: .monitorExtension, liveSnapshot: nil, applier: self.appBlocker, deactivateWhenIdle: true)
       })
     {
       cancelTimer(profile.id, activeSession.id)

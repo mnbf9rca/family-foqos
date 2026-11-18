@@ -10,10 +10,15 @@ protocol SessionController: AnyObject {
   func startRemoteSession(context: ModelContext, profileId: UUID, sessionId: UUID?, startTime: Date, timerEndTime: Date?, originDevice: String?, origin: SessionOrigin?, sequenceNumber: Int?, serverModificationDate: Date?)
   func stopRemoteSession(context: ModelContext, profileId: UUID, expectedSessionId: String?, sequenceNumber: Int?)
   @discardableResult func receiveSessionRecord(_ record: ProfileSessionRecord) -> Bool
+  func receiveSessionRecord(_ record: ProfileSessionRecord, context: ModelContext) throws -> Bool
   func clearRemoteSession(profileId: UUID)
 }
 
 extension SessionController {
+  func receiveSessionRecord(_ record: ProfileSessionRecord, context: ModelContext) throws -> Bool {
+    receiveSessionRecord(record)
+  }
+
   func stopRemoteSession(context: ModelContext, profileId: UUID) {
     stopRemoteSession(context: context, profileId: profileId, expectedSessionId: nil, sequenceNumber: nil)
   }
