@@ -264,17 +264,29 @@ final class TimersUtil: TimersUtilScheduling, @unchecked Sendable {  // SAFETY: 
   static func registerBackgroundTasks() {
     BGTaskScheduler.shared.register(
       forTaskWithIdentifier: backgroundProcessingTaskIdentifier,
-      using: nil
+      using: .main
     ) { task in
-      guard let processingTask = task as? BGProcessingTask else {
-        task.setTaskCompleted(success: false)
-        return
+      MainActor.assumeIsolated {
+        guard task is BGProcessingTask else {
+          task.setTaskCompleted(success: false)
+          return
+        }
+        Self.completeBackgroundProcessing(
+          launch: .shared,
+          process: Self.processBackgroundTasks,
+          complete: { task.setTaskCompleted(success: $0) })
       }
-      Self.handleBackgroundProcessingTask(processingTask)
     }
   }
 
-  private static func handleBackgroundProcessingTask(_ task: BGProcessingTask) {
+  @MainActor
+  static func completeBackgroundProcessing(
+    launch: ProtectedStoreLaunch, process: () -> Bool, complete: (Bool) -> Void
+  ) {
+    complete(launch.isReady && process())
+  }
+
+  private static func processBackgroundTasks() -> Bool {
     let timerUtil = TimersUtil()
 
     // Get all pending tasks from UserDefaults
@@ -316,7 +328,7 @@ final class TimersUtil: TimersUtilScheduling, @unchecked Sendable {  // SAFETY: 
       timerUtil.scheduleBackgroundProcessing()
     }
 
-    task.setTaskCompleted(success: hasExecutedTasks)
+    return hasExecutedTasks
   }
 
   /// Schedule a background processing task
