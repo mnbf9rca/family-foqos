@@ -708,6 +708,7 @@ class AppDelegate: NSObject, UIApplicationDelegate {
     onHeld: () -> Void,
     onReleased: () async -> Void
   ) async {
+    launch.refresh()
     await StartupRecoveryPushRouter.route(
       isHeld: !launch.isReady || isRecoveryHeld(),
       onHeld: onHeld, onReleased: onReleased)

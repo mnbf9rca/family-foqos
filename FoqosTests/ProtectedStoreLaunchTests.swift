@@ -87,11 +87,11 @@ final class ProtectedStoreLaunchTests: XCTestCase {
 
     launch.refresh()
     guard case .failed = launch.state else { return XCTFail("Expected an open failure") }
-    XCTAssertThrowsError(try launch.readyContainer())
     XCTAssertEqual(opens, 1)
     XCTAssertEqual(preparations, 0)
 
     isUnlocked = false
+    XCTAssertThrowsError(try launch.readyContainer())
     launch.refresh()
     XCTAssertEqual(opens, 1)
 
@@ -139,35 +139,21 @@ final class ProtectedStoreLaunchTests: XCTestCase {
     XCTAssertEqual(deliveries, 1)
   }
 
-  func testHeldBackgroundAndSceneEntriesLeaveStateUntouchedUntilUnlock() async throws {
+  func testHeldBackgroundEntriesCompleteOnceAndSceneDeliveryWaitsUntilUnlock() async throws {
     let container = try TestModelContainer.create()
-    let suiteName = "ProtectedStoreLaunchTests-\(UUID().uuidString)"
-    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-    defer { defaults.removePersistentDomain(forName: suiteName) }
     let profileID = UUID()
-    let deviceID = UUID()
-    let record = ProfileSessionRecord(profileId: profileID)
-    defaults.set("child", forKey: "family_foqos_app_mode")
-    defaults.set(true, forKey: "family_foqos_device_sync_enabled")
-    defaults.set(deviceID.uuidString, forKey: "family_foqos_device_sync_id")
-    RemotelyActiveStore.save([profileID: record], defaults: defaults)
 
     var isUnlocked = false
     var preparations = 0
     var recoveryReads = 0
     var backgroundRuns = 0
+    var reschedules = 0
     let launch = ProtectedStoreLaunch(
       isProtectedDataAvailable: { isUnlocked },
       probeStore: { .readFailed },
       capture: { self.evidence },
       open: { container },
-      prepare: { _ in
-        preparations += 1
-        XCTAssertEqual(defaults.string(forKey: "family_foqos_app_mode"), "child")
-        XCTAssertTrue(defaults.bool(forKey: "family_foqos_device_sync_enabled"))
-        XCTAssertEqual(defaults.string(forKey: "family_foqos_device_sync_id"), deviceID.uuidString)
-        XCTAssertEqual(RemotelyActiveStore.load(defaults: defaults), [profileID: record])
-      })
+      prepare: { _ in preparations += 1 })
 
     let navigation = NavigationManager()
     let delegate = SceneDelegate(navigation: navigation, launch: launch)
@@ -200,17 +186,21 @@ final class ProtectedStoreLaunchTests: XCTestCase {
         backgroundRuns += 1
         return true
       },
+      reschedule: { reschedules += 1 },
       complete: { taskCompletions.append($0) })
     XCTAssertEqual(pushCompletions, [.noData])
     XCTAssertEqual(taskCompletions, [false])
     XCTAssertEqual(recoveryReads, 0)
     XCTAssertEqual(backgroundRuns, 0)
+    XCTAssertEqual(reschedules, 0)
     XCTAssertEqual(preparations, 0)
 
     isUnlocked = true
     launch.refresh()
 
     XCTAssertEqual(preparations, 1)
+    XCTAssertEqual(reschedules, 1)
+    XCTAssertEqual(taskCompletions, [false])
     XCTAssertEqual(navigation.deliveries, [.link(profileId: profileID), .link(profileId: warmID)])
     let laterID = UUID()
     delegate.receiveURL(try XCTUnwrap(URL(string: "https://family-foqos.app/profile/\(laterID)")))
@@ -283,6 +273,55 @@ final class ProtectedStoreLaunchTests: XCTestCase {
     }
     XCTAssertEqual(startedProfileID, entity.id)
     XCTAssertEqual(opens, 1)
+  }
+
+  func testEachBackgroundEntryCanOpenAfterUnlockWithoutASceneOrNotification() async throws {
+    let container = try TestModelContainer.create()
+    let profile = BlockedProfiles(name: "Persisted profile")
+    container.mainContext.insert(profile)
+    try container.mainContext.save()
+
+    var isUnlocked = false
+    var opens = 0
+    func makeLaunch() -> ProtectedStoreLaunch {
+      isUnlocked = false
+      let launch = ProtectedStoreLaunch(
+        isProtectedDataAvailable: { isUnlocked },
+        probeStore: { .readFailed },
+        capture: { self.evidence },
+        open: {
+          opens += 1
+          return container
+        })
+      launch.refresh()
+      XCTAssertFalse(launch.isReady)
+      isUnlocked = true
+      return launch
+    }
+
+    let intentLaunch = makeLaunch()
+    let query = BlockedProfilesQuery(launch: intentLaunch)
+    let suggestions = try await query.suggestedEntities()
+    XCTAssertEqual(suggestions.map(\.name), ["Persisted profile"])
+    XCTAssertEqual(opens, 1)
+
+    let pushLaunch = makeLaunch()
+    var pushCompletions: [UIBackgroundFetchResult] = []
+    await AppDelegate.routeProtectedPush(
+      launch: pushLaunch, isRecoveryHeld: false,
+      onHeld: { pushCompletions.append(.noData) },
+      onReleased: { pushCompletions.append(.newData) })
+    XCTAssertEqual(pushCompletions, [.newData])
+    XCTAssertEqual(opens, 2)
+
+    let processingLaunch = makeLaunch()
+    var processingCompletions: [Bool] = []
+    TimersUtil.completeBackgroundProcessing(
+      launch: processingLaunch, process: { true },
+      reschedule: { XCTFail("Ready task should be processed immediately") },
+      complete: { processingCompletions.append($0) })
+    XCTAssertEqual(processingCompletions, [true])
+    XCTAssertEqual(opens, 3)
   }
 
   private enum TestFailure: Error { case open }

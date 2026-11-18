@@ -129,6 +129,7 @@ final class ProtectedStoreLaunch: ObservableObject {
   }
 
   func readyContainer() throws -> ModelContainer {
+    refresh()
     switch state {
     case .ready(let container, _): return container
     case .waitingForUnlock: throw Unavailable.waitingForUnlock

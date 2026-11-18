@@ -274,6 +274,7 @@ final class TimersUtil: TimersUtilScheduling, @unchecked Sendable {  // SAFETY: 
         Self.completeBackgroundProcessing(
           launch: .shared,
           process: Self.processBackgroundTasks,
+          reschedule: { TimersUtil().scheduleBackgroundProcessing() },
           complete: { task.setTaskCompleted(success: $0) })
       }
     }
@@ -281,9 +282,18 @@ final class TimersUtil: TimersUtilScheduling, @unchecked Sendable {  // SAFETY: 
 
   @MainActor
   static func completeBackgroundProcessing(
-    launch: ProtectedStoreLaunch, process: () -> Bool, complete: (Bool) -> Void
+    launch: ProtectedStoreLaunch,
+    process: () -> Bool,
+    reschedule: @escaping () -> Void,
+    complete: (Bool) -> Void
   ) {
-    complete(launch.isReady && process())
+    launch.refresh()
+    guard launch.isReady else {
+      launch.afterOpen(reschedule)
+      complete(false)
+      return
+    }
+    complete(process())
   }
 
   private static func processBackgroundTasks() -> Bool {
