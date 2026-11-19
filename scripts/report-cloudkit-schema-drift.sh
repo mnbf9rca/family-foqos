@@ -158,6 +158,10 @@ comm -23 "$TEMP_DIR/manifest" "$TEMP_DIR/schema" >"$TEMP_DIR/missing-schema"
 # A type-only manifest entry checks existence only because the app owns no fields, as with legacy SyncedSession.
 comm -13 "$TEMP_DIR/manifest" "$TEMP_DIR/schema" |
   awk -v prefix="$SCHEMA_ONLY_EXCEPTION_PREFIX" '
+    BEGIN {
+      # Retired in 7fdcb84. The deployed field remains available to older clients.
+      retired_fields["RECORD TYPE FamilyMember.displayName"]=1
+    }
     NR == FNR {
       if ($0 ~ /^RECORD TYPE "/) {
         rest=substr($0, length("RECORD TYPE ") + 1)
@@ -173,7 +177,7 @@ comm -13 "$TEMP_DIR/manifest" "$TEMP_DIR/schema" |
       manifest_types[type]=1
       next
     }
-    index($0, prefix) == 1 { next }
+    index($0, prefix) == 1 || ($0 in retired_fields) { next }
     {
       if ($0 ~ /^RECORD TYPE "/) {
         rest=substr($0, length("RECORD TYPE ") + 1)
