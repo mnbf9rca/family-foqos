@@ -17,12 +17,11 @@ trap cleanup EXIT
 
 [[ -x "$REPORTER" ]] || { echo "FAIL: schema drift reporter is missing"; exit 1; }
 
-REAL_OUTPUT=$("$REPORTER")
-[[ "$REAL_OUTPUT" == 'OK: no CloudKit schema drift.' ]] || {
-  echo "FAIL: real repository must have no schema drift"
+if ! REAL_OUTPUT=$("$REPORTER" 2>&1) || [[ "$REAL_OUTPUT" != 'OK: no CloudKit schema drift.' ]]; then
+  echo "FAIL: the real repository must accept the retained FamilyMember.displayName field"
   echo "$REAL_OUTPUT"
   exit 1
-}
+fi
 
 FIXTURE_ROOT="$TEST_ROOT/repo"
 reset_fixture() {
@@ -118,6 +117,39 @@ cp \
 assert_drift \
   'MISSING from manifest: RECORD TYPE FamilyRoot.smokeFamilyRootField' \
   'FamilyRoot write discovery must report a fake field'
+
+# Retiring one field must not exempt other names with the same prefix.
+reset_fixture
+sed '/^[[:space:]]*displayName[[:space:]]/a\
+        displayNameExtra STRING,
+' \
+  "$FIXTURE_ROOT/Foqos/CloudKit/cloudkit-schema.ckdb" >"$TEST_ROOT/cloudkit-schema.ckdb"
+cp "$TEST_ROOT/cloudkit-schema.ckdb" "$FIXTURE_ROOT/Foqos/CloudKit/cloudkit-schema.ckdb"
+assert_drift \
+  'EXTRA in checked-in schema: RECORD TYPE FamilyMember.displayNameExtra' \
+  'a field resembling a retired field must still be reported'
+
+# The retired entry is scoped to its record type.
+reset_fixture
+sed '/^[[:space:]]*commandType[[:space:]]/a\
+        displayName STRING,
+' \
+  "$FIXTURE_ROOT/Foqos/CloudKit/cloudkit-schema.ckdb" >"$TEST_ROOT/cloudkit-schema.ckdb"
+cp "$TEST_ROOT/cloudkit-schema.ckdb" "$FIXTURE_ROOT/Foqos/CloudKit/cloudkit-schema.ckdb"
+assert_drift \
+  'EXTRA in checked-in schema: RECORD TYPE FamilyCommand.displayName' \
+  'the same field on a different record type must still be reported'
+
+# Reusing a retired field in code requires putting it back in the manifest.
+reset_fixture
+sed '/static let userRecordName = "userRecordName"/a\
+    static let displayName = "displayName"
+' \
+  "$FIXTURE_ROOT/Foqos/Models/FamilyMember.swift" >"$TEST_ROOT/FamilyMember.swift"
+cp "$TEST_ROOT/FamilyMember.swift" "$FIXTURE_ROOT/Foqos/Models/FamilyMember.swift"
+assert_drift \
+  'MISSING from manifest: RECORD TYPE FamilyMember.displayName' \
+  'a retired field made live again must be required by the manifest'
 
 # A code-live manifest type cannot use a type-only entry to hide schema fields.
 reset_fixture

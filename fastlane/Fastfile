@@ -73,6 +73,7 @@ platform :ios do
       list = issues.map { |i| "##{i['number']} #{i['title']}" }.join("\n  ")
       UI.user_error!("Release blocked by open release-blocking issues:\n  #{list}")
     end
+    sh('bash', File.join(REPO_ROOT, 'scripts/report-cloudkit-schema-drift.sh'))
     sh('bash', File.join(REPO_ROOT, 'scripts/check-prod-schema.sh'))
   end
 

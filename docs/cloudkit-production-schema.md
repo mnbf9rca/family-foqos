@@ -15,7 +15,7 @@ The agent owns repository changes and the post-merge Development import; a PR ch
    bash scripts/report-cloudkit-schema-drift.sh
    ```
 
-   Stop if it reports drift. Update the reported entries in `fastlane/required-prod-schema.txt` and `Foqos/CloudKit/cloudkit-schema.ckdb`, preserving declarations already deployed to Production, then rerun the reporter until it prints `OK: no CloudKit schema drift.`.
+   Stop if it reports drift. Update the reported entries in `fastlane/required-prod-schema.txt` and `Foqos/CloudKit/cloudkit-schema.ckdb`, preserving declarations already deployed to Production, then rerun the reporter until it prints `OK: no CloudKit schema drift.`. When a deployed field is retired from code, keep it in the `.ckdb` and add its exact entry and retirement commit to the reporter’s retired-field set.
 
 3. Run the checked-in schema checker and its harness:
 

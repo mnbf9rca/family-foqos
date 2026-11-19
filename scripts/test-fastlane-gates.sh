@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Keep this list in sync whenever the suite starts invoking another external tool.
-required_commands=(bundle cat chmod dirname mkdir mktemp rm sed)
+required_commands=(bundle cat chmod cp dirname mkdir mktemp rg rm sed)
 for required_command in "${required_commands[@]}"; do
   command -v "$required_command" >/dev/null || {
     echo "FAIL: required command not found: $required_command" >&2
@@ -93,4 +93,22 @@ if [[ "$GATE_STATUS" -ne 0 ]]; then
   exit 1
 fi
 
-echo "PASS: release-blocking label gate cases"
+DRIFT_FIXTURE="$TEST_ROOT/drift-repo"
+mkdir "$DRIFT_FIXTURE"
+cp -R "$REPO_ROOT/Foqos" "$REPO_ROOT/FoqosDeviceMonitor" "$REPO_ROOT/FoqosShieldConfig" \
+  "$REPO_ROOT/FoqosWidget" "$REPO_ROOT/fastlane" "$DRIFT_FIXTURE/"
+sed '/^[[:space:]]*displayName[[:space:]]/a\
+        smokeUnexpectedField STRING,
+' "$REPO_ROOT/Foqos/CloudKit/cloudkit-schema.ckdb" >"$DRIFT_FIXTURE/Foqos/CloudKit/cloudkit-schema.ckdb"
+
+FAKE_LABEL_PRESENT=1 CLOUDKIT_SCHEMA_REPO_ROOT="$DRIFT_FIXTURE" run_gates
+if [[ "$GATE_STATUS" -eq 0 ||
+  "$GATE_OUTPUT" != *"EXTRA in checked-in schema: RECORD TYPE FamilyMember.smokeUnexpectedField"* ||
+  "$GATE_OUTPUT" != *"CloudKit schema drift detected."* ]]; then
+  echo "FAIL: unexpected schema drift must abort the release gate"
+  echo "actual exit: $GATE_STATUS"
+  echo "$GATE_OUTPUT"
+  exit 1
+fi
+
+echo "PASS: release-blocking label and CloudKit schema drift gate cases"
