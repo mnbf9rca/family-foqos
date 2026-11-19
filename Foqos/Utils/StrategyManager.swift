@@ -1247,17 +1247,26 @@ class StrategyManager: ObservableObject {
   /// Delegate emergency unblock to EmergencyUnblockManager, providing session stop logic.
   /// Throws EmergencyUnblockError if unblock is not allowed (no remaining, geofence blocked, etc.).
   func emergencyUnblock(context: ModelContext) async throws {
-    let session: BlockedProfileSession?
-    if let displayed = activeSession, displayed.modelContext === context, displayed.isPersistentModelValid,
-      displayed.isActive, displayed.blockedProfile.profileSchemaVersion >= 2
+    let displayed = activeSession.flatMap { $0.isPersistentModelValid && $0.isActive ? $0 : nil }
+    let displayedId = displayed?.id
+    if let displayedId, let owner = SharedData.readSessionState()?.active,
+      owner.endTime == nil, owner.id != displayedId
     {
-      // An emergency stop can use the displayed identity when the shared store is idle or damaged.
-      // The locked stop still checks the target and cannot stop a replacement.
-      session = displayed
-    } else {
-      session = try getActiveSession(context: context)
+      throw EmergencyUnblockError.sessionChanged
     }
-    if session == nil, let remote = try controlSession(context: context)?.remote {
+    let session: BlockedProfileSession?
+    do {
+      session = try getActiveSession(context: context)
+    } catch let error as CocoaError where error.code == .fileReadCorruptFile {
+      guard let displayed, displayed.modelContext === context, displayed.isPersistentModelValid,
+        displayed.isActive, displayed.blockedProfile.profileSchemaVersion >= 2
+      else { throw error }
+      session = displayed
+    }
+    if let displayedId, let session, session.id != displayedId {
+      throw EmergencyUnblockError.sessionChanged
+    }
+    if displayedId == nil, session == nil, let remote = try controlSession(context: context)?.remote {
       try await stopRemoteOnlySession(profileId: remote.profileId, context: context, emergency: true)
       return
     }
@@ -2162,7 +2171,7 @@ class StrategyManager: ObservableObject {
     guard
       SharedData.completeSession(
         expectedSessionId: session.id, now: now, localSession: session.toSnapshot(),
-        allowUndecodableStore: emergency,
+        allowUndecodableStore: emergency, allowLocalFallbackWhenIdle: !emergency,
         onComplete: {
           SharedData.applyRestrictionsForCurrentState(process: .mainApp, liveSnapshot: nil, applier: self.appBlocker)
         })

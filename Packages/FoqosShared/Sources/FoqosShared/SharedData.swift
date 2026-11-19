@@ -845,7 +845,7 @@ public enum SharedData {
   @discardableResult
   public static func completeSession(
     expectedSessionId: String, now: Date, requireTimerDeadline: Bool = false,
-    localSession: SessionSnapshot? = nil, allowUndecodableStore: Bool = false,
+    localSession: SessionSnapshot? = nil, allowUndecodableStore: Bool = false, allowLocalFallbackWhenIdle: Bool = true,
     scheduledStopAt: Date? = nil, expectedProfileId: UUID? = nil, calendar: Calendar = .current,
     onComplete: () -> Void = {}
   ) -> Bool {
@@ -854,9 +854,13 @@ public enum SharedData {
       let checked = checkedActiveSession()
       guard checked != nil || allowUndecodableStore else { return false }
       let live = checked.flatMap { $0 }.flatMap { $0.endTime == nil ? $0 : nil }
-      guard var current = live ?? localSession,
+      let fallback = checked == nil || allowLocalFallbackWhenIdle ? localSession : nil
+      guard var current = live ?? fallback,
         current.id == expectedSessionId, current.endTime == nil,
-        var completed = checkedCompletedSessions()
+        var completed = checkedCompletedSessions(),
+        !completed.contains(where: {
+          $0.id == current.id && $0.blockedProfileId == current.blockedProfileId && $0.endTime != nil
+        })
       else { return false }
       if let scheduledStopAt {
         guard current.blockedProfileId == expectedProfileId, current.startTime <= scheduledStopAt,

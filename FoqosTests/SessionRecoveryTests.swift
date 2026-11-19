@@ -358,6 +358,54 @@ final class SessionRecoveryTests: XCTestCase {
     XCTAssertFalse(applier.calls.contains(.activate(profileId: profile.id)))
   }
 
+  func testEmergencyAfterMonitorCompletionDoesNotChargeOrCompleteTwice() async throws {
+    let delivery = time(20, 18)
+    let context = container.mainContext
+    let profile = BlockedProfiles(name: "Finished focus")
+    context.insert(profile)
+    let session = BlockedProfileSession(
+      tag: "manual", blockedProfile: profile, startTime: time(15), origin: .init(kind: .manual))
+    context.insert(session)
+    try context.save()
+    let emergency = EmergencyUnblockManager(defaults: defaults)
+    emergency.seedForTesting(epoch: 1)
+    let available = emergency.getRemainingEmergencyUnblocks()
+    manager = StrategyManager(
+      emergencyUnblockManager: emergency, appBlocker: applier, remoteActiveDefaults: defaults,
+      currentDate: { delivery }, calendar: calendar)
+    manager.activeSession = session
+    SharedData.createActiveSharedSession(for: session.toSnapshot())
+    let endedAt = time(18)
+    XCTAssertTrue(SharedData.completeSession(expectedSessionId: session.id, now: endedAt))
+
+    do {
+      try await manager.emergencyUnblock(context: context)
+      XCTFail("The monitor already ended this session")
+    } catch {
+      guard case EmergencyUnblockError.noActiveSession = error else { return XCTFail("Unexpected error: \(error)") }
+    }
+
+    XCTAssertEqual(emergency.getRemainingEmergencyUnblocks(), available)
+    XCTAssertEqual(session.endTime, endedAt)
+    XCTAssertNil(manager.activeSession)
+    XCTAssertNil(SharedData.getActiveSharedSession())
+    XCTAssertTrue(SharedData.completedSessionsInScheduler.isEmpty)
+  }
+
+  func testEmergencyCommitRejectsOwnershipLostAfterAuthorization() {
+    let session = SharedData.SessionSnapshot(
+      id: UUID().uuidString, tag: "manual", blockedProfileId: UUID(), startTime: time(15),
+      forceStarted: false, origin: .init(kind: .manual))
+    SharedData.createActiveSharedSession(for: session)
+    XCTAssertTrue(SharedData.completeSession(expectedSessionId: session.id, now: time(18)))
+
+    XCTAssertFalse(
+      SharedData.completeSession(
+        expectedSessionId: session.id, now: time(20), localSession: session,
+        allowUndecodableStore: true, allowLocalFallbackWhenIdle: false))
+    XCTAssertEqual(SharedData.completedSessionsInScheduler.map(\.endTime), [time(18)])
+  }
+
   func testRemoteInactiveDeliveryRefreshesSessionBeforeSelectingStopTarget() throws {
     configureManager(delivery: time(20, 18))
     let context = container.mainContext
