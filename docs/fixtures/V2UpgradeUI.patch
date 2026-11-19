@@ -238,7 +238,7 @@ index 17cc1a1..85bb15c 100644
      self.registerTimer = registerTimer
      self.cancelTimer = cancelTimer
 diff --git a/Foqos/Views/HomeView.swift b/Foqos/Views/HomeView.swift
-index 478d8a3..31b5b77 100644
+index 478d8a3..a1c7ed9 100644
 --- a/Foqos/Views/HomeView.swift
 +++ b/Foqos/Views/HomeView.swift
 @@ -14,6 +14,9 @@ struct HomeView: View {
@@ -268,7 +268,33 @@ index 478d8a3..31b5b77 100644
      .onChange(of: scenePhase) { oldPhase, newPhase in
        if newPhase == .active {
          loadApp()
-@@ -741,6 +754,11 @@ struct HomeView: View {
+@@ -683,8 +696,15 @@ struct HomeView: View {
+     nfcScanner.scan(profileName: profile.name)
+   }
+
++  private var isNFCReadingAvailable: Bool {
++    #if DEBUG
++      if UpgradeUI.isActive { return true }
++    #endif
++    return NFCReaderSession.readingAvailable
++  }
++
+   private func stopNFCScan(for profile: BlockedProfiles) {
+-    guard NFCReaderSession.readingAvailable else {
++    guard isNFCReadingAvailable else {
+       strategyManager.errorMessage = StrategyManager.nfcUnavailableStopMessage
+       return
+     }
+@@ -718,7 +738,7 @@ struct HomeView: View {
+   }
+
+   private func scanConfirmationNFC() {
+-    guard NFCReaderSession.readingAvailable else {
++    guard isNFCReadingAvailable else {
+       strategyManager.errorMessage = StrategyManager.nfcUnavailableStopMessage
+       return
+     }
+@@ -741,6 +761,11 @@ struct HomeView: View {
        }
      #endif
      try? strategyManager.loadActiveSession(context: context)
