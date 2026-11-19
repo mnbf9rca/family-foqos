@@ -375,6 +375,7 @@ final class SyncApplyService {
 
     let mergedStamp = SharedData.latestScheduleStop(synced.scheduleLastStoppedAt, existing.scheduleLastStoppedAt)
     let stampChanged = mergedStamp != existing.scheduleLastStoppedAt
+    let needsSnapshot = stampChanged || store.failedApplies.contains { $0.recordName == recordName && $0.op == .upsert }
     existing.scheduleLastStoppedAt = mergedStamp
     synced.scheduleLastStoppedAt = mergedStamp
 
@@ -390,8 +391,8 @@ final class SyncApplyService {
       // Auto-heal (I2 exception): bump + signal controller to re-enqueue the V2 payload.
       existing.syncVersion += 1
       try commit()
-      if stampChanged { try publishProfileSnapshot(existing) }
       pendingReenqueues.append(record.recordID)
+      if needsSnapshot { try publishProfileSnapshot(existing) }
       SyncDiagnostics.profileApply(
         profileId: existing.id, branch: "local_schema_newer_reenqueue",
         remoteVersion: synced.version, localVersion: localVersion,
@@ -405,7 +406,7 @@ final class SyncApplyService {
       existing.profileSchemaVersion = synced.profileSchemaVersion
       existing.syncVersion = synced.version
       try commit()
-      if stampChanged { try publishProfileSnapshot(existing) }
+      if needsSnapshot { try publishProfileSnapshot(existing) }
       SyncDiagnostics.profileApply(
         profileId: existing.id, branch: "remote_schema_newer_marker",
         remoteVersion: synced.version, localVersion: localVersion,
@@ -466,8 +467,8 @@ final class SyncApplyService {
         // Local wins: bump above the tie and re-enqueue through the existing I2 exception.
         existing.syncVersion += 1
         try commit()
-        if stampChanged { try publishProfileSnapshot(existing) }
         pendingReenqueues.append(record.recordID)
+        if needsSnapshot { try publishProfileSnapshot(existing) }
         SyncConflictManager.shared.addDivergenceConflict(
           profileId: existing.id, profileName: existing.name)
         SyncDiagnostics.profileApply(
@@ -479,10 +480,8 @@ final class SyncApplyService {
         return .applied
       }
     } else {
-      if stampChanged {
-        try commit()
-        try publishProfileSnapshot(existing)
-      }
+      if stampChanged { try commit() }
+      if needsSnapshot { try publishProfileSnapshot(existing) }
       SyncDiagnostics.profileApply(
         profileId: existing.id, branch: "older_remote_noop", remoteVersion: synced.version,
         localVersion: localVersion, remoteSchema: synced.profileSchemaVersion,
@@ -493,7 +492,8 @@ final class SyncApplyService {
   }
 
   private func publishProfileSnapshot(_ profile: BlockedProfiles) throws {
-    if let stoppedAt = BlockedProfiles.updateSnapshot(for: profile),
+    guard let published = BlockedProfiles.updateSnapshot(for: profile) else { throw CocoaError(.fileWriteUnknown) }
+    if let stoppedAt = published.scheduleLastStoppedAt,
       stoppedAt > (profile.scheduleLastStoppedAt ?? .distantPast)
     {
       profile.scheduleLastStoppedAt = stoppedAt

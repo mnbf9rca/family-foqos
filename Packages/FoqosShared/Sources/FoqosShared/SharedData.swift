@@ -556,15 +556,23 @@ public enum SharedData {
   }
 
   @discardableResult
-  public static func setSnapshot(_ snapshot: ProfileSnapshot, for profileID: String) -> Date? {
+  public static func setSnapshot(_ snapshot: ProfileSnapshot, for profileID: String) -> ProfileSnapshot? {
     withLockStatus(blocking: true) { outcome in
       guard outcome == .acquired else { return nil }
       var all = profileSnapshots
       var merged = snapshot
       merged.scheduleLastStoppedAt = latestScheduleStop(all[profileID]?.scheduleLastStoppedAt, snapshot.scheduleLastStoppedAt)
       all[profileID] = merged
-      profileSnapshots = all
-      return merged.scheduleLastStoppedAt
+      guard let bytes = try? JSONEncoder().encode(all) else { return nil }
+      let key = Key.profileSnapshots.rawValue
+      let previous = suite.object(forKey: key)
+      suite.set(bytes, forKey: key)
+      guard suite.data(forKey: key) == bytes else {
+        if let previous { suite.set(previous, forKey: key) } else { suite.removeObject(forKey: key) }
+        return nil
+      }
+      clearLegacy(.profileSnapshots)
+      return merged
     }
   }
 

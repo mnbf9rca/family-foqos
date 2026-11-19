@@ -123,6 +123,39 @@ final class SyncApplyServiceTests: XCTestCase {
     XCTAssertEqual(SharedData.snapshot(for: local.id.uuidString)?.scheduleLastStoppedAt, later)
   }
 
+  func testRedeliveryRepublishesProfileSnapshotAfterLockFailure() throws {
+    let now = Date()
+    for incomingVersion in [1, 3] {
+      let local = BlockedProfiles(name: "Local", createdAt: now, updatedAt: now, syncVersion: 2)
+      context.insert(local)
+      try context.save()
+      BlockedProfiles.updateSnapshot(for: local)
+      let changesSettings = incomingVersion > local.syncVersion
+      let record = makeProfileRecord(
+        id: local.id, name: "Remote", version: incomingVersion, originDeviceId: "device-B",
+        schemaVersion: local.profileSchemaVersion, now: now)
+      let stoppedAt = changesSettings ? nil : now.addingTimeInterval(-60)
+      record[SyncedProfile.FieldKey.scheduleLastStoppedAt.rawValue] = stoppedAt
+
+      SharedData.configureLockPath(nil)
+      let first = makeService().applyFetchedModification(record, isPendingDeleteOrTombstoned: noPendingDelete)
+      SharedData.resetLockPath()
+
+      XCTAssertEqual(first, .failed)
+      XCTAssertTrue(store.failedApplies.contains { $0.recordName == record.recordID.recordName })
+      XCTAssertEqual(SharedData.snapshot(for: local.id.uuidString)?.name, "Local")
+      XCTAssertNil(SharedData.snapshot(for: local.id.uuidString)?.scheduleLastStoppedAt)
+
+      XCTAssertEqual(
+        makeService().applyFetchedModification(record, isPendingDeleteOrTombstoned: noPendingDelete),
+        .applied)
+      let snapshot = try XCTUnwrap(SharedData.snapshot(for: local.id.uuidString))
+      XCTAssertEqual(snapshot.name, changesSettings ? "Remote" : "Local")
+      XCTAssertEqual(snapshot.scheduleLastStoppedAt, stoppedAt)
+      XCTAssertFalse(store.failedApplies.contains { $0.recordName == record.recordID.recordName })
+    }
+  }
+
   func testLegacyManualStopRejectsIdenticalActiveReplayBeforeCloudConfirmationAndAfterRelaunch() throws {
     let now = Date()
     let syncWasEnabled = ProfileSyncManager.shared.isEnabled
