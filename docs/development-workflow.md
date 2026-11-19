@@ -23,7 +23,7 @@ The orchestrator dispatches a rerun only when signing or SSH approval expires an
 ## Agent Safehouse boundaries
 
 - Keep Codex’s native sandbox and automatic approval reviewer configured. If a shell command fails immediately with `sandbox-exec: sandbox_apply: Operation not permitted`, request per-command escalation (`require_escalated`) with a justification and let the automatic reviewer decide. An escalated command still runs inside Safehouse. Full access and blanket permission bypasses are prohibited.
-- SwiftPM cannot start its manifest sandbox inside Safehouse. Only inside Safehouse, `scripts/xcode-stream.sh` adds `-IDEPackageSupportDisableManifestSandbox=1` to direct `xcodebuild` calls. Package manifests then run under the outer Safehouse policy. Leave this flag to the wrapper. The Fastlane screenshots lane runs Xcode through Fastlane and requires separate handling.
+- SwiftPM and Swift macro plugins need to run under the outer Safehouse policy. For direct `xcodebuild` calls inside Safehouse, `scripts/xcode-stream.sh` adds `-IDEPackageSupportDisableManifestSandbox=1` and sets `OTHER_SWIFT_FLAGS=$(inherited) -disable-sandbox`. Swift macro plugins then run without the compiler's own sandbox. Supply extra Swift flags through the environment so Xcode can inherit them. The Fastlane screenshots lane runs Xcode through Fastlane and requires separate handling.
 - A Safehouse policy denial persists after Codex escalation. Report the exact denial, such as `mach-lookup com.apple.PowerManagement.control`, to the orchestrator as a human gate. Wait for the approved policy update and a host-side relaunch before retrying. Workarounds are prohibited.
 
 ## Simulator Ownership
@@ -32,7 +32,7 @@ Every simulator process tree enters through `scripts/xcode-stream.sh`; the machi
 
 UUID destinations only. Never pass a device-name destination: it can create a simulator under `~/Library/Developer/XCTestDevices/` on every invocation and consume about 16 GB. Never pass a destination or DerivedData path yourself. Do not boot, clone, erase, or delete a gate-owned simulator outside the wrapper. The wrapper injects `-parallel-testing-enabled NO` and `-disable-concurrent-destination-testing` to prevent XCTestDevices clones.
 
-Set `IOS_SIM_GATE_DEVICE_TYPE` or `IOS_SIM_GATE_RUNTIME` only when the task requires an override. Always put `xcodebuild` directly after the wrapper's `--`; do not mediate it through `xcrun`, `env`, `bundle`, or a shell command. Wrapper-owned formatting preserves the exact child status without depending on caller shell options. Pass `--xcbeautify` to select formatting; the wrapper checks the standalone `xcbeautify` binary before acquiring the gate and owns the internal `xcodebuild 2>&1 | xcbeautify` pipeline. In Safehouse, direct Xcode invocations also receive the [SwiftPM manifest flag](#agent-safehouse-boundaries).
+Set `IOS_SIM_GATE_DEVICE_TYPE` or `IOS_SIM_GATE_RUNTIME` only when the task requires an override. Always put `xcodebuild` directly after the wrapper's `--`; do not mediate it through `xcrun`, `env`, `bundle`, or a shell command. Wrapper-owned formatting preserves the exact child status without depending on caller shell options. Pass `--xcbeautify` to select formatting; the wrapper checks the standalone `xcbeautify` binary before acquiring the gate and owns the internal `xcodebuild 2>&1 | xcbeautify` pipeline. In Safehouse, direct Xcode invocations also receive the [SwiftPM and Swift compiler sandbox flags](#agent-safehouse-boundaries).
 
 ## Build and Clean
 

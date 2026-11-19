@@ -234,6 +234,11 @@ execute_internal() {
       -IDEPackageSupportDisableManifestSandbox|-IDEPackageSupportDisableManifestSandbox=*)
         die "callers must not supply $argument; xcode-stream manages SwiftPM manifest sandboxing"
         ;;
+      OTHER_SWIFT_FLAGS=*|OTHER_SWIFT_FLAGS\[*\]=*)
+        if [[ "${APP_SANDBOX_CONTAINER_ID:-}" == agent-safehouse ]]; then
+          die "inside Safehouse, set OTHER_SWIFT_FLAGS in the environment so xcode-stream can add the Swift compiler sandbox flag"
+        fi
+        ;;
     esac
   done
 
@@ -243,7 +248,9 @@ execute_internal() {
     -parallel-testing-enabled NO \
     -disable-concurrent-destination-testing
   if [[ "${APP_SANDBOX_CONTAINER_ID:-}" == agent-safehouse ]]; then
-    set -- "$@" -IDEPackageSupportDisableManifestSandbox=1
+    # shellcheck disable=SC2016 # Xcode expands the inherited build setting.
+    set -- "$@" -IDEPackageSupportDisableManifestSandbox=1 \
+      'OTHER_SWIFT_FLAGS=$(inherited) -disable-sandbox'
   fi
 
   if [[ "$use_xcbeautify" == true ]]; then

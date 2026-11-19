@@ -251,6 +251,9 @@ write_fake_xcodebuild() {
   cat >"$TEST_ROOT/bin/xcodebuild" <<'EOF'
 #!/opt/homebrew/bin/bash
 printf '%s\n' "$@" >"$XCODEBUILD_LOG"
+if [[ -n "${OTHER_SWIFT_FLAGS:-}" ]]; then
+  printf 'environment OTHER_SWIFT_FLAGS: %s\n' "$OTHER_SWIFT_FLAGS" >>"$XCODEBUILD_LOG"
+fi
 [[ -z "${XCODEBUILD_STDOUT:-}" ]] || printf '%s\n' "$XCODEBUILD_STDOUT"
 [[ -z "${XCODEBUILD_STDERR:-}" ]] || printf '%s\n' "$XCODEBUILD_STDERR" >&2
 if [[ -n "${XCODEBUILD_XCTEST_DEVICE_NAME:-}" ]]; then
@@ -365,7 +368,7 @@ reset_case() {
   export XCTEST_DEVICES_JSON="$CASE_ROOT/xctest-devices.json"
   export XCTEST_CENSUS_CALLS_FILE="$CASE_ROOT/xctest-census-calls"
   export JQ_BIN WINNER_UUID
-  unset IOS_SIM_GATE_DEVICE_TYPE IOS_SIM_GATE_RUNTIME SIMULATE_REGISTER_RACE XCODEBUILD_EXIT \
+  unset OTHER_SWIFT_FLAGS IOS_SIM_GATE_DEVICE_TYPE IOS_SIM_GATE_RUNTIME SIMULATE_REGISTER_RACE XCODEBUILD_EXIT \
     XCODEBUILD_STDOUT XCODEBUILD_STDERR XCODEBUILD_XCTEST_DEVICE_NAME \
     XCODEBUILD_XCTEST_DEVICE_UUID XCODEBUILD_INTERRUPT_CENSUS_PARENT XCBEAUTIFY_EXIT \
     XCBEAUTIFY_PREFLIGHT_EXIT GATE_STATUS_EXIT INCOMPATIBLE_RUNTIME XCTEST_CENSUS_FAIL_CALL
@@ -438,15 +441,56 @@ assert_contains "$XCODEBUILD_LOG" "-parallel-testing-enabled"
 assert_contains "$XCODEBUILD_LOG" "NO"
 assert_contains "$XCODEBUILD_LOG" "-disable-concurrent-destination-testing"
 assert_not_contains "$XCODEBUILD_LOG" "-IDEPackageSupportDisableManifestSandbox"
+assert_not_contains "$XCODEBUILD_LOG" "OTHER_SWIFT_FLAGS="
 [[ $(<"$XCTEST_CENSUS_CALLS_FILE") -eq 2 ]] ||
   fail "successful gated run must census XCTestDevices exactly twice"
 
-reset_case safehouse-manifest-sandbox
+caller_swift_flags='OTHER_SWIFT_FLAGS=-D CALLER_FLAG'
+conditional_swift_flags='OTHER_SWIFT_FLAGS[config=Debug]=-D DEBUG_CALLER_FLAG'
+environment_swift_flags='-D ENVIRONMENT_FLAG'
+APP_SANDBOX_CONTAINER_ID='' OTHER_SWIFT_FLAGS="$environment_swift_flags" \
+  run_wrapper --agent build2 --session collab -- xcodebuild test \
+    "$caller_swift_flags" "$conditional_swift_flags"
+assert_contains "$XCODEBUILD_LOG" "environment OTHER_SWIFT_FLAGS: $environment_swift_flags"
+grep -Fx -- "$caller_swift_flags" "$XCODEBUILD_LOG" >/dev/null ||
+  fail "outside Safehouse, the plain caller setting must pass through unchanged"
+grep -Fx -- "$conditional_swift_flags" "$XCODEBUILD_LOG" >/dev/null ||
+  fail "outside Safehouse, the conditional caller setting must pass through unchanged"
+assert_not_contains "$XCODEBUILD_LOG" "-disable-sandbox"
+assert_not_contains "$XCODEBUILD_LOG" "-IDEPackageSupportDisableManifestSandbox"
+
+reset_case safehouse-sandbox-flags
 add_device "$REUSE_UUID" "Family Foqos build2" com.apple.CoreSimulator.SimRuntime.iOS-26-0
 set_owner "$REUSE_UUID" build2 collab
-APP_SANDBOX_CONTAINER_ID=agent-safehouse \
-  run_wrapper --agent build2 --session collab --xcbeautify -- xcodebuild test
-assert_contains "$XCODEBUILD_LOG" "-IDEPackageSupportDisableManifestSandbox=1"
+# shellcheck disable=SC2016 # Xcode expands the inherited build setting.
+safehouse_swift_flags='OTHER_SWIFT_FLAGS=$(inherited) -disable-sandbox'
+for format in plain xcbeautify; do
+  format_args=()
+  if [[ "$format" == xcbeautify ]]; then
+    format_args=(--xcbeautify)
+  fi
+  APP_SANDBOX_CONTAINER_ID=agent-safehouse \
+    run_wrapper --agent build2 --session collab "${format_args[@]}" -- xcodebuild test
+  assert_contains "$XCODEBUILD_LOG" "-IDEPackageSupportDisableManifestSandbox=1"
+  grep -Fx -- "$safehouse_swift_flags" "$XCODEBUILD_LOG" >/dev/null ||
+    fail "Safehouse must pass the inherited Swift compiler flags as one argument"
+done
+
+APP_SANDBOX_CONTAINER_ID=agent-safehouse OTHER_SWIFT_FLAGS="$environment_swift_flags" \
+  run_wrapper --agent build2 --session collab -- xcodebuild test
+assert_contains "$XCODEBUILD_LOG" "environment OTHER_SWIFT_FLAGS: $environment_swift_flags"
+grep -Fx -- "$safehouse_swift_flags" "$XCODEBUILD_LOG" >/dev/null ||
+  fail "Safehouse must leave Xcode to inherit the environment flags"
+
+for setting in "$caller_swift_flags" "$conditional_swift_flags"; do
+  : >"$XCODEBUILD_LOG"
+  if output=$(APP_SANDBOX_CONTAINER_ID=agent-safehouse \
+    run_wrapper --agent build2 --session collab -- xcodebuild test "$setting" 2>&1); then
+    fail "Safehouse must reject caller Swift flags on the xcodebuild command line"
+  fi
+  [[ "$output" == *"set OTHER_SWIFT_FLAGS in the environment"* && ! -s "$XCODEBUILD_LOG" ]] ||
+    fail "Safehouse must explain how to supply Swift flags and stop before invoking xcodebuild: $output"
+done
 
 reset_case session-isolation
 add_device "$REUSE_UUID" "No session" com.apple.CoreSimulator.SimRuntime.iOS-26-0
