@@ -1,8 +1,8 @@
 diff --git a/Foqos/Components/Strategy/QRCodeScanner.swift b/Foqos/Components/Strategy/QRCodeScanner.swift
-index 5743a99..23ac2d1 100644
+index 6a3ed36..57165b5 100644
 --- a/Foqos/Components/Strategy/QRCodeScanner.swift
 +++ b/Foqos/Components/Strategy/QRCodeScanner.swift
-@@ -31,6 +31,15 @@ struct LabeledCodeScannerView: View {
+@@ -40,6 +40,15 @@ struct LabeledCodeScannerView: View {
    @State private var errorMessage: String? = nil
    @State private var scanError: ScanError? = nil
    @State private var isTorchOn = false
@@ -18,7 +18,7 @@ index 5743a99..23ac2d1 100644
  
    init(
      heading: String,
-@@ -73,6 +82,7 @@ struct LabeledCodeScannerView: View {
+@@ -82,6 +91,7 @@ struct LabeledCodeScannerView: View {
                .dataMatrix,
              ],
              showViewfinder: true,
@@ -26,7 +26,7 @@ index 5743a99..23ac2d1 100644
              shouldVibrateOnSuccess: true,
              isTorchOn: isTorchOn,
              videoCaptureDevice: camera,
-@@ -159,6 +169,12 @@ struct LabeledCodeScannerView: View {
+@@ -168,6 +178,12 @@ struct LabeledCodeScannerView: View {
      }
      .padding()
      .onAppear {
@@ -40,10 +40,10 @@ index 5743a99..23ac2d1 100644
        errorMessage = nil
        scanError = nil
 diff --git a/Foqos/FoqosApp.swift b/Foqos/FoqosApp.swift
-index 255d03d..ed4744e 100644
+index 5103d42..612ecad 100644
 --- a/Foqos/FoqosApp.swift
 +++ b/Foqos/FoqosApp.swift
-@@ -390,7 +390,11 @@ struct FoqosApp: App {
+@@ -363,7 +363,11 @@ private struct ReadyAppContent: View {
        guard !startupRecoveryRuntime.isHeld else { return }
      }
  
@@ -56,7 +56,7 @@ index 255d03d..ed4744e 100644
        await CloudKitManager.shared.checkAccountStatus()
        await CloudKitManager.shared.verifySelfFamilyMemberRecord()
        await verifyChildAuthorizationIfNeeded()
-@@ -420,6 +424,11 @@ struct FoqosApp: App {
+@@ -401,6 +405,11 @@ private struct ReadyAppContent: View {
      if shouldRefreshSchedules && !ScreenshotDemoMode.isActive {
        reconcileSchedulesForCurrentState()
      }
@@ -68,7 +68,7 @@ index 255d03d..ed4744e 100644
    }
  
    private func reconcileSchedulesForCurrentState() {
-@@ -862,6 +871,9 @@ func completeShareAcceptance(metadata: CKShare.Metadata, role: FamilyRole) {
+@@ -934,6 +943,9 @@ func completeShareAcceptance(metadata: CKShare.Metadata, role: FamilyRole) {
  /// Family Controls failures are recoverable and preserve the current family mode.
  @MainActor
  func verifyChildAuthorizationIfNeeded() async {
@@ -79,7 +79,7 @@ index 255d03d..ed4744e 100644
      await AuthorizationVerifier.shared.verifyChildAuthorization()
    }
 diff --git a/Foqos/Utils/DeviceActivityCenterUtil.swift b/Foqos/Utils/DeviceActivityCenterUtil.swift
-index 712d0d1..746053e 100644
+index 13fb864..629b28b 100644
 --- a/Foqos/Utils/DeviceActivityCenterUtil.swift
 +++ b/Foqos/Utils/DeviceActivityCenterUtil.swift
 @@ -25,7 +25,12 @@ class DeviceActivityCenterUtil {
@@ -122,7 +122,7 @@ index 712d0d1..746053e 100644
    }
  
    static func removeStrategyTimerActivity(profileId: UUID, sessionId: String) {
-@@ -333,6 +346,9 @@ class DeviceActivityCenterUtil {
+@@ -346,6 +359,9 @@ class DeviceActivityCenterUtil {
    }
  
    static func registerStrategyTimer(profileId: UUID, minutes: Int, now: Date) throws -> Date {
@@ -165,10 +165,10 @@ index 2cd7c07..28a218f 100644
        let result = try await cloudKitManager.fetchSharedLockCodes()
        // Fail-closed-with-cache (#197): trust a CONNECTED result (even empty = parent cleared)
 diff --git a/Foqos/Utils/NFCScannerUtil.swift b/Foqos/Utils/NFCScannerUtil.swift
-index 4b100b2..16f3522 100644
+index a981305..bdd48b0 100644
 --- a/Foqos/Utils/NFCScannerUtil.swift
 +++ b/Foqos/Utils/NFCScannerUtil.swift
-@@ -28,6 +28,21 @@ class NFCScannerUtil: NSObject, ObservableObject {
+@@ -47,6 +47,21 @@ class NFCScannerUtil: NSObject, ObservableObject {
    private var scanCompleted = false
  
    func scan(profileName: String) {
@@ -217,13 +217,14 @@ index 87d4056..3e9f6cc 100644
          if self.authorizationStatus != newStatus {
            Log.info(
 diff --git a/Foqos/Utils/StrategyManager.swift b/Foqos/Utils/StrategyManager.swift
-index a7f9f3f..94e8735 100644
+index 17cc1a1..85bb15c 100644
 --- a/Foqos/Utils/StrategyManager.swift
 +++ b/Foqos/Utils/StrategyManager.swift
-@@ -69,8 +69,13 @@ class StrategyManager: ObservableObject {
+@@ -90,9 +90,14 @@ class StrategyManager: ObservableObject {
      self.sessionSyncService = sessionSyncService
      self.locationManager = locationManager
      self.remoteActiveDefaults = remoteActiveDefaults
+     self.sessionStopOutbox = SessionStopOutbox(defaults: remoteActiveDefaults)
 -    self.appBlocker = appBlocker
 -    self.backstopRegistrar = backstopRegistrar
 +    #if DEBUG
@@ -237,10 +238,10 @@ index a7f9f3f..94e8735 100644
      self.registerTimer = registerTimer
      self.cancelTimer = cancelTimer
 diff --git a/Foqos/Views/HomeView.swift b/Foqos/Views/HomeView.swift
-index 61641f4..13b13a2 100644
+index 478d8a3..a1c7ed9 100644
 --- a/Foqos/Views/HomeView.swift
 +++ b/Foqos/Views/HomeView.swift
-@@ -13,6 +13,9 @@ struct HomeView: View {
+@@ -14,6 +14,9 @@ struct HomeView: View {
    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
  
    @Environment(\.scenePhase) private var scenePhase
@@ -250,7 +251,7 @@ index 61641f4..13b13a2 100644
  
    @EnvironmentObject var requestAuthorizer: RequestAuthorizer
    @EnvironmentObject var strategyManager: StrategyManager
-@@ -314,6 +317,16 @@ struct HomeView: View {
+@@ -320,6 +323,16 @@ struct HomeView: View {
          loadApp()
        }
      }
@@ -267,7 +268,33 @@ index 61641f4..13b13a2 100644
      .onChange(of: scenePhase) { oldPhase, newPhase in
        if newPhase == .active {
          loadApp()
-@@ -751,6 +764,11 @@ struct HomeView: View {
+@@ -683,8 +696,15 @@ struct HomeView: View {
+     nfcScanner.scan(profileName: profile.name)
+   }
+
++  private var isNFCReadingAvailable: Bool {
++    #if DEBUG
++      if UpgradeUI.isActive { return true }
++    #endif
++    return NFCReaderSession.readingAvailable
++  }
++
+   private func stopNFCScan(for profile: BlockedProfiles) {
+-    guard NFCReaderSession.readingAvailable else {
++    guard isNFCReadingAvailable else {
+       strategyManager.errorMessage = StrategyManager.nfcUnavailableStopMessage
+       return
+     }
+@@ -718,7 +738,7 @@ struct HomeView: View {
+   }
+
+   private func scanConfirmationNFC() {
+-    guard NFCReaderSession.readingAvailable else {
++    guard isNFCReadingAvailable else {
+       strategyManager.errorMessage = StrategyManager.nfcUnavailableStopMessage
+       return
+     }
+@@ -741,6 +761,11 @@ struct HomeView: View {
        }
      #endif
      try? strategyManager.loadActiveSession(context: context)
