@@ -435,6 +435,90 @@ final class SessionTimerCASTests: XCTestCase {
   }
 
   @MainActor
+  func testStaleCloudWinnerIsRetiredBeforeTheValidNewStartPublishes() async throws {
+    let suite = "StaleWinner-\(UUID())"
+    let defaults = UserDefaults(suiteName: suite)!
+    SharedData.configure(suite: defaults)
+    let sync = ProfileSyncManager.shared
+    let wasEnabled = sync.isEnabled
+    sync.isEnabled = true
+    defer {
+      sync.isEnabled = wasEnabled
+      defaults.removePersistentDomain(forName: suite)
+    }
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let now = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 11, day: 18, hour: 20)))
+    let container = try TestModelContainer.create()
+    let context = container.mainContext
+    let profile = BlockedProfiles(name: "New run", createdAt: now, updatedAt: now)
+    profile.startTriggers = .init(manual: true, schedule: true)
+    profile.stopConditions = .init(manual: true, schedule: true)
+    profile.startSchedule = .init(days: [.wednesday], hour: 15, minute: 20, updatedAt: now.addingTimeInterval(-86400))
+    profile.stopSchedule = .init(days: [.wednesday], hour: 18, minute: 0, updatedAt: now.addingTimeInterval(-86400))
+    profile.scheduleLastStoppedAt = now.addingTimeInterval(-6960)
+    context.insert(profile)
+    try context.save()
+    let staleId = UUID().uuidString
+    var stale = ProfileSessionRecord(profileId: profile.id)
+    stale.applyUpdate(
+      isActive: true, sequenceNumber: 32, deviceId: "other-device",
+      startTime: now.addingTimeInterval(-16560), sessionId: staleId, origin: .init(kind: .schedule))
+    let published = expectation(description: "valid new session published")
+    let server = RestartCASRecord(record: stale.toCKRecord(in: CKRecordZone.ID(zoneName: "Test"))) { published.fulfill() }
+    let service = SessionSyncService(fetchRecord: { _ in await server.fetch() }, saveRecord: { await server.save($0) })
+    let manager = StrategyManager(
+      sessionSyncService: service, appBlocker: RecordingRestrictionApplier(), remoteActiveDefaults: defaults,
+      currentDate: { now }, calendar: calendar)
+    defer { manager.stopTimer() }
+
+    let session = try manager.startOriginatingSession(context: context, profile: profile, origin: .init(kind: .manual), now: now)
+    await fulfillment(of: [published], timeout: 5)
+    let saves = await server.saves
+    XCTAssertEqual(saves.map { $0["isActive"] as? Int }, [0, 1])
+    XCTAssertEqual(saves.first?["sessionId"] as? String, staleId)
+    XCTAssertEqual(saves.last?["sessionId"] as? String, session.id)
+    XCTAssertEqual(manager.activeSession?.id, session.id)
+    XCTAssertEqual(SharedData.getActiveSharedSession()?.id, session.id)
+  }
+
+  @MainActor
+  func testCandidateRecheckedAfterFetchBeforeConditionalSave() async {
+    let now = Date()
+    let profileId = UUID()
+    let replacement = UUID().uuidString
+    let original = UUID().uuidString
+    let suite = "CASFetchRace-\(UUID())"
+    let defaults = UserDefaults(suiteName: suite)!
+    SharedData.configure(suite: defaults)
+    defer { defaults.removePersistentDomain(forName: suite) }
+    SharedData.createActiveSharedSession(
+      for: .init(
+        id: original, tag: "manual", blockedProfileId: profileId, startTime: now, forceStarted: false))
+    let service = SessionSyncService(
+      fetchRecord: { _ in
+        await MainActor.run {
+          SharedData.createActiveSharedSession(
+            for: .init(
+              id: replacement, tag: "manual", blockedProfileId: profileId, startTime: now, forceStarted: false))
+        }
+        throw CKError(.unknownItem)
+      },
+      saveRecord: { record in
+        XCTFail("A replaced start cannot reach conditional save")
+        return record
+      })
+
+    let outcome = await service.startSession(profileId: profileId, startTime: now, sessionId: original) {
+      SharedData.getActiveSharedSession()?.id == original
+    }
+    guard case .error(let error) = outcome, let syncError = error as? SessionSyncError,
+      case .candidateChanged = syncError
+    else { return XCTFail("Expected candidate to be invalidated after fetch") }
+    XCTAssertEqual(SharedData.getActiveSharedSession()?.id, replacement)
+  }
+
+  @MainActor
   func testOfflineStopThenStartResolvesExactOldIntentBeforePublishingNewCountdown() async throws {
     let now = Date()
     let name = "OfflineRestart-" + UUID().uuidString

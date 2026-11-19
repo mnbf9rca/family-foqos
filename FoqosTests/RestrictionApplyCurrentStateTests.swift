@@ -1,3 +1,4 @@
+import Darwin
 @preconcurrency import FoqosShared
 import XCTest
 
@@ -30,6 +31,122 @@ final class RestrictionApplyCurrentStateTests: XCTestCase {
       enableAllowMode: false,
       enableAllowModeDomains: false,
       enableSafariBlocking: false)
+  }
+
+  func testAppEffectRunsUnlockedAndRepairsAReplacement() {
+    let now = Date()
+    let first = snap(UUID())
+    let replacement = snap(UUID())
+    SharedData.setSnapshot(first, for: first.id.uuidString)
+    SharedData.setSnapshot(replacement, for: replacement.id.uuidString)
+    SharedData.createActiveSharedSession(
+      for: .init(
+        id: UUID().uuidString, tag: "start", blockedProfileId: first.id, startTime: now, forceStarted: false))
+    withSeparateLockDescriptor { descriptor in
+      let spy = RecordingRestrictionApplier()
+      spy.onActivate = { profile in
+        XCTAssertEqual(flock(descriptor, LOCK_EX | LOCK_NB), 0)
+        XCTAssertEqual(flock(descriptor, LOCK_UN), 0)
+        if profile.id == first.id {
+          SharedData.createActiveSharedSession(
+            for: .init(
+              id: UUID().uuidString, tag: "replacement", blockedProfileId: replacement.id, startTime: now, forceStarted: false))
+        }
+      }
+
+      _ = SharedData.applyRestrictionsForCurrentState(process: .mainApp, liveSnapshot: first, applier: spy)
+      XCTAssertEqual(spy.calls, [.activate(profileId: first.id), .activate(profileId: replacement.id)])
+    }
+  }
+
+  func testMonitorEffectRepairsSameIdentityGrantChange() {
+    let now = Date()
+    let profile = snap(UUID())
+    SharedData.setSnapshot(profile, for: profile.id.uuidString)
+    let session = SharedData.SessionSnapshot(
+      id: UUID().uuidString, tag: "start", blockedProfileId: profile.id, startTime: now, forceStarted: false)
+    SharedData.createActiveSharedSession(for: session)
+    withSeparateLockDescriptor { descriptor in
+      let spy = RecordingRestrictionApplier()
+      spy.onActivate = { _ in
+        XCTAssertEqual(flock(descriptor, LOCK_EX | LOCK_NB), 0)
+        XCTAssertEqual(flock(descriptor, LOCK_UN), 0)
+        var granted = session
+        granted.breakStartTime = now
+        granted.breakEndDeadline = now.addingTimeInterval(300)
+        granted.pinnedProfileConfig = profile
+        SharedData.createActiveSharedSession(for: granted)
+      }
+
+      _ = SharedData.applyRestrictionsForCurrentState(process: .monitorExtension, liveSnapshot: profile, applier: spy)
+      XCTAssertEqual(spy.calls, [.activate(profileId: profile.id), .deactivate])
+      XCTAssertEqual(SharedData.getActiveSharedSession()?.id, session.id)
+    }
+  }
+
+  func testCommittedMonitorStartAppliesShieldsWhileAnotherWriterHoldsTheLock() {
+    let now = Date()
+    let id = UUID()
+    var profile = snap(id)
+    profile.profileSchemaVersion = 2
+    profile.startTriggers = .init(manual: true)
+    profile.stopConditions = .init(manual: true)
+    profile.settingsReadable = true
+    let start = SharedData.SessionSnapshot(
+      id: UUID().uuidString, tag: "manual", blockedProfileId: id, startTime: now, forceStarted: true,
+      origin: .init(kind: .manual))
+    let spy = RecordingRestrictionApplier()
+
+    withSeparateLockDescriptor { descriptor in
+      SharedData.setSnapshot(profile, for: id.uuidString)
+      XCTAssertTrue(
+        SharedData.commitOriginatingSession(
+          start, expectedVictimId: nil, now: now,
+          onCommit: {
+            XCTAssertEqual(flock(descriptor, LOCK_EX | LOCK_NB), 0)
+            defer { XCTAssertEqual(flock(descriptor, LOCK_UN), 0) }
+            SharedData.applyRestrictionsForCurrentState(
+              process: .monitorExtension, liveSnapshot: profile, applier: spy, deactivateWhenIdle: true)
+          }))
+      XCTAssertEqual(spy.calls, [.activate(profileId: id)])
+      XCTAssertEqual(SharedData.getActiveSharedSession()?.id, start.id)
+    }
+  }
+
+  func testCommittedMonitorStopClearsShieldsWhileAnotherWriterHoldsTheLock() {
+    let now = Date()
+    let profile = snap(UUID())
+    let session = SharedData.SessionSnapshot(
+      id: UUID().uuidString, tag: "manual", blockedProfileId: profile.id, startTime: now.addingTimeInterval(-60),
+      forceStarted: true, origin: .init(kind: .manual))
+    let spy = RecordingRestrictionApplier()
+
+    withSeparateLockDescriptor { descriptor in
+      SharedData.createActiveSharedSession(for: session)
+      XCTAssertTrue(
+        SharedData.completeSession(expectedSessionId: session.id, now: now) {
+          XCTAssertEqual(flock(descriptor, LOCK_EX | LOCK_NB), 0)
+          defer { XCTAssertEqual(flock(descriptor, LOCK_UN), 0) }
+          SharedData.applyRestrictionsForCurrentState(
+            process: .monitorExtension, liveSnapshot: nil, applier: spy, deactivateWhenIdle: true)
+        })
+      XCTAssertEqual(spy.calls, [.deactivate])
+      XCTAssertNil(SharedData.getActiveSharedSession())
+    }
+  }
+
+  private func withSeparateLockDescriptor(_ verify: (Int32) -> Void) {
+    let path = FileManager.default.temporaryDirectory.appendingPathComponent("SessionEffect-\(UUID())")
+    let descriptor = open(path.path, O_CREAT | O_RDWR, 0o600)
+    XCTAssertGreaterThanOrEqual(descriptor, 0)
+    guard descriptor >= 0 else { return }
+    SharedData.configureLockPath(path.path)
+    defer {
+      SharedData.resetLockPath()
+      close(descriptor)
+      try? FileManager.default.removeItem(at: path)
+    }
+    verify(descriptor)
   }
 
   func testGivenNoSession_WhenMainAppApplies_ThenDeactivates() {

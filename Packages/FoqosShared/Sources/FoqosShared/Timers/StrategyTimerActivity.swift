@@ -51,14 +51,16 @@ public class StrategyTimerActivity: TimerActivity {
       let active = SharedData.getActiveSharedSession(), active.blockedProfileId == profile.id,
       active.origin == nil
     else { return }
-    appBlocker.activateRestrictions(for: profile)
+    SharedData.applyRestrictionsForCurrentState(
+      process: .monitorExtension, liveSnapshot: profile, applier: appBlocker, deactivateWhenIdle: true)
   }
 
   @discardableResult
   public func stop(for profile: SharedData.ProfileSnapshot, sessionId: String, now: Date) -> Bool {
     guard let active = SharedData.getActiveSharedSession(), active.blockedProfileId == profile.id else { return false }
     return SharedData.completeSession(expectedSessionId: sessionId, now: now, requireTimerDeadline: true) {
-      self.appBlocker.deactivateRestrictions()
+      SharedData.applyRestrictionsForCurrentState(
+        process: .monitorExtension, liveSnapshot: nil, applier: self.appBlocker, deactivateWhenIdle: true)
       self.cancelTimer(profile.id, sessionId)
     }
   }
@@ -70,7 +72,8 @@ public class StrategyTimerActivity: TimerActivity {
     let now = Date()
     if active.tag == profile.id.uuidString { SharedData.setLastStoppedAt(for: profile.id.uuidString, at: now) }
     _ = SharedData.completeSession(expectedSessionId: active.id, now: now) {
-      self.appBlocker.deactivateRestrictions()
+      SharedData.applyRestrictionsForCurrentState(
+        process: .monitorExtension, liveSnapshot: nil, applier: self.appBlocker, deactivateWhenIdle: true)
     }
   }
 }

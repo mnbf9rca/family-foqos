@@ -105,36 +105,49 @@ final class SharedDataLockTests: XCTestCase {
     XCTAssertTrue(SharedData.getAndFlushCompletedSessionsForScheduler().isEmpty)
   }
 
-  // MARK: - Error paths (withLock graceful degradation)
+  func testAcknowledgementLeavesNewlyAppendedCompletion() throws {
+    let now = Date()
+    SharedData.createSessionForScheduler(for: UUID())
+    let first = try XCTUnwrap(SharedData.getActiveSharedSession())
+    XCTAssertTrue(SharedData.completeSession(expectedSessionId: first.id, now: now))
+    let captured = try XCTUnwrap(SharedData.readSessionState()?.completed.first)
 
-  func testGivenNilLockPath_WhenWritingSnapshot_ThenProceedsUnlocked() {
+    SharedData.createSessionForScheduler(for: UUID())
+    let second = try XCTUnwrap(SharedData.getActiveSharedSession())
+    XCTAssertTrue(SharedData.completeSession(expectedSessionId: second.id, now: now))
+    XCTAssertTrue(SharedData.acknowledgeCompletedSession(captured))
+    XCTAssertTrue(SharedData.acknowledgeCompletedSession(captured))
+    XCTAssertEqual(SharedData.readSessionState()?.completed.map(\.id), [second.id])
+  }
+
+  // MARK: - Snapshot writes require a lock
+
+  func testGivenNilLockPath_WhenWritingSnapshot_ThenFailsClosed() {
     // Given: force nil lockPath (simulates missing app group container)
     SharedData.configureLockPath(nil)
     defer { SharedData.resetLockPath() }
 
-    // When: write a snapshot (exercises withLock with nil lockPath)
+    // A snapshot write cannot preserve the current stamp without the lock.
     let id = UUID()
     let snapshot = makeSnapshot(id: id, name: "NilLock")
     SharedData.setSnapshot(snapshot, for: id.uuidString)
 
-    // Then: snapshot was written despite no lock
     let retrieved = SharedData.snapshot(for: id.uuidString)
-    XCTAssertEqual(retrieved?.name, "NilLock")
+    XCTAssertNil(retrieved)
   }
 
-  func testGivenInvalidLockPath_WhenWritingSnapshot_ThenProceedsUnlocked() {
+  func testGivenInvalidLockPath_WhenWritingSnapshot_ThenFailsClosed() {
     // Given: lock path in nonexistent directory (open() will fail with ENOENT)
     SharedData.configureLockPath("/nonexistent/directory/lock")
     defer { SharedData.resetLockPath() }
 
-    // When: write a snapshot (exercises withLock with open() failure)
+    // A snapshot write cannot preserve the current stamp without the lock.
     let id = UUID()
     let snapshot = makeSnapshot(id: id, name: "BadPath")
     SharedData.setSnapshot(snapshot, for: id.uuidString)
 
-    // Then: snapshot was written despite lock failure
     let retrieved = SharedData.snapshot(for: id.uuidString)
-    XCTAssertEqual(retrieved?.name, "BadPath")
+    XCTAssertNil(retrieved)
   }
 
   // MARK: - Public withLock entry point (Task 3, #267)

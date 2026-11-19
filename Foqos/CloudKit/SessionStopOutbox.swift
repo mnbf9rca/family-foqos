@@ -8,6 +8,7 @@ final class SessionStopOutbox {
     let expectedSessionId: String?
     let expectedStart: Date?
     var allowRemoteLegacy: Bool? = nil
+    var endTime: Date? = nil
   }
 
   private let defaults: UserDefaults
@@ -66,15 +67,32 @@ final class SessionStopOutbox {
   }
 
   @discardableResult
-  func enqueue(profileId: UUID, expectedStart: Date? = nil, expectedSessionId: String? = nil, allowRemoteLegacy: Bool = false) -> Bool {
+  func enqueue(
+    profileId: UUID, expectedStart: Date? = nil, expectedSessionId: String? = nil,
+    allowRemoteLegacy: Bool = false, endTime: Date? = nil
+  ) -> Bool {
     guard var queued = intents else { return false }
-    if expectedSessionId == nil, queued.contains(where: { $0.profileId == profileId && $0.expectedSessionId != nil }) { return false }
-    let intent = Intent(profileId: profileId, expectedSessionId: expectedSessionId, expectedStart: expectedStart, allowRemoteLegacy: allowRemoteLegacy ? true : nil)
-    if queued.contains(intent) { return true }
-    // Exact identities supersede profile-only legacy stops, never another exact identity.
-    if expectedSessionId != nil {
-      queued.removeAll { $0.profileId == profileId && $0.expectedSessionId == nil }
-      if queued.contains(where: { $0.profileId == profileId && $0.expectedSessionId == expectedSessionId }) { return true }
+    let intent = Intent(
+      profileId: profileId, expectedSessionId: expectedSessionId, expectedStart: expectedStart,
+      allowRemoteLegacy: allowRemoteLegacy ? true : nil, endTime: endTime)
+    if let index = queued.firstIndex(where: {
+      $0.profileId == profileId && $0.expectedSessionId == expectedSessionId
+        && (expectedSessionId != nil || $0.expectedStart == expectedStart)
+    }) {
+      if queued[index].endTime == nil, let endTime {
+        queued[index].endTime = endTime
+        return save(queued)
+      }
+      return true
+    }
+    if expectedSessionId == nil, expectedStart == nil,
+      queued.contains(where: { $0.profileId == profileId && ($0.expectedSessionId != nil || $0.expectedStart != nil) })
+    {
+      return false
+    }
+    // An exact stop supersedes a profile-only intent, never a different identity.
+    if expectedSessionId != nil || expectedStart != nil {
+      queued.removeAll { $0.profileId == profileId && $0.expectedSessionId == nil && $0.expectedStart == nil }
     }
     queued.append(intent)
     return save(queued)
@@ -88,7 +106,7 @@ final class SessionStopOutbox {
 
   func removeLegacyIntents(profileId: UUID) {
     guard var queued = intents else { return }
-    queued.removeAll { $0.profileId == profileId && $0.expectedSessionId == nil }
+    queued.removeAll { $0.profileId == profileId && $0.expectedSessionId == nil && $0.expectedStart == nil }
     save(queued)
   }
 

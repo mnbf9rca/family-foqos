@@ -43,9 +43,9 @@ extension SharedData {
     applier: RestrictionApplying = AppBlockerUtil(),
     commit: (SessionSnapshot?) -> Bool
   ) -> Bool {
-    withLockStatus(blocking: true) { outcome in
+    let committed = withLockStatus(blocking: true) { outcome in
       guard outcome == .acquired else { return false }
-      guard var session = rawActiveSession, session.endTime == nil,
+      guard let checked = checkedActiveSession(), var session = checked, session.endTime == nil,
         session.id == expectedSessionId
       else { return false }
       guard session.breakStartTime == nil else { return false }
@@ -58,11 +58,12 @@ extension SharedData {
       session.oneMoreMinuteDeadline = nil
 
       guard commit(session) else { return false }
-      applyDecision(
-        deriveRestriction(session: session, liveSnapshot: pinned, process: .mainApp),
-        session: session, applier: applier)
       return true
     }
+    if committed {
+      applyRestrictionsForCurrentState(process: .mainApp, liveSnapshot: liveSnapshot, applier: applier)
+    }
+    return committed
   }
 
   @discardableResult
@@ -92,9 +93,9 @@ extension SharedData {
     applier: RestrictionApplying = AppBlockerUtil(),
     commit: (SessionSnapshot?) -> Bool
   ) -> Bool {
-    withLockStatus(blocking: true) { outcome in
+    let committed = withLockStatus(blocking: true) { outcome in
       guard outcome == .acquired else { return false }
-      guard var session = rawActiveSession, session.endTime == nil,
+      guard let checked = checkedActiveSession(), var session = checked, session.endTime == nil,
         session.id == expectedSessionId
       else { return false }
       guard !(session.breakStartTime != nil && session.breakEndTime == nil) else { return false }
@@ -107,11 +108,12 @@ extension SharedData {
       session.pinnedProfileConfig = pinned
 
       guard commit(session) else { return false }
-      applyDecision(
-        deriveRestriction(session: session, liveSnapshot: pinned, process: .mainApp),
-        session: session, applier: applier)
       return true
     }
+    if committed {
+      applyRestrictionsForCurrentState(process: .mainApp, liveSnapshot: liveSnapshot, applier: applier)
+    }
+    return committed
   }
 
   @discardableResult
@@ -147,12 +149,15 @@ extension SharedData {
     applier: RestrictionApplying = AppBlockerUtil(),
     commit: (SessionSnapshot?) -> Bool
   ) -> Bool {
-    withLockStatus(blocking: process == .mainApp) { _ in
-      guard var session = rawActiveSession, session.endTime == nil,
+    var fallback: (previous: SessionSnapshot, closed: SessionSnapshot)?
+    let committed = withLockStatus(blocking: process == .mainApp) { outcome in
+      guard outcome == .acquired || process == .monitorExtension else { return false }
+      guard let checked = checkedActiveSession(), var session = checked, session.endTime == nil,
         session.id == expectedSessionId
       else { return false }
       guard session.breakStartTime != nil, session.breakEndTime == nil else { return false }
 
+      let previous = session
       var didStamp = false
       if !explicit {
         var deadline = session.breakEndDeadline
@@ -165,18 +170,25 @@ extension SharedData {
           didStamp = true
         }
         guard let deadline, now >= deadline else {
-          if didStamp { _ = commit(session) }
+          if didStamp, outcome == .acquired { _ = commit(session) }
           return false
         }
       }
 
       session.breakEndTime = now
-      guard commit(session) else { return false }
-      applyDecision(
-        deriveRestriction(session: session, liveSnapshot: liveSnapshot, process: process),
-        session: session, applier: applier)
-      return true
+      guard outcome == .acquired else {
+        fallback = (previous, session)
+        return false
+      }
+      return commit(session)
     }
+    if committed {
+      applyRestrictionsForCurrentState(process: process, liveSnapshot: liveSnapshot, applier: applier)
+    } else if let fallback {
+      applyExpiredGrantFallback(
+        previous: fallback.previous, closed: fallback.closed, liveSnapshot: liveSnapshot, applier: applier)
+    }
+    return committed
   }
 
   @discardableResult
@@ -209,13 +221,16 @@ extension SharedData {
     applier: RestrictionApplying = AppBlockerUtil(),
     commit: (SessionSnapshot?) -> Bool
   ) -> Bool {
-    withLockStatus(blocking: process == .mainApp) { _ in
-      guard var session = rawActiveSession, session.endTime == nil,
+    var fallback: (previous: SessionSnapshot, closed: SessionSnapshot)?
+    let committed = withLockStatus(blocking: process == .mainApp) { outcome in
+      guard outcome == .acquired || process == .monitorExtension else { return false }
+      guard let checked = checkedActiveSession(), var session = checked, session.endTime == nil,
         session.id == expectedSessionId
       else { return false }
       guard session.oneMoreMinuteStartTime != nil else { return false }
 
       let breakOpen = session.breakStartTime != nil && session.breakEndTime == nil
+      let previous = session
       var didStamp = false
       if !breakOpen && !force {
         var deadline = session.oneMoreMinuteDeadline
@@ -225,25 +240,51 @@ extension SharedData {
           didStamp = true
         }
         guard let deadline, now >= deadline else {
-          if didStamp { _ = commit(session) }
+          if didStamp, outcome == .acquired { _ = commit(session) }
           return false
         }
       }
 
       session.oneMoreMinuteStartTime = nil
       session.oneMoreMinuteDeadline = nil
-      guard commit(session) else { return false }
-      applyDecision(
-        deriveRestriction(session: session, liveSnapshot: liveSnapshot, process: process),
-        session: session, applier: applier)
-      return true
+      guard outcome == .acquired else {
+        fallback = (previous, session)
+        return false
+      }
+      return commit(session)
+    }
+    if committed {
+      applyRestrictionsForCurrentState(process: process, liveSnapshot: liveSnapshot, applier: applier)
+    } else if let fallback {
+      applyExpiredGrantFallback(
+        previous: fallback.previous, closed: fallback.closed, liveSnapshot: liveSnapshot, applier: applier)
+    }
+    return committed
+  }
+
+  /// A contended monitor can re-block an expired grant without overwriting the owner.
+  private static func applyExpiredGrantFallback(
+    previous: SessionSnapshot, closed: SessionSnapshot, liveSnapshot: ProfileSnapshot?, applier: RestrictionApplying
+  ) {
+    guard let checked = checkedActiveSession(), checked == previous else { return }
+    let profile =
+      profileSnapshots[closed.blockedProfileId.uuidString]
+      ?? (liveSnapshot?.id == closed.blockedProfileId ? liveSnapshot : nil)
+    let decision = deriveRestriction(session: closed, liveSnapshot: profile, process: .monitorExtension)
+    guard case .activate = decision else { return }
+    applyDecision(decision, session: closed, applier: applier)
+    if let checked = checkedActiveSession(), checked != previous {
+      applyRestrictionsForCurrentState(
+        process: .monitorExtension, liveSnapshot: nil, applier: applier, deactivateWhenIdle: true)
     }
   }
 
   /// §6.4 — normalize open grant fields at session end for bookkeeping only.
   public static func closeGrantsForSessionEnd(expectedSessionId: String, now: Date) {
-    withLockStatus(blocking: true) { _ in
-      guard var session = rawActiveSession, session.id == expectedSessionId else { return }
+    withLockStatus(blocking: true) { outcome in
+      guard outcome == .acquired, let checked = checkedActiveSession(),
+        var session = checked, session.id == expectedSessionId
+      else { return }
       if session.breakStartTime != nil && session.breakEndTime == nil {
         session.breakEndTime = now
       }
@@ -273,22 +314,49 @@ extension SharedData {
     return breakOpen || s.oneMoreMinuteStartTime != nil
   }
 
-  /// D-C2-4 standalone derive-and-apply. Main app also flushes ended-but-present stale entries.
+  /// Apply synchronously after unlocking and repair any effect overtaken by another writer.
   @discardableResult
   public static func applyRestrictionsForCurrentState(
     process: RestrictionProcess,
     liveSnapshot: ProfileSnapshot?,
-    applier: RestrictionApplying = AppBlockerUtil()
+    applier: RestrictionApplying = AppBlockerUtil(),
+    deactivateWhenIdle: Bool = false
   ) -> RestrictionDecision {
-    withLockStatus(blocking: process == .mainApp) { _ in
-      let session = rawActiveSession
-      if process == .mainApp, let session, session.endTime != nil {
-        _ = rawCommitActiveSession(nil)
+    func readBasis() -> RestrictionBasis? {
+      withLockStatus(blocking: process == .mainApp) { outcome in
+        // The monitor can still derive an effect from readable state if another process
+        // kept the lock after the transition committed. Only the app can repair storage here.
+        guard outcome == .acquired || process == .monitorExtension,
+          let session = checkedActiveSession()
+        else { return nil }
+        let profile = session.flatMap { owner in
+          profileSnapshots[owner.blockedProfileId.uuidString] ?? (liveSnapshot?.id == owner.blockedProfileId ? liveSnapshot : nil)
+        }
+        return RestrictionBasis(session: session, profile: profile)
       }
-      let decision = deriveRestriction(session: session, liveSnapshot: liveSnapshot, process: process)
-      applyDecision(decision, session: session, applier: applier)
-      return decision
     }
+
+    var repairing = deactivateWhenIdle
+    var lastDecision = RestrictionDecision.bailPreserve
+    while let basis = readBasis() {
+      if process == .mainApp, let ended = basis.session, ended.endTime != nil,
+        recoverEndedSession(ended)
+      {
+        continue
+      }
+      let decision = deriveRestriction(
+        session: basis.session, liveSnapshot: basis.profile, process: repairing ? .mainApp : process)
+      applyDecision(decision, session: basis.session, applier: applier)
+      lastDecision = decision
+      guard let current = readBasis(), current != basis else { return decision }
+      if decision != .bailPreserve { repairing = true }
+    }
+    return lastDecision
+  }
+
+  private struct RestrictionBasis: Equatable {
+    let session: SessionSnapshot?
+    let profile: ProfileSnapshot?
   }
 
   /// §7.5 reconciler core. Never mutates DeviceActivity registrations.
@@ -318,10 +386,18 @@ extension SharedData {
         liveSnapshot: liveSnapshot,
         applier: applier)
     }
-    applyRestrictionsForCurrentState(
-      process: process,
-      liveSnapshot: liveSnapshot,
-      applier: applier)
+    if process == .monitorExtension, let session = rawActiveSession, hasOpenGrant(session) {
+      let breakDeadline =
+        session.breakEndDeadline
+        ?? session.breakStartTime.flatMap { start in
+          breakDurationMinutes.map { start.addingTimeInterval(TimeInterval($0 * 60)) }
+        }
+      let ommDeadline = session.oneMoreMinuteDeadline ?? session.oneMoreMinuteStartTime?.addingTimeInterval(60)
+      let openBreak = session.breakStartTime != nil && session.breakEndTime == nil
+      let expired = openBreak ? breakDeadline.map { now >= $0 } : ommDeadline.map { now >= $0 }
+      if expired == true { return }
+    }
+    applyRestrictionsForCurrentState(process: process, liveSnapshot: liveSnapshot, applier: applier)
   }
 
   @discardableResult
@@ -348,8 +424,8 @@ extension SharedData {
     now: Date,
     commit: (SessionSnapshot?) -> Bool
   ) -> Bool {
-    withLockStatus(blocking: true) { _ in
-      guard var session = rawActiveSession, session.endTime == nil,
+    withLockStatus(blocking: true) { outcome in
+      guard outcome == .acquired, let checked = checkedActiveSession(), var session = checked, session.endTime == nil,
         session.id == expectedSessionId
       else { return false }
 

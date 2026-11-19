@@ -1,0 +1,499 @@
+import CloudKit
+import FoqosShared
+import SwiftData
+import XCTest
+
+@testable import FamilyFoqos
+
+@MainActor
+final class SessionRecoveryTests: XCTestCase {
+  private var container: ModelContainer!
+  private var defaults: UserDefaults!
+  private var suiteName: String!
+  private var activityStarts = 0
+  private var applier: RecordingRestrictionApplier!
+  private var manager: StrategyManager!
+  private var syncWasEnabled = false
+
+  private var calendar: Calendar {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    return calendar
+  }
+
+  private var wednesday: Date {
+    calendar.date(from: DateComponents(year: 2026, month: 11, day: 18))!
+  }
+
+  private func time(_ hour: Int, _ minute: Int = 0, day: Int = 0) -> Date {
+    wednesday.addingTimeInterval(TimeInterval(day * 86_400 + hour * 3600 + minute * 60))
+  }
+
+  override func setUp() async throws {
+    try await super.setUp()
+    suiteName = "SessionRecoveryTests-\(UUID())"
+    defaults = UserDefaults(suiteName: suiteName)!
+    SharedData.configure(suite: defaults)
+    SharedData.configureLockPath(FileManager.default.temporaryDirectory.appendingPathComponent(suiteName).path)
+    container = try TestModelContainer.create()
+    applier = RecordingRestrictionApplier()
+    syncWasEnabled = ProfileSyncManager.shared.isEnabled
+    ProfileSyncManager.shared.isEnabled = false
+  }
+
+  override func tearDown() async throws {
+    manager?.stopTimer()
+    ProfileSyncManager.shared.isEnabled = syncWasEnabled
+    defaults.removePersistentDomain(forName: suiteName)
+    SharedData.resetLockPath()
+    try? FileManager.default.removeItem(at: FileManager.default.temporaryDirectory.appendingPathComponent(suiteName))
+    try await super.tearDown()
+  }
+
+  private func configureManager(delivery: Date) {
+    manager = StrategyManager(
+      appBlocker: applier, remoteActiveDefaults: defaults,
+      startSessionActivity: { [weak self] _ in self?.activityStarts += 1 },
+      currentDate: { delivery }, calendar: calendar)
+  }
+
+  func testEndedInstanceCannotBeAdoptedAgain() throws {
+    try assertIncidentRejected(sameIdentity: true)
+  }
+
+  func testRemoteIdentityFromStoppedOccurrenceCannotBeAdopted() throws {
+    try assertIncidentRejected(sameIdentity: false)
+  }
+
+  func testCompletionSurvivesFailedHistorySaveAndIsReplayed() throws {
+    let context = container.mainContext
+    let profile = BlockedProfiles(name: "Completed")
+    profile.profileSchemaVersion = 2
+    context.insert(profile)
+    try context.save()
+    let owner = SharedData.SessionSnapshot(
+      id: UUID().uuidString, tag: "schedule", blockedProfileId: profile.id,
+      startTime: time(15, 20), forceStarted: false, origin: .init(kind: .schedule))
+    SharedData.createActiveSharedSession(for: owner)
+    XCTAssertTrue(SharedData.completeSession(expectedSessionId: owner.id, now: time(18, 4)))
+    struct SaveFailure: Error {}
+    let delivery = time(20, 18)
+    manager = StrategyManager(
+      appBlocker: applier, remoteActiveDefaults: defaults,
+      saveSession: { _ in throw SaveFailure() }, currentDate: { delivery }, calendar: calendar)
+
+    XCTAssertThrowsError(try manager.loadActiveSession(context: context))
+    XCTAssertEqual(SharedData.completedSessionsInScheduler.map(\.id), [owner.id])
+
+    configureManager(delivery: time(20, 18))
+    let reopened = ModelContext(container)
+    try manager.loadActiveSession(context: reopened)
+    try manager.loadActiveSession(context: reopened)
+    XCTAssertNil(manager.activeSession)
+    XCTAssertTrue(SharedData.completedSessionsInScheduler.isEmpty)
+    let rows = try ModelContext(container).fetch(FetchDescriptor<BlockedProfileSession>())
+    XCTAssertEqual(rows.map(\.id), [owner.id])
+    XCTAssertEqual(rows.first?.endTime, time(18, 4))
+  }
+
+  func testInterruptedAdoptionRestoresOnlySharedOwner() throws {
+    configureManager(delivery: time(21, 52))
+    let context = container.mainContext
+    let profile = BlockedProfiles(name: "Split")
+    profile.profileSchemaVersion = 2
+    context.insert(profile)
+    let abandoned = BlockedProfileSession(
+      tag: "schedule", blockedProfile: profile, startTime: time(6),
+      origin: .init(kind: .schedule))
+    abandoned.sessionStartSyncPending = true
+    context.insert(abandoned)
+    try context.save()
+    BlockedProfiles.updateSnapshot(for: profile)
+    let owner = SharedData.SessionSnapshot(
+      id: UUID().uuidString, tag: "remote-sync", blockedProfileId: profile.id,
+      startTime: time(6, 1), forceStarted: true, origin: .init(kind: .schedule))
+    SharedData.createActiveSharedSession(for: owner)
+
+    try manager.loadActiveSession(context: ModelContext(container))
+    try manager.loadActiveSession(context: ModelContext(container))
+    XCTAssertEqual(manager.activeSession?.id, owner.id)
+    let rows = try ModelContext(container).fetch(FetchDescriptor<BlockedProfileSession>())
+    XCTAssertEqual(rows.filter(\.isActive).map(\.id), [owner.id])
+    let obsolete = try XCTUnwrap(rows.first { $0.id == abandoned.id })
+    XCTAssertEqual(obsolete.endTime, owner.startTime)
+    XCTAssertFalse(obsolete.sessionStartSyncPending)
+  }
+
+  func testAdoptedSlotIsRecoveredAfterAnInjectedRowSaveFailure() throws {
+    let delivery = time(20, 18)
+    let context = container.mainContext
+    let profile = BlockedProfiles(name: "Interrupted adoption")
+    context.insert(profile)
+    try context.save()
+    struct SaveFailure: Error {}
+    manager = StrategyManager(
+      appBlocker: applier, remoteActiveDefaults: defaults, saveSession: { _ in throw SaveFailure() },
+      currentDate: { delivery }, calendar: calendar)
+    let adopted = UUID()
+    manager.startRemoteSession(
+      context: context, profileId: profile.id, sessionId: adopted,
+      startTime: time(19), origin: .init(kind: .manual))
+
+    XCTAssertEqual(SharedData.getActiveSharedSession()?.id, adopted.uuidString)
+    XCTAssertNil(try BlockedProfileSession.findSession(byID: adopted.uuidString, in: ModelContext(container)))
+
+    configureManager(delivery: delivery)
+    let reopened = ModelContext(container)
+    try manager.loadActiveSession(context: reopened)
+    try manager.loadActiveSession(context: reopened)
+    XCTAssertEqual(try manager.controlSession(context: reopened)?.id, adopted.uuidString)
+    XCTAssertEqual(try ModelContext(container).fetch(FetchDescriptor<BlockedProfileSession>()).map(\.id), [adopted.uuidString])
+  }
+
+  func testOccurrenceUsesSourceStartWeekdayEditTimeAndIndependentStop() {
+    let profile = BlockedProfiles(name: "Recurrence")
+    profile.startTriggers = .init(schedule: true)
+    profile.stopConditions = .init(schedule: true)
+    profile.startSchedule = .init(days: [.monday], hour: 9, minute: 0, updatedAt: time(0, day: -8))
+    profile.stopSchedule = .init(days: [.friday], hour: 17, minute: 0, updatedAt: time(0, day: -8))
+    func allowed(start: Date, delivery: Date, kind: SessionOrigin.Kind?, deadline: Date? = nil) -> Bool {
+      SharedData.sessionTimingAllowsAdmission(
+        startedAt: start, deadline: deadline, origin: kind.map { SessionOrigin(kind: $0) },
+        profile: BlockedProfiles.getSnapshot(for: profile), now: delivery, calendar: calendar)
+    }
+    XCTAssertTrue(allowed(start: time(9, day: -2), delivery: time(20), kind: .schedule))
+    XCTAssertFalse(allowed(start: time(9, day: -2), delivery: time(17, day: 2), kind: .schedule))
+
+    profile.startSchedule = .init(days: [.wednesday, .thursday], hour: 15, minute: 20, updatedAt: time(0, day: -1))
+    profile.stopSchedule = .init(days: [.wednesday], hour: 15, minute: 20, updatedAt: time(0, day: -1))
+    XCTAssertFalse(allowed(start: time(15, 20), delivery: time(15, 20), kind: .manual))
+    profile.stopSchedule?.updatedAt = time(16)
+    XCTAssertTrue(allowed(start: time(15, 20), delivery: time(20), kind: .schedule))
+    profile.scheduleLastStoppedAt = time(15, 22)
+    XCTAssertFalse(allowed(start: time(15, 24), delivery: time(20), kind: .schedule))
+    XCTAssertTrue(allowed(start: time(15, 24), delivery: time(20), kind: nil))
+    XCTAssertTrue(allowed(start: time(15, 24), delivery: time(20), kind: .manual))
+    XCTAssertTrue(allowed(start: time(15, 20, day: 1), delivery: time(16, day: 1), kind: .schedule))
+    XCTAssertFalse(allowed(start: time(15, 24), delivery: time(20), kind: .manual, deadline: time(20)))
+    XCTAssertTrue(allowed(start: time(15, 24), delivery: time(20), kind: .manual, deadline: time(20, 1)))
+  }
+
+  func testOwnerRestoresAfterUndeliveredStopWithoutPublishingOrUnshielding() async throws {
+    let delivery = time(20, 18)
+    let context = container.mainContext
+    let profile = BlockedProfiles(name: "Live owner")
+    profile.startTriggers = .init(schedule: true)
+    profile.stopConditions = .init(manual: true, schedule: true)
+    profile.stopSchedule = .init(days: [.wednesday], hour: 18, minute: 0, updatedAt: time(0))
+    context.insert(profile)
+    let session = BlockedProfileSession(
+      tag: "schedule", blockedProfile: profile, startTime: time(15, 20), origin: .init(kind: .schedule))
+    session.sessionStartSyncPending = true
+    context.insert(session)
+    try context.save()
+    SharedData.setSnapshot(BlockedProfiles.getSnapshot(for: profile), for: profile.id.uuidString)
+    SharedData.createActiveSharedSession(for: session.toSnapshot())
+    ProfileSyncManager.shared.isEnabled = true
+    let network = SessionSyncService(
+      fetchRecord: { _ in
+        XCTFail("An expired historical owner cannot be published")
+        throw CKError(.networkUnavailable)
+      })
+    manager = StrategyManager(
+      sessionSyncService: network, appBlocker: applier, remoteActiveDefaults: defaults,
+      currentDate: { delivery }, calendar: calendar)
+    try manager.loadActiveSession(context: context)
+    await manager.drainSessionStopOutbox()
+
+    XCTAssertEqual(try manager.controlSession(context: context)?.local?.id, session.id)
+    XCTAssertEqual(SharedData.getActiveSharedSession()?.id, session.id)
+    XCTAssertNil(session.endTime)
+    XCTAssertFalse(applier.calls.contains(.deactivate))
+  }
+
+  func testCorruptSlotDefersNormalizationAndIdleRecoveryDoesNotRepublish() async throws {
+    let delivery = time(21, 52)
+    let context = container.mainContext
+    let profile = BlockedProfiles(name: "Idle split")
+    context.insert(profile)
+    let row = BlockedProfileSession(
+      tag: "schedule", blockedProfile: profile, startTime: time(6), origin: .init(kind: .schedule))
+    row.sessionStartSyncPending = true
+    context.insert(row)
+    try context.save()
+    let key = "family_foqos_active_schedule_session"
+    let corrupt = Data("not a session".utf8)
+    defaults.set(corrupt, forKey: key)
+    configureManager(delivery: delivery)
+    XCTAssertThrowsError(try manager.loadActiveSession(context: context))
+    XCTAssertEqual(defaults.data(forKey: key), corrupt)
+    XCTAssertTrue(row.isActive)
+    XCTAssertTrue(applier.calls.isEmpty)
+
+    defaults.removeObject(forKey: key)
+    try manager.loadActiveSession(context: context)
+    await manager.drainSessionStopOutbox()
+    XCTAssertNil(try manager.controlSession(context: context))
+    XCTAssertFalse(row.sessionStartSyncPending)
+    XCTAssertEqual(row.endTime, row.startTime)
+  }
+
+  func testIdleRepairPreservesLiveV1AndUsesAvailableCompletionForTheDisplacedRow() throws {
+    let now = time(21, 52)
+    configureManager(delivery: now)
+    let context = container.mainContext
+    let legacyProfile = BlockedProfiles(name: "Legacy")
+    legacyProfile.profileSchemaVersion = 1
+    let profile = BlockedProfiles(name: "Split and completed")
+    context.insert(legacyProfile)
+    context.insert(profile)
+    let legacy = BlockedProfileSession(tag: "legacy", blockedProfile: legacyProfile, startTime: time(10))
+    let old = BlockedProfileSession(tag: "schedule", blockedProfile: profile, startTime: time(6), origin: .init(kind: .schedule))
+    old.sessionStartSyncPending = true
+    context.insert(legacy)
+    context.insert(old)
+    try context.save()
+    let winner = SharedData.SessionSnapshot(
+      id: UUID().uuidString, tag: "remote-sync", blockedProfileId: profile.id,
+      startTime: time(6, 1), forceStarted: true, origin: .init(kind: .schedule))
+    SharedData.createActiveSharedSession(for: winner)
+    XCTAssertTrue(SharedData.completeSession(expectedSessionId: winner.id, now: time(8)))
+
+    try manager.loadActiveSession(context: ModelContext(container))
+
+    let rows = try ModelContext(container).fetch(FetchDescriptor<BlockedProfileSession>())
+    XCTAssertEqual(rows.filter(\.isActive).map(\.id), [legacy.id])
+    XCTAssertEqual(manager.activeSession?.id, legacy.id)
+    XCTAssertEqual(rows.first { $0.id == old.id }?.endTime, time(8))
+    XCTAssertEqual(rows.first { $0.id == winner.id }?.endTime, time(8))
+    XCTAssertEqual(rows.first { $0.id == old.id }?.sessionStartSyncPending, false)
+  }
+
+  func testEarlierRecordedCompletionBoundsOrphanBeforeDifferentProfileTakesOver() throws {
+    let now = time(21, 52)
+    configureManager(delivery: now)
+    let context = container.mainContext
+    let previous = BlockedProfiles(name: "Previous")
+    let current = BlockedProfiles(name: "Current")
+    context.insert(previous)
+    context.insert(current)
+    let orphan = BlockedProfileSession(tag: "schedule", blockedProfile: previous, startTime: time(6), origin: .init(kind: .schedule))
+    let completed = BlockedProfileSession(tag: "schedule", blockedProfile: previous, startTime: time(6, 1))
+    completed.endTime = time(8)
+    context.insert(orphan)
+    context.insert(completed)
+    try context.save()
+    let owner = SharedData.SessionSnapshot(
+      id: UUID().uuidString, tag: "remote-sync", blockedProfileId: current.id,
+      startTime: time(12), forceStarted: true, origin: .init(kind: .manual))
+    SharedData.createActiveSharedSession(for: owner)
+
+    try manager.loadActiveSession(context: ModelContext(container))
+
+    XCTAssertEqual(manager.activeSession?.id, owner.id)
+    XCTAssertEqual(
+      try BlockedProfileSession.findSession(byID: orphan.id, in: ModelContext(container))?.endTime,
+      time(8))
+  }
+
+  func testNextDayScheduledDeliveryIsAdoptedAfterStoppedOccurrence() throws {
+    let delivery = time(16, day: 1)
+    configureManager(delivery: delivery)
+    let context = container.mainContext
+    let profile = BlockedProfiles(name: "After school")
+    profile.startTriggers = .init(schedule: true)
+    profile.stopConditions = .init(schedule: true)
+    profile.startSchedule = .init(days: [.wednesday, .thursday], hour: 15, minute: 20, updatedAt: time(0, day: -1))
+    profile.stopSchedule = .init(days: [.wednesday, .thursday], hour: 18, minute: 0, updatedAt: time(0, day: -1))
+    profile.scheduleLastStoppedAt = time(18, 4)
+    context.insert(profile)
+    try context.save()
+    let next = UUID()
+    manager.startRemoteSession(
+      context: context, profileId: profile.id, sessionId: next, startTime: time(15, 24, day: 1), origin: .init(kind: .schedule))
+
+    XCTAssertEqual(manager.activeSession?.id, next.uuidString)
+    XCTAssertEqual(SharedData.getActiveSharedSession()?.id, next.uuidString)
+    XCTAssertEqual(applier.calls, [.activate(profileId: profile.id)])
+  }
+
+  func testForegroundKeepsRemoteOnlyControlWithoutRetryingMissingSelection() async throws {
+    configureManager(delivery: time(16))
+    ProfileSyncManager.shared.isEnabled = true
+    let context = container.mainContext
+    let profile = BlockedProfiles(name: "Pick apps", needsAppSelection: true)
+    context.insert(profile)
+    try context.save()
+    var remote = ProfileSessionRecord(profileId: profile.id)
+    remote.applyUpdate(
+      isActive: true, sequenceNumber: 1, deviceId: "remote", startTime: time(15),
+      sessionId: UUID().uuidString, origin: .init(kind: .manual))
+    XCTAssertTrue(try manager.receiveSessionRecord(remote, context: context))
+
+    await manager.drainSessionStopOutbox()
+
+    XCTAssertNil(manager.errorMessage)
+    XCTAssertEqual(manager.remoteOnlySessionRecord(profileIds: [profile.id])?.sessionId, remote.sessionId)
+  }
+
+  func testEndedHistoryPreventsReenforcingTheSameIdentityLeftInTheSlot() throws {
+    configureManager(delivery: time(20, 18))
+    let context = container.mainContext
+    let profile = BlockedProfiles(name: "Ended owner")
+    context.insert(profile)
+    let row = BlockedProfileSession(tag: "manual", blockedProfile: profile, startTime: time(15), origin: .init(kind: .manual))
+    context.insert(row)
+    let staleOwner = row.toSnapshot()
+    row.endTime = time(18)
+    row.origin = nil
+    try context.save()
+    SharedData.setSnapshot(BlockedProfiles.getSnapshot(for: profile), for: profile.id.uuidString)
+    SharedData.createActiveSharedSession(for: staleOwner)
+
+    try manager.loadActiveSession(context: ModelContext(container))
+
+    XCTAssertNil(manager.activeSession)
+    XCTAssertNil(SharedData.getActiveSharedSession())
+    XCTAssertEqual(try BlockedProfileSession.findSession(byID: row.id, in: ModelContext(container))?.endTime, time(18))
+    XCTAssertFalse(applier.calls.contains(.activate(profileId: profile.id)))
+  }
+
+  func testEmergencyAfterMonitorCompletionDoesNotChargeOrCompleteTwice() async throws {
+    let delivery = time(20, 18)
+    let context = container.mainContext
+    let profile = BlockedProfiles(name: "Finished focus")
+    context.insert(profile)
+    let session = BlockedProfileSession(
+      tag: "manual", blockedProfile: profile, startTime: time(15), origin: .init(kind: .manual))
+    context.insert(session)
+    try context.save()
+    let emergency = EmergencyUnblockManager(defaults: defaults)
+    emergency.seedForTesting(epoch: 1)
+    let available = emergency.getRemainingEmergencyUnblocks()
+    manager = StrategyManager(
+      emergencyUnblockManager: emergency, appBlocker: applier, remoteActiveDefaults: defaults,
+      currentDate: { delivery }, calendar: calendar)
+    manager.activeSession = session
+    SharedData.createActiveSharedSession(for: session.toSnapshot())
+    let endedAt = time(18)
+    XCTAssertTrue(SharedData.completeSession(expectedSessionId: session.id, now: endedAt))
+
+    do {
+      try await manager.emergencyUnblock(context: context)
+      XCTFail("The monitor already ended this session")
+    } catch {
+      guard case EmergencyUnblockError.noActiveSession = error else { return XCTFail("Unexpected error: \(error)") }
+    }
+
+    XCTAssertEqual(emergency.getRemainingEmergencyUnblocks(), available)
+    XCTAssertEqual(session.endTime, endedAt)
+    XCTAssertNil(manager.activeSession)
+    XCTAssertNil(SharedData.getActiveSharedSession())
+    XCTAssertTrue(SharedData.completedSessionsInScheduler.isEmpty)
+  }
+
+  func testEmergencyCommitRejectsOwnershipLostAfterAuthorization() {
+    let session = SharedData.SessionSnapshot(
+      id: UUID().uuidString, tag: "manual", blockedProfileId: UUID(), startTime: time(15),
+      forceStarted: false, origin: .init(kind: .manual))
+    SharedData.createActiveSharedSession(for: session)
+    XCTAssertTrue(SharedData.completeSession(expectedSessionId: session.id, now: time(18)))
+
+    XCTAssertFalse(
+      SharedData.completeSession(
+        expectedSessionId: session.id, now: time(20), localSession: session,
+        allowUndecodableStore: true, allowLocalFallbackWhenIdle: false))
+    XCTAssertEqual(SharedData.completedSessionsInScheduler.map(\.endTime), [time(18)])
+  }
+
+  func testRemoteInactiveDeliveryRefreshesSessionBeforeSelectingStopTarget() throws {
+    configureManager(delivery: time(20, 18))
+    let context = container.mainContext
+    let profile = BlockedProfiles(name: "Replacement")
+    context.insert(profile)
+    let old = BlockedProfileSession(
+      tag: "manual", blockedProfile: profile, startTime: time(15), origin: .init(kind: .manual))
+    context.insert(old)
+    try context.save()
+    manager.activeSession = old
+    let replacement = SharedData.SessionSnapshot(
+      id: UUID().uuidString, tag: "remote-sync", blockedProfileId: profile.id,
+      startTime: time(19), forceStarted: true, origin: .init(kind: .manual))
+    SharedData.createActiveSharedSession(for: replacement)
+
+    manager.stopRemoteSession(context: context, profileId: profile.id, expectedSessionId: old.id, sequenceNumber: 2)
+
+    XCTAssertEqual(manager.activeSession?.id, replacement.id)
+    XCTAssertEqual(SharedData.getActiveSharedSession()?.id, replacement.id)
+    XCTAssertTrue(try XCTUnwrap(manager.activeSession).isActive)
+    XCTAssertFalse(applier.calls.contains(.deactivate))
+  }
+
+  func testCompletionIsKeptWhenRequiredOutboxCannotBeWritten() throws {
+    configureManager(delivery: time(20, 18))
+    ProfileSyncManager.shared.isEnabled = true
+    let context = container.mainContext
+    let profile = BlockedProfiles(name: "Outbox")
+    context.insert(profile)
+    try context.save()
+    let owner = SharedData.SessionSnapshot(
+      id: UUID().uuidString, tag: "manual", blockedProfileId: profile.id,
+      startTime: time(15, 20), forceStarted: false, origin: .init(kind: .manual))
+    SharedData.createActiveSharedSession(for: owner)
+    XCTAssertTrue(SharedData.completeSession(expectedSessionId: owner.id, now: time(18, 4)))
+    defaults.set(Data("not an outbox".utf8), forKey: "family_foqos_session_stop_intents")
+
+    XCTAssertThrowsError(try manager.loadActiveSession(context: context))
+    XCTAssertEqual(try BlockedProfileSession.findSession(byID: owner.id, in: ModelContext(container))?.endTime, time(18, 4))
+    XCTAssertEqual(SharedData.completedSessionsInScheduler.map(\.id), [owner.id])
+
+    ProfileSyncManager.shared.isEnabled = false
+    try manager.loadActiveSession(context: ModelContext(container))
+    XCTAssertTrue(SharedData.completedSessionsInScheduler.isEmpty)
+    XCTAssertNil(manager.activeSession)
+  }
+
+  private func assertIncidentRejected(sameIdentity: Bool) throws {
+    configureManager(delivery: time(20, 18))
+    let context = container.mainContext
+    let profile = BlockedProfiles(name: "After school")
+    profile.profileSchemaVersion = 2
+    profile.startSchedule = ProfileScheduleTime(
+      days: [.wednesday, .thursday], hour: 15, minute: 20, updatedAt: time(0, day: -1))
+    profile.stopSchedule = ProfileScheduleTime(
+      days: [.wednesday, .thursday], hour: 18, minute: 0, updatedAt: time(0, day: -1))
+    profile.startTriggers = ProfileStartTriggers(schedule: true)
+    profile.stopConditions = ProfileStopConditions(schedule: true)
+    profile.scheduleLastStoppedAt = time(18, 4)
+    context.insert(profile)
+    let localId = UUID()
+    let ended = BlockedProfileSession(
+      tag: "schedule", blockedProfile: profile, startTime: time(15, 20),
+      id: localId.uuidString, origin: .init(kind: .schedule))
+    ended.usesCanonicalIdentity = true
+    ended.endSession(now: time(18, 4))
+    context.insert(ended)
+    try context.save()
+
+    let remoteId = sameIdentity ? localId : UUID()
+    let start = time(15, sameIdentity ? 20 : 24)
+    var remote = ProfileSessionRecord(profileId: profile.id)
+    remote.applyUpdate(
+      isActive: true, sequenceNumber: 1, deviceId: "remote", startTime: start,
+      sessionId: remoteId.uuidString, origin: .init(kind: .schedule))
+
+    XCTAssertFalse(try manager.receiveSessionRecord(remote, context: context))
+    manager.startRemoteSession(
+      context: context, profileId: profile.id, sessionId: remoteId,
+      startTime: start, origin: .init(kind: .schedule))
+
+    XCTAssertNil(manager.remoteOnlySessionRecord(profileIds: [profile.id]))
+    XCTAssertTrue(manager.remotelyActiveProfileIds.isEmpty)
+    XCTAssertNil(manager.activeSession)
+    XCTAssertNil(SharedData.getActiveSharedSession())
+    XCTAssertTrue(applier.calls.isEmpty)
+    XCTAssertEqual(activityStarts, 0)
+    XCTAssertEqual(ended.endTime, time(18, 4))
+    XCTAssertTrue(try context.fetch(FetchDescriptor<BlockedProfileSession>()).allSatisfy { !$0.isActive })
+  }
+}

@@ -109,3 +109,30 @@ public struct ProfileScheduleTime: Codable, Equatable {
     return "\(dayNames) at \(time)"
   }
 }
+
+extension SharedData {
+  /// Delivery-time admission for a V2 transition into ownership or a cloud start.
+  /// Restoring the existing owner never uses this decision.
+  public static func sessionTimingAllowsAdmission(
+    startedAt: Date, deadline: Date?, origin: SessionOrigin?,
+    profile: ProfileSnapshot, now: Date, calendar: Calendar = .current
+  ) -> Bool {
+    guard (profile.profileSchemaVersion ?? 1) >= 2 else { return true }
+    if let deadline, deadline > startedAt, deadline <= now { return false }
+    if profile.stopConditionsSchedule == true, profile.stopConditions?.schedule == true,
+      let stop = profile.stopSchedule,
+      stop.hasOccurrence(from: max(startedAt, stop.updatedAt), through: now, calendar: calendar)
+    {
+      return false
+    }
+    guard origin?.kind == .schedule, let stoppedAt = profile.scheduleLastStoppedAt,
+      stoppedAt <= now
+    else { return true }
+    if startedAt <= stoppedAt { return false }
+    guard profile.startTriggersSchedule == true, let start = profile.startSchedule,
+      let occurrence = start.previousDailyClockOccurrence(atOrBefore: startedAt, calendar: calendar),
+      occurrence >= start.updatedAt, start.isTodayScheduled(now: occurrence, calendar: calendar)
+    else { return true }
+    return occurrence > stoppedAt
+  }
+}

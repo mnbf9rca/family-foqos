@@ -48,6 +48,7 @@ final class StrategyManagerBackgroundTests: XCTestCase {
     let session = BlockedProfileSession(tag: "test", blockedProfile: profile)
     context.insert(session)
     try context.save()
+    SharedData.createActiveSharedSession(for: session.toSnapshot())
 
     XCTAssertThrowsError(
       try manager.startSessionFromBackground(profile.id, context: context)
@@ -189,6 +190,7 @@ final class StrategyManagerBackgroundTests: XCTestCase {
     let session = BlockedProfileSession(tag: "test", blockedProfile: profileA)
     context.insert(session)
     try context.save()
+    SharedData.createActiveSharedSession(for: session.toSnapshot())
 
     do {
       try await manager.stopSessionFromBackground(profileB.id, context: context)
@@ -281,6 +283,7 @@ final class StrategyManagerBackgroundTests: XCTestCase {
     let session = BlockedProfileSession(tag: "test", blockedProfile: profile)
     context.insert(session)
     try context.save()
+    SharedData.createActiveSharedSession(for: session.toSnapshot())
 
     do {
       try await manager.stopSessionFromBackground(profile.id, context: context)

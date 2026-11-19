@@ -190,6 +190,14 @@ struct ProfileSessionRecord: Codable, Equatable, Sendable {
     return abs(startTime.timeIntervalSince(otherStart)) < 0.001
   }
 
+  func isOlderThan(_ other: ProfileSessionRecord) -> Bool {
+    if let date = serverModificationDate, let otherDate = other.serverModificationDate, date != otherDate {
+      return date < otherDate
+    }
+    if serverModificationDate == nil, other.serverModificationDate != nil, !matchesIdentity(of: other) { return true }
+    return sequenceNumber < other.sequenceNumber
+  }
+
   mutating func completeLocally(at endTime: Date) {
     isActive = false
     self.endTime = endTime
@@ -204,7 +212,10 @@ struct ProfileSessionRecord: Codable, Equatable, Sendable {
   func matchesCompletion(expectedSessionId: String?, expectedStart: Date?, deviceId: String, allowRemoteLegacy: Bool = false) -> Bool {
     if let expectedSessionId { return sessionId == expectedSessionId }
     if let expectedStart {
-      if allowRemoteLegacy { return startTime.map { abs($0.timeIntervalSince(expectedStart)) < 0.001 } == true }
+      guard sessionId == nil else { return false }
+      if allowRemoteLegacy {
+        return startTime.map { abs($0.timeIntervalSince(expectedStart)) < 0.001 } == true
+      }
       return matchesCompletion(expectedStart: expectedStart, deviceId: deviceId)
     }
     return true

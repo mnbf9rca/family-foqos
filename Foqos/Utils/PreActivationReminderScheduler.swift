@@ -16,12 +16,10 @@ enum PreActivationReminderScheduler {
       let profiles = try BlockedProfiles.fetchProfiles(in: context)
       var changed = false
       for profile in profiles {
-        guard
-          let snapStopped = SharedData.snapshot(for: profile.id.uuidString)?.scheduleLastStoppedAt
-        else { continue }
-        let current = profile.scheduleLastStoppedAt
-        if current == nil || snapStopped > current! {
-          profile.scheduleLastStoppedAt = snapStopped
+        let snapStopped = SharedData.snapshot(for: profile.id.uuidString)?.scheduleLastStoppedAt
+        let merged = SharedData.latestScheduleStop(profile.scheduleLastStoppedAt, snapStopped)
+        if merged != profile.scheduleLastStoppedAt {
+          profile.scheduleLastStoppedAt = merged
           changed = true
         }
       }

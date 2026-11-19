@@ -39,7 +39,7 @@ final class EmergencyUnblockReminderTests: XCTestCase {
       "Emergency unblock must schedule the post-session reminder exactly once"
     )
   }
-  func testEmergencyFallbackEndsIdleAndUndecodableStoreWithoutSpendingFailedStops() async throws {
+  func testEmergencyFallbackEndsOnlyUndecodableStoreWithoutSpendingFailedStops() async throws {
     let now = Date()
     for state in ["idle", "corrupt", "different", "unlocked"] {
       let name = "EmergencyFallback-" + UUID().uuidString
@@ -64,13 +64,16 @@ final class EmergencyUnblockReminderTests: XCTestCase {
       manager.activeSession = session
       do {
         try await manager.emergencyUnblock(context: context)
-        XCTAssertTrue(state == "idle" || state == "corrupt")
+        XCTAssertEqual(state, "corrupt")
       } catch {
-        XCTAssertTrue(state == "different" || state == "unlocked")
+        XCTAssertTrue(state == "idle" || state == "different" || state == "unlocked")
       }
-      let stopped = state == "idle" || state == "corrupt"
-      XCTAssertEqual(session.endTime != nil, stopped)
-      XCTAssertEqual(emergency.getRemainingEmergencyUnblocks(), count - (stopped ? 1 : 0))
+      if state == "idle" {
+        XCTAssertEqual(session.endTime, session.startTime, "Recovery archives the orphan without charging an unblock")
+      } else {
+        XCTAssertEqual(session.endTime != nil, state == "corrupt")
+      }
+      XCTAssertEqual(emergency.getRemainingEmergencyUnblocks(), count - (state == "corrupt" ? 1 : 0))
       manager.stopTimer()
     }
   }

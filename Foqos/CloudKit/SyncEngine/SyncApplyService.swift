@@ -19,6 +19,7 @@ final class SyncApplyService {
   private let sessionController: SessionController
   private let emergencyManager: EmergencyUnblockManager
   private let deviceId: String
+  private let currentDate: () -> Date
   private let scheduleProfileDeleteCommit: (@escaping @MainActor () -> Void) -> Void
   private var zoneID: CKRecordZone.ID {
     CKRecordZone.ID(zoneName: CloudKitConstants.syncZoneName, ownerName: CKCurrentUserDefaultName)
@@ -47,13 +48,15 @@ final class SyncApplyService {
     emergencyManager: EmergencyUnblockManager,
     deviceId: String,
     scheduleProfileDeleteCommit: @escaping (@escaping @MainActor () -> Void) -> Void =
-      BlockedProfiles.scheduleProfileDeleteCommit
+      BlockedProfiles.scheduleProfileDeleteCommit,
+    currentDate: @escaping () -> Date = Date.init
   ) {
     self.modelContext = modelContext
     self.store = store
     self.sessionController = sessionController
     self.emergencyManager = emergencyManager
     self.deviceId = deviceId
+    self.currentDate = currentDate
     self.scheduleProfileDeleteCommit = scheduleProfileDeleteCommit
   }
 
@@ -334,8 +337,13 @@ final class SyncApplyService {
   }
 
   private func applyDecodedProfile(
-    _ synced: SyncedProfile, record: CKRecord
+    _ incoming: SyncedProfile, record: CKRecord
   ) throws -> ApplyOutcome {
+    var synced = incoming
+    let now = currentDate()
+    let sharedStamp = SharedData.snapshot(for: synced.profileId.uuidString)?.scheduleLastStoppedAt
+    let deliveredStamp = synced.scheduleLastStoppedAt.flatMap { $0 <= now ? $0 : nil }
+    synced.scheduleLastStoppedAt = SharedData.latestScheduleStop(deliveredStamp, sharedStamp)
     let recordName = record.recordID.recordName
     guard
       let existing = try BlockedProfiles.findProfile(byID: synced.profileId, in: modelContext)
@@ -354,7 +362,7 @@ final class SyncApplyService {
       let created = createLocalProfile(from: synced)
       try commit()
       try migrateIncomingProfile(created)
-      BlockedProfiles.updateSnapshot(for: created)
+      try publishProfileSnapshot(created)
       storeSystemFields(record)
       store.clearDeleteWatermark(recordName: recordName)
       SyncDiagnostics.profileApply(
@@ -364,6 +372,12 @@ final class SyncApplyService {
         localGeofenceRefCount: nil)
       return .applied
     }
+
+    let mergedStamp = SharedData.latestScheduleStop(synced.scheduleLastStoppedAt, existing.scheduleLastStoppedAt)
+    let stampChanged = mergedStamp != existing.scheduleLastStoppedAt
+    let needsSnapshot = stampChanged || store.failedApplies.contains { $0.recordName == recordName && $0.op == .upsert }
+    existing.scheduleLastStoppedAt = mergedStamp
+    synced.scheduleLastStoppedAt = mergedStamp
 
     let localVersion = existing.syncVersion
     let localSchema = existing.profileSchemaVersion
@@ -378,6 +392,7 @@ final class SyncApplyService {
       existing.syncVersion += 1
       try commit()
       pendingReenqueues.append(record.recordID)
+      if needsSnapshot { try publishProfileSnapshot(existing) }
       SyncDiagnostics.profileApply(
         profileId: existing.id, branch: "local_schema_newer_reenqueue",
         remoteVersion: synced.version, localVersion: localVersion,
@@ -391,6 +406,7 @@ final class SyncApplyService {
       existing.profileSchemaVersion = synced.profileSchemaVersion
       existing.syncVersion = synced.version
       try commit()
+      if needsSnapshot { try publishProfileSnapshot(existing) }
       SyncDiagnostics.profileApply(
         profileId: existing.id, branch: "remote_schema_newer_marker",
         remoteVersion: synced.version, localVersion: localVersion,
@@ -403,7 +419,7 @@ final class SyncApplyService {
       updateLocalProfile(existing, from: synced)
       try commit()
       try migrateIncomingProfile(existing)
-      BlockedProfiles.updateSnapshot(for: existing)
+      try publishProfileSnapshot(existing)
       SyncConflictManager.shared.clearConflict(profileId: existing.id)
       storeSystemFields(record)
       SyncDiagnostics.profileApply(
@@ -417,9 +433,10 @@ final class SyncApplyService {
       // Equal-version divergence (§5.1): payload-differing => deterministic tie-break (#218).
       let localSynced = SyncedProfile(from: existing, originDeviceId: deviceId)
       if SyncPayloadEquality.profilesPayloadEqual(synced, localSynced) {
+        if stampChanged { try commit() }
         try migrateIncomingProfile(existing)
         // An earlier apply may have committed before publishing its snapshot.
-        BlockedProfiles.updateSnapshot(for: existing)
+        try publishProfileSnapshot(existing)
         storeSystemFields(record)
         SyncDiagnostics.profileApply(
           profileId: existing.id, branch: "equal_payload_noop",
@@ -435,7 +452,7 @@ final class SyncApplyService {
         updateLocalProfile(existing, from: synced)
         try commit()
         try migrateIncomingProfile(existing)
-        BlockedProfiles.updateSnapshot(for: existing)
+        try publishProfileSnapshot(existing)
         storeSystemFields(record)
         SyncConflictManager.shared.addDivergenceConflict(
           profileId: existing.id, profileName: existing.name)
@@ -451,6 +468,7 @@ final class SyncApplyService {
         existing.syncVersion += 1
         try commit()
         pendingReenqueues.append(record.recordID)
+        if needsSnapshot { try publishProfileSnapshot(existing) }
         SyncConflictManager.shared.addDivergenceConflict(
           profileId: existing.id, profileName: existing.name)
         SyncDiagnostics.profileApply(
@@ -462,13 +480,24 @@ final class SyncApplyService {
         return .applied
       }
     } else {
-      // Older incoming version ⇒ no-op.
+      if stampChanged { try commit() }
+      if needsSnapshot { try publishProfileSnapshot(existing) }
       SyncDiagnostics.profileApply(
         profileId: existing.id, branch: "older_remote_noop", remoteVersion: synced.version,
         localVersion: localVersion, remoteSchema: synced.profileSchemaVersion,
         localSchema: localSchema, remoteGeofenceRefCount: remoteGeofenceRefCount,
         localGeofenceRefCount: localGeofenceRefCount)
       return .applied
+    }
+  }
+
+  private func publishProfileSnapshot(_ profile: BlockedProfiles) throws {
+    guard let published = BlockedProfiles.updateSnapshot(for: profile) else { throw CocoaError(.fileWriteUnknown) }
+    if let stoppedAt = published.scheduleLastStoppedAt,
+      stoppedAt > (profile.scheduleLastStoppedAt ?? .distantPast)
+    {
+      profile.scheduleLastStoppedAt = stoppedAt
+      try commit()
     }
   }
 
@@ -809,7 +838,15 @@ final class SyncApplyService {
       Log.info("Ignoring undecodable ProfileSession record", category: .sync)
       return .ignored
     }
-    guard sessionController.receiveSessionRecord(session) else { return .ignored }
+    do {
+      let accepted = try sessionController.receiveSessionRecord(session, context: modelContext)
+      store.removeFailedApply(recordName: record.recordID.recordName)
+      guard accepted else { return .ignored }
+    } catch {
+      store.addFailedApply(FailedApply(recordName: record.recordID.recordName, recordType: ProfileSessionRecord.recordType, op: .upsert))
+      Log.error("Session receipt deferred: \(redactedErrorForLog(error))", category: .session)
+      return .failed
+    }
     if let profile = try? BlockedProfiles.findProfile(byID: session.profileId, in: modelContext),
       let active = profile.sessions.valid.first(where: { $0.isActive }),
       session.sessionId == nil || session.sessionId == active.id,

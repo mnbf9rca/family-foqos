@@ -75,23 +75,29 @@ final class StrategyManagerReconcileTests: XCTestCase {
     XCTAssertEqual(reconciliationCount, 0)
   }
 
-  // #237 / Design Q1: tapping Stop while the shared active session was swapped by the extension
-  // must NOT end the stale on-screen session -- it reloads and surfaces instead.
-  func testGivenSharedSessionSwapped_WhenToggleStop_ThenStaleSessionNotEndedAndSurfaced() throws {
+  // #237 / Design Q1: a stale Stop must not complete a different shared owner.
+  func testGivenSharedSessionSwapped_WhenToggleStop_ThenReplacementRemainsAndChangeIsSurfaced() throws {
+    let now = Date()
     let profileA = BlockedProfiles(name: "A")
+    let profileB = BlockedProfiles(name: "B")
     context.insert(profileA)
-    let sessionA = BlockedProfileSession(tag: "A", blockedProfile: profileA)
+    context.insert(profileB)
+    let sessionA = BlockedProfileSession(tag: "A", blockedProfile: profileA, startTime: now.addingTimeInterval(-60))
     context.insert(sessionA)
     try context.save()
-    manager.activeSession = sessionA  // stale on-screen session
-    // Extension swapped the shared active session to a different one (fresh id != sessionA.id).
-    SharedData.createSessionForScheduler(for: UUID())
-    XCTAssertNotEqual(
-      SharedData.getActiveSharedSession()?.id, sessionA.id, "precondition: shared session swapped")
+    manager.activeSession = sessionA
+    let replacement = SharedData.SessionSnapshot(
+      id: UUID().uuidString, tag: "schedule", blockedProfileId: profileB.id, startTime: now,
+      forceStarted: true, origin: .init(kind: .schedule))
+    SharedData.createActiveSharedSession(for: replacement)
 
     manager.toggleBlocking(context: context, activeProfile: profileA)
 
-    XCTAssertNil(sessionA.endTime, "the stale session must NOT be ended (#237 / Q1)")
+    XCTAssertEqual(SharedData.getActiveSharedSession(), replacement, "#237 / Q1")
+    XCTAssertEqual(manager.activeSession?.id, replacement.id)
+    XCTAssertNil(manager.activeSession?.endTime)
+    XCTAssertTrue(SharedData.completedSessionsInScheduler.isEmpty)
+    XCTAssertEqual(sessionA.endTime, now, "The obsolete row is archived at the replacement start")
     XCTAssertNotNil(manager.errorMessage, "the state change is surfaced to the user")
   }
 

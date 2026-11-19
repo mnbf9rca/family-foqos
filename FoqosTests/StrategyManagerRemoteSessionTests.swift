@@ -184,6 +184,7 @@ final class StrategyManagerRemoteSessionTests: XCTestCase {
     context.insert(sessionA)
     try context.save()
     manager.activeSession = sessionA
+    SharedData.createActiveSharedSession(for: sessionA.toSnapshot())
 
     manager.startRemoteSession(
       context: context,
@@ -207,6 +208,7 @@ final class StrategyManagerRemoteSessionTests: XCTestCase {
     context.insert(sessionA)
     try context.save()
     manager.activeSession = sessionA
+    SharedData.createActiveSharedSession(for: sessionA.toSnapshot())
 
     manager.startRemoteSession(
       context: context,
@@ -236,7 +238,7 @@ final class StrategyManagerRemoteSessionTests: XCTestCase {
     XCTAssertFalse(manager.sessionStopOutbox.pending.contains(profile.id))
   }
 
-  func testGivenSameProfileActiveInStoreOnly_WhenRemoteStart_ThenNoDuplicateSessionCreated() throws {
+  func testGivenSameProfileOrphanRow_WhenRemoteStart_ThenOnlyCommittedIdentityIsActive() throws {
     let now = Date(timeIntervalSinceReferenceDate: 1_000)
     let profile = BlockedProfiles(name: "Stored")
     context.insert(profile)
@@ -246,14 +248,16 @@ final class StrategyManagerRemoteSessionTests: XCTestCase {
     try context.save()
     manager.activeSession = nil
 
+    let remote = UUID()
     manager.startRemoteSession(
       context: context,
       profileId: profile.id,
-      sessionId: UUID(),
+      sessionId: remote,
       startTime: now)
 
-    XCTAssertEqual(try activeSessions().map(\.id), [existing.id])
-    XCTAssertTrue(appBlocker.calls.isEmpty)
+    XCTAssertEqual(try activeSessions().map(\.id), [remote.uuidString])
+    XCTAssertNotNil(existing.endTime)
+    XCTAssertEqual(appBlocker.calls, [.activate(profileId: profile.id)])
   }
 
   private func activeSessions() throws -> [BlockedProfileSession] {

@@ -591,7 +591,9 @@ class BlockedProfiles {
     let removeOneMoreMinuteBackstop: (UUID) -> Void
     var cancelStrategyTimer: (UUID, String) -> Void = DeviceActivityCenterUtil.removeStrategyTimerActivity
     var removeProfileActivities: (UUID) -> Void = { DeviceActivityCenterUtil.removeActivities(for: $0) }
-    var deactivateRestrictions: () -> Void = { AppBlockerUtil().deactivateRestrictions() }
+    var deactivateRestrictions: () -> Void = {
+      SharedData.applyRestrictionsForCurrentState(process: .mainApp, liveSnapshot: nil)
+    }
     var discardLocalSession: @MainActor (UUID) -> Void = { StrategyManager.shared.discardDeletedProfileSession(profileId: $0) }
     var refreshShortcuts: () -> Void = { FamilyFoqosShortcuts.updateAppShortcutParameters() }
   }
@@ -729,13 +731,15 @@ class BlockedProfiles {
   }
 
   /// Create a codable/equatable snapshot suitable for UserDefaults
-  static func updateSnapshot(for profile: BlockedProfiles) {
+  @discardableResult
+  static func updateSnapshot(for profile: BlockedProfiles) -> SharedData.ProfileSnapshot? {
     let snapshot = getSnapshot(for: profile)
     let nameChanged = SharedData.snapshot(for: profile.id.uuidString)?.name != snapshot.name
-    SharedData.setSnapshot(snapshot, for: profile.id.uuidString)
+    let published = SharedData.setSnapshot(snapshot, for: profile.id.uuidString)
     // Local and synced creates, renames, and duplicates all land here; Siri phrases
     // with a profile parameter only see new names after this notification.
-    if nameChanged { FamilyFoqosShortcuts.updateAppShortcutParameters() }
+    if nameChanged, published != nil { FamilyFoqosShortcuts.updateAppShortcutParameters() }
+    return published
   }
 
   static func deleteSnapshot(for profile: BlockedProfiles) {

@@ -6,6 +6,26 @@ public func redactedErrorForLog(_ error: any Error) -> String {
   return redactor.redact(error)
 }
 
+public func sessionCorrelationToken(_ id: String) -> String? {
+  guard let uuid = UUID(uuidString: id) else { return nil }
+  return String(uuid.uuidString.lowercased().filter { $0 != "-" }.prefix(12))
+}
+
+extension Log {
+  enum SessionTransition: String {
+    case started, stopped, adopted
+  }
+
+  static func sessionTransition(_ transition: SessionTransition, id: String, replacing previousId: String? = nil) {
+    guard let token = sessionCorrelationToken(id) else { return }
+    if let previousId, previousId != id, let previous = sessionCorrelationToken(previousId) {
+      info("Session \(transition.rawValue) \(previous) → \(token)", category: .session)
+    } else {
+      info("Session \(transition.rawValue) \(token)", category: .session)
+    }
+  }
+}
+
 private struct ErrorLogRedactor {
   private let maxDepth = 3
   private let maxCharacters = 2_048

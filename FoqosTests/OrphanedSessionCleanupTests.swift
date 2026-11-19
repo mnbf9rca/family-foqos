@@ -49,7 +49,8 @@ final class OrphanedSessionCleanupTests: XCTestCase {
     defer { manager.stopTimer() }
     SharedData.configureLockPath(nil)
 
-    XCTAssertNoThrow(try manager.loadActiveSession(context: container.mainContext))
+    XCTAssertThrowsError(try manager.loadActiveSession(context: container.mainContext))
+    XCTAssertNil(manager.activeSession)
     XCTAssertEqual(SharedData.getActiveSharedSession(), ghost)
     SharedData.resetLockPath()
     try manager.loadActiveSession(context: container.mainContext)
