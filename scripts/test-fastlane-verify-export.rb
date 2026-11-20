@@ -60,8 +60,9 @@ end
     '-authenticationKeyIssuerID', '11111111-2222-3333-4444-555555555555'
   ]
   raise 'Missing signing key path' if signing_key_path.to_s.empty?
+
   if container_id
-    expected.concat(['-IDEPackageSupportDisableManifestSandbox=1', 'OTHER_SWIFT_FLAGS=$(inherited) -disable-sandbox'])
+    expected.push('-IDEPackageSupportDisableManifestSandbox=1', 'OTHER_SWIFT_FLAGS=$(inherited) -disable-sandbox')
     raise 'Safehouse must skip the standalone package resolution' unless options[:skip_package_dependencies_resolution]
     raise 'Expected FamilyFoqos IPA and archive naming in Safehouse' unless options[:output_name] == 'FamilyFoqos'
   elsif options[:skip_package_dependencies_resolution] || options[:output_name]
