@@ -158,10 +158,14 @@ struct BlockedProfileView: View {
     return lockCodeManager.isUnlocked(profile.id)
   }
 
-  /// Whether editing should be disabled
-  private var editingDisabled: Bool {
+  private var profileStateUnavailable: Bool {
     confirmingRemoteSession || remoteConfirmationFailed
       || (profile != nil && !triggerConfig.hasLoadedProfile)
+  }
+
+  /// Whether editing should be disabled
+  private var editingDisabled: Bool {
+    profileStateUnavailable
       || ProfileEditGate.editingDisabled(
         isBlocking: isBlocking,
         isManaged: isManagedProfile,
@@ -685,7 +689,7 @@ struct BlockedProfileView: View {
 
           if isEditing, let validProfile = profile {
             ToolbarItemGroup(placement: .topBarTrailing) {
-              if !editingDisabled {
+              if !profileStateUnavailable && !isBlocking {
                 Menu {
                   Button {
                     writeProfile()
