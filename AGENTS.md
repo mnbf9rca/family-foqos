@@ -6,6 +6,7 @@ This always-loaded file is the invariant sheet for agentic work in Family Foqos.
 
 - Keep implementations DRY and KISS; in general, apply YAGNI.
 - V2 start and stop conditions are independent; V1 strategy behaviour must not be reused. Follow the [V2 conditions rulebook](docs/superpowers/specs/2026-10-02-508-v2-conditions-rulebook.md); legacy data conversion does not give V1 behaviour authority over V2.
+- Wait at least 7 days after publication before adding or updating any dependency version, including Ruby gems in `Gemfile` or `Gemfile.lock`, Swift packages in `Package.resolved`, and GitHub Actions versions. List each changed dependency version and its publish date in the PR.
 - Never amend or force commits. Put every fix in a new signed commit; revert with a new commit when needed.
 - Obtain independent adversarial design review (correctness, over-engineering, missing cases that matter in practice) before implementation and independent code review before every merge. The orchestrator merges per the [merge policy](docs/multi-agent-coordination.md#report-merge-readiness-literally), with operator/process-doc and batch exceptions.
 - Warm each implementation stream’s Git credentials at startup while the human is present; follow [Development Workflow](docs/development-workflow.md#warm-git-credentials) for dispatch, expiry, and AFK rules.
