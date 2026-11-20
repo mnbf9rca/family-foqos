@@ -8,8 +8,8 @@ Fastlane.load_actions
 repo_root = File.expand_path('..', __dir__)
 captured_options = nil
 
-unless Gem.loaded_specs.fetch('fastlane').version.to_s == '2.238.0'
-  warn 'FAIL: Fastlane is not pinned to 2.238.0'
+unless Gem.loaded_specs.fetch('fastlane').version.to_s == '2.242.0'
+  warn 'FAIL: Fastlane is not pinned to 2.242.0'
   exit 1
 end
 
@@ -26,7 +26,7 @@ begin
   warn 'FAIL: shipped Gym unexpectedly accepted app-store-connect'
   exit 1
 rescue FastlaneCore::Interface::FastlaneError
-  # Expected for Fastlane 2.238.0.
+  # Expected for Fastlane 2.242.0.
 end
 
 Fastlane::Actions::BuildAppAction.singleton_class.define_method(:run) do |options|
