@@ -112,6 +112,43 @@ final class ScreenshotTests: XCTestCase {
   }
 
   @MainActor
+  func testIdleLockedChildProfileActionsKeepEditingLocked() {
+    let app = launch(scenario: "child-locked")
+    XCTAssertTrue(app.staticTexts["Locked Profiles"].waitForExistence(timeout: 15))
+    app.buttons["Cancel"].tap()
+
+    let manage = app.buttons["Manage"]
+    XCTAssertTrue(manage.waitForExistence(timeout: 10))
+    manage.tap()
+    XCTAssertTrue(app.navigationBars["Profiles"].waitForExistence(timeout: 10))
+    let school = app.collectionViews.firstMatch.staticTexts["School Nights"]
+    XCTAssertTrue(school.waitForExistence(timeout: 10))
+    school.tap()
+
+    let name = app.textFields["Profile Name"]
+    XCTAssertTrue(name.waitForExistence(timeout: 10))
+    XCTAssertFalse(name.isEnabled)
+    XCTAssertFalse(app.buttons["Update"].exists)
+
+    let actions = app.buttons["Profile Actions"]
+    XCTAssertTrue(actions.waitForExistence(timeout: 10), "Idle locked profiles should offer Profile Actions")
+    actions.tap()
+    for title in ["Write to NFC Tag", "Generate QR code", "Duplicate Profile", "View Sessions", "Delete Profile"] {
+      XCTAssertTrue(app.buttons[title].exists, "Missing profile action: \(title)")
+    }
+
+    app.buttons["Duplicate Profile"].tap()
+    let duplicate = app.alerts["Duplicate Profile"]
+    XCTAssertTrue(duplicate.waitForExistence(timeout: 10))
+    XCTAssertFalse(app.staticTexts["Enter Lock Code"].exists)
+    duplicate.buttons["Cancel"].tap()
+
+    actions.tap()
+    app.buttons["Delete Profile"].tap()
+    XCTAssertTrue(app.staticTexts["Enter Lock Code"].waitForExistence(timeout: 10))
+  }
+
+  @MainActor
   func testParentDashboardScreenshot() throws {
     let app = launch(scenario: "parent-dashboard")
     XCTAssertTrue(app.staticTexts["Lock Code Set"].waitForExistence(timeout: 15))
