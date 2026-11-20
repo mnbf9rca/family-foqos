@@ -652,14 +652,13 @@ final class UpgradePersonaUITests: XCTestCase {
     XCTAssertTrue(app.buttons["Unlock"].waitForExistence(timeout: 10))
     XCTAssertFalse(app.buttons["Update"].exists)
     let name = app.textFields["Profile Name"]
+    XCTAssertFalse(name.isEnabled, "Parent-controlled Profile Name must be disabled before unlock")
     XCTAssertEqual(name.value as? String, "RC child")
-    name.tap()
-    name.typeText(" unsaved draft")
-    XCTAssertFalse(app.buttons["Update"].exists)
-    screenshot("child-unsaved-name-draft")
+    screenshot("child-locked-name-field")
     press("Cancel")
     selectProfileRow("RC child")
-    XCTAssertEqual(name.value as? String, "RC child", "Locked draft must not persist after Cancel")
+    XCTAssertFalse(name.isEnabled, "Profile Name must remain locked after Cancel and reopen")
+    XCTAssertEqual(name.value as? String, "RC child", "Reopening the locked field must retain the original name")
     let tapStart = app.switches["Tap to start"]
     scrollTo(tapStart)
     XCTAssertFalse(tapStart.isEnabled, "Locked start condition must remain disabled")
@@ -686,6 +685,7 @@ final class UpgradePersonaUITests: XCTestCase {
     press("Unlock")
     enterCode("2468")
     XCTAssertTrue(app.buttons["Update"].waitForExistence(timeout: 10))
+    XCTAssertTrue(name.isEnabled, "The correct parent code must enable Profile Name")
     press("Update")
     closeProfiles()
     inspectSettings(save: false, unlock: false)  // The original locked flag stays persisted; edit lease may remain this launch.

@@ -9,7 +9,7 @@ Expected behavior and the persona matrix are in the [approved plan](superpowers/
 | Persona evidence detail | Required proof |
 | --- | --- |
 | Emergency user | Show the retained allowance of 1 and successful last unblock in the UI. On idle relaunch, Emergency is reachable only during an active session, so the mandatory fresh report proves exactly 0 remaining and 14 reset days; keep the idle screenshot and global no-Stop check. A missing or stale report is UNRUN. |
-| Child | Locked items show Unlock, withhold Update and disable condition controls. Name accepts an unsaved draft: Cancel/reopen must retain the original name, and the mandatory report must retain its name and managed flag; correct code permits saving. New profiles choose Tap to start and Tap to stop through the UI before Create; the report checks those choices and that new/duplicated profiles are unlocked. |
+| Child | Locked items show Unlock, withhold Update and disable condition controls. Name is disabled while locked. After Cancel, reopening keeps the field disabled and shows the original name. The correct code enables Name and permits saving. The mandatory report must retain the original name and managed flag. New profiles choose Tap to start and Tap to stop through the UI before Create; the report checks those choices and that new/duplicated profiles are unlocked. |
 
 ## 1. Pin sources and compile fixtures before touching app data
 
