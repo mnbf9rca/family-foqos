@@ -41,6 +41,17 @@ platform :ios do
     api_key = options.fetch(:api_key)
     build = options.fetch(:build)
     ASCCredentials.with_private_key_tempfile(api_key.fetch(:key)) do |key_path|
+      xcargs = "CURRENT_PROJECT_VERSION=#{build} -allowProvisioningUpdates " \
+               "-authenticationKeyPath #{Shellwords.escape(key_path)} " \
+               "-authenticationKeyID #{api_key.fetch(:key_id)} " \
+               "-authenticationKeyIssuerID #{api_key.fetch(:issuer_id)}"
+      gym_options = {}
+      if ENV['APP_SANDBOX_CONTAINER_ID'] == 'agent-safehouse'
+        swift_flags = Shellwords.escape('OTHER_SWIFT_FLAGS=$(inherited) -disable-sandbox')
+        xcargs += " -IDEPackageSupportDisableManifestSandbox=1 #{swift_flags}"
+        # Gym's separate package and settings queries do not inherit xcargs.
+        gym_options = { skip_package_dependencies_resolution: true, output_name: SCHEME }
+      end
       gym(
         project: XCODEPROJ,
         scheme: SCHEME,
@@ -48,10 +59,8 @@ platform :ios do
         # Gym 2.238.0 still rejects Xcode's app-store-connect spelling before archiving.
         export_method: 'app-store',
         xcodebuild_formatter: 'xcbeautify',
-        xcargs: "CURRENT_PROJECT_VERSION=#{build} -allowProvisioningUpdates " \
-                "-authenticationKeyPath #{Shellwords.escape(key_path)} " \
-                "-authenticationKeyID #{api_key.fetch(:key_id)} " \
-                "-authenticationKeyIssuerID #{api_key.fetch(:issuer_id)}"
+        xcargs: xcargs,
+        **gym_options
       )
     end
   end

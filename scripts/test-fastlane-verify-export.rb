@@ -3,6 +3,7 @@
 require 'base64'
 require 'fastlane'
 require 'openssl'
+require 'shellwords'
 
 Fastlane.load_actions
 
@@ -36,26 +37,38 @@ ArchiveStorage.singleton_class.define_method(:upload_dsyms) do |**_options|
   raise 'dSYM publication path reached'
 end
 
-Dir.chdir(repo_root) { fastfile.runner.execute(:verify_export, :ios, {}) }
+[nil, 'agent-safehouse'].each do |container_id|
+  if container_id
+    ENV['APP_SANDBOX_CONTAINER_ID'] = container_id
+  else
+    ENV.delete('APP_SANDBOX_CONTAINER_ID')
+  end
+  captured_builds.clear
+  Dir.chdir(repo_root) { fastfile.runner.execute(:verify_export, :ios, {}) }
+  raise "Expected one archive/export, got #{captured_builds.length}" unless captured_builds.length == 1
 
-unless captured_builds.length == 1
-  warn "FAIL: verify_export built #{captured_builds.length} times instead of once"
-  exit 1
+  options = captured_builds.first
+  raise 'Wrong export method' unless options.fetch(:export_method) == 'app-store'
+  raise 'Wrong build formatter' unless options.fetch(:xcodebuild_formatter) == 'xcbeautify'
+
+  actual = Shellwords.split(options.fetch(:xcargs))
+  signing_key_path = actual[3]
+  expected = [
+    'CURRENT_PROJECT_VERSION=123', '-allowProvisioningUpdates',
+    '-authenticationKeyPath', signing_key_path,
+    '-authenticationKeyID', 'TESTKEY123',
+    '-authenticationKeyIssuerID', '11111111-2222-3333-4444-555555555555'
+  ]
+  raise 'Missing signing key path' if signing_key_path.to_s.empty?
+
+  if container_id
+    expected.push('-IDEPackageSupportDisableManifestSandbox=1', 'OTHER_SWIFT_FLAGS=$(inherited) -disable-sandbox')
+    raise 'Safehouse must skip the standalone package resolution' unless options[:skip_package_dependencies_resolution]
+    raise 'Expected FamilyFoqos IPA and archive naming in Safehouse' unless options[:output_name] == 'FamilyFoqos'
+  elsif options[:skip_package_dependencies_resolution] || options[:output_name]
+    raise 'Host archive options changed'
+  end
+  raise "Wrong archive arguments for #{container_id || 'host'}" unless actual == expected
 end
 
-options = captured_builds.fetch(0)
-unless options.fetch(:export_method) == 'app-store'
-  warn "FAIL: verify_export export method was #{options.fetch(:export_method).inspect}"
-  exit 1
-end
-unless options.fetch(:xcodebuild_formatter) == 'xcbeautify'
-  warn "FAIL: verify_export formatter was #{options.fetch(:xcodebuild_formatter).inspect}"
-  exit 1
-end
-unless options.fetch(:xcargs).include?('CURRENT_PROJECT_VERSION=123')
-  actual_build = options.fetch(:xcargs)[/CURRENT_PROJECT_VERSION=\S+/]
-  warn "FAIL: verify_export did not propagate derived build 123: #{actual_build.inspect}"
-  exit 1
-end
-
-puts 'PASS: verify_export performs one archive/export and cannot reach upload actions'
+puts 'PASS: host and Safehouse verify_export each archive once and cannot reach upload actions'
